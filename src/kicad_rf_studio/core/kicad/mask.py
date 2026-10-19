@@ -13,19 +13,21 @@ def mask_openings(board: Board, side: str) -> MultiPolygon:
     A pad that lists the side's mask opens its outline grown by its margin, with or without copper (a hole listed on
     the masks opens, a paste-only pad does not). The margin is the first one that is set of the pad's own, its
     footprint's and the board's pad_to_mask_clearance, so a zero wins over a larger value further out, and a negative
-    margin shrinks the opening. Shapes drawn on the mask layer open it as they are. When the board has a
-    solder_mask_min_width, every web of mask narrower than it is closed, which merges the openings on both sides."""
+    margin shrinks the opening. A pad whose file lists no copper layer (a mask-only pad) takes no margin, as in
+    pcbnew. Shapes drawn on the mask layer open it as they are. When the board has a solder_mask_min_width, every
+    web of mask narrower than it is closed, which merges the openings on both sides."""
     # ponytail: two corners cut, each a known ceiling.
     # - Vias are not opened (their tenting is not read), so an untented via is covered here. Upgrade: read the
     #   tenting into Via and add its pad to `shapes`.
-    # - pcbnew 9 gives a pad whose layer list names no copper (a mask-only pad) a margin of 0, whatever the margins
-    #   say; here it takes the margin like any other. Upgrade: record on Pad whether its file lists copper, as
-    #   `layers` cannot tell (a hole that covers its pad lists copper, and pcbnew still gives it the margin).
+    # - A mask-only unplated hole (np_thru_hole whose file lists no copper) takes the margin like any pad, where
+    #   pcbnew gives it 0. `layers` is empty for it as for a hole that covers its pad, which pcbnew does give the
+    #   margin, so the check below leaves np_thru_hole alone. Upgrade: record on Pad whether its file lists copper.
     shapes = list(board.mask_graphics[side])
     for fp in board.footprints.values():
         for pad in fp.pads:
             if side in pad.mask_sides:
-                margins = (pad.mask_margin, fp.mask_margin, board.pad_to_mask_clearance)
+                no_copper = pad.kind != "np_thru_hole" and not pad.layers  # pcbnew gives such a pad no margin
+                margins = (0.0 if no_copper else pad.mask_margin, fp.mask_margin, board.pad_to_mask_clearance)
                 shapes.append(pad.polygon.buffer(next(m for m in margins if m is not None)))
     openings = unary_union(shapes)
     if board.solder_mask_min_width > 0:

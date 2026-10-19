@@ -45,9 +45,10 @@ def test_margin_precedence(mini_board):
 def margin_of(m): return "" if m is None else f"(solder_mask_margin {m})"
 
 
-def pad(number, x, layers='"F.Cu" "F.Mask"', margin=None):
-    """A 1 x 1 mm SMD pad of U9 at (x, 0)."""
-    return f'(pad "{number}" smd rect (at {x} 0) (size 1 1) (layers {layers}) {margin_of(margin)} (uuid "p{number}"))'
+def pad(number, x, layers='"F.Cu" "F.Mask"', margin=None, kind="smd"):
+    """A 1 x 1 mm rectangular pad of U9 at (x, 0)."""
+    return (f'(pad "{number}" {kind} rect (at {x} 0) (size 1 1) (layers {layers}) {margin_of(margin)} '
+            f'(uuid "p{number}"))')
 
 
 def footprint(*pads, margin=None, attr=""):
@@ -80,6 +81,29 @@ def test_the_first_margin_that_is_set_applies_even_when_it_is_zero(mini_board, p
     b = mini_board(footprint(pad(1, 0, margin=pad_margin), margin=fp_margin), clearance=0.2)
     (m,) = mask_openings(b, "F").geoms
     assert m.area == pytest.approx(1 + 4 * margin + math.pi * margin**2, rel=1e-3)
+
+
+@pytest.mark.parametrize("kind", ["smd", "thru_hole", "connect"])
+def test_a_pad_with_no_copper_layer_takes_no_margin(mini_board, kind):
+    """As in pcbnew, whatever the margins say. A copper pad beside it keeps the chain."""
+    b = mini_board(footprint(pad(1, 0, '"F.Mask"', margin=0.05, kind=kind), pad(2, 3, margin=0.05), margin=0.1),
+                   clearance=0.2)
+    bare, copper = b.footprints["U9"].pads
+    assert bare.layers == () and copper.layers == ("F.Cu",)
+    m = mask_openings(b, "F")
+    (own,) = opening_hits(m, bare.polygon)
+    (grown,) = opening_hits(m, copper.polygon)
+    assert own.symmetric_difference(bare.polygon).area < 1e-9  # exactly its own outline
+    assert grown.area == pytest.approx(1 + 4 * 0.05 + math.pi * 0.05**2, rel=1e-3)  # the pad's 0.05, not 0.1 or 0.2
+
+
+def test_a_hole_that_covers_its_pad_still_takes_the_margin(mini_board):
+    """Its `layers` is empty, but the file lists copper, and pcbnew gives it the margin (here the footprint's 0.1)."""
+    hole = '(pad "1" np_thru_hole circle (at 0 0) (size 1 1) (drill 1) (layers "*.Cu" "*.Mask") (uuid "p1"))'
+    b = mini_board(footprint(hole, margin=0.1), clearance=0.2)
+    assert b.footprints["U9"].pads[0].layers == ()
+    (m,) = mask_openings(b, "F").geoms
+    assert m.area == pytest.approx(math.pi * 0.6**2, rel=5e-3)  # a 1 mm circle grown by 0.1
 
 
 @pytest.mark.parametrize("margin, area", [(-0.1, 0.8**2), (-0.6, 0)], ids=["shrinks", "vanishes"])
