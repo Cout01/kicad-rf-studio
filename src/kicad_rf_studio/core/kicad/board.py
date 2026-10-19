@@ -7,9 +7,10 @@ from collections.abc import Iterator
 from dataclasses import dataclass
 from pathlib import Path
 
+from shapely import unary_union
 from shapely.geometry import LineString, Polygon
 from shapely.geometry.base import BaseGeometry
-from shapely.ops import polygonize, unary_union
+from shapely.ops import polygonize
 
 from kicad_rf_studio.core.kicad.sexpr import Quoted, atom, child, children, num, parse, repair
 from kicad_rf_studio.core.kicad.shapes import XY, arc_points, circle
@@ -18,6 +19,7 @@ from kicad_rf_studio.core.messages import KrsError
 OLDEST_SUPPORTED = 20241229  # the file version of KiCad 9.0
 NEWEST_TESTED = 20241229  # moves up when CI tier (c) has read a KiCad 10 board
 DEFAULT_THICKNESS = 1.6  # mm, what KiCad assumes for a board whose file gives none
+OUTLINE_GRID = 1e-3  # mm, the grid Edge.Cuts lines are noded on: ends closer than this meet
 _MASK = {"F.Mask": "F", "B.Mask": "B"}
 _GRAPHICS = ("gr_poly", "gr_rect", "gr_circle", "gr_line", "gr_arc")
 
@@ -231,8 +233,15 @@ def _outline(lines: list[LineString]) -> Polygon | None:
     """The board's shape from the Edge.Cuts linework: the loop that encloses the most, with the loops inside
     it cut out. polygonize returns every loop as a face and leaves a cutout out of the face around it, so
     the board is the face with the largest outer ring. The face of the largest area is not: a big cutout
-    leaves a thin frame. The lines are noded first, so a doubled or overshooting line still closes."""
-    return max(polygonize(unary_union(lines)), key=lambda p: Polygon(p.exterior).area, default=None)
+    leaves a thin frame. The lines are noded first, on a grid of OUTLINE_GRID, so a doubled or overshooting
+    line still closes and two ends that miss each other by a hair meet. The outline's vertices then lie on
+    that grid: each coordinate moves by at most half of it."""
+    # ponytail: ends that miss by less than about 1 um meet on the grid (a 1 nm miss still straddles a grid line
+    # about once in a thousand). A wider gap leaves no outline, though KiCad chains ends up to 0.01 mm apart,
+    # and only the largest loop is kept, so a panel of boards keeps one board. Upgrade: join the ends within
+    # 0.01 mm before noding, and keep every outer loop.
+    noded = unary_union(lines, grid_size=OUTLINE_GRID)
+    return max(polygonize(noded), key=lambda p: Polygon(p.exterior).area, default=None)
 
 
 def load_board(path: str | Path) -> Board:

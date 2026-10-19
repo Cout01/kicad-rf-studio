@@ -350,9 +350,29 @@ def test_untidy_outline_lines_still_close_the_board(mini_board, body):
     assert mini_board(body).outline.area == pytest.approx(60)
 
 
+SIDES = ("(start 0 0) (end 10 0)", "(start 10 0) (end 10 6)", "(start 10 6) (end 0 6)")
+
+
+@pytest.mark.parametrize("last_side", [
+    "(start 0 6) (end 0 0.000001)",  # stops 1 nm short of the corner
+    "(start 0 6) (end 0.000001 0.000001)",  # ends 1 nm inside it
+    "(start 0 6) (end -0.000001 -0.000001)",  # ends 1 nm outside it
+], ids=["short", "inside", "outside"])
+def test_a_corner_that_misses_by_a_nanometre_still_closes(mini_board, last_side):
+    b = mini_board(" ".join(edge("gr_line", g) for g in (*SIDES, last_side)))
+    assert b.outline is not None and b.outline.area == pytest.approx(60, rel=1e-6)
+    assert "W_NO_OUTLINE" not in codes(b)
+
+
+def test_an_arc_that_stops_a_nanometre_short_still_closes(mini_board):
+    body = rounded_board()
+    assert body.count("(end 10 1)") == 1  # the end of the first arc, where the line from (10, 1) takes over
+    b = mini_board(body.replace("(end 10 1)", "(end 10.000001 1)"))
+    assert b.outline is not None and b.outline.area == pytest.approx(60 - (4 - math.pi), rel=1e-3)
+
+
 def test_an_open_outline_is_no_outline(mini_board):
-    b = mini_board(" ".join(edge("gr_line", g) for g in
-                            ("(start 0 0) (end 10 0)", "(start 10 0) (end 10 6)", "(start 10 6) (end 0 6)")))
+    b = mini_board(" ".join(edge("gr_line", g) for g in SIDES))
     assert b.outline is None and "W_NO_OUTLINE" in codes(b)
 
 
