@@ -78,10 +78,42 @@ def test_only_the_first_word_is_read(text, value, kind):
     assert_reads(text, value, kind)
 
 
+@pytest.mark.parametrize("text, value, kind", [
+    ("100 nF", 100e-9, "F"), ("3.3 pF", 3.3e-12, "F"), ("4.7 k", 4700.0, ""),
+    ("10 uF/16V", 10e-6, "F"), ("100 nF 50V", 100e-9, "F"), ("100   nF", 100e-9, "F"),
+    ("100\tnF", 100e-9, "F"), ("100\N{NO-BREAK SPACE}nF", 100e-9, "F"), ("1 Meg", 1e6, ""),
+    ("0 R", 0.0, "R"), ("2.2 uH", 2.2e-6, "H"), ("47 m\N{GREEK CAPITAL LETTER OMEGA}", 47e-3, "R")])
+def test_a_space_between_the_number_and_its_prefix_or_unit_is_ignored(text, value, kind):
+    assert_reads(text, value, kind)
+
+
+@pytest.mark.parametrize("text", ["100 50V", "100 1%", "100 (typ)", "100 +/-5%"])
+def test_a_spaced_word_that_does_not_start_with_a_letter_is_not_part_of_the_value(text):
+    assert_reads(text, 100.0, "")
+
+
+@pytest.mark.parametrize("text, value, kind", [
+    ("100nf", 100e-9, "F"), ("10uf", 10e-6, "F"), ("1nh", 1e-9, "H"), ("1uh", 1e-6, "H"),
+    ("0r", 0.0, "R"), ("10r", 10.0, "R"), ("4r7", 4.7, "R"), ("4k7r", 4.7e3, "R"),
+    ("1mf", 1e-3, "F"), ("1Mr", 1e6, "R")])  # the unit letter may be any case, the prefix may not
+def test_unit_letters_are_read_in_any_case(text, value, kind):
+    assert_reads(text, value, kind)
+
+
+@pytest.mark.parametrize("text, value, kind", [
+    ("100nF,50V", 100e-9, "F"), ("10uF, 16V", 10e-6, "F"), ("100 nF,50V", 100e-9, "F"),
+    ("4k7,5%", 4700.0, ""), ("1k,1%", 1e3, ""), ("0R,DNP", 0.0, "R")])
+def test_a_comma_ends_the_value_like_a_slash(text, value, kind):
+    assert_reads(text, value, kind)
+
+
 @pytest.mark.parametrize("text", [
     "DNP", "", "   ", "RFIC", "R47", "/5k",      # no number first
     "3.3V", "74HC04", "1N4148", "10uFx", "1e3",  # a number, then text that is no prefix or unit
-    "4n7n", "1.5k2", "4R7F", "1kk", "1.2.3"])    # a prefix, unit or point in the wrong place
+    "4n7n", "1.5k2", "4R7F", "1kk", "1.2.3",     # a prefix, unit or point in the wrong place
+    "10UF", "100NF",                             # prefixes keep their case
+    "100 mA", "100 NF", "5 V", "100 ohms", "100 X7R", "4 k7",  # a spaced word that is no unit
+    "4,7uF", "0,1uF", "2,2k", "100,50V"])        # a decimal comma does not end a value
 def test_text_that_is_not_a_value_gives_none(text):
     assert parse_value(text) is None
 
@@ -115,9 +147,16 @@ def test_frequency_forms(text, hz):
 
 @pytest.mark.parametrize("text", [
     "abc", "", "   ", "MHz", "Hz", "915 XHz", "915MHzz", "915M Hz", "-915MHz", "+915MHz",
-    "nan", "inf", "1_000", "915 e6", "1e", "9 15"])
+    "nan", "inf", "1_000", "915 e6", "1e", "9 15",
+    "0", "0Hz", "0.0 MHz", "1e-999",                 # not above zero
+    "1e999", "1e308 kHz", "1e9999"])                 # not finite
 def test_bad_frequency_reports_the_text(text):
     with pytest.raises(KrsError) as e:
         parse_frequency(text)
     assert e.value.code == "E_BAD_FREQUENCY" and e.value.params == {"text": text}
     assert f'"{text}"' in str(e.value)  # the message renders, with the text as typed
+
+
+def test_a_giant_exponent_is_a_bad_frequency_and_not_a_crash():
+    with pytest.raises(KrsError):  # int() refuses more than 4300 digits, so the pattern must
+        parse_frequency("1e" + "9" * 5000)
