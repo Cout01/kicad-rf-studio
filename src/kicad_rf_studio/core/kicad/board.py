@@ -1,19 +1,19 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
-"""A KiCad board as plain data: copper, vias, zone fills, graphics and the outline, in mm with y up."""
+"""A KiCad board as plain data: footprints and their pads, copper, vias, zone fills, graphics and the outline,
+in mm with y up."""
 from __future__ import annotations
 
-import math
 from collections.abc import Iterator
 from dataclasses import dataclass
 from pathlib import Path
 
 from shapely import unary_union
 from shapely.geometry import LineString, Polygon
-from shapely.geometry.base import BaseGeometry
 from shapely.ops import polygonize
 
 from kicad_rf_studio.core.kicad.sexpr import Quoted, atom, child, children, num, parse, repair
-from kicad_rf_studio.core.kicad.shapes import XY, arc_points, circle
+from kicad_rf_studio.core.kicad.shapes import (
+    GRAPHICS, XY, arc_points, covered, graphic_shape, pad_shape, place, points, stroke_path, valid_polygons, xy)
 from kicad_rf_studio.core.messages import KrsError
 
 OLDEST_SUPPORTED = 20241229  # the file version of KiCad 9.0
@@ -21,7 +21,8 @@ NEWEST_TESTED = 20241229  # moves up when CI tier (c) has read a KiCad 10 board
 DEFAULT_THICKNESS = 1.6  # mm, what KiCad assumes for a board whose file gives none
 OUTLINE_GRID = 1e-3  # mm, the grid Edge.Cuts lines are noded on: ends closer than this meet
 _MASK = {"F.Mask": "F", "B.Mask": "B"}
-_GRAPHICS = ("gr_poly", "gr_rect", "gr_circle", "gr_line", "gr_arc")
+_FP_GRAPHICS = ("fp_poly", "fp_rect", "fp_circle", "fp_line", "fp_arc")
+_MPN = ("mpn", "manufacturer part number", "manufacturer_part_number")  # property names, lower case
 
 
 @dataclass(frozen=True)
@@ -62,6 +63,42 @@ class CopperArea:
     uuid: str
 
 
+@dataclass(frozen=True)
+class Pad:
+    """A footprint's pad, with its copper outline where pcbnew puts it. A pad with no copper layers (a paste-only
+    one) is kept too, so every pad of the file is here."""
+    ref: str
+    number: str
+    uuid: str
+    net: str
+    kind: str  # "smd", "thru_hole", "np_thru_hole" or "connect"
+    layers: tuple[str, ...]  # its copper layers, top to bottom
+    mask_sides: tuple[str, ...]  # "F" and/or "B": the sides whose solder mask it opens
+    center: XY  # pcbnew's ShapePos: the centre of the copper, which a drill offset moves off the hole
+    polygon: Polygon
+    mask_margin: float | None  # None: the footprint's or the board's applies
+
+    @property
+    def name(self) -> str:
+        return f"{self.ref}.{self.number}"
+
+
+@dataclass(frozen=True)
+class Footprint:
+    """A placed footprint. `at` and `angle` place its own frame on the board."""
+    ref: str
+    value: str
+    mpn: str | None
+    lib_id: str
+    uuid: str
+    layer: str  # "F.Cu" or "B.Cu": the side it sits on
+    at: XY
+    angle: float
+    dnp: bool
+    pads: tuple[Pad, ...]
+    mask_margin: float | None
+
+
 @dataclass
 class Board:
     """Everything the board holds that a simulation needs, as shapely polygons in mm with y up."""
@@ -70,7 +107,7 @@ class Board:
     thickness: float
     copper_layers: tuple[str, ...]  # top to bottom: F.Cu, In1.Cu, ..., B.Cu
     nets: tuple[str, ...]
-    footprints: dict[str, Footprint]  # by reference; filled in Task 7
+    footprints: dict[str, Footprint]  # by reference
     tracks: list[Track]
     vias: list[Via]
     areas: list[CopperArea]
@@ -84,16 +121,6 @@ class Board:
     def pads(self, name: str) -> list[Pad]:
         """The pads called `name`, "REF.NUM": more than one when a footprint repeats a number."""
         return [p for fp in self.footprints.values() for p in fp.pads if p.name == name]
-
-
-def _pt(x, y) -> XY:
-    """A KiCad point as ours: the y axis points down in KiCad. `0.0 - y` keeps a zero from becoming -0.0."""
-    return float(x), 0.0 - float(y)
-
-
-def _xy(node: list, head: str) -> XY:
-    c = child(node, head)
-    return _pt(c[1], c[2])
 
 
 def _text(node: list, head: str) -> str:
@@ -130,36 +157,15 @@ def _copper_layers(root: list) -> tuple[str, ...]:
 
 
 def _track(node: list, table: dict[str, str]) -> Track:
-    mid = _xy(node, "mid") if child(node, "mid") else None
+    mid = xy(node, "mid") if child(node, "mid") else None
     return Track(_text(node, "layer"), _net(node, table), num(node, "width", 1, 0.0),
-                 _xy(node, "start"), _xy(node, "end"), mid, _text(node, "uuid"))
+                 xy(node, "start"), xy(node, "end"), mid, _text(node, "uuid"))
 
 
 def _via(node: list, table: dict[str, str]) -> Via:
     layers = tuple(str(a) for a in (child(node, "layers") or [])[1:]) or ("F.Cu", "B.Cu")
-    return Via(_xy(node, "at"), num(node, "size", 1, 0.0), num(node, "drill", 1, 0.0), layers,
+    return Via(xy(node, "at"), num(node, "size", 1, 0.0), num(node, "drill", 1, 0.0), layers,
                _net(node, table), _text(node, "uuid"))
-
-
-def _points(pts: list) -> list[XY]:
-    """The vertices of a `(pts ...)` list. KiCad writes an arc of a polygon as `(arc (start) (mid) (end))`,
-    which stands in for all the vertices on it."""
-    out: list[XY] = []
-    for p in pts[1:]:
-        if p[0] == "xy":
-            out.append(_pt(p[1], p[2]))
-        elif p[0] == "arc":
-            out += arc_points(_xy(p, "start"), _xy(p, "mid"), _xy(p, "end"))
-    return out
-
-
-def _polygons(geom: BaseGeometry) -> list[Polygon]:
-    """The non-empty polygons of `geom`. An invalid one is rebuilt with buffer(0): KiCad writes a fill with
-    a hole as one outline that runs into the hole and back along a zero-width slit, which buffer(0) turns
-    into an outline with a hole. (A polygon that truly crosses itself, a bow-tie, keeps one lobe.)"""
-    if not geom.is_valid:
-        geom = geom.buffer(0)
-    return [g for g in getattr(geom, "geoms", [geom]) if not g.is_empty]
 
 
 def _zone(b: Board, node: list, table: dict[str, str]) -> None:
@@ -171,7 +177,7 @@ def _zone(b: Board, node: list, table: dict[str, str]) -> None:
     fills = children(node, "filled_polygon")
     for fill in fills:
         layer = _text(fill, "layer")
-        polygons = _polygons(Polygon(_points(child(fill, "pts"))))
+        polygons = valid_polygons(Polygon(points(child(fill, "pts"))))
         if layer in b.copper_layers:
             b.areas += [CopperArea(layer, net, p, "zone", uuid) for p in polygons]
         elif layer in _MASK:
@@ -182,51 +188,62 @@ def _zone(b: Board, node: list, table: dict[str, str]) -> None:
                 b.warnings.append(("W_ZONE_NOT_FILLED", {"uuid": uuid, "layer": str(layer)}))
 
 
-def _shape(node: list) -> LineString | Polygon:
-    """The centre line of a line or arc, or the outline of a rectangle, circle or polygon."""
-    head = node[0]
-    if head == "gr_line":
-        return LineString([_xy(node, "start"), _xy(node, "end")])
-    if head == "gr_arc":
-        return LineString(arc_points(_xy(node, "start"), _xy(node, "mid"), _xy(node, "end")))
-    if head == "gr_rect":
-        (x0, y0), (x1, y1) = _xy(node, "start"), _xy(node, "end")
-        return Polygon([(x0, y0), (x1, y0), (x1, y1), (x0, y1)])
-    if head == "gr_circle":
-        c = _xy(node, "center")
-        return circle(c, math.dist(c, _xy(node, "end")))
-    return Polygon(_points(child(node, "pts")))  # gr_poly
-
-
-def _line(shape: LineString | Polygon) -> LineString:
-    return shape.exterior if isinstance(shape, Polygon) else shape
-
-
-def _covered(node: list, shape: LineString | Polygon) -> list[Polygon]:
-    """What a graphic covers: its stroke, `width` wide with round ends, and its inside when it is filled.
-    KiCad draws the stroke of a filled shape as well, so a filled shape grows by half its width."""
-    width = num(child(node, "stroke") or [], "width", 1, 0.0)
-    if isinstance(shape, Polygon) and atom(node, "fill") == "yes":
-        return _polygons(shape.buffer(width / 2) if width else shape)
-    return _polygons(_line(shape).buffer(width / 2))
-
-
-def _graphic(b: Board, node: list, table: dict[str, str], edge: list[LineString]) -> None:
+def _graphic(b: Board, node: list, table: dict[str, str], edge: list[LineString],
+             at: XY = (0.0, 0.0), angle: float = 0.0) -> None:
     """A board graphic is outline linework on Edge.Cuts, a copper area on a copper layer (with a warning
-    when it has no net) or a mask opening on a mask layer. On any other layer it is left alone."""
+    when it has no net) or a mask opening on a mask layer. On any other layer it is left alone. A footprint's
+    graphic is the same, once `at` and `angle` have placed it."""
     layer = _text(node, "layer")
     if layer != "Edge.Cuts" and layer not in b.copper_layers and layer not in _MASK:
         return  # not even read: drawings on the silkscreen and the like can be anything
-    shape = _shape(node)
+    shape = place(graphic_shape(node), at, angle)
+    filled = atom(node, "fill") == "yes"
     if layer == "Edge.Cuts":
-        edge.append(_line(shape))
+        edge.append(stroke_path(shape))
     elif layer in b.copper_layers:
         net, uuid = _net(node, table), _text(node, "uuid")
         if not net:
             b.warnings.append(("W_NETLESS_COPPER", {"uuid": uuid, "layer": layer}))
-        b.areas += [CopperArea(layer, net, p, "graphic", uuid) for p in _covered(node, shape)]
+        b.areas += [CopperArea(layer, net, p, "graphic", uuid) for p in covered(node, shape, filled)]
     else:
-        b.mask_graphics[_MASK[layer]] += _covered(node, shape)
+        b.mask_graphics[_MASK[layer]] += covered(node, shape, filled)
+
+
+def _pad_layers(pad: list, copper: tuple[str, ...]) -> tuple[tuple[str, ...], tuple[str, ...]]:
+    """A pad's copper layers, top to bottom, and the sides whose mask it opens. `*.Cu` is every copper layer,
+    `F&B.Cu` the two outer ones and `*.Mask` both masks."""
+    names = {str(a) for a in (child(pad, "layers") or [])[1:]}
+    if "*.Cu" in names:
+        names |= set(copper)
+    if "F&B.Cu" in names:
+        names |= {"F.Cu", "B.Cu"}
+    if "*.Mask" in names:
+        names |= {"F.Mask", "B.Mask"}
+    return tuple(layer for layer in copper if layer in names), tuple(s for s in "FB" if f"{s}.Mask" in names)
+
+
+def _footprint(b: Board, node: list, table: dict[str, str], edge: list[LineString]) -> None:
+    """A footprint with its pads. Its graphics go where a board graphic's would, with no net."""
+    at, angle = xy(node, "at"), num(node, "at", 3, 0.0)
+    props = {str(p[1]): str(p[2]) for p in children(node, "property") if len(p) > 2}
+    ref = props.get("Reference", "")
+    pads = []
+    for p in children(node, "pad"):
+        center, polygon, warnings = pad_shape(p, at, angle)
+        pad = Pad(ref, str(p[1]), _text(p, "uuid"), _net(p, table), str(p[2]), *_pad_layers(p, b.copper_layers),
+                  center, polygon, num(p, "solder_mask_margin", 1, None))
+        b.warnings += [(code, {**params, "pad": pad.name}) for code, params in warnings]
+        pads.append(pad)
+    for g in node:
+        if isinstance(g, list) and g and g[0] in _FP_GRAPHICS:
+            _graphic(b, g, table, edge, at, angle)
+    mpn = next((v for k, v in props.items() if k.lower() in _MPN), None)
+    dnp = "dnp" in (child(node, "attr") or [])[1:] or atom(node, "dnp") == "yes"
+    # ponytail: footprints are kept by reference, so of two with the same one (an unannotated "REF**", a repeated
+    # logo) only the last is kept. Upgrade: a list of footprints, with the lookups by reference built from it.
+    b.footprints[ref] = Footprint(ref, props.get("Value", ""), mpn, str(node[1]), _text(node, "uuid"),
+                                  _text(node, "layer"), at, angle, dnp, tuple(pads),
+                                  num(node, "solder_mask_margin", 1, None))
 
 
 def _outline(lines: list[LineString]) -> Polygon | None:
@@ -279,8 +296,10 @@ def load_board(path: str | Path) -> Board:
             b.vias.append(_via(node, table))
         elif node[0] == "zone":
             _zone(b, node, table)
-        elif node[0] in _GRAPHICS:
+        elif node[0] in GRAPHICS:
             _graphic(b, node, table, edge)
+        elif node[0] == "footprint":
+            _footprint(b, node, table, edge)
     b.outline = _outline(edge)
     if b.outline is None:
         b.warnings.append(("W_NO_OUTLINE", {}))
