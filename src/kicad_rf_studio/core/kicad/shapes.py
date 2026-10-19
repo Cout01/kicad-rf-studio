@@ -104,6 +104,13 @@ def stroke_path(shape: LineString | Polygon) -> LineString:
     return shape.exterior if isinstance(shape, Polygon) else shape
 
 
+def is_filled(node: list, default: bool = False) -> bool:
+    """Whether a graphic's inside is filled: `(fill yes)` or `(fill solid)`. `no` and `none` leave only its stroke,
+    as do the hatch fills, which are not read. A graphic with no fill flag is `default`."""
+    fill = atom(node, "fill")
+    return default if fill is None else fill in ("yes", "solid")
+
+
 def covered(node: list, shape: LineString | Polygon, filled: bool) -> list[Polygon]:
     """What a graphic covers: its stroke, `width` wide with round ends, and its inside when it is filled.
     KiCad draws the stroke of a filled shape as well, so a filled shape grows by half its width. A graphic
@@ -160,7 +167,7 @@ def _outline(pad: list) -> BaseGeometry:
         parts = [anchor]
         for p in (child(pad, "primitives") or [])[1:]:
             if p[0] in GRAPHICS:  # a Bezier (gr_curve) is not read; gr_vector and gr_bbox are markers, not copper
-                filled = p[0] == "gr_poly" or atom(p, "fill") == "yes"  # a polygon primitive is always filled
+                filled = is_filled(p, default=p[0] == "gr_poly")  # with no flag, KiCad has always filled a polygon
                 parts += covered(p, graphic_shape(p), filled)
         return unary_union(parts)
     # rect and roundrect, either with chamfered corners; the ratios default as in KiCad

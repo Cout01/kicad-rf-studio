@@ -13,7 +13,8 @@ from shapely.ops import polygonize
 
 from kicad_rf_studio.core.kicad.sexpr import Quoted, atom, child, children, num, parse, repair
 from kicad_rf_studio.core.kicad.shapes import (
-    GRAPHICS, XY, arc_points, covered, graphic_shape, pad_shape, place, points, stroke_path, valid_polygons, xy)
+    GRAPHICS, XY, arc_points, covered, graphic_shape, is_filled, pad_shape, place, points, stroke_path,
+    valid_polygons, xy)
 from kicad_rf_studio.core.messages import KrsError
 
 OLDEST_SUPPORTED = 20241229  # the file version of KiCad 9.0
@@ -197,7 +198,7 @@ def _graphic(b: Board, node: list, table: dict[str, str], edge: list[LineString]
     if layer != "Edge.Cuts" and layer not in b.copper_layers and layer not in _MASK:
         return  # not even read: drawings on the silkscreen and the like can be anything
     shape = place(graphic_shape(node), at, angle)
-    filled = atom(node, "fill") == "yes"
+    filled = is_filled(node)
     if layer == "Edge.Cuts":
         edge.append(stroke_path(shape))
     elif layer in b.copper_layers:
@@ -209,10 +210,23 @@ def _graphic(b: Board, node: list, table: dict[str, str], edge: list[LineString]
         b.mask_graphics[_MASK[layer]] += covered(node, shape, filled)
 
 
+def _hole_takes_pad(pad: list) -> bool:
+    """Whether an unplated hole leaves its pad no copper, by pcbnew's PAD::FlashLayer: a round hole in a circle pad
+    or an oval hole in an oval pad, at least as large as the pad in each axis and with no offset."""
+    drill = child(pad, "drill") or []
+    sizes = [float(a) for a in drill[1:] if isinstance(a, str) and a != "oval"]  # the width, then any height
+    shape, w = str(pad[3]), num(pad, "size", 1, 0.0)
+    h = w if shape == "circle" else num(pad, "size", 2, 0.0)  # a circle pad is w across, as it is drawn
+    matched = (shape, "oval" in drill[1:]) in (("circle", False), ("oval", True))
+    centred = not child(drill, "offset") or xy(drill, "offset") == (0.0, 0.0)
+    return matched and centred and bool(sizes) and sizes[0] >= w and sizes[-1] >= h
+
+
 def _pad_layers(pad: list, copper: tuple[str, ...]) -> tuple[tuple[str, ...], tuple[str, ...]]:
     """A pad's copper layers, top to bottom, and the sides whose mask it opens. `*.Cu` is every copper layer,
-    `F&B.Cu` the two outer ones and `*.Mask` both masks. An unplated hole has no copper, whatever it lists."""
-    if pad[2] == "np_thru_hole":
+    `F&B.Cu` the two outer ones and `*.Mask` both masks. An unplated hole (np_thru_hole) has no copper when its
+    hole takes the whole pad, and otherwise keeps the copper its file lists. The mask always follows the file."""
+    if pad[2] == "np_thru_hole" and _hole_takes_pad(pad):
         copper = ()
     names = {str(a) for a in (child(pad, "layers") or [])[1:]}
     if "*.Cu" in names:

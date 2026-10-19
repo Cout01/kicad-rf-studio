@@ -77,10 +77,17 @@ def test_pad_layers_nets_and_margins(tmp_path):
     assert (p4.name, p4.kind, p4.layers, p4.mask_sides, p4.net) == ("U9.", "smd", (), (), "")
 
 
-def test_an_unplated_hole_has_no_copper_whatever_its_layers_say(mini_board):
-    pad = '(pad "" np_thru_hole circle (at 0 0) (size 3 3) (drill 3) (layers "*.Cu" "*.Mask") (uuid "h1"))'
+@pytest.mark.parametrize("shape, size, drill, layers", [
+    ("circle", "3 3", "3", ()),  # the hole takes the whole pad
+    ("circle", "4 4", "3", ("F.Cu", "B.Cu")),  # a ring of copper is left
+    ("rect", "3 3", "3", ("F.Cu", "B.Cu")),  # the corners are left
+    ("circle", "3 3", "3 (offset 0.2 0)", ("F.Cu", "B.Cu")),  # the copper sits off the hole
+    ("oval", "3 2", "oval 3 2", ()),
+], ids=["covered-circle", "ring", "rect", "offset", "covered-oval"])
+def test_an_unplated_hole_has_copper_only_where_it_leaves_some(mini_board, shape, size, drill, layers):
+    pad = f'(pad "" np_thru_hole {shape} (at 0 0) (size {size}) (drill {drill}) (layers "*.Cu" "*.Mask") (uuid "h"))'
     (hole,) = mini_board(footprint(pad)).footprints["U9"].pads
-    assert (hole.kind, hole.layers, hole.mask_sides) == ("np_thru_hole", (), ("F", "B"))
+    assert (hole.kind, hole.layers, hole.mask_sides) == ("np_thru_hole", layers, ("F", "B"))
 
 
 def test_a_footprint_zone_is_read_in_board_coordinates(mini_board):
@@ -129,8 +136,8 @@ def test_footprint_graphics_are_placed_and_sorted_like_board_graphics(mini_board
     assert b.outline.bounds == pytest.approx((9, -7, 11, -3)) and b.outline.area == pytest.approx(8)
 
 
-def custom_pad(primitive, anchor):
-    return footprint(f'(pad "1" smd custom (at 0 0) (size 0.2 0.2) (layers "F.Cu") '
+def custom_pad(primitive, anchor, size=0.2):
+    return footprint(f'(pad "1" smd custom (at 0 0) (size {size} {size}) (layers "F.Cu") '
                      f'(options (clearance outline) (anchor {anchor})) (primitives {primitive}) (uuid "p1"))')
 
 
@@ -141,7 +148,21 @@ def custom_pad(primitive, anchor):
     ("(gr_circle (center 0 0) (end 1 0) (width 0) (fill yes))", "rect", math.pi),
     ("(gr_circle (center 2 0) (end 3 0) (width 0.2))", "rect", math.pi * (1.1**2 - 0.9**2) + 0.04),  # a ring
     ("(gr_rect (start -1 -0.5) (end 1 0.5) (width 0) (fill yes))", "rect", 2),
-    ("(gr_poly (pts (xy 0 0) (xy 2 0) (xy 0 2)) (width 0))", "rect", 2 + 0.04 - 0.01),  # a polygon is always filled
-], ids=["line", "arc", "disc", "ring", "rect", "poly"])
+], ids=["line", "arc", "disc", "ring", "rect"])
 def test_custom_pad_is_its_anchor_and_its_primitives(mini_board, primitive, anchor, area):
     assert mini_board(custom_pad(primitive, anchor)).pads("U9.1")[0].polygon.area == pytest.approx(area, rel=2e-3)
+
+
+FILLED = 4 + 4 * 2 * 0.05 + math.pi * 0.05**2  # the 2 x 2 square and the outer half of its 0.1 mm stroke
+STROKE = 8 * 2 * 0.05 + (math.pi - 4) * 0.05**2  # the 0.1 mm band along the square's sides alone
+
+
+@pytest.mark.parametrize("fill, area", [
+    ("(fill yes)", FILLED), ("(fill solid)", FILLED), ("", FILLED),  # with no flag a polygon is filled (legacy)
+    ("(fill no)", STROKE), ("(fill none)", STROKE),
+], ids=["yes", "solid", "absent", "no", "none"])
+def test_a_custom_pad_polygon_follows_its_fill_flag(mini_board, fill, area):
+    # the square's top side runs through the pad's centre, so the 0.1 mm anchor lies inside the stroke either way
+    square = f"(gr_poly (pts (xy -1 0) (xy 1 0) (xy 1 2) (xy -1 2)) (width 0.1) {fill})"
+    pad = mini_board(custom_pad(square, "circle", size=0.1)).pads("U9.1")[0]
+    assert pad.polygon.area == pytest.approx(area, rel=2e-3)

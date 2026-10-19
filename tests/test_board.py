@@ -273,11 +273,12 @@ def test_an_unfilled_graphic_is_only_its_stroke(mini_board):
     ("gr_arc", "(start 1 0) (mid 0.7071067811865476 0.7071067811865476) (end 0 1)", None, 0.4,
      0.4 * math.pi / 2 + math.pi * 0.2**2),
     ("gr_circle", "(center 5 5) (end 6 5)", "yes", 0, math.pi),
+    ("gr_circle", "(center 5 5) (end 6 5)", "solid", 0, math.pi),  # how KiCad 7 wrote a filled shape
     ("gr_circle", "(center 5 5) (end 6 5)", "no", 0.4, math.pi * (1.2**2 - 0.8**2)),
     ("gr_poly", "(pts (xy 0 0) (xy 4 0) (xy 0 3))", "yes", 0, 6),
     # an arc inside a polygon stands for its polyline: this half disc is the arc and the chord closing it
     ("gr_poly", "(pts (arc (start 0 1) (mid 1 0) (end 0 -1)))", "yes", 0, math.pi / 2),
-], ids=["line", "arc", "disc", "ring", "triangle", "half disc"])
+], ids=["line", "arc", "disc", "solid disc", "ring", "triangle", "half disc"])
 def test_every_graphic_kind_covers_the_copper_it_draws(mini_board, kind, geometry, fill, width, area):
     (a,) = mini_board(graphic(kind, geometry, width=width, fill=fill)).areas
     assert a.polygon.area == pytest.approx(area, rel=2e-3)
