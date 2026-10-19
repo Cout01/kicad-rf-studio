@@ -18,3 +18,5 @@ Set up the local privacy gate before you commit or push. It refuses private name
 3. Enable the hooks: `git config core.hooksPath .githooks`
 
 The hooks run `tools/privacy_gate.py` with the Python found on your `PATH`; it needs only the standard library. Without a usable list they refuse the commit or push. `python tools/privacy_gate.py --all` scans the whole history by hand.
+
+A hit prints as `<where>:<line>: <rule>`. `deny#N` is the N-th entry of your list, counting entries only, and `generic:...` is one of the built-in rules. The gate never prints matched text; a file whose name matched shows as `path#N`.

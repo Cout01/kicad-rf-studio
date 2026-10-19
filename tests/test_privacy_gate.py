@@ -254,6 +254,20 @@ def test_pre_push_scans_only_what_the_remote_lacks(repo, monkeypatch):
     assert push(monkeypatch, f"refs/heads/main {new} refs/heads/main {old}") == 0
 
 
+def test_pre_push_new_branch_skips_what_the_same_remote_has(repo, monkeypatch):
+    old = commit(repo, "a.txt", "acme\n")
+    git(repo, "update-ref", "refs/remotes/origin/main", old)       # origin already has it
+    new = commit(repo, "a.txt", "clean\n")
+    assert push(monkeypatch, f"refs/heads/feature {new} refs/heads/feature {NEVER}") == 0
+
+
+def test_pre_push_does_not_trust_what_only_another_remote_has(repo, monkeypatch):
+    old = commit(repo, "a.txt", "acme\n")
+    git(repo, "update-ref", "refs/remotes/backup/main", old)       # a different remote has it
+    new = commit(repo, "a.txt", "clean\n")
+    assert push(monkeypatch, f"refs/heads/main {new} refs/heads/main {NEVER}") == 1
+
+
 def test_pre_push_skips_deletions(repo, monkeypatch):
     sha = commit(repo, "a.txt", "acme\n")
     assert push(monkeypatch, f"(delete) {NEVER} refs/heads/gone {sha}") == 0

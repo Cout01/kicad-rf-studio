@@ -1,10 +1,15 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """Local privacy gate for the git hooks in .githooks. Standard library only.
 
-Refuses to commit or push an entry of the private list (the file named by $KRS_PRIVATE_LIST) found
-anywhere, or an absolute drive path, home path, UNC share or e-mail address found in a file's
-contents. A hit is printed as <where>:<line>: <rule>. The matched text, and any file, ref or
-archive-member name that matched, is never printed.
+Refuses to commit or push when an entry of the private list (the file named by $KRS_PRIVATE_LIST)
+appears anywhere: file contents, file names, ref names, commit messages, author fields or archive
+member names. It also refuses an absolute drive path, home path, UNC share or e-mail address in a
+file's contents (the generic rules; tools/privacy_allow.txt can exempt a path from those only).
+
+A hit is printed as <where>:<line>: <rule>, where <where> is <commit>:<path>, <commit>:commit (the
+header and message) or refs, and <rule> is deny#<n> (the n-th entry of the list) or generic:<kind>.
+The matched text is never printed, nor is a name that matched: such a file shows as path#<n> (its
+position in the listing) with line 0 standing for the name itself.
 """
 import argparse
 import io
@@ -111,16 +116,17 @@ def _scan_commit(sha: str, deny: list[str], allow: set[str], seen: set) -> list[
     return out + _scan_files(prefix, files, deny, allow, seen)
 
 
-def _pushed(stdin_text: str) -> tuple[list[str], list[str]]:
-    """Commits and ref names of the updates git feeds the pre-push hook on stdin."""
+def _pushed(stdin_text: str, remote_name: str) -> tuple[list[str], list[str]]:
+    """Commits and ref names of the updates git feeds the pre-push hook on stdin. A new remote ref
+    skips only what remote-tracking refs of that remote reach: another remote proves nothing here."""
     commits, refs = [], []
     for line in filter(str.strip, stdin_text.splitlines()):
         local_ref, local, remote_ref, remote = line.split()
         if set(local) == {"0"}:  # a deletion pushes no commit
             continue
         refs += [local_ref, remote_ref]
-        if set(remote) == {"0"}:  # a new remote ref: everything no remote-tracking ref has yet
-            span = ["rev-list", local, "--not", "--remotes"]
+        if set(remote) == {"0"}:  # a new remote ref
+            span = ["rev-list", local, "--not", f"--remotes={remote_name}"]
         else:
             span = ["rev-list", f"{remote}..{local}"]
         commits += git(*span).split()
@@ -152,7 +158,7 @@ def main(argv: list[str] | None = None) -> int:
             commits = git("rev-list", "--all").split()
             refs = git("for-each-ref", "--format=%(refname)").split()
         else:
-            commits, refs = _pushed(sys.stdin.read())
+            commits, refs = _pushed(sys.stdin.read(), args.pre_push[0])
         out = _check("refs", "\n".join(refs), deny, False)
         for sha in commits:
             out += _scan_commit(sha, deny, allow, seen)
