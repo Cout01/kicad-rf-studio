@@ -1,4 +1,5 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
+import subprocess
 from pathlib import Path
 import kicad_rf_studio
 
@@ -13,3 +14,9 @@ def test_every_python_file_has_spdx_header():
     missing = [str(p.relative_to(ROOT)) for p in files
                if SPDX not in p.read_text(encoding="utf-8").splitlines()[:2]]
     assert missing == []
+
+def test_env_files_are_ignored():
+    paths = [".env", ".env.local", "secrets.env", ".envrc", "venv/x.py", "env/x.py", ".venv-2/x.py"]
+    not_ignored = [p for p in paths
+                   if subprocess.run(["git", "check-ignore", "-q", p], cwd=ROOT).returncode != 0]
+    assert not_ignored == []

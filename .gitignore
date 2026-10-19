@@ -1,4 +1,12 @@
-.venv/
+# virtual environments and secrets never enter the repository
+.venv*/
+venv/
+env/
+ENV/
+.env
+.env.*
+*.env
+.envrc
 __pycache__/
 *.egg-info/
 build/
