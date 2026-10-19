@@ -1,0 +1,21 @@
+.venv/
+__pycache__/
+*.egg-info/
+build/
+dist/
+.pytest_cache/
+# user projects, results and boards never enter the repository
+project.json
+project.json.lock
+results/
+*.s[0-9]p
+*.s[0-9][0-9]p
+*.kicad_pcb
+*.kicad_pro
+*.kicad_prl
+*.lck
+*-backups/
+fp-info-cache
+!tests/fixtures/*.kicad_pcb
+graphify-out/
+.claude/settings.local.json
