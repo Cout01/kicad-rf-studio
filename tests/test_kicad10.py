@@ -5,6 +5,7 @@ KRS_KICAD9_DIR holds the KiCad 9 boards and KRS_KICAD10_DIR their upgraded copie
 Without both variables the whole file is skipped."""
 import math
 import os
+from collections import Counter
 from pathlib import Path
 
 import pytest
@@ -32,6 +33,9 @@ def test_upgraded_board_reads_the_same(path):
     old, new = load_board(path), load_board(Path(NEW) / path.name)
     assert set(old.nets) == set(new.nets)
     assert len(old.tracks) == len(new.tracks) and len(old.vias) == len(new.vias)
+    # KiCad 9 gives an item a net code and KiCad 10 a name: each item must still land on the same net
+    assert Counter((t.layer, t.net) for t in old.tracks) == Counter((t.layer, t.net) for t in new.tracks)
+    assert Counter((v.layers, v.net) for v in old.vias) == Counter((v.layers, v.net) for v in new.vias)
     assert sorted(old.footprints) == sorted(new.footprints)
     old_pads, new_pads = pads(old), pads(new)
     assert set(old_pads) == set(new_pads)
