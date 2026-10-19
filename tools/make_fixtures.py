@@ -2,15 +2,18 @@
 """Build the synthetic fixture boards in tests/fixtures, with pcbnew's own pad outlines beside them.
 
 Dev-time only: it runs under KiCad 9's bundled Python, and the product never imports it. Regenerate
-from the repository root in an isolated KiCad profile, so that no KiCad setting of the user is read
-or written:
+from the repository root with
 
-    set KICAD_CONFIG_HOME, KICAD_DOCUMENTS_HOME, KICAD_CACHE_HOME, TEMP and TMP to an empty build/kicad-profile
     "%KICAD_PYTHON%" tools/make_fixtures.py tests/fixtures
 
-KICAD_PYTHON names python.exe in KiCad 9's bin folder. Footprints are loaded by path from
-KICAD9_FOOTPRINT_DIR, or from <bin>/../share/kicad/footprints when it is unset, because the isolated
-profile has no library table. The uuids are seeded, so a rerun writes the same files.
+KICAD_PYTHON names python.exe in KiCad 9's bin folder. Before pcbnew loads, the script points
+KICAD_CONFIG_HOME, KICAD_DOCUMENTS_HOME, KICAD_CACHE_HOME, TEMP and TMP at build/kicad-profile in this
+repository, creating it, whatever the caller's environment says, so KiCad reads and writes none of the
+user's settings. Run kicad-cli (to preview a fixture, say) with those five variables set the same way.
+
+Footprints are loaded by path from KICAD9_FOOTPRINT_DIR, or from <bin>/../share/kicad/footprints when it
+is unset, because the isolated profile has no library table. The uuids are seeded, so a rerun writes the
+same files.
 
 <name>.pads.json maps each pad uuid to {"name": "REF.NUM", "center": [x, y], "polygons": [ring, ...]}:
 pcbnew's ShapePos and the outer rings of GetEffectivePolygon(<first copper layer>, ERROR_INSIDE), in mm
@@ -23,7 +26,12 @@ import sys
 import zlib
 from pathlib import Path
 
-import pcbnew
+PROFILE = Path(__file__).resolve().parents[1] / "build" / "kicad-profile"
+PROFILE.mkdir(parents=True, exist_ok=True)
+for var in ("KICAD_CONFIG_HOME", "KICAD_DOCUMENTS_HOME", "KICAD_CACHE_HOME", "TEMP", "TMP"):
+    os.environ[var] = str(PROFILE)  # set before pcbnew loads
+
+import pcbnew  # noqa: E402
 
 FP_DIR = Path(os.environ.get("KICAD9_FOOTPRINT_DIR")
               or Path(sys.executable).parents[1] / "share" / "kicad" / "footprints")
@@ -304,11 +312,13 @@ def pads_zoo(b):
     p.SetRoundRectRadiusRatio(0.2)
     p.SetChamferRectRatio(0.25)
     p.SetChamferPositions(1 | 8)  # RECT_CHAMFER_TOP_LEFT | RECT_CHAMFER_BOTTOM_RIGHT
+    # pads 5, 7 and 8 are lopsided in local y, so a reader with a y sign wrong cannot match them
     p = pad("5", pcbnew.PAD_SHAPE_CUSTOM, (10, 0), (0.6, 0.6))
     p.SetAnchorPadShape(pcbnew.F_Cu, pcbnew.PAD_SHAPE_RECT)
-    p.AddPrimitivePoly(pcbnew.F_Cu, [pt(0.2, -0.5), pt(1.4, 0), pt(0.2, 0.5)], MM(0.1), True)
+    p.AddPrimitivePoly(pcbnew.F_Cu, [pt(0.2, -0.5), pt(1.4, -0.2), pt(0.2, 0.5)], MM(0.1), True)
     pad("6", pcbnew.PAD_SHAPE_CIRCLE, (0, 3), (1.6, 1.6), tht=True)
-    pad("7", pcbnew.PAD_SHAPE_OVAL, (3, 3), (2, 1.2), angle=30, tht=True).SetOffset(pt(0.4, 0))
+    pad("7", pcbnew.PAD_SHAPE_OVAL, (3, 3), (2, 1.6), angle=30, tht=True).SetOffset(pt(0.3, 0.2))
+    pad("8", pcbnew.PAD_SHAPE_TRAPEZOID, (6, 3), (1.5, 1)).SetDelta(pt(0, 0.3))
     zoo.SetPosition(pt(104, 114))
     zoo.SetOrientationDegrees(30)
 

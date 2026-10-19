@@ -569,7 +569,7 @@
 			(primitives
 				(gr_poly
 					(pts
-						(xy 0.2 -0.5) (xy 1.4 0) (xy 0.2 0.5)
+						(xy 0.2 -0.5) (xy 1.4 -0.2) (xy 0.2 0.5)
 					)
 					(width 0.1)
 					(fill yes)
@@ -587,14 +587,22 @@
 		)
 		(pad "7" thru_hole oval
 			(at 3 3 60)
-			(size 2 1.2)
+			(size 2 1.6)
 			(drill 0.8
-				(offset 0.4 0)
+				(offset 0.3 0.2)
 			)
 			(layers "*.Cu" "*.Mask")
 			(remove_unused_layers no)
 			(thermal_bridge_angle 45)
 			(uuid "4d21b9df-1040-493c-9a5c-dd70fe1fc2a0")
+		)
+		(pad "8" smd trapezoid
+			(at 6 3 30)
+			(size 1.5 1)
+			(rect_delta 0 0.3)
+			(layers "F.Cu" "F.Mask" "F.Paste")
+			(thermal_bridge_angle 45)
+			(uuid "ad539b71-a2aa-4dbc-9365-44abd4b82fc0")
 		)
 		(embedded_fonts no)
 	)
@@ -2301,7 +2309,7 @@
 		)
 		(fill no)
 		(layer "Edge.Cuts")
-		(uuid "ad539b71-a2aa-4dbc-9365-44abd4b82fc0")
+		(uuid "e044f077-38bd-41a2-b69e-e874fb3b9240")
 	)
 	(embedded_fonts no)
 )
