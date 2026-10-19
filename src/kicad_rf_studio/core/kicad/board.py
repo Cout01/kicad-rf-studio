@@ -211,7 +211,9 @@ def _graphic(b: Board, node: list, table: dict[str, str], edge: list[LineString]
 
 def _pad_layers(pad: list, copper: tuple[str, ...]) -> tuple[tuple[str, ...], tuple[str, ...]]:
     """A pad's copper layers, top to bottom, and the sides whose mask it opens. `*.Cu` is every copper layer,
-    `F&B.Cu` the two outer ones and `*.Mask` both masks."""
+    `F&B.Cu` the two outer ones and `*.Mask` both masks. An unplated hole has no copper, whatever it lists."""
+    if pad[2] == "np_thru_hole":
+        copper = ()
     names = {str(a) for a in (child(pad, "layers") or [])[1:]}
     if "*.Cu" in names:
         names |= set(copper)
@@ -223,7 +225,8 @@ def _pad_layers(pad: list, copper: tuple[str, ...]) -> tuple[tuple[str, ...], tu
 
 
 def _footprint(b: Board, node: list, table: dict[str, str], edge: list[LineString]) -> None:
-    """A footprint with its pads. Its graphics go where a board graphic's would, with no net."""
+    """A footprint with its pads. Its graphics go where a board graphic's would, with no net, and its zones
+    follow the board-zone rules."""
     at, angle = xy(node, "at"), num(node, "at", 3, 0.0)
     props = {str(p[1]): str(p[2]) for p in children(node, "property") if len(p) > 2}
     ref = props.get("Reference", "")
@@ -237,6 +240,11 @@ def _footprint(b: Board, node: list, table: dict[str, str], edge: list[LineStrin
     for g in node:
         if isinstance(g, list) and g and g[0] in _FP_GRAPHICS:
             _graphic(b, g, table, edge, at, angle)
+        elif isinstance(g, list) and g and g[0] == "zone":
+            # ponytail: assumes KiCad writes a footprint's zone outline and fills in board coordinates, as a board
+            # zone's, so only (x, -y) applies, not the footprint's placement. If a KiCad version stores them in the
+            # footprint's frame, place them like the graphics above.
+            _zone(b, g, table)
     mpn = next((v for k, v in props.items() if k.lower() in _MPN), None)
     dnp = "dnp" in (child(node, "attr") or [])[1:] or atom(node, "dnp") == "yes"
     # ponytail: footprints are kept by reference, so of two with the same one (an unannotated "REF**", a repeated

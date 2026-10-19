@@ -62,7 +62,7 @@ def test_dnp_is_an_attribute_or_a_flag_of_its_own(mini_board, attr, dnp):
 def test_pad_layers_nets_and_margins(tmp_path):
     pads = ('(pad "1" thru_hole circle (at 1 0) (size 1 1) (drill 0.5) (layers "*.Cu" "*.Mask") (net 1 "SIG") '
             '(solder_mask_margin 0.05) (uuid "p1")) '
-            '(pad "2" np_thru_hole circle (at 3 0) (size 1 1) (drill 1) (layers "F&B.Cu" "B.Mask") (uuid "p2")) '
+            '(pad "2" thru_hole circle (at 3 0) (size 1 1) (drill 0.5) (layers "F&B.Cu" "B.Mask") (uuid "p2")) '
             '(pad "3" smd rect (at 5 0) (size 1 1) (layers "B.Cu" "B.Paste" "B.Mask") (net 1 "SIG") (uuid "p3")) '
             '(pad "" smd roundrect (at 0 0) (size 1 1) (layers "F.Paste") (roundrect_rratio 0.25) (uuid "p4"))')
     path = tmp_path / "four.kicad_pcb"
@@ -71,10 +71,27 @@ def test_pad_layers_nets_and_margins(tmp_path):
     p1, p2, p3, p4 = load_board(path).footprints["U9"].pads
     assert (p1.name, p1.kind, p1.net, p1.mask_margin) == ("U9.1", "thru_hole", "SIG", 0.05)
     assert (p1.layers, p1.mask_sides) == (("F.Cu", "In1.Cu", "In2.Cu", "B.Cu"), ("F", "B"))  # "*": every one
-    assert (p2.kind, p2.layers, p2.mask_sides, p2.net) == ("np_thru_hole", ("F.Cu", "B.Cu"), ("B",), "")  # "F&B"
+    assert (p2.kind, p2.layers, p2.mask_sides, p2.net) == ("thru_hole", ("F.Cu", "B.Cu"), ("B",), "")  # "F&B"
     assert (p2.mask_margin, p3.layers, p3.mask_sides) == (None, ("B.Cu",), ("B",))
     # a paste-only pad is kept, with no copper and no net
     assert (p4.name, p4.kind, p4.layers, p4.mask_sides, p4.net) == ("U9.", "smd", (), (), "")
+
+
+def test_an_unplated_hole_has_no_copper_whatever_its_layers_say(mini_board):
+    pad = '(pad "" np_thru_hole circle (at 0 0) (size 3 3) (drill 3) (layers "*.Cu" "*.Mask") (uuid "h1"))'
+    (hole,) = mini_board(footprint(pad)).footprints["U9"].pads
+    assert (hole.kind, hole.layers, hole.mask_sides) == ("np_thru_hole", (), ("F", "B"))
+
+
+def test_a_footprint_zone_is_read_in_board_coordinates(mini_board):
+    """KiCad writes a footprint's zone in board coordinates, so the footprint's (10, 5, 90°) must not move it."""
+    pts = "(pts (xy 11 4) (xy 13 4) (xy 13 6) (xy 11 6))"
+    zone = (f'(zone (net 1) (net_name "GND") (layer "F.Cu") (uuid "fz") (polygon {pts}) '
+            f'(filled_polygon (layer "F.Cu") {pts}))')
+    b = mini_board('(net 1 "GND") ' + footprint(zone, at="10 5 90"))
+    (a,) = b.areas
+    assert (a.layer, a.net, a.source, a.uuid) == ("F.Cu", "GND", "zone", "fz")
+    assert a.polygon.equals(Polygon([(11, -4), (13, -4), (13, -6), (11, -6)]))
 
 
 def test_pads_that_share_a_number_are_all_kept():
