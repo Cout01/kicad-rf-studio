@@ -6,6 +6,7 @@ from pathlib import Path
 
 CATALOG: dict[str, str] = {
     "E_PARSE_UNBALANCED": "The board file is damaged: unbalanced brackets near line {line}. Open it in KiCad and save it again.",
+    "E_NOT_A_BOARD": "{path} is not a KiCad board file.",
     "E_BOARD_VERSION": "This board was saved by a KiCad older than 9 (file version {version}). Open it in KiCad 9 or newer and save it.",
     "W_BOARD_NEWER": "This board was saved by a newer KiCad (file version {version}); reading it was not tested.",
     "W_REPAIRED_FILTER_RATIO": "Repaired {count} teardrop entries damaged by a KiCad 9 writer bug; the file on disk is unchanged.",

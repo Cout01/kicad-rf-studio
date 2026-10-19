@@ -20,3 +20,39 @@ jobs:
       - run: python tools/privacy_gate.py --all --generic-only
       - run: python -m pip install -e .[dev]
       - run: python -m pytest -q
+
+  # Tier (c): boards saved by KiCad 9 must read the same after `kicad-cli pcb upgrade` of KiCad 10.
+  # The demo boards are KiCad's own, fetched from the 9.0.7 tag at run time and never committed.
+  tier-c:
+    runs-on: ubuntu-24.04
+    container:
+      image: kicad/kicad:10.0
+      options: --user root
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Python and curl
+        run: |
+          apt-get update
+          apt-get install -y --no-install-recommends curl python3-pip python3-venv
+      - name: Collect the KiCad 9 boards
+        run: |
+          mkdir -p build/k9 build/k10
+          curl -fsSL -o build/k9/pic_programmer.kicad_pcb https://gitlab.com/kicad/code/kicad/-/raw/9.0.7/demos/pic_programmer/pic_programmer.kicad_pcb
+          curl -fsSL -o build/k9/microwave.kicad_pcb https://gitlab.com/kicad/code/kicad/-/raw/9.0.7/demos/microwave/microwave.kicad_pcb
+          curl -fsSL -o build/k9/custom_pads_test.kicad_pcb https://gitlab.com/kicad/code/kicad/-/raw/9.0.7/demos/custom_pads_test/custom_pads_test.kicad_pcb
+          cp tests/fixtures/*.kicad_pcb build/k9/
+      - name: Upgrade them with KiCad 10
+        run: |
+          cp build/k9/*.kicad_pcb build/k10/
+          for board in build/k10/*.kicad_pcb; do kicad-cli pcb upgrade --force "$board"; done
+          echo "File versions KiCad 10 writes (NEWEST_TESTED in board.py follows the highest):"
+          grep -h -m1 "(version" build/k10/*.kicad_pcb | sort | uniq -c
+      - name: Compare
+        run: |
+          python3 -m venv .venv
+          . .venv/bin/activate
+          python -m pip install -e ".[dev]"
+          python -m pytest tests/test_kicad10.py -q
+        env:
+          KRS_KICAD9_DIR: build/k9
+          KRS_KICAD10_DIR: build/k10
