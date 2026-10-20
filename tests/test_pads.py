@@ -1,13 +1,15 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 import json
 import math
+import typing
 from pathlib import Path
 
 import pytest
-from shapely.geometry import Polygon
+from shapely.geometry import MultiPolygon, Polygon
 from shapely.ops import unary_union
 
 from kicad_rf_studio.core.kicad import load_board
+from kicad_rf_studio.core.kicad.board import Pad
 
 FIX = Path(__file__).parent / "fixtures"
 MAX_ERR = 0.001  # mm, the arc tolerance of shapes.py
@@ -151,6 +153,12 @@ def custom_pad(primitive, anchor, size=0.2):
 ], ids=["line", "arc", "disc", "ring", "rect"])
 def test_custom_pad_is_its_anchor_and_its_primitives(mini_board, primitive, anchor, area):
     assert mini_board(custom_pad(primitive, anchor)).pads("U9.1")[0].polygon.area == pytest.approx(area, rel=2e-3)
+
+
+def test_a_custom_pad_whose_primitives_miss_the_anchor_is_a_multipolygon(mini_board):
+    pad = mini_board(custom_pad("(gr_circle (center 2 0) (end 3 0) (width 0.2))", "rect")).pads("U9.1")[0]
+    assert isinstance(pad.polygon, MultiPolygon) and len(pad.polygon.geoms) == 2  # the anchor and the ring
+    assert typing.get_type_hints(Pad)["polygon"] == Polygon | MultiPolygon  # and the annotation says so
 
 
 FILLED = 4 + 4 * 2 * 0.05 + math.pi * 0.05**2  # the 2 x 2 square and the outer half of its 0.1 mm stroke

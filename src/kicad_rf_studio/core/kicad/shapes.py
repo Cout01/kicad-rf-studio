@@ -4,7 +4,7 @@ import math
 
 from shapely import unary_union
 from shapely.affinity import affine_transform
-from shapely.geometry import LineString, MultiPoint, Point, Polygon
+from shapely.geometry import LineString, MultiPoint, MultiPolygon, Point, Polygon
 from shapely.geometry.base import BaseGeometry
 
 from kicad_rf_studio.core.kicad.sexpr import atom, child, num
@@ -176,7 +176,7 @@ def _outline(pad: list) -> BaseGeometry:
     return _rect(w, h, r, num(pad, "chamfer_ratio", 1, 0.2) * min(w, h), cut)
 
 
-def pad_shape(pad: list, fp_at: XY, fp_angle: float) -> tuple[XY, Polygon, list[tuple[str, dict]]]:
+def pad_shape(pad: list, fp_at: XY, fp_angle: float) -> tuple[XY, Polygon | MultiPolygon, list[tuple[str, dict]]]:
     """Where pcbnew puts a pad's copper, its ShapePos, and the copper's outline there, in board mm with y up,
     plus the warnings the pad raises. `fp_at` and `fp_angle` place its footprint.
 

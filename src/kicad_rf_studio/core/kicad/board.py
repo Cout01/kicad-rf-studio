@@ -8,7 +8,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from shapely import unary_union
-from shapely.geometry import LineString, Polygon
+from shapely.geometry import LineString, MultiPolygon, Polygon
 from shapely.ops import polygonize
 
 from kicad_rf_studio.core.kicad.sexpr import Quoted, atom, child, children, num, parse, repair
@@ -77,7 +77,7 @@ class Pad:
     layers: tuple[str, ...]  # its copper layers, top to bottom
     mask_sides: tuple[str, ...]  # "F" and/or "B": the sides whose solder mask it opens
     center: XY  # pcbnew's ShapePos: the centre of the copper, which a drill offset moves off the hole
-    polygon: Polygon
+    polygon: Polygon | MultiPolygon  # a custom pad whose primitives miss its anchor is in pieces
     mask_margin: float | None  # None: the footprint's or the board's applies
 
     @property
