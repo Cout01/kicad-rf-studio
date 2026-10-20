@@ -107,6 +107,12 @@ def jlcpcb_file():
     return json.loads(files("kicad_rf_studio").joinpath("data/stackups/jlcpcb-2l.json").read_text("utf-8"))
 
 
+def has_values_unless_copper(stackup):
+    """Ruling R29: a mask or dielectric always has an epsilon_r and a loss_tangent; only copper has none."""
+    return all((l.epsilon_r is None and l.loss_tangent is None) if l.kind == "copper"
+               else (l.epsilon_r is not None and l.loss_tangent is not None) for l in stackup.layers)
+
+
 def test_the_jlcpcb_file_has_the_documented_shape():
     d = jlcpcb_file()
     assert d["name"] == "jlcpcb-2l" and datetime.date.fromisoformat(d["retrieved"])
@@ -129,11 +135,22 @@ def test_the_jlcpcb_build_uses_the_published_values():
     assert [(l.name, l.kind) for l in s.layers] == [
         ("F.Mask", "mask"), ("F.Cu", "copper"), ("dielectric 1", "dielectric"), ("B.Cu", "copper"), ("B.Mask", "mask")]
     top, copper, core, _, bottom = s.layers
-    assert (top.thickness, top.epsilon_r, top.loss_tangent) == (0.01524, 3.8, None)  # 0.6 mil of mask on copper
+    assert (top.thickness, top.epsilon_r, top.loss_tangent) == (0.01524, 3.8, 0.0)  # 0.6 mil of mask on copper
     assert replace(bottom, name="F.Mask") == top
     assert (copper.thickness, core.epsilon_r, core.loss_tangent) == (0.035, 4.5, 0.02)
     assert core.thickness == pytest.approx(0.8 - 2 * (0.035 + 0.01524))  # the rest of the board
     assert s.nonstandard_copper() == []
+
+
+def test_a_null_in_the_preset_file_takes_kicads_default_and_stays_null_in_the_file():
+    assert jlcpcb_file()["mask"]["loss_tangent"] is None  # the file records what JLCPCB publishes: no loss tangent
+    top = preset("jlcpcb-2l", 0.8).layers[0]
+    assert (top.epsilon_r, top.loss_tangent) == (3.8, 0.0)  # its own epsilon_r, KiCad's loss tangent for a mask
+
+
+@pytest.mark.parametrize("name", ["kicad-default", "jlcpcb-2l"])
+def test_no_preset_leaves_a_mask_or_dielectric_without_values(name):
+    assert has_values_unless_copper(preset(name, 1.6))
 
 
 # --- reading the board's own stackup -------------------------------------------------------------
@@ -148,10 +165,16 @@ def test_every_fixture_board_carries_the_default_two_layer_stackup(path):
 
 def test_board_stackup_values_come_from_the_file():
     s = load_board(FIX / "lpf915.kicad_pcb").stackup
-    # KiCad writes epsilon_r only for a layer with a material, so the default mask has none
+    # KiCad writes epsilon_r and loss_tangent only for a layer with a material, so the file gives the masks none
+    # and KiCad's default applies to them: 3.3 and 0
     assert [(l.name, l.thickness, l.epsilon_r, l.loss_tangent) for l in s.layers] == [
-        ("F.Mask", 0.01, None, None), ("F.Cu", 0.035, None, None), ("dielectric 1", 0.71, 4.5, 0.02),
-        ("B.Cu", 0.035, None, None), ("B.Mask", 0.01, None, None)]
+        ("F.Mask", 0.01, 3.3, 0.0), ("F.Cu", 0.035, None, None), ("dielectric 1", 0.71, 4.5, 0.02),
+        ("B.Cu", 0.035, None, None), ("B.Mask", 0.01, 3.3, 0.0)]
+
+
+@pytest.mark.parametrize("path", sorted(FIX.glob("*.kicad_pcb")), ids=lambda p: p.stem)
+def test_no_fixture_stackup_leaves_a_mask_or_dielectric_without_values(path):
+    assert has_values_unless_copper(load_board(path).stackup)
 
 
 def layer(name, type_, thickness="", extra=""):
@@ -223,9 +246,52 @@ def test_a_board_with_no_usable_stackup_layer_has_none(setup):
     assert from_board(parse(f"(kicad_pcb (version 20241229) {setup})")) is None
 
 
-def test_a_missing_thickness_reads_as_zero_and_a_missing_value_as_none():
+def test_a_missing_thickness_reads_as_zero_and_copper_has_no_permittivity():
     (copper,) = from_board(board_with('(layer "F.Cu" (type "copper"))')).layers
     assert copper == Layer("F.Cu", "copper", 0.0, None, None)
+
+
+# --- KiCad's defaults for what a mask or dielectric leaves out (ruling R29) ---------------------------
+
+
+def test_a_board_that_gives_its_masks_and_dielectric_no_values_gets_kicads_defaults(mini_board):
+    copper = "(thickness 0.035)"
+    stackup = ("(stackup " + layer("F.Mask", "Top Solder Mask", "(thickness 0.01)") + layer("F.Cu", "copper", copper)
+               + layer("dielectric 1", "core", "(thickness 0.7)") + layer("B.Cu", "copper", copper)
+               + layer("B.Mask", "Bottom Solder Mask", "(thickness 0.01)") + ")")
+    s = mini_board(stackup=stackup).stackup
+    assert [(l.kind, l.epsilon_r, l.loss_tangent) for l in s.layers] == [
+        ("mask", 3.3, 0.0), ("copper", None, None), ("dielectric", 4.5, 0.02), ("copper", None, None),
+        ("mask", 3.3, 0.0)]
+
+
+@pytest.mark.parametrize("type_, given, expected", [
+    ("Top Solder Mask", "", (3.3, 0.0)),
+    ("Top Solder Mask", "(epsilon_r 4)", (4.0, 0.0)),
+    ("Top Solder Mask", "(loss_tangent 0.01)", (3.3, 0.01)),
+    ("core", "", (4.5, 0.02)),
+    ("prepreg", "(epsilon_r 3.6)", (3.6, 0.02)),
+    ("core", "(loss_tangent 0.004)", (4.5, 0.004)),
+    ("core", "(epsilon_r 3.6) (loss_tangent 0)", (3.6, 0.0)),  # a zero the file writes is a value, not a gap
+    ("copper", "", (None, None)),
+], ids=["mask", "mask epsilon_r only", "mask loss_tangent only", "core", "prepreg epsilon_r only",
+        "core loss_tangent only", "lossless core", "copper"])
+def test_each_value_a_layer_leaves_out_takes_kicads_default_on_its_own(type_, given, expected):
+    (got,) = from_board(board_with(layer("L", type_, "(thickness 0.1)", given))).layers
+    assert (got.epsilon_r, got.loss_tangent) == expected
+
+
+def test_a_sublayer_without_values_takes_the_default_too():
+    core = layer("dielectric 1", "core", "(thickness 0.3)", f"{FR4.format(3.6, 0.004)} addsublayer (thickness 0.4)")
+    sublayers = from_board(board_with(core)).layers
+    assert [(l.epsilon_r, l.loss_tangent) for l in sublayers] == [(3.6, 0.004), (4.5, 0.02)]
+
+
+def test_a_layer_built_with_none_gets_the_default_of_its_kind():
+    assert Layer("m", "mask", 0.01, None, None) == Layer("m", "mask", 0.01, 3.3, 0.0)
+    assert Layer("d", "dielectric", 0.5, None, None) == Layer("d", "dielectric", 0.5, 4.5, 0.02)
+    assert replace(Layer("m", "mask", 0.01, 3.8, 0.01), thickness=0.02) == Layer("m", "mask", 0.02, 3.8, 0.01)
+    assert Layer("c", "copper", 0.035, None, None).epsilon_r is None
 
 
 # --- JSON ----------------------------------------------------------------------------------------
@@ -249,3 +315,12 @@ def test_json_round_trips_through_text():
 def test_json_may_leave_out_epsilon_and_loss_tangent():
     s = Stackup.from_json({"source": "x", "layers": [{"name": "F.Cu", "kind": "copper", "thickness_mm": 0.035}]})
     assert s == Stackup("x", (Layer("F.Cu", "copper", 0.035, None, None),))
+
+
+def test_json_gives_a_mask_or_dielectric_that_leaves_out_its_values_kicads_defaults():
+    layers = [{"name": "F.Mask", "kind": "mask", "thickness_mm": 0.01},
+              {"name": "F.Cu", "kind": "copper", "thickness_mm": 0.035},
+              {"name": "dielectric 1", "kind": "dielectric", "thickness_mm": 0.7, "epsilon_r": None,
+               "loss_tangent": 0.01}]
+    s = Stackup.from_json({"source": "x", "layers": layers})
+    assert [(l.epsilon_r, l.loss_tangent) for l in s.layers] == [(3.3, 0.0), (None, None), (4.5, 0.01)]

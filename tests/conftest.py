@@ -5,14 +5,14 @@ from kicad_rf_studio.core.kicad import load_board
 
 MINI = ('(kicad_pcb (version {version}) (generator "test") (general (thickness 0.8)) '
         '(layers (0 "F.Cu" signal) (2 "B.Cu" signal) (25 "Edge.Cuts" user) (39 "F.Mask" user)) '
-        '(setup (pad_to_mask_clearance {clearance})) (net 0 "") {body})')
+        '(setup {stackup} (pad_to_mask_clearance {clearance})) (net 0 "") {body})')
 
 
 @pytest.fixture
 def mini_board_file(tmp_path):
-    def make(body="", version=20241229, clearance=0):
+    def make(body="", version=20241229, clearance=0, stackup=""):
         p = tmp_path / "mini.kicad_pcb"
-        p.write_text(MINI.format(version=version, clearance=clearance, body=body), encoding="utf-8")
+        p.write_text(MINI.format(version=version, clearance=clearance, stackup=stackup, body=body), encoding="utf-8")
         return p
     return make
 
