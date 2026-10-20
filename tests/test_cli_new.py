@@ -114,7 +114,9 @@ def test_options_reach_the_project_and_the_summary(tmp_path, capsys):
                  "--preset", "strict", "-o", str(out)])
     d = load_project(out / "project.json")
     assert code == 0 and (d["f0_hz"], d["harmonics"], d["preset"]) == (2.4e9, 5, "strict")
-    assert "Preset strict (provisional default), band factor 1.1, T_max 40 ns, harmonics 5." in capsys.readouterr().out
+    lines = capsys.readouterr().out.splitlines()
+    assert "f0 2400 MHz, with 5 harmonics." in lines
+    assert "Preset strict (provisional default), band factor 1.1, T_max 40 ns, harmonics 5." in lines
 
 
 def test_classes_are_the_computed_sets(tmp_path):
@@ -219,13 +221,44 @@ def test_the_printed_summary(tmp_path, monkeypatch, capsys):
     assert code == 0 and err == ""
     assert out.splitlines() == [
         "Fills as saved — refill (B) in KiCad and save if you changed copper.",
-        "Stackup: board, dielectric 0.71 mm, εr 4.5.",
+        "Stackup: board, dielectric 0.71 mm, εr 4.5; mask 0.01 mm, εr 3.3.",
         "GND nets: GND. Power nets: VDD. Connectors: J1, J2. Shields: SH1.",
         "Chain U1.1 → J1.1: series C1, L1, R1; shunt C2, C3, R2.",
         "Port P1: signal U1.1, reference U1.2 (ic).",
         "Port P2: signal J1.1, reference J1.2 (connector).",
+        "f0 915 MHz, with 3 harmonics.",
         "Preset normal (provisional default), band factor 1.1, T_max 40 ns, harmonics 3.",
         f"Wrote {pj}."]
+
+
+def test_a_bare_f0_is_hertz_and_is_warned(tmp_path, capsys):
+    code = main(["new", str(LPF), "--start", "U1.1", "--end", "J1.1", "--f0", "915", "-o", str(tmp_path / "p")])
+    lines = capsys.readouterr().out.splitlines()
+    assert code == 0 and load_project(tmp_path / "p" / "project.json")["f0_hz"] == 915
+    assert "f0 0.000915 MHz, with 3 harmonics." in lines
+    assert "f0 = 915 Hz is outside 1 MHz to 100 GHz. Did you forget the unit, as in 915MHz?" in lines
+
+
+@pytest.mark.parametrize("f0, shown, warned", [
+    ("999.999kHz", "0.999999", True), ("1MHz", "1", False), ("100GHz", "100000", False),
+    ("100.1GHz", "100100", True)])
+def test_f0_is_warned_outside_1_mhz_to_100_ghz(tmp_path, capsys, f0, shown, warned):
+    code = main(["new", str(LPF), "--start", "U1.1", "--end", "J1.1", "--f0", f0, "-o", str(tmp_path / "p")])
+    lines = capsys.readouterr().out.splitlines()
+    assert code == 0 and f"f0 {shown} MHz, with 3 harmonics." in lines
+    assert any(" Hz is outside 1 MHz to 100 GHz." in line for line in lines) is warned
+
+
+NO_MASK = ('(stackup (layer "F.Cu" (type "copper") (thickness 0.035)) '
+           '(layer "dielectric 1" (type "core") (thickness 0.73) (epsilon_r 4.4)) '
+           '(layer "B.Cu" (type "copper") (thickness 0.035)))')
+
+
+def test_a_stackup_without_a_mask_shows_none_for_it(tmp_path, capsys, mini_board_file):
+    board = mini_board_file(footprint("TP1", pad(1, "SIG")) + footprint("TP2", pad(1, "SIG", x=5)), stackup=NO_MASK)
+    code = main(["new", str(board), "--start", "TP1.1", "--end", "TP2.1", "--f0", "915MHz", "-o", str(tmp_path / "p")])
+    assert code == 0 and "Stackup: board, dielectric 0.73 mm, εr 4.4; mask none mm, εr none." in (
+        capsys.readouterr().out.splitlines())
 
 
 def test_the_lid_warning_names_the_shield(tmp_path, capsys):
@@ -307,11 +340,12 @@ def test_ports_without_a_reference(tmp_path, capsys, mini_board_file):
     assert printed.splitlines() == [
         "The board has no Edge.Cuts outline, so the substrate is not clipped.",
         "Fills as saved — refill (B) in KiCad and save if you changed copper.",
-        "Stackup: jlcpcb-2l, dielectric 0.69952 mm, εr 4.5.",
+        "Stackup: jlcpcb-2l, dielectric 0.69952 mm, εr 4.5; mask 0.01524 mm, εr 3.8.",
         "GND nets: none. Power nets: none. Connectors: none. Shields: none.",
         "Chain TP1.1 → TP2.1: series none; shunt none.",
         "Port P1: signal TP1.1, reference none (none).",
         "Port P2: signal TP2.1, reference none (none).",
+        "f0 915 MHz, with 3 harmonics.",
         "Preset normal (provisional default), band factor 1.1, T_max 40 ns, harmonics 3.",
         "No reference found for TP1.1; set it in project.json before `run`.",
         "No reference found for TP2.1; set it in project.json before `run`.",
@@ -326,12 +360,13 @@ def test_the_stackup_option_replaces_the_boards_own(tmp_path, capsys):
     d = load_project(pj)
     assert code == 0 and d["stackup"]["source"] == "jlcpcb-2l"
     assert [x["name"] for x in d["stackup"]["layers"]] == ["F.Mask", "F.Cu", "dielectric 1", "B.Cu", "B.Mask"]
-    assert "Stackup: jlcpcb-2l, dielectric 0.69952 mm, εr 4.5." in capsys.readouterr().out
+    assert "Stackup: jlcpcb-2l, dielectric 0.69952 mm, εr 4.5; mask 0.01524 mm, εr 3.8." in capsys.readouterr().out
 
 
 def test_the_dielectric_thickness_is_shown_without_float_noise(tmp_path, capsys):
     code, pj = run_new(tmp_path, "--stackup", "kicad-default")  # 0.8 - 2 x (0.035 + 0.01) is 0.7100000000000001
-    assert code == 0 and "Stackup: kicad-default, dielectric 0.71 mm, εr 4.5." in capsys.readouterr().out
+    assert code == 0 and "Stackup: kicad-default, dielectric 0.71 mm, εr 4.5; mask 0.01 mm, εr 3.3." in (
+        capsys.readouterr().out)
 
 
 @pytest.mark.parametrize("name", ["nope", ""])  # an empty name is not "no --stackup"
@@ -490,7 +525,7 @@ def test_unencodable_characters_become_question_marks_on_stdout(tmp_path, monkey
     console.flush()
     out = raw.getvalue().decode("cp1252")
     assert code == 0
-    assert "Stackup: board, dielectric 0.71 mm, ?r 4.5." in out and "Chain U1.1 ? J1.1:" in out
+    assert "Stackup: board, dielectric 0.71 mm, ?r 4.5; mask 0.01 mm, ?r 3.3." in out and "Chain U1.1 ? J1.1:" in out
 
 
 def test_unencodable_characters_become_question_marks_on_stderr(tmp_path, monkeypatch):

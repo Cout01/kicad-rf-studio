@@ -98,15 +98,18 @@ def _new(a: argparse.Namespace) -> None:
 
     c = project["classes"]
     dielectric = next(x for x in stackup.layers if x.kind == "dielectric")  # there is one: its thickness is above 0
+    mask = next((x for x in stackup.layers if x.kind == "mask"), None)  # the top one; a stackup may have none
     notes = [*board.warnings, ("W_FILLS_AS_SAVED", {}),
              ("I_STACKUP", {"source": stackup.source, "thickness_mm": f"{stackup.dielectric_thickness():g}",
-                            "epsilon_r": dielectric.epsilon_r}),
+                            "epsilon_r": dielectric.epsilon_r, "mask_mm": f"{mask.thickness:g}" if mask else "none",
+                            "mask_epsilon_r": mask.epsilon_r if mask else "none"}),
              ("I_CLASSES", {"gnd": _list(c["gnd_nets"]), "power": _list(c["power_nets"]),
                             "connectors": _list(c["connectors"]), "shields": _list(c["shields"])}),
              ("I_CHAIN", {"start": chain.start, "end": chain.end, "series": _list(p.ref for p in chain.series),
                           "shunt": _list(p.ref for p in chain.shunt)}),
              *(("I_PORT", {"name": p["name"], "signal": p["signal"], "reference": _shown(p["reference"]),
                            "rule": p["rule"] or "none"}) for p in ports),
+             ("I_F0", {"f0_mhz": f"{a.f0 / 1e6:g}", "harmonics": a.harmonics}),
              ("I_DEFAULTS", {"preset": a.preset, "band_factor": BAND_FACTOR, "t_max_ns": f"{T_MAX_S * 1e9:g}",
                              "harmonics": a.harmonics})]
     if heavy := stackup.nonstandard_copper():
@@ -117,6 +120,8 @@ def _new(a: argparse.Namespace) -> None:
     if unreadable := sorted(p["ref"] for p in parts if parse_value(p["value"]) is None):
         notes.append(("W_VALUE_UNREADABLE", {"refs": _list(unreadable)}))
     notes += [("W_NO_REFERENCE", {"signal": p["signal"]}) for p in ports if p["reference"] is None]
+    if not 1e6 <= a.f0 <= 1e11:  # a bare --f0 915 is 915 Hz
+        notes.append(("W_F0_RANGE", {"f0_hz": f"{a.f0:g}"}))
     if other_drive:
         notes.append(("W_ABSOLUTE_BOARD_PATH", {}))
     notes.append(("I_WROTE", {"path": target}))
