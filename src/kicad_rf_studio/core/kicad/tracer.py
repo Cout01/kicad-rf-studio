@@ -109,7 +109,8 @@ def _resolve(board: Board, classes: Classes, name: str) -> list[Pad]:
     pads = [p for p in board.pads(name) if p.layers]
     if not pads:
         known = {p.name for fp in board.footprints.values() for p in _copper(fp)}
-        raise KrsError("E_UNKNOWN_PAD", name=name, candidates=", ".join(difflib.get_close_matches(name, known, n=5)))
+        raise KrsError("E_UNKNOWN_PAD", name=name,
+                       candidates=", ".join(difflib.get_close_matches(name, known, n=5)) or "none")
     nets = {p.net for p in pads}
     if len(nets) > 1:
         raise KrsError("E_AMBIGUOUS_PAD", name=name, nets=", ".join(sorted(nets)))
@@ -123,7 +124,9 @@ def trace_chain(board: Board, start: str, end: str, classes: Classes | None = No
     """The chain from pad `start` to pad `end`: the nets on the way, the series parts between them and the shunt
     parts that touch them, DNP ones too. The walk is breadth first, so it takes the fewest parts, trying the parts of
     a net in ref order. A part is a footprint with exactly two pads with a net, on two nets; a connector or a shield
-    is none. Raises KrsError: E_UNKNOWN_PAD, E_AMBIGUOUS_PAD, E_START_ON_GND, E_NO_CHAIN."""
+    is none. Raises KrsError: E_SAME_PADS, E_UNKNOWN_PAD, E_AMBIGUOUS_PAD, E_START_ON_GND, E_NO_CHAIN."""
+    if start == end:
+        raise KrsError("E_SAME_PADS", name=start)
     classes = classify(board) if classes is None else classes
     start_net = _resolve(board, classes, start)[0].net
     end_net = _resolve(board, classes, end)[0].net

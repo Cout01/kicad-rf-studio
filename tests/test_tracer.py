@@ -243,6 +243,27 @@ def test_no_chain_names_the_nets_reached(lpf):
     assert "RF_A, RF_B, RF_C, RF_OUT" in str(e.value)
 
 
+def test_no_chain_names_every_kind_of_stopper(lpf):
+    with pytest.raises(KrsError) as e:
+        trace_chain(lpf, "U1.1", "J2.1")
+    assert str(e.value) == (
+        "No chain from U1.1 to J2.1: the walk stopped at nets RF_A, RF_B, RF_C, RF_OUT. A DNP part, a connector, "
+        "a shield, a GND or power net, or a part with three or more pads is in the way.")
+
+
+def test_a_chain_from_a_pad_to_itself_is_refused(lpf):
+    with pytest.raises(KrsError) as e:
+        trace_chain(lpf, "U1.1", "U1.1")
+    assert (e.value.code, e.value.params) == ("E_SAME_PADS", {"name": "U1.1"})
+    assert str(e.value) == "The chain starts and ends at the same pad, U1.1. Give two different pads."
+
+
+def test_an_unknown_pad_with_no_close_name_says_none(lpf):
+    with pytest.raises(KrsError) as e:
+        trace_chain(lpf, "ZZZ", "J1.1")
+    assert e.value.params["candidates"] == "none" and str(e.value) == "Pad ZZZ does not exist. Closest pads: none."
+
+
 def test_the_nets_reached_are_listed_by_name_not_in_the_order_of_the_walk(mini_board):
     b = mini_board(two("R1", "Z", "A") + two("R2", "M", "N"))  # the walk from R1.1 reaches Z, then A
     with pytest.raises(KrsError) as e:
