@@ -1,0 +1,21 @@
+kicad-rf-studio is free software under the GNU General Public License v3.0 or later (GPL-3.0-or-later); see LICENSE.
+It includes the third-party pieces below, each under the licence given.
+
+
+CSXCAD SmoothMeshLines
+  Upstream:  CSXCAD v0.7.0, the CSXCAD that openEMS-Project v0.37.0 pins (https://github.com/thliebig/CSXCAD),
+             file python/CSXCAD/SmoothMeshLines.py
+  Copyright: (C) 2015, 2016 Thorsten Liebig
+  Licence:   GNU Lesser General Public License v3.0 or later (LGPL-3.0-or-later)
+  Here:      src/kicad_rf_studio/core/mesh/smooth.py, a copy of SmoothMeshLines and its helpers that keeps the
+             original licence header
+
+
+KiCad line-calculator formulas
+  Upstream:  KiCad 9.0 (https://gitlab.com/kicad/code/kicad, branch 9.0), files pcb_calculator/transline/microstrip.cpp,
+             coplanar.cpp, transline.cpp and units.h
+  Copyright: (C) 2001 Gopal Narayanan, 2002 Claudio Girardi, 2005-2006 Stefan Jahn, 2008 Michael Margraf; modified
+             for KiCad by Jean-Pierre Charras; the KiCad Developers
+  Licence:   GNU General Public License v2.0 or later (GPL-2.0-or-later), used here under GPL-3.0-or-later
+  Here:      tests/kicad_lines.py, the microstrip and grounded coplanar waveguide formulas ported to Python, for the
+             tests only (not installed with the package)
