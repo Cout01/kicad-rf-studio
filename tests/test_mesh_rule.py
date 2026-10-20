@@ -17,7 +17,8 @@ from kicad_rf_studio.core.kicad import classify, load_board, trace_chain
 from kicad_rf_studio.core.kicad.tracer import Chain
 from kicad_rf_studio.core.mesh import Mesh, build_mesh
 from kicad_rf_studio.core.mesh.protect import protected_set
-from kicad_rf_studio.core.mesh.rule import (RATIO, _grade, cell_size, dz0, edge_lines, merge, z_lines)
+from kicad_rf_studio.core.mesh.rule import (RATIO, _grade, _patterns, cell_size, dz0, edge_lines, merge, xy_lines,
+                                            z_lines)
 from kicad_rf_studio.core.mesh.smooth import smooth_mesh_lines
 
 FIX = Path(__file__).parent / "fixtures"
@@ -32,11 +33,10 @@ def section(width, gap):
     return Section("LINE", "F.Cu", "x", (0.0, 0.0), (10.0, 0.0), width, gap, 10.0, (5.0, 0.0))
 
 
-@cache
-def geometry(name, start="", end=""):
-    """`name`'s geometry as build_geometry (Task 12) assembles it from Tasks 2-6 at a 3 GHz top of band, and its
+def build(path, start="", end=""):
+    """The board's geometry as build_geometry (Task 12) assembles it from Tasks 2-6 at a 3 GHz top of band, and its
     protected set. The coupons have no pads to trace a chain between (R-P2-1), so their chain is LINE alone."""
-    b = load_board(FIX / f"{name}.kicad_pcb")
+    b = load_board(path)
     chain = trace_chain(b, start, end) if start else Chain("", "", ("LINE",), (), ())
     zs = zstack(b.stackup, b.copper_layers)
     region = build_region(b, chain, [], zs, 3e9)
@@ -49,8 +49,22 @@ def geometry(name, start="", end=""):
 
 
 @cache
-def mesh(name, start="", end=""):
-    return build_mesh(*geometry(name, start, end), 2)
+def geometry(name, start="", end=""):
+    return build(FIX / f"{name}.kicad_pcb", start, end)
+
+
+def variant(tmp_path, name, old, new):
+    """The geometry of fixture `name` with one token of its file changed: a synthetic variant of a synthetic board."""
+    text = (FIX / f"{name}.kicad_pcb").read_text(encoding="utf-8")
+    assert text.count(old) == 1
+    path = tmp_path / f"{name}.kicad_pcb"
+    path.write_text(text.replace(old, new), encoding="utf-8")
+    return build(path)
+
+
+@cache
+def mesh(name, start="", end="", n=2):
+    return build_mesh(*geometry(name, start, end), n)
 
 
 def slab(zs, copper):
@@ -76,14 +90,32 @@ def bad_pairs(lines, fixed=()):
 
 def lint(lines, edges, d):
     """The edge lint of spec 5.5, as Task 12 will run it: the edges with a line on them, their nearest inside line
-    closer than d/8, or their first outside line nearer than the nearest inside one."""
+    closer than d/8, or their first outside line no farther than the nearest inside one (T7 carry: a tie fails)."""
     hits = []
     for e, inside in edges:
         off = (lines - e) * inside  # > 0 inside the metal
         near_in, near_out = off[off > 0].min(initial=np.inf), -off[off < 0].max(initial=-np.inf)
-        if (off == 0).any() or near_in < d / 8 or near_out < near_in:
+        if (off == 0).any() or near_in < d / 8 or near_out <= near_in:
             hits.append((e, inside))
     return hits
+
+
+def shared_nodes(m, geom, layer, a, b):
+    """The grid nodes of `layer` that nets `a` and `b` both hold: a conductor holds both ends of every grid edge whose
+    middle lies in it, boundary included (T7 ruling), so FDTD joins the two nets there."""
+    held = []
+    for net in (a, b):
+        g = shapely.union_all([pc.polygon for pc in geom.pieces if pc.layer == layer and pc.net == net])
+        shapely.prepare(g)
+        nodes = np.zeros((len(m.x), len(m.y)), bool)
+        along_x = shapely.intersects_xy(g, *np.meshgrid((m.x[1:] + m.x[:-1]) / 2, m.y, indexing="ij"))
+        along_y = shapely.intersects_xy(g, *np.meshgrid(m.x, (m.y[1:] + m.y[:-1]) / 2, indexing="ij"))
+        nodes[1:] |= along_x
+        nodes[:-1] |= along_x
+        nodes[:, 1:] |= along_y
+        nodes[:, :-1] |= along_y
+        held.append(nodes)
+    return int((held[0] & held[1]).sum())
 
 
 def test_cell_size_rule():
@@ -191,12 +223,13 @@ def test_mesh_takes_no_rods_by_default():  # Task 12 builds meshes by hand for i
     assert m.snapped_rods == ()
 
 
+@pytest.mark.parametrize("n", [2, 3])  # verifier: lpf915 failed the lint at n = 3, which P0-B (spec 9.3) measures
 @pytest.mark.parametrize(("name", "start", "end"), FIXTURES)
-def test_every_fixture_axis_grades_and_passes_the_edge_lint(name, start, end):
+def test_every_fixture_axis_grades_and_passes_the_edge_lint(name, start, end, n):
     # T9 fix ruling: build_mesh holds every neighbour within 1.3 on its final lines; Task 10 ruling: except beside a
     # cell the rule fixes
     geom, _ = geometry(name, start, end)
-    m = mesh(name, start, end)
+    m = mesh(name, start, end, n)
     for axis, (lo, hi) in zip("xy", (geom.region.walls[:2], geom.region.walls[2:4])):
         lines, edges = getattr(m, axis), m.edges[axis]
         assert not bad_pairs(lines, [e for e, _ in edges])
@@ -243,6 +276,130 @@ def test_grading_refines_both_sides_of_a_jump(lines):
     lines = np.round(np.asarray(lines, float), 6)
     out = _grade(lines, [], 1.0)
     assert set(lines) <= set(out) and not bad_pairs(out) and np.diff(out).max() <= 1.0 + GRID_TOL
+
+
+def test_grading_converges_between_wide_neighbours():
+    # verifier: a cell between two cells far above RATIO·cap had no piece ≤ cap within RATIO of either, and the halving
+    # that followed ratcheted down: RuntimeError after 10,000 rounds on real boards, or thousands of µm cells here
+    lines = np.array([2.090114, 4.778241, 7.418406, 10.079351])
+    out = _grade(lines, [], 0.075)
+    assert set(lines) <= set(out) and not bad_pairs(out) and np.diff(out).max() <= 0.075 + GRID_TOL
+    assert len(out) < 1.2 * (lines[-1] - lines[0]) / 0.075
+
+
+def test_mesh_converges_on_a_thin_45_degree_line(tmp_path):
+    geom, prot = variant(tmp_path, "coupon_gcpw_45", "(width 0.6)", "(width 0.124)")  # verifier: RuntimeError
+    m = build_mesh(geom, prot, 2)
+    for axis in "xy":
+        lines = getattr(m, axis)
+        assert not bad_pairs(lines, [e for e, _ in m.edges[axis]]) and np.diff(lines).min() >= m.d / 3 - GRID_TOL
+
+
+@pytest.mark.parametrize("d", [0.15, 0.1])  # a 0.3 mm strip at n = 2 and 3
+@pytest.mark.parametrize("gaps", [(), (0.3,), (0.45,)])  # no edge, or same-side edges sharing a cell over 1.3d wide
+def test_fill_beside_wide_cells_stays_near_d(d, gaps):
+    # verifier: the fill matched the 23 mm cells outside the extent (and a shared cell over 1.3d), which no piece ≤ d
+    # can match, and halved down to 2.3 µm: 2335 lines on a 21 mm extent; spec 5.4 merges in-plane below d/3
+    edges = [(110.0, -1)] * bool(gaps) + [(round(110.0 + s * d, 6), -1) for s in gaps]
+    lines, _ = xy_lines(edges, (99.5005, 120.4995), (76.156864, 143.843136), [], d, 2.355392)
+    assert np.diff(lines).min() >= d / 3 - GRID_TOL and not bad_pairs(lines, [e for e, _ in edges])
+    assert len(lines) < 21 / d + 60
+
+
+@pytest.mark.parametrize("n", [2, 3])
+def test_narrow_solid_microstrip_has_no_cell_under_d_over_3(tmp_path, n):
+    geom, prot = variant(tmp_path, "coupon_ms", "(width 1.35)", "(width 0.6)")  # solid: 0.6 mm is under 30·t
+    m = build_mesh(geom, prot, n)  # verifier: 685 x lines at n = 2, 615 cells under d/3, the smallest 0.041d
+    for axis in "xy":
+        lines = getattr(m, axis)
+        assert np.diff(lines).min() >= m.d / 3 - GRID_TOL and not bad_pairs(lines, [e for e, _ in m.edges[axis]])
+
+
+@pytest.mark.parametrize("s", [0.2, 0.3, 0.375, 0.45, 0.5, 0.52, 0.55, 0.6, 0.65, 2 / 3, 0.7, 0.9, 1, 1.2, 4 / 3, 1.5])
+@pytest.mark.parametrize("side", [-1, 1])
+def test_same_side_edges_pass_the_lint_at_any_spacing(s, side):
+    # verifier: one pattern shared by edges more than d/2 apart put the outer edge's outside line nearer than its inside
+    # one (a track entering a pad 38-50 µm wider each side; lpf915 at n = 3)
+    d = 0.075
+    edges = sorted([(110.0, side), (round(110.0 - side * s * d, 6), side)])  # the second edge lies outside the first
+    lines, _ = xy_lines(edges, (100.0, 120.0), (80.0, 140.0), [], d, 2.36)
+    assert not lint(lines, edges, d)
+
+
+@pytest.mark.parametrize("steps", [(0.3, 0.3), (0.2, 0.2, 0.2, 0.2), (0.3, 0.6), (0.45, 0.45), (0.391, 0.392, 1.254)])
+def test_a_staircase_of_close_edges_passes_the_lint(steps):
+    d = 0.075  # verifier: three edges 0.3d apart chained into one pattern, the far edge 0.85d inside and 0.75d outside
+    edges = [(round(110.0 + v * d, 6), -1) for v in np.cumsum([0, *steps])]
+    lines, _ = xy_lines(edges, (100.0, 120.0), (80.0, 140.0), [], d, 2.36)
+    assert not lint(lines, edges, d)
+
+
+def test_a_shared_cell_spans_d_at_most():
+    # Task 10 fix ruling: steps under 5d/16 leave no room for a line, so a staircase joins one cell, and each join
+    # widens it for its far edge; uncapped, such joins chained into cells many d wide that passed the lint (9.6d in a
+    # probe). Past d the far edge fails it instead: E_EDGE_LINT, whose advice (the strict preset, 2d/3) passes
+    edges = [(round(110.0 + v * 0.075, 6), -1) for v in (0, 0.3, 0.6, 0.9, 1.2)]
+    lines, _ = xy_lines(edges, (100.0, 120.0), (80.0, 140.0), [], 0.075, 2.36)
+    assert lint(lines, edges, 0.075) and np.diff(lines[(lines > 109.8) & (lines < 110.4)]).max() < 2 * 0.075
+    lines, _ = xy_lines(edges, (100.0, 120.0), (80.0, 140.0), [], 0.05, 2.36)
+    assert not lint(lines, edges, 0.05)
+
+
+@pytest.mark.parametrize("g", [0.1, 0.3, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0, 1.1, 1.3, 1.5, 1.7, 2.0])
+def test_facing_edges_across_a_gap_pass_the_lint(g):
+    # copper below one edge and above the next, g·d apart: their own outside lines, 3d/4 out, cross in a gap under 1.5d
+    # and one lands inside the other edge's cell (gaps of 0.6d to d failed the lint before the fix round)
+    d = 0.075
+    edges = [(110.0, -1), (round(110.0 + g * d, 6), 1)]
+    lines, _ = xy_lines(edges, (100.0, 120.0), (80.0, 140.0), [], d, 2.36)
+    assert not lint(lines, edges, d)
+
+
+def test_extra_edges_keep_their_own_pattern():
+    # the lint's one re-mesh (spec 5.5) passes the failing edges back; their own pattern then wins over every line that
+    # sharing or merging put in its cell, so the re-mesh changes something (verifier: it rebuilt the same lines)
+    d = 0.075
+    edges = [(110.0, 1), (round(110.0 + 0.2 * d, 6), -1)]  # metal overlapping by 0.2d: no line lies d/8 inside both
+    lines, _ = xy_lines(edges, (100.0, 120.0), (80.0, 140.0), [], d, 2.36)
+    assert lint(lines, edges, d)
+    lines, _ = xy_lines(edges, (100.0, 120.0), (80.0, 140.0), [], d, 2.36, force=edges[:1])
+    assert not lint(lines, edges[:1], d) and {round(v, 6) for v in edge_lines(*edges[0], d)} <= set(lines)
+
+
+def test_extent_end_just_past_an_edge_is_no_line():
+    d = 0.075  # verifier: an extent end d/12 to d/4 outside an edge was a line nearer than the edge's inside line
+    edges = [(100.01, 1)]
+    lines, _ = xy_lines(edges, (100.0, 120.0), (80.0, 140.0), [], d, 2.36)
+    assert not lint(lines, edges, d)
+
+
+def test_extent_end_in_an_edge_cell_is_no_line(tmp_path):
+    # verifier: TP1 moved by 20 µm made the extent's end (the pour's end at 99.5005) a line on that edge, which shares a
+    # cell with the pad's edge at 99.52; the lint failed at n = 2 and 3 and the re-mesh rebuilt the same lines
+    geom, prot = variant(tmp_path, "coupon_gcpw_pads", "(at 100 100)", "(at 100.02 100)")
+    for n in (2, 3):
+        m = build_mesh(geom, prot, n)
+        assert not lint(m.x, m.edges["x"], m.d) and not lint(m.y, m.edges["y"], m.d)
+
+
+def test_colliding_inside_lines_keep_one_where_the_lint_allows():
+    d = 0.075
+    pad, gnd = (-100.5, 1), (-100.4505, -1)  # coupon_gcpw_pads: a pad's edge 49.5 µm past the facing GND edge
+    pins = _patterns([pad, gnd], d, prefer={gnd})
+    assert round(edge_lines(*gnd, d)[0], 6) in pins and round(edge_lines(*pad, d)[0], 6) not in pins
+    assert not lint(np.array(sorted(pins)), [pad, gnd], d)
+    line, other = (1.0, 1), (1.0245, -1)  # lpf915: metal overlapping by 24.5 µm; either line is under d/8 in the other
+    pins = _patterns([line, other], d, prefer={line})
+    assert 1.01225 in pins and not lint(np.array(sorted(pins)), [line, other], d)
+
+
+def test_section_edges_keep_their_lines_on_coupon_gcpw_pads():
+    # verifier: the pads' edges pulled the GND inside lines to the mean along the whole line, at the section's cut too:
+    # fit2d read +3.38 % (over 3 %), and +2.47 % with the GND lines kept
+    m = mesh("coupon_gcpw_pads")
+    for edge in [(-100.4505, -1), (-99.5495, 1)]:  # the GND edges facing the LINE at its cut
+        assert np.isclose(m.y, edge_lines(*edge, m.d)[0], rtol=0, atol=1.5e-6).any()
+    assert not lint(m.y, m.edges["y"], m.d)
 
 
 def test_grading_never_splits_a_fixed_cell():
