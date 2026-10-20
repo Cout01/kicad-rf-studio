@@ -141,13 +141,14 @@ def copper_pieces(board: Board, crop: Polygon,
     return pieces, warnings
 
 
-def connectivity(pieces: list[Piece], rods: list[Rod], roi: BaseGeometry,
-                 nets: Collection[str]) -> list[tuple[str, dict]]:
+def connectivity(pieces: list[Piece], rods: list[Rod], roi: BaseGeometry, nets: Collection[str],
+                 crop: Polygon) -> list[tuple[str, dict]]:
     """The opens and shorts of `nets`. Pieces on one layer that touch are joined, and a rod joins the pieces its
-    barrel touches. A net of `nets` in two or more joined parts is open: E_OPEN_IN_ROI when two of them reach `roi`,
-    else W_OPEN_IN_MARGIN. Copper of another net touching theirs is a short: E_SHORT_IN_ROI when the touch lies in
-    `roi`, else W_SHORT_IN_MARGIN. Copper with no net floats, so it is never open and shorts nothing. Opens come
-    first, by net, then shorts, by pair of nets."""
+    barrel touches. The pieces are clipped to `crop`, so a net's parts that run out of it may join outside it: they
+    count as one. A net of `nets` in two or more parts is open: E_OPEN_IN_ROI when two of them reach `roi`, else
+    W_OPEN_IN_MARGIN. Copper of another net touching theirs is a short: E_SHORT_IN_ROI when the touch lies in `roi`,
+    else W_SHORT_IN_MARGIN. Copper with no net floats, so it is never open and shorts nothing. Opens come first, by
+    net, then shorts, by pair of nets."""
     # ponytail: a rod joins every layer, as a through via does; a blind or buried via needs its layer span here
     geoms = [pc.polygon for pc in pieces] + [Point(r.at).buffer(r.radius) for r in rods]
     layers = [pc.layer for pc in pieces] + [None] * len(rods)
@@ -159,6 +160,9 @@ def connectivity(pieces: list[Piece], rods: list[Rod], roi: BaseGeometry,
     same = np.array([(i, j) for i, j in touch if names[i] == names[j]], dtype=int).reshape(-1, 2)
     graph = coo_matrix((np.ones(len(same)), (same[:, 0], same[:, 1])), shape=(len(geoms), len(geoms)))
     part = connected_components(graph, directed=False)[1]
+    # the parts that run out of the crop count as one; the simplification and the grid can pull a cut edge up to
+    # SIMPLIFY and a hair off the crop's edge
+    part[np.isin(part, part[shapely.dwithin(geoms, crop.boundary, 2 * SIMPLIFY)])] = -1
     in_roi = shapely.intersects(geoms, roi)
     notes = []
     for net in sorted(set(nets) - {""}):

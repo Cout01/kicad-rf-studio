@@ -95,21 +95,22 @@ def test_protected_area_holds_the_chain_its_part_pads_and_the_ground_within_reac
 def test_open_in_roi_blocks():  # coupon_ms with a 0.1 mm cut in LINE inside the ROI
     b, zs, region, pieces, prot = setup("coupon_ms")
     nets = {"LINE", "GND"}
-    assert connectivity(pieces, [], region.roi, nets) == []
+    assert connectivity(pieces, [], region.roi, nets, region.crop) == []
     slot = box(109.95, -101, 110.05, -99)
     cut = [Piece(pc.layer, pc.net, q, pc.solid) for pc in pieces
            for q in (shapely.get_parts(pc.polygon.difference(slot)) if pc.net == "LINE" else [pc.polygon])]
-    assert ("E_OPEN_IN_ROI", {"net": "LINE"}) in connectivity(cut, [], region.roi, nets)
+    assert ("E_OPEN_IN_ROI", {"net": "LINE"}) in connectivity(cut, [], region.roi, nets, region.crop)
     # with the cut past a shorter ROI, the far half of LINE floats in the margin
-    assert connectivity(cut, [], box(99, -105, 109, -95), nets) == [("W_OPEN_IN_MARGIN", {"net": "LINE"})]
+    short_roi = box(99, -105, 109, -95)
+    assert connectivity(cut, [], short_roi, nets, region.crop) == [("W_OPEN_IN_MARGIN", {"net": "LINE"})]
 
 
 def test_rods_join_the_layers():
     # coupon_gcpw's GND is two F.Cu pours and the B.Cu plane, one net only through the fence vias
     b, zs, region, pieces, prot = setup("coupon_gcpw")
     nets = {"LINE", "GND"}
-    assert connectivity(pieces, via_rods(b, region.crop, zs, prot), region.roi, nets) == []
-    assert connectivity(pieces, [], region.roi, nets) == [("E_OPEN_IN_ROI", {"net": "GND"})]
+    assert connectivity(pieces, via_rods(b, region.crop, zs, prot), region.roi, nets, region.crop) == []
+    assert connectivity(pieces, [], region.roi, nets, region.crop) == [("E_OPEN_IN_ROI", {"net": "GND"})]
 
 
 def test_plated_holes_join_their_layers(mini_board):
@@ -134,9 +135,26 @@ def test_plated_holes_join_their_layers(mini_board):
         ("LINE", (0.0, 0.0), 0.4, True), ("GND", (0.0, -2.0), 0.4, True), ("GND", (0.0, -9.0), 0.4, False)}
     slab = {s.copper: s for s in zs if s.kind == "copper"}
     assert {(r.z0, r.z1) for r in rods} == {(slab["B.Cu"].z0, slab["F.Cu"].z1)}
-    nets = {"LINE", "GND"}
-    assert connectivity(pieces, rods, region.roi, nets) == []
-    assert connectivity(pieces, [], region.roi, nets) == [("E_OPEN_IN_ROI", {"net": n}) for n in ("GND", "LINE")]
+    nets, roi, crop = {"LINE", "GND"}, region.roi, region.crop
+    assert connectivity(pieces, rods, roi, nets, crop) == []
+    assert connectivity(pieces, [], roi, nets, crop) == [("E_OPEN_IN_ROI", {"net": n}) for n in ("GND", "LINE")]
+
+
+def test_parts_that_run_out_of_the_crop_may_join_outside_it(mini_board):
+    # Task 4 fix: the pieces are clipped to the crop, so a net's parts that run out of it may be one on the board. VDD's
+    # two legs reach into the ROI and close 60 mm away, past the crop: no open. A VDD island that stays in the crop is a
+    # break, in the ROI when it reaches the ROI, even across the ROI's edge
+    seg = '(segment (start {} {}) (end {} {}) (width 0.5) (layer "F.Cu") (net "{}") (uuid "{}"))'
+    b = mini_board(seg.format(0, 0, 10, 0, "LINE", "l") + seg.format(2, -1.5, 2, -60, "VDD", "v1")
+                   + seg.format(8, -1.5, 8, -60, "VDD", "v2") + seg.format(2, -60, 8, -60, "VDD", "v3"))
+    zs = zstack(kicad_default(0.8), b.copper_layers)
+    region = build_region(b, Chain("", "", ("LINE",), (), ()), [], zs, 3e9)
+    pieces, _ = copper_pieces(b, region.crop, T)
+    nets, roi, crop = {"LINE", "VDD"}, region.roi, region.crop
+    assert connectivity(pieces, [], roi, nets, crop) == []
+    near, far = (Piece("F.Cu", "VDD", box(4.5, y, 5.5, y + 1), False) for y in (2, 10))  # the ROI ends at y = 2.38
+    assert connectivity([*pieces, near], [], roi, nets, crop) == [("E_OPEN_IN_ROI", {"net": "VDD"})]
+    assert connectivity([*pieces, far], [], roi, nets, crop) == [("W_OPEN_IN_MARGIN", {"net": "VDD"})]
 
 
 def test_short_in_margin_warns(mini_board):  # a LINE stub runs out of the ROI onto a GND pour, inside the crop
@@ -147,7 +165,8 @@ def test_short_in_margin_warns(mini_board):  # a LINE stub runs out of the ROI o
                    # Task 4 ruling: copper with no net floats. Here it touches LINE and lies in two parts
                    + rect.format(1.5, -0.5, 2.5, 0.5) + '(layer "F.Cu") (uuid "f1")) '
                    + rect.format(20, 8, 21, 9) + '(layer "F.Cu") (uuid "f2"))')
-    pieces, _ = copper_pieces(b, box(-50, -50, 50, 50), T)
+    crop = box(-50, -50, 50, 50)
+    pieces, _ = copper_pieces(b, crop, T)
     nets = {"LINE", ""}
-    assert connectivity(pieces, [], box(-1, -3, 11, 3), nets) == [("W_SHORT_IN_MARGIN", {"nets": "GND, LINE"})]
-    assert connectivity(pieces, [], box(-1, -9, 11, 3), nets) == [("E_SHORT_IN_ROI", {"nets": "GND, LINE"})]
+    assert connectivity(pieces, [], box(-1, -3, 11, 3), nets, crop) == [("W_SHORT_IN_MARGIN", {"nets": "GND, LINE"})]
+    assert connectivity(pieces, [], box(-1, -9, 11, 3), nets, crop) == [("E_SHORT_IN_ROI", {"nets": "GND, LINE"})]
