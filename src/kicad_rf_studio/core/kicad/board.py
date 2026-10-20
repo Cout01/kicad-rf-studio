@@ -21,7 +21,8 @@ from kicad_rf_studio.core.messages import KrsError, reason
 OLDEST_SUPPORTED = 20241229  # the file version of KiCad 9.0
 NEWEST_TESTED = 20241229  # moves up when CI tier (c) has read a KiCad 10 board
 DEFAULT_THICKNESS = 1.6  # mm, what KiCad assumes for a board whose file gives none
-OUTLINE_GRID = 1e-3  # mm, the grid Edge.Cuts lines are noded on: ends closer than this meet
+OUTLINE_GRID = 1e-3  # mm, the grid Edge.Cuts lines are noded on
+CHAIN_EPSILON = 0.01  # mm, KiCad's Edge.Cuts chaining epsilon: ends closer than this meet
 _MASK = {"F.Mask": "F", "B.Mask": "B"}
 _FP_GRAPHICS = ("fp_poly", "fp_rect", "fp_circle", "fp_line", "fp_arc")
 _MPN = ("mpn", "manufacturer part number", "manufacturer_part_number")  # property names, lower case
@@ -177,6 +178,11 @@ def _zone(b: Board, node: list, table: dict[str, str]) -> None:
         return
     net, uuid = _net(node, table), _text(node, "uuid")
     fills = children(node, "filled_polygon")
+    if atom(child(node, "fill") or [], "mode") == "hatch":
+        for fill in fills:
+            if _text(fill, "layer") in b.copper_layers:
+                b.warnings.append(("W_COPPER_DROPPED", {"kind": "hatched zone", "layer": _text(fill, "layer"), "uuid": uuid}))
+        return
     for fill in fills:
         layer = _text(fill, "layer")
         polygons = valid_polygons(Polygon(points(child(fill, "pts"))))
@@ -281,11 +287,23 @@ def _outline(lines: list[LineString]) -> Polygon | None:
     leaves a thin frame. The lines are noded first, on a grid of OUTLINE_GRID, so a doubled or overshooting
     line still closes and two ends that miss each other by a hair meet. The outline's vertices then lie on
     that grid: each coordinate moves by at most half of it."""
-    # ponytail: ends that miss by less than about 1 um meet on the grid (a 1 nm miss still straddles a grid line
-    # about once in a thousand). A wider gap leaves no outline, though KiCad chains ends up to 0.01 mm apart,
-    # and only the largest loop is kept, so a panel of boards keeps one board. Upgrade: join the ends within
-    # 0.01 mm before noding, and keep every outer loop.
-    noded = unary_union(lines, grid_size=OUTLINE_GRID)
+    # Ends within CHAIN_EPSILON of an earlier end are moved onto it first, as KiCad chains them.
+    # ponytail: only the largest loop is kept, so a panel of boards keeps one board. Upgrade: keep every outer loop.
+    ends: list[tuple[float, float]] = []
+
+    def snap(pt: tuple[float, float]) -> tuple[float, float]:
+        for e in ends:
+            if (pt[0] - e[0]) ** 2 + (pt[1] - e[1]) ** 2 <= CHAIN_EPSILON ** 2:
+                return e
+        ends.append(pt)
+        return pt
+
+    joined = []
+    for line in lines:
+        c = list(line.coords)
+        c[0], c[-1] = snap(c[0]), snap(c[-1])
+        joined.append(LineString(c))
+    noded = unary_union(joined, grid_size=OUTLINE_GRID)
     return max(polygonize(noded), key=lambda p: Polygon(p.exterior).area, default=None)
 
 
@@ -337,6 +355,8 @@ def load_board(path: str | Path) -> Board:
             _zone(b, node, table)
         elif node[0] in GRAPHICS:
             _graphic(b, node, table, edge)
+        elif node[0] in ("gr_text", "gr_curve") and _text(node, "layer") in b.copper_layers:
+            b.warnings.append(("W_COPPER_DROPPED", {"kind": node[0], "layer": _text(node, "layer"), "uuid": _text(node, "uuid")}))
         elif node[0] == "footprint":
             _footprint(b, node, table, edge, copies)
     if copies:

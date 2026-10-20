@@ -9,7 +9,7 @@ description = "Simulate the RF parts of a KiCad board with openEMS"
 readme = "README.md"
 license = "GPL-3.0-or-later"
 requires-python = ">=3.11"
-dependencies = ["shapely>=2.0"]
+dependencies = ["shapely>=2.0", "numpy", "scipy"]
 
 [project.optional-dependencies]
 dev = ["pytest>=8"]

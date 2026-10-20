@@ -13,6 +13,7 @@ CATALOG: dict[str, str] = {
     "W_REPAIRED_FILTER_RATIO": "Repaired {count} teardrop entries damaged by a KiCad 9 writer bug; the file on disk is unchanged.",
     "W_ZONE_NOT_FILLED": "Zone {uuid} on {layer} has no fill and is left out. Refill (B) in KiCad and save.",
     "W_NO_OUTLINE": "The board has no Edge.Cuts outline, so the substrate is not clipped.",
+    "W_COPPER_DROPPED": "{kind} {uuid} on {layer} is left out of the simulation; convert it to a filled shape or a solid zone in KiCad if it carries current.",
     "W_NETLESS_COPPER": "Copper shape {uuid} on {layer} has no net and is simulated as floating copper.",
     "W_PADSTACK": "Pad {pad} uses a per-layer padstack; its front shape is used on every layer.",
     "W_DUPLICATE_REF": "Footprints share the references {refs}; the copies were renamed with #2, #3 and so on. Annotate the board in KiCad to name them.",

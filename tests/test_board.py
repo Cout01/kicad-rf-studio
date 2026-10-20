@@ -466,3 +466,44 @@ def test_tracks_and_zone_fills_agree_in_position_and_shape(name, net):
     trace = unary_union([t.polygon() for t in b.tracks if t.net == net])
     gap = min(a.polygon.distance(trace) for a in b.areas if a.layer == "F.Cu" and a.net == "GND")
     assert gap == pytest.approx(0.1505, abs=0.001)
+
+
+# --- plan 2, task 1: outline chaining and dropped copper ---------------------------------------------
+
+def _square(gaps_um):
+    """A 10 x 10 Edge.Cuts square of four gr_lines, each ending short of the next by the given gap."""
+    corners = [(0, 0), (10, 0), (10, 10), (0, 10)]
+    out = []
+    for i, (gap, a) in enumerate(zip(gaps_um, corners)):
+        b = corners[(i + 1) % 4]
+        dx, dy = (b[0] - a[0]) / 10, (b[1] - a[1]) / 10
+        end = (b[0] - dx * gap / 1000, b[1] - dy * gap / 1000)
+        out.append(f'(gr_line (start {a[0]} {a[1]}) (end {end[0]:.6f} {end[1]:.6f}) (layer "Edge.Cuts") (uuid "e{i}"))')
+    return " ".join(out)
+
+
+def test_outline_joins_ends_within_10_um(mini_board):
+    b = mini_board(_square((0, 3, 7, 9.9)))
+    assert b.outline is not None and b.outline.area == pytest.approx(100, abs=0.1)  # a 9.9 um join moves a corner
+
+
+def test_outline_gap_above_10_um_still_open(mini_board):
+    b = mini_board(_square((0, 0, 0, 12)))
+    assert b.outline is None and ("W_NO_OUTLINE", {}) in b.warnings
+
+
+@pytest.mark.parametrize("item,kind", [
+    ('(gr_text "RF" (at 1 1) (layer "F.Cu") (uuid "t1"))', "gr_text"),
+    ('(gr_curve (pts (xy 0 0) (xy 1 1) (xy 2 1) (xy 3 0)) (layer "F.Cu") (uuid "c1"))', "gr_curve")])
+def test_dropped_copper_warns(mini_board, item, kind):
+    b = mini_board(item)
+    assert ("W_COPPER_DROPPED", {"kind": kind, "layer": "F.Cu", "uuid": item.split('"')[-2]}) in b.warnings
+
+
+HATCHED_ZONE = ('(zone (net 0) (net_name "") (layer "F.Cu") (uuid "h1") (fill yes (mode hatch)) '
+                '(polygon (pts (xy 0 0) (xy 4 0) (xy 4 4) (xy 0 4))) '
+                '(filled_polygon (layer "F.Cu") (pts (xy 0 0) (xy 4 0) (xy 4 4) (xy 0 4))))')
+
+
+def test_hatched_fill_warns(mini_board):
+    assert any(c == "W_COPPER_DROPPED" and p["kind"] == "hatched zone" for c, p in mini_board(HATCHED_ZONE).warnings)
