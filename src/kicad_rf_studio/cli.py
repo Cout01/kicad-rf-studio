@@ -10,7 +10,7 @@ from pathlib import Path
 
 from kicad_rf_studio.core.kicad import choose_reference, classify, load_board, trace_chain
 from kicad_rf_studio.core.kicad.stackup import preset as stackup_preset
-from kicad_rf_studio.core.kicad.values import parse_frequency
+from kicad_rf_studio.core.kicad.values import parse_frequency, parse_value
 from kicad_rf_studio.core.messages import KrsError, reason, render
 from kicad_rf_studio.core.project import SCHEMA, board_hash, save_project
 
@@ -113,6 +113,9 @@ def _new(a: argparse.Namespace) -> None:
         notes.append(("W_COPPER_WEIGHT", {"layers": _list(heavy)}))
     if c["shields"] and a.lid_height is None:
         notes.append(("W_LID_HEIGHT_MISSING", {"refs": _list(c["shields"])}))
+    parts = project["chain"]["series"] + project["chain"]["shunt"]  # DNP ones too
+    if unreadable := sorted(p["ref"] for p in parts if parse_value(p["value"]) is None):
+        notes.append(("W_VALUE_UNREADABLE", {"refs": _list(unreadable)}))
     notes += [("W_NO_REFERENCE", {"signal": p["signal"]}) for p in ports if p["reference"] is None]
     if other_drive:
         notes.append(("W_ABSOLUTE_BOARD_PATH", {}))

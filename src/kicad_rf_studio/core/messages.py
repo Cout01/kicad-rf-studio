@@ -35,6 +35,7 @@ CATALOG: dict[str, str] = {
     "I_DEFAULTS": "Preset {preset} (provisional default), band factor {band_factor}, T_max {t_max_ns} ns, harmonics {harmonics}.",
     "W_FILLS_AS_SAVED": "Fills as saved — refill (B) in KiCad and save if you changed copper.",
     "W_LID_HEIGHT_MISSING": "Shield {refs} found but no --lid-height was given; `run` will refuse until project.json has lid_height_mm.",
+    "W_VALUE_UNREADABLE": "Cannot read the value of {refs}. Write values like 4.7pF, 4p7 or 15nH.",
     "W_NO_REFERENCE": "No reference found for {signal}; set it in project.json before `run`.",
     "W_ABSOLUTE_BOARD_PATH": "The board is on another drive, so project.json stores its absolute path.",
     "I_WROTE": "Wrote {path}.",

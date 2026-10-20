@@ -254,6 +254,35 @@ def test_heavy_copper_is_warned_between_the_defaults_and_the_lid(tmp_path, capsy
     assert not any("Copper layers" in line for line in lines[:n] + lines[n + 1:])
 
 
+def with_values(tmp_path, **values):
+    """A copy of lpf915 where the footprint of each keyword's reference has that Value."""
+    text = LPF.read_text(encoding="utf-8")
+    for ref, value in values.items():
+        start = text.index('(property "Value" "', text.index(f'(property "Reference" "{ref}"')) + 19
+        text = text[:start] + value + text[text.index('"', start):]
+    board = tmp_path / "values.kicad_pcb"
+    board.write_text(text, encoding="utf-8")
+    return board
+
+
+def test_a_part_value_that_cannot_be_read_is_warned(tmp_path, capsys):
+    board = with_values(tmp_path, C2="3,3pF")  # C3 has the same value, and comes first in the file
+    out = tmp_path / "p"
+    code = main(["new", str(board), "--start", "U1.1", "--end", "J1.1", "--f0", "915MHz", "-o", str(out)])
+    warned = [line for line in capsys.readouterr().out.splitlines() if line.startswith("Cannot read the value")]
+    assert code == 0 and warned == ["Cannot read the value of C2. Write values like 4.7pF, 4p7 or 15nH."]
+    shunt = load_project(out / "project.json")["chain"]["shunt"]
+    assert [p["value"] for p in shunt] == ["3,3pF", "3.3pF", "0R"]  # kept as written
+
+
+def test_unreadable_values_are_one_warning_for_series_shunt_and_dnp_parts(tmp_path, capsys):
+    # L1 is a series part, R2 a DNP shunt part; C4, a decoupling capacitor on VDD, is no part of the chain
+    board = with_values(tmp_path, R2="TBD", L1="", C2="3,3pF", C4="??")
+    code = main(["new", str(board), "--start", "U1.1", "--end", "J1.1", "--f0", "915MHz", "-o", str(tmp_path / "p")])
+    warned = [line for line in capsys.readouterr().out.splitlines() if line.startswith("Cannot read the value")]
+    assert code == 0 and warned == ["Cannot read the value of C2, L1, R2. Write values like 4.7pF, 4p7 or 15nH."]
+
+
 def pad(number, net, x=0.0):
     return f'(pad "{number}" smd rect (at {x} 0) (size 1 1) (layers "F.Cu") (net "{net}"))'
 
