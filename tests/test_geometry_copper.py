@@ -4,12 +4,13 @@ from pathlib import Path
 import pytest
 import shapely
 from shapely import unary_union
-from shapely.geometry import Point, Polygon, box
+from shapely.geometry import LineString, Point, Polygon, box
 
 from kicad_rf_studio.core.geometry.copper import clean, copper_pieces, is_solid, split_holes
 from kicad_rf_studio.core.geometry.region import build_region
 from kicad_rf_studio.core.geometry.zstack import zstack
 from kicad_rf_studio.core.kicad import load_board
+from kicad_rf_studio.core.kicad.shapes import circle
 from kicad_rf_studio.core.kicad.stackup import kicad_default
 from kicad_rf_studio.core.kicad.tracer import Chain
 
@@ -68,6 +69,7 @@ def test_pieces_of_a_pour_cut_by_the_crop_are_hole_free_and_keep_its_area():
         group = [a.polygon for a in b.areas if (a.layer, a.net) == on]
         group += [t.polygon() for t in b.tracks if (t.layer, t.net) == on]
         group += [p.polygon for p in b.all_pads() if p.net == "GND" and layer in p.layers]
+        group += [circle(v.at, v.diameter / 2) for v in b.vias if v.net == "GND"]  # rings: each via joins F.Cu, B.Cu
         gnd = clean(shapely.GeometryCollection(group), crop)
         assert sum(len(g.interiors) for g in gnd.geoms) == holes
         split = [pc.polygon.area for pc in pieces if (pc.layer, pc.net) == (layer, "GND")]
@@ -100,6 +102,14 @@ def test_solid_vs_sheet():
     assert not is_solid(box(0, 0, 5, 20), box(7, 0, 12, 20), t)  # 5 mm wide, 2 mm gap
     assert is_solid(box(0, 0, 5, 5).union(box(5, 2, 6, 2.5)), Polygon(), t)  # 0.5 mm neck
     assert is_solid(box(0, 0, 5, 5).union(box(5, 2, 7, 2.5)).union(box(7, 0, 12, 5)), Polygon(), t)  # between two
+    # a gap inside one polygon is a gap: a 1.5 mm hairpin's 0.3 mm slot, a 0.2 mm slot and a 1 mm hole in a plane
+    plane = box(0, 0, 10, 10)
+    assert is_solid(LineString([(10, 0), (0, 0), (0, 1.8), (10, 1.8)]).buffer(0.75), Polygon(), t)
+    assert is_solid(plane.difference(box(4.9, 2, 5.1, 8)), Polygon(), t)
+    assert is_solid(plane.difference(Point(5, 5).buffer(0.5)), Polygon(), t)
+    # ...but a 1.1 mm hole is not, nor the corner where a 1.5 mm track leaves a pad at 45°
+    assert not is_solid(plane.difference(Point(5, 5).buffer(0.55)), Polygon(), t)
+    assert not is_solid(box(0, 0, 3, 3).union(LineString([(3, 1.5), (7.5, 6)]).buffer(0.75)), Polygon(), t)
     # Task 3 rulings: rounded corners are no narrow width, nor are the nanometre slivers an opening shaves off a
     # cleaned outline (coupon_ms's 1.35 mm line, alone on F.Cu, loses 1.4e-6 mm² of them)
     assert not is_solid(box(0, 0, 5, 5).buffer(-0.2).buffer(0.2), Polygon(), t)
@@ -108,6 +118,25 @@ def test_solid_vs_sheet():
     # coupon_gcpw_pads' two F.Cu GND pours are wide: they are solid through their 0.15 mm gap to LINE
     gcpw = copper_pieces(load_board(FIX / "coupon_gcpw_pads.kicad_pcb"), BIG, T)[0]
     assert [pc.solid for pc in gcpw if (pc.layer, pc.net) == ("F.Cu", "GND")] == [True, True]
+
+
+def test_gaps_inside_a_net_and_to_a_via_ring_make_copper_solid(mini_board):
+    # a one-net hairpin of 1.5 mm tracks, 0.3 mm between its arms
+    arms = [(10, 0, 0, 0), (0, 0, 0, 1.8), (0, 1.8, 10, 1.8)]
+    hairpin = mini_board(''.join(f'(segment (start {x0} {y0}) (end {x1} {y1}) (width 1.5) (layer "F.Cu") (net "RES") '
+                                 f'(uuid "s{i}")) ' for i, (x0, y0, x1, y1) in enumerate(arms)))
+    assert [(pc.net, pc.solid) for pc in copper_pieces(hairpin, BIG, T)[0]] == [("RES", True)]
+    # a B.Cu GND plane 0.15 mm from a SIG via's 0.6 mm ring, which is copper on both layers it joins
+    b = mini_board('(gr_poly (pts (xy 0 0) (xy 10 0) (xy 10 10) (xy 0 10)) (stroke (width 0)) (fill yes) '
+                   '(layer "B.Cu") (net "GND") (uuid "g")) '
+                   '(via (at 10.45 5) (size 0.6) (drill 0.3) (layers "F.Cu" "B.Cu") (net "SIG") (uuid "v"))')
+    pieces, _ = copper_pieces(b, BIG, T)
+    assert sorted((pc.layer, pc.net, pc.solid) for pc in pieces) == [
+        ("B.Cu", "GND", True), ("B.Cu", "SIG", True), ("F.Cu", "SIG", True)]
+    assert all(pc.polygon.hausdorff_distance(Point(10.45, -5).buffer(0.3)) <= 0.010 for pc in pieces if pc.net == "SIG")
+    # lpf915's B.Cu GND plane stays a sheet: where its J2 tab meets the pour's rounded corner is a corner, not a gap
+    plane = [pc.solid for pc in copper_pieces(load_board(FIX / "lpf915.kicad_pcb"), BIG, T)[0] if pc.layer == "B.Cu"]
+    assert plane and not any(plane)
 
 
 def test_copper_lost_in_cleanup_warns(mini_board):

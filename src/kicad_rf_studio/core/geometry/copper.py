@@ -6,16 +6,20 @@ from __future__ import annotations
 from collections import defaultdict
 from dataclasses import dataclass
 
+import numpy as np
 import shapely
 from shapely.geometry import GeometryCollection, MultiPolygon, Polygon, box
 from shapely.geometry.base import BaseGeometry
+from shapely.geometry.polygon import orient
 from shapely.strtree import STRtree
 
 from kicad_rf_studio.core.kicad.board import Board
+from kicad_rf_studio.core.kicad.shapes import circle
 
 GRID = 1e-6  # mm, the grid every coordinate lies on
 SIMPLIFY = 0.01  # mm, the farthest the simplification moves an outline
 SOLID_T = 30  # copper with a width or a gap below SOLID_T times its thickness is solid
+FACING = np.cos(np.radians(30))  # two edges face each other when their normals are within 30° of opposite
 
 
 @dataclass(frozen=True)
@@ -66,25 +70,45 @@ def split_holes(p: Polygon) -> list[Polygon]:
     return out
 
 
+def _faces_itself(g: Polygon, d: float) -> bool:
+    """Whether two edges of `g` face each other across empty space nearer than `d`, as across a slot, between a
+    hairpin's arms or over a small hole. A probe swept `d` out of the copper from each edge, starting half the
+    simplification off it and its ends, must meet an edge whose normal is within 30° of opposite: edges that meet at a
+    corner (90°, 45°) only lean into each other's probes."""
+    g = orient(g)  # exterior counter-clockwise, holes clockwise: the copper is left of every edge
+    rings = [np.asarray(ring.coords) for ring in (g.exterior, *g.interiors)]
+    a, b = np.concatenate([c[:-1] for c in rings]), np.concatenate([c[1:] for c in rings])
+    length = np.hypot(*(b - a).T)
+    a, b, length = a[length > 0], b[length > 0], length[length > 0]
+    u = (b - a) / length[:, None]
+    n = u @ np.array([[0, -1], [1, 0]])  # (uy, -ux): out of the copper
+    k, e = length > SIMPLIFY, SIMPLIFY / 2  # an edge shorter than the two offsets sends no probe
+    p0, p1 = a[k] + e * (u[k] + n[k]), b[k] + e * (n[k] - u[k])
+    probes = shapely.polygons(np.stack([p0, p1, p1 + (d - e) * n[k], p0 + (d - e) * n[k]], axis=1))
+    i, j = STRtree(shapely.linestrings(np.stack([a, b], axis=1))).query(probes, "intersects")
+    return bool((np.sum(n[k][i] * n[j], axis=1) < -FACING).any())
+
+
 def is_solid(piece_geom: Polygon, others: BaseGeometry, t: float) -> bool:
-    """Whether copper of thickness `t` must be solid: a width of `piece_geom`, or its gap to `others`, is below 30·t.
-    A width is below when an opening by 15·t takes copper away, deeper than half the simplification: on the grid, an
-    opening also shaves nanometre slivers off a wide outline. The opening is mitred, so a wide shape keeps its corners
-    (a round one cuts every corner off), and only the copper it takes counts (a mitred one squares off a rounded
-    corner)."""
+    """Whether copper of thickness `t` must be solid: a width of `piece_geom`, a gap inside it (`_faces_itself`) or
+    its gap to `others` is below 30·t. A width is below when an opening by 15·t takes copper away, deeper than half
+    the simplification: on the grid, an opening also shaves nanometre slivers off a wide outline. The opening is
+    mitred, so a wide shape keeps its corners (a round one cuts every corner off), and only the copper it takes counts
+    (a mitred one squares off a rounded corner)."""
     r = SOLID_T / 2 * t
     opened = piece_geom.buffer(-r, join_style="mitre").buffer(r, join_style="mitre")
     narrow = not piece_geom.difference(opened).buffer(-SIMPLIFY / 2).is_empty
-    return narrow or piece_geom.distance(others) < 2 * r
+    return narrow or piece_geom.distance(others) < 2 * r or _faces_itself(piece_geom, 2 * r)
 
 
 def copper_pieces(board: Board, crop: Polygon,
                   thickness: dict[str, float]) -> tuple[list[Piece], list[tuple[str, dict]]]:
-    """The copper of `board` in `crop` as pieces, top layer first, from its tracks, areas and pads per (layer, net).
-    A pad adds copper on exactly its `layers`, none for a paste-only pad or a covered NPTH, with every part of a
-    MultiPolygon. The pieces of one cleaned polygon share its `solid`, whose gaps are to every other polygon on the
-    layer, of any net; `thickness` gives each layer's t. A (layer, net) whose copper in the crop is all lost in the
-    cleanup is a W_COPPER_EMPTIED."""
+    """The copper of `board` in `crop` as pieces, top layer first, from its tracks, areas, pads and via rings per
+    (layer, net). A pad adds copper on exactly its `layers`, none for a paste-only pad or a covered NPTH, with every
+    part of a MultiPolygon; a via adds a ring of its diameter on the two layers it joins. The pieces of one cleaned
+    polygon share its `solid`, whose gaps are inside it and to every other polygon on the layer, of any net;
+    `thickness` gives each layer's t. A (layer, net) whose copper in the crop is all lost in the cleanup is a
+    W_COPPER_EMPTIED."""
     groups: dict[tuple[str, str], list[BaseGeometry]] = defaultdict(list)
     for t in board.tracks:
         groups[t.layer, t.net].append(t.polygon())
@@ -93,6 +117,9 @@ def copper_pieces(board: Board, crop: Polygon,
     for p in board.all_pads():
         for layer in p.layers:
             groups[layer, p.net].append(p.polygon)
+    for v in board.vias:  # ponytail: rings on the two layers it joins; inner rings when a 4-layer board needs them
+        for layer in v.layers:
+            groups[layer, v.net].append(circle(v.at, v.diameter / 2))
     cleaned, warnings = {}, []
     for (layer, net), geoms in sorted(groups.items()):
         cleaned[layer, net] = g = clean(GeometryCollection(geoms), crop)
