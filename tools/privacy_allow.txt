@@ -1,2 +1,3 @@
 # Paths listed here are exempt from the generic rules only. The private list always applies.
 path:tests/test_privacy_gate.py
+path:src/kicad_rf_studio/core/mesh/smooth.py

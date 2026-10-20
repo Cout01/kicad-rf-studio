@@ -6,6 +6,7 @@ import kicad_rf_studio
 
 ROOT = Path(__file__).resolve().parents[1]
 SPDX = "# SPDX-License-Identifier: GPL-3.0-or-later"
+LGPL = {"src/kicad_rf_studio/core/mesh/smooth.py": "# SPDX-License-Identifier: LGPL-3.0-or-later"}  # CSXCAD's copy
 
 def test_version():
     assert kicad_rf_studio.__version__ == "0.1.0.dev0"
@@ -13,7 +14,7 @@ def test_version():
 def test_every_python_file_has_spdx_header():
     files = [p for d in ("src", "tools", "tests") if (ROOT / d).is_dir() for p in (ROOT / d).rglob("*.py")]
     missing = [str(p.relative_to(ROOT)) for p in files
-               if SPDX not in p.read_text(encoding="utf-8").splitlines()[:2]]
+               if LGPL.get(p.relative_to(ROOT).as_posix(), SPDX) not in p.read_text(encoding="utf-8").splitlines()[:2]]
     assert missing == []
 
 def test_ci_tests_the_declared_python_floor_with_read_only_permissions():
