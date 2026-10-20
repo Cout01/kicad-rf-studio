@@ -165,7 +165,8 @@ def test_a_reference_point_is_stored_and_shown_in_kicads_frame(tmp_path, capsys)
     """KiCad's y points down. The point keeps the sign of y the file gives TP1, (at 100 100), as KiCad shows it."""
     code, pj = run_new(tmp_path, board="coupon_gcpw_pads.kicad_pcb", start="TP1.1", end="TP2.1")
     root = parse((FIX / "coupon_gcpw_pads.kicad_pcb").read_text(encoding="utf-8"))
-    tp1 = next(f for f in children(root, "footprint") if ["Reference", "TP1"] in (p[1:3] for p in children(f, "property")))
+    tp1 = next(f for f in children(root, "footprint")
+               if ["Reference", "TP1"] in (p[1:3] for p in children(f, "property")))
     file_y = float(child(tp1, "at")[2])
     x, y = load_project(pj)["ports"][0]["reference"]["point"]
     assert code == 0 and y * file_y > 0 and abs(y - file_y) < 1  # the same sign, and less than 1 mm off the pad
@@ -441,7 +442,8 @@ def test_a_missing_board_is_a_user_error(tmp_path, capsys):
     board = tmp_path / "nope.kicad_pcb"
     code = main(["new", str(board), "--start", "A.1", "--end", "B.1", "--f0", "915MHz", "-o", str(tmp_path / "p")])
     assert code == 2 and capsys.readouterr().err == (
-        f"Cannot read the board {board}: file not found. Check the path, or open the board in KiCad and save it again.\n")
+        f"Cannot read the board {board}: file not found. "
+        "Check the path, or open the board in KiCad and save it again.\n")
 
 
 def test_a_board_that_is_not_utf8_is_a_short_user_error(tmp_path, monkeypatch, capsys):
