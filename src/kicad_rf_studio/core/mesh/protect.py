@@ -6,11 +6,12 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 import shapely
-from shapely.geometry import Point, Polygon
+from shapely.geometry import Polygon
 from shapely.geometry.base import BaseGeometry
 
 from kicad_rf_studio.core.geometry.copper import Piece, _grid
 from kicad_rf_studio.core.kicad.board import Board
+from kicad_rf_studio.core.kicad.shapes import circle
 from kicad_rf_studio.core.kicad.tracer import Chain, Classes
 
 
@@ -18,7 +19,7 @@ from kicad_rf_studio.core.kicad.tracer import Chain, Classes
 class Protected:
     """The protected set of a chain. `area` holds, per copper layer, the copper of the measured `nets`, the chain
     parts' pads and the reference (GND) copper within reach of the measured nets; `vias` are the uuids of the vias
-    that stay solid; `boxes` are the port boxes (plan 3)."""
+    and plated holes (thru_hole pads) that stay solid; `boxes` are the port boxes (plan 3)."""
     nets: frozenset[str]
     area: dict[str, BaseGeometry]
     vias: frozenset[str]
@@ -30,7 +31,8 @@ def protected_set(board: Board, chain: Chain, classes: Classes, pieces: list[Pie
     """The protected set of `chain`, whose nets are the measured nets. The reach, `reach_h` substrate heights `h`
     (provisional: P0-B checks it), is measured in plane from the measured nets' copper on every layer. The GND copper
     within it is protected, cut where the reach ends, and so is every GND via whose ring comes within it; the measured
-    nets' own vias are protected wherever they are. `area` is on the 1e-6 mm grid."""
+    nets' own vias are protected wherever they are. A plated hole (a thru_hole pad) is a via whose ring is its pad.
+    `area` is on the 1e-6 mm grid."""
     nets = frozenset(chain.nets)
     measured = shapely.union_all([pc.polygon for pc in pieces if pc.net in nets])
     reach = reach_h * h
@@ -42,6 +44,8 @@ def protected_set(board: Board, chain: Chain, classes: Classes, pieces: list[Pie
         shapes += [pc.polygon.intersection(within) for pc in pieces if pc.layer == layer and pc.net in classes.gnd]
         shapes += [p.polygon for p in board.all_pads() if p.name in names and layer in p.layers]
         area[layer] = _grid(shapely.union_all(shapes))
-    vias = frozenset(v.uuid for v in board.vias if v.net in nets
-                     or (v.net in classes.gnd and shapely.dwithin(measured, Point(v.at), reach + v.diameter / 2)))
+    rings = [(v.uuid, v.net, circle(v.at, v.diameter / 2)) for v in board.vias]
+    rings += [(p.uuid, p.net, p.polygon) for p in board.all_pads() if p.kind == "thru_hole"]
+    vias = frozenset(uuid for uuid, net, ring in rings
+                     if net in nets or (net in classes.gnd and shapely.dwithin(measured, ring, reach)))
     return Protected(nets, area, vias, tuple(boxes))

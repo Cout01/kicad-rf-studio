@@ -13,7 +13,7 @@ from shapely.ops import polygonize
 
 from kicad_rf_studio.core.kicad.sexpr import Quoted, atom, child, children, num, parse, repair
 from kicad_rf_studio.core.kicad.shapes import (
-    GRAPHICS, XY, arc_points, covered, graphic_shape, is_filled, pad_shape, place, points, stroke_path,
+    GRAPHICS, XY, arc_points, covered, graphic_shape, is_filled, pad_shape, place, points, stroke_path, turn,
     valid_polygons, xy)
 from kicad_rf_studio.core.kicad.stackup import Stackup, from_board as read_stackup
 from kicad_rf_studio.core.messages import KrsError, reason
@@ -80,6 +80,8 @@ class Pad:
     center: XY  # pcbnew's ShapePos: the centre of the copper, which a drill offset moves off the hole
     polygon: Polygon | MultiPolygon  # a custom pad whose primitives miss its anchor is in pieces
     mask_margin: float | None  # None: the footprint's or the board's applies
+    at: XY  # the pad's position on the board: the centre of its hole
+    drill: float  # its hole's diameter, the narrower axis of an oval one; 0 for a pad with no hole
 
     @property
     def name(self) -> str:
@@ -221,11 +223,16 @@ def _graphic(b: Board, node: list, table: dict[str, str], edge: list[LineString]
         b.mask_graphics[_MASK[layer]] += covered(node, shape, filled)
 
 
+def _drill(pad: list) -> list[float]:
+    """A pad's hole: its width, then any height (an oval hole); nothing for a pad with no hole."""
+    return [float(a) for a in (child(pad, "drill") or [])[1:] if isinstance(a, str) and a != "oval"]
+
+
 def _hole_takes_pad(pad: list) -> bool:
     """Whether an unplated hole leaves its pad no copper, by pcbnew's PAD::FlashLayer: a round hole in a circle pad
     or an oval hole in an oval pad, at least as large as the pad in each axis and with no offset."""
     drill = child(pad, "drill") or []
-    sizes = [float(a) for a in drill[1:] if isinstance(a, str) and a != "oval"]  # the width, then any height
+    sizes = _drill(pad)
     shape, w = str(pad[3]), num(pad, "size", 1, 0.0)
     h = w if shape == "circle" else num(pad, "size", 2, 0.0)  # a circle pad is w across, as it is drawn
     matched = (shape, "oval" in drill[1:]) in (("circle", False), ("oval", True))
@@ -266,7 +273,8 @@ def _footprint(b: Board, node: list, table: dict[str, str], edge: list[LineStrin
     for p in children(node, "pad"):
         center, polygon, warnings = pad_shape(p, at, angle)
         pad = Pad(ref, str(p[1]), _text(p, "uuid"), _net(p, table), str(p[2]), *_pad_layers(p, b.copper_layers),
-                  center, polygon, num(p, "solder_mask_margin", 1, None))
+                  center, polygon, num(p, "solder_mask_margin", 1, None), turn(xy(p, "at"), angle, at),
+                  min(_drill(p), default=0.0))
         b.warnings += [(code, {**params, "pad": pad.name}) for code, params in warnings]
         pads.append(pad)
     for g in node:

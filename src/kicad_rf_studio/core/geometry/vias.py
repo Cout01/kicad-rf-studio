@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """Vias as rods (spec 5.1), in mm: a via of the protected set is a solid PEC cylinder of its drill, and any other a
-PEC curve, which the mesh snaps to its lines so that it cannot fall between them."""
+PEC curve, which the mesh snaps to its lines so that it cannot fall between them. A plated hole (a thru_hole pad) has
+a barrel too, and is a via here."""
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -18,7 +19,8 @@ if TYPE_CHECKING:  # core.mesh builds on core.geometry, so nothing here imports 
 
 @dataclass(frozen=True)
 class Rod:
-    """A via's barrel, from z0 to z1: a cylinder of `radius` (half its drill) when `solid`, else a curve at `at`."""
+    """A via's or a plated hole's barrel, from z0 to z1: a cylinder of `radius` (half its drill) when `solid`, else a
+    curve at `at`."""
     net: str
     at: XY
     radius: float
@@ -28,12 +30,15 @@ class Rod:
 
 
 def via_rods(board: Board, crop: Polygon, zs: tuple[Slab, ...], prot: Protected) -> list[Rod]:
-    """The vias whose centre lies in `crop`, each from the bottom face of the lower copper layer it joins to the top
-    face of the upper one. A via is solid when its uuid is in `prot.vias`."""
+    """The vias and plated holes whose centre lies in `crop`, each from the bottom face of the lowest copper layer it
+    joins to the top face of the highest. A rod is solid when its via's or pad's uuid is in `prot.vias`."""
     faces = {s.copper: (s.z0, s.z1) for s in zs if s.kind == "copper"}
+    # ponytail: a slot is a rod of its width; a slot-shaped barrel when one matters
+    holes = [(v.net, v.at, v.drill, v.layers, v.uuid) for v in board.vias]
+    holes += [(p.net, p.at, p.drill, p.layers, p.uuid) for p in board.all_pads() if p.kind == "thru_hole" and p.layers]
     rods = []
-    for v in board.vias:
-        if crop.intersects(Point(v.at)):
-            z = [z for layer in v.layers for z in faces[layer]]
-            rods.append(Rod(v.net, v.at, round(v.drill / 2, 6), min(z), max(z), v.uuid in prot.vias))
+    for net, at, drill, layers, uuid in holes:
+        if crop.intersects(Point(at)):
+            z = [z for layer in layers for z in faces[layer]]
+            rods.append(Rod(net, at, round(drill / 2, 6), min(z), max(z), uuid in prot.vias))
     return rods

@@ -112,6 +112,33 @@ def test_rods_join_the_layers():
     assert connectivity(pieces, [], region.roi, nets) == [("E_OPEN_IN_ROI", {"net": "GND"})]
 
 
+def test_plated_holes_join_their_layers(mini_board):
+    # Task 4 fix: a plated hole (a thru_hole pad) has a barrel, as a via has. LINE comes in on F.Cu to the pin J1.1,
+    # whose hole is 0.3 mm off its copper's centre, and leaves on B.Cu. GND's legs J1.2, within reach of LINE, and
+    # J1.3, a slot beyond it, are joined on B.Cu only
+    pad = ('(pad "{0}" thru_hole circle (at {1}) (size 1.6 1.6) (drill {2}) (layers "*.Cu" "*.Mask") (net "{3}") '
+           '(uuid "p{0}"))')
+    b = mini_board('(footprint "Lib:SMA" (layer "F.Cu") (at 0 0) (property "Reference" "J1") '
+                   + pad.format(1, "0 0", "0.8 (offset 0.3 0)", "LINE") + pad.format(2, "0 2", "0.8", "GND")
+                   + pad.format(3, "0 9", "oval 0.8 1.2", "GND") + ') '
+                   '(segment (start 0.3 0) (end 10 0) (width 0.5) (layer "F.Cu") (net "LINE") (uuid "l1")) '
+                   '(segment (start 0.3 0) (end -10 0) (width 0.5) (layer "B.Cu") (net "LINE") (uuid "l2")) '
+                   '(segment (start 0 2) (end 0 9) (width 0.5) (layer "B.Cu") (net "GND") (uuid "g1"))')
+    zs, chain = zstack(kicad_default(0.8), b.copper_layers), Chain("", "", ("LINE",), (), ())
+    region = build_region(b, chain, [], zs, 3e9)
+    pieces, _ = copper_pieces(b, region.crop, T)
+    rods = via_rods(b, region.crop, zs, protected_set(b, chain, classify(b), pieces, substrate_h(zs)))
+    # a barrel sits at its hole, half its drill wide (a slot's narrower axis) and through the board; the pin's barrel
+    # and the leg's within reach are solid
+    assert {(r.net, r.at, r.radius, r.solid) for r in rods} == {
+        ("LINE", (0.0, 0.0), 0.4, True), ("GND", (0.0, -2.0), 0.4, True), ("GND", (0.0, -9.0), 0.4, False)}
+    slab = {s.copper: s for s in zs if s.kind == "copper"}
+    assert {(r.z0, r.z1) for r in rods} == {(slab["B.Cu"].z0, slab["F.Cu"].z1)}
+    nets = {"LINE", "GND"}
+    assert connectivity(pieces, rods, region.roi, nets) == []
+    assert connectivity(pieces, [], region.roi, nets) == [("E_OPEN_IN_ROI", {"net": n}) for n in ("GND", "LINE")]
+
+
 def test_short_in_margin_warns(mini_board):  # a LINE stub runs out of the ROI onto a GND pour, inside the crop
     rect = '(gr_poly (pts (xy {0} {1}) (xy {2} {1}) (xy {2} {3}) (xy {0} {3})) (stroke (width 0)) (fill yes) '
     b = mini_board('(segment (start 0 0) (end 10 0) (width 0.5) (layer "F.Cu") (net "LINE") (uuid "l1")) '
