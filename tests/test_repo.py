@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 import subprocess
+import tomllib
 from pathlib import Path
 import kicad_rf_studio
 
@@ -14,6 +15,12 @@ def test_every_python_file_has_spdx_header():
     missing = [str(p.relative_to(ROOT)) for p in files
                if SPDX not in p.read_text(encoding="utf-8").splitlines()[:2]]
     assert missing == []
+
+def test_ci_tests_the_declared_python_floor_with_read_only_permissions():
+    ci = (ROOT / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
+    floor = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))["project"]["requires-python"]
+    assert floor.startswith(">=") and f'python-version: "{floor[2:]}"' in ci
+    assert "\npermissions:\n  contents: read\n" in ci and "fail-fast: false" in ci
 
 def test_env_files_are_ignored():
     paths = [".env", ".env.local", "secrets.env", ".envrc", "venv/x.py", "env/x.py", ".venv-2/x.py"]

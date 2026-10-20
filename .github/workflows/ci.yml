@@ -1,15 +1,21 @@
 on: [push, pull_request]
 
+permissions:
+  contents: read
+
 jobs:
   tier-a:
     runs-on: ${{ matrix.os }}
     strategy:
+      fail-fast: false
       matrix:
         include:
           - os: windows-latest
             python-version: "3.14"
           - os: ubuntu-24.04
             python-version: "3.12"
+          - os: ubuntu-24.04
+            python-version: "3.11"  # the floor pyproject.toml declares
     steps:
       - uses: actions/checkout@v4
         with:
