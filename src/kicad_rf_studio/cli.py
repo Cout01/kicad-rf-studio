@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
-"""The command line. `new` reads a board, traces the RF chain between two pads and writes project.json. There is no
-help= text: every string a user sees is a code in core.messages, and argparse itself writes the usage line."""
+"""The command line. `new` reads a board, traces the RF chain between two pads and writes project.json, which it never
+replaces. There is no help= text: every string a user sees is a code in core.messages, and argparse itself writes the
+usage line."""
 import argparse
 import math
 import os
@@ -87,8 +88,9 @@ def _new(a: argparse.Namespace) -> None:
                   "series": [_part(board, p) for p in chain.series], "shunt": [_part(board, p) for p in chain.shunt]},
         "ports": ports}
     target = folder / "project.json"
-    # ponytail: replaces a project.json that is already there, hand edits and all; refuse, or add --force, if that bites
     try:
+        if target.exists():  # it may hold the hand edits that W_NO_REFERENCE and W_LID_HEIGHT_MISSING ask for
+            raise KrsError("E_PROJECT_EXISTS", path=str(target))
         folder.mkdir(parents=True, exist_ok=True)
         save_project(target, project)
     except OSError as e:  # the path the error names (the folder, a file in the way, project.json), else project.json

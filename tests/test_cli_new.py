@@ -176,11 +176,14 @@ def test_o_is_a_folder_and_its_parents_are_created(tmp_path):
     assert [p.name for p in out.iterdir()] == ["project.json"]
 
 
-def test_running_again_overwrites_with_the_same_bytes(tmp_path):
+def test_running_again_refuses_and_keeps_the_project_as_it_is(tmp_path, capsys):
     _, pj = run_new(tmp_path)
     first = pj.read_bytes()
-    code, _ = run_new(tmp_path)
-    assert code == 0 and pj.read_bytes() == first
+    capsys.readouterr()
+    code, _ = run_new(tmp_path, "--lid-height", "2.5")  # another option: an overwrite would change the bytes
+    out, err = capsys.readouterr()
+    assert code == 2 and pj.read_bytes() == first
+    assert (out, err) == ("", f"{pj} already exists. Delete it, or give another -o folder.\n")
 
 
 def test_the_board_path_has_forward_slashes(tmp_path):

@@ -27,6 +27,7 @@ CATALOG: dict[str, str] = {
     "E_NO_CHAIN": "No chain from {start} to {end}: the walk stopped at nets {reached}. A DNP part, a GND or power net, or a part with three or more pads is in the way.",
     "E_PROJECT_SCHEMA": "{path} uses project schema {found}; this version reads schema {expected}.",
     "E_OUTPUT_PATH": "Cannot write {path}: {reason}. Choose another -o folder.",
+    "E_PROJECT_EXISTS": "{path} already exists. Delete it, or give another -o folder.",
     "I_STACKUP": "Stackup: {source}, dielectric {thickness_mm} mm, εr {epsilon_r}.",
     "I_CLASSES": "GND nets: {gnd}. Power nets: {power}. Connectors: {connectors}. Shields: {shields}.",
     "I_CHAIN": "Chain {start} → {end}: series {series}; shunt {shunt}.",
