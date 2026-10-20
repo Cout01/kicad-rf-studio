@@ -294,9 +294,11 @@ def _grade(lines: np.ndarray, fixed: Iterable[float], cap: float | Callable[[np.
 
 def _pieces(g: float, a: float, b: float, cap: float, held_a: bool = False, held_b: bool = False) -> list[float]:
     """The sizes, in order, that fill a run `g` long between neighbour cells `a` and `b` (math.inf: none): two fronts
-    grow by GROW from the neighbours' sizes (at most `cap`) until they meet, then are scaled to fit, down, or up
-    without the last piece. Every piece is at most `cap` and each end piece at most RATIO times its neighbour; of the
-    two, the one whose end pieces are also no less than 1/RATIO of their neighbours wins, then the one scaled least.
+    grow by GROW from the neighbours' sizes (at most `cap`) until they meet, then fit the run: down, their largest
+    pieces cut to one level, so the end pieces keep the neighbours' sizes (verifier (B): scaled down whole, the fill
+    beside a d/3 cell fell to 0.27d, under spec 5.4's d/3 merge); or scaled up without the last piece, the innermost
+    of the front that grew last. Every piece is at most `cap` and each end piece at most RATIO times its neighbour; of
+    the two, the one whose end pieces are also no less than 1/RATIO of their neighbours wins, then the one scaled least.
     A held neighbour (a cell the rule fixes, exempt as the larger of a pair) sets no such floor, nor can one that no
     piece reaches. A run too short for both floors (1.3 to 1.54 times its neighbours) gets the scaled-down pieces, and
     _grade then re-fills the neighbour's run to match."""
@@ -311,8 +313,13 @@ def _pieces(g: float, a: float, b: float, cap: float, held_a: bool = False, held
             total, nr = total + nr, min(nr * GROW, cap)
     runs = [left + right[::-1]]
     if len(runs[0]) > 1:
-        runs.append(left[:-1] + right[::-1] if last_left else left + right[:0:-1])
+        runs.append(left[:-1] + right[::-1] if last_left else left + right[-2::-1])
     fits = [(g / sum(r), [p * g / sum(r) for p in r]) for r in runs]
+    if sum(runs[0]) > g:  # the level that the pieces above it, cut to it, leave the run's length
+        s, i = sorted(runs[0]), len(runs[0]) - 1
+        while i and (g - sum(s[:i])) / (len(s) - i) < s[i - 1]:
+            i -= 1
+        fits[0] = (fits[0][0], [min(p, (g - sum(s[:i])) / (len(s) - i)) for p in runs[0]])
 
     def under(p: list[float]) -> bool:  # exactly: the 1e-6 mm grid then moves a piece by at most 1e-6, within GRID_TOL
         return max(p) <= cap + 1e-9 and p[0] <= RATIO * a + 1e-9 and p[-1] <= RATIO * b + 1e-9

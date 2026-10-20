@@ -53,10 +53,11 @@ def geometry(name, start="", end=""):
     return build(FIX / f"{name}.kicad_pcb", start, end)
 
 
-def variant(tmp_path, name, old, new):
-    """The geometry of fixture `name` with one token of its file changed: a synthetic variant of a synthetic board."""
+def variant(tmp_path, name, old, new, count=1):
+    """The geometry of fixture `name` with a token of its file changed, `count` times: a synthetic variant of a
+    synthetic board."""
     text = (FIX / f"{name}.kicad_pcb").read_text(encoding="utf-8")
-    assert text.count(old) == 1
+    assert text.count(old) == count
     path = tmp_path / f"{name}.kicad_pcb"
     path.write_text(text.replace(old, new), encoding="utf-8")
     return build(path)
@@ -343,6 +344,35 @@ def test_fill_beside_wide_cells_stays_near_d(d, gaps):
     lines, _ = xy_lines(edges, (99.5005, 120.4995), (76.156864, 143.843136), [], d, 2.355392)
     assert np.diff(lines).min() >= d / 3 - GRID_TOL and not bad_pairs(lines, [e for e, _ in edges])
     assert len(lines) < 21 / d + 60
+
+
+@pytest.mark.parametrize(("size", "n"), [(0.652, 2), (0.634, 3)])
+def test_pads_a_step_wider_than_their_track_keep_cells_over_d_over_3(tmp_path, size, n):
+    # verifier (B): LINE pads 26-32 µm wider each side than the 0.6 mm track make a step 0.34-0.43d wide, split by its
+    # shallow d/8 inside line into cells of 0.34-0.39d; the fill beside them was scaled down to 0.306d and 0.314d
+    pad = '(pad "1" smd rect\n\t\t\t(at 0 0)\n\t\t\t(size 1 1)'
+    geom, prot = variant(tmp_path, "coupon_gcpw_pads", pad, pad.replace("(size 1 1)", f"(size {size} {size})"), 2)
+    m = build_mesh(geom, prot, n)
+    for axis in "xy":
+        lines = getattr(m, axis)
+        assert np.diff(lines).min() >= m.d / 3 - GRID_TOL and not lint(lines, m.edges[axis], m.d)
+
+
+def test_the_fill_beside_a_pad_step_stays_over_d_over_3():
+    # verifier (B): _pieces scaled a run down with no d/3 floor (spec 5.4 merges below it) from the small cells of a
+    # split step: 0.27d. A track w·d wide, its pad's edge s·d past it on one side or both, GND g·d past the pad
+    fails = []
+    for d in (0.075, 0.05):
+        for s in np.arange(0.30, 0.501, 0.01):
+            for w, g in ((2.0, 2.0), (3.0, 2.0), (4.0, 3.0), (8.0, 3.0)):
+                for both in (False, True):
+                    t, e = 110.0, (s + g) * d
+                    edges = [(round(t - w * d, 6), 1), (t, -1), (round(t + s * d, 6), -1), (round(t + e, 6), 1)]
+                    edges += [(round(t - (w + s) * d, 6), 1), (round(t - w * d - e, 6), -1)] * both
+                    lines, _ = xy_lines(sorted(edges), (100.0, 120.0), (80.0, 140.0), [], d, 2.36)
+                    if np.diff(lines).min() < d / 3 - GRID_TOL or lint(lines, sorted(edges), d):
+                        fails.append((d, round(float(s), 2), w, g, both))
+    assert not fails
 
 
 @pytest.mark.parametrize("n", [2, 3])
