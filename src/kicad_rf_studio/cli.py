@@ -40,11 +40,13 @@ def _part(board, part) -> dict:
 
 
 def _reference(ref) -> dict | None:
-    """A port's reference as project.json keeps it: a pad, a point on a layer, or None."""
+    """A port's reference as project.json keeps it: a pad, a point on a layer, or None. The point is in KiCad's frame,
+    y down, as project.py says."""
     if ref is None:
         return None
     if ref.rule == "copper":
-        return {"point": list(ref.point), "layer": ref.layer}
+        x, y = ref.point
+        return {"point": [x, 0.0 - y], "layer": ref.layer}  # 0.0 - y keeps a zero from becoming -0.0
     return {"pad": ref.pad, "uuid": ref.uuid}
 
 
@@ -69,7 +71,9 @@ def _new(a: argparse.Namespace) -> None:
     ports = []
     for n, signal in enumerate((a.start, a.end), 1):
         ref = choose_reference(board, classes, signal)
-        ports.append({"name": f"P{n}", "signal": signal, "rule": ref and ref.rule, "reference": _reference(ref)})
+        sig = next(p for p in board.pads(signal) if p.layers)  # the pad trace_chain resolved: the first with copper
+        ports.append({"name": f"P{n}", "signal": signal, "signal_uuid": sig.uuid, "layer": sig.layers[0],
+                      "rule": ref and ref.rule, "reference": _reference(ref)})
     folder, other_drive = Path(a.output or "."), False
     try:
         board_path = Path(os.path.relpath(a.board, folder)).as_posix()

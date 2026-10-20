@@ -10,6 +10,7 @@ import pytest
 import kicad_rf_studio.cli as cli
 from kicad_rf_studio.cli import main
 from kicad_rf_studio.core.kicad import choose_reference, classify, load_board
+from kicad_rf_studio.core.kicad.sexpr import child, children, parse
 from kicad_rf_studio.core.kicad.tracer import Classes
 from kicad_rf_studio.core.project import board_file, board_hash, load_project
 
@@ -96,11 +97,11 @@ def test_project_layout(tmp_path):
             {"ref": "C2", "pads": ["C2.1", "C2.2"], "nets": ["RF_B", "GND"], "value": "3.3pF"},
             {"ref": "C3", "pads": ["C3.1", "C3.2"], "nets": ["RF_C", "GND"], "value": "3.3pF"},
             {"ref": "R2", "pads": ["R2.1", "R2.2"], "nets": ["RF_OUT", "RF_SMA"], "value": "0R"}]}
-    assert d["ports"] == [
-        {"name": "P1", "signal": "U1.1", "rule": "ic",
+    assert d["ports"] == [  # a port records the pad it resolved: a number can repeat in a footprint
+        {"name": "P1", "signal": "U1.1", "signal_uuid": board.pads("U1.1")[0].uuid, "layer": "F.Cu", "rule": "ic",
          "reference": {"pad": "U1.2", "uuid": board.pads("U1.2")[0].uuid}},
-        {"name": "P2", "signal": "J1.1", "rule": "connector",
-         "reference": {"pad": "J1.2", "uuid": board.pads("J1.2")[0].uuid}}]
+        {"name": "P2", "signal": "J1.1", "signal_uuid": board.pads("J1.1")[0].uuid, "layer": "F.Cu",
+         "rule": "connector", "reference": {"pad": "J1.2", "uuid": board.pads("J1.2")[0].uuid}}]
 
 
 def test_lid_height_is_null_until_given(tmp_path):
@@ -152,12 +153,35 @@ def test_a_copper_reference_is_a_point_on_a_layer(tmp_path, capsys):
     d, board = load_project(pj), load_board(FIX / "coupon_gcpw_pads.kicad_pcb")
     assert code == 0
     for port, pad in zip(d["ports"], ("TP1.1", "TP2.1")):
-        ref = choose_reference(board, classify(board), pad)
-        assert port["rule"] == "copper" and port["reference"] == {"point": list(ref.point), "layer": "F.Cu"}
+        x, y = choose_reference(board, classify(board), pad).point  # y up, as the board is read
+        assert port["rule"] == "copper" and port["reference"] == {"point": [x, -y], "layer": "F.Cu"}
     out = capsys.readouterr().out
     assert re.search(r"Port P1: signal TP1\.1, reference \(-?\d+\.\d{3}, -?\d+\.\d{3}\) on F\.Cu \(copper\)\.", out)
     assert "GND nets: GND. Power nets: none. Connectors: none. Shields: none." in out
     assert "Chain TP1.1 → TP2.1: series none; shunt none." in out
+
+
+def test_a_reference_point_is_stored_and_shown_in_kicads_frame(tmp_path, capsys):
+    """KiCad's y points down. The point keeps the sign of y the file gives TP1, (at 100 100), as KiCad shows it."""
+    code, pj = run_new(tmp_path, board="coupon_gcpw_pads.kicad_pcb", start="TP1.1", end="TP2.1")
+    root = parse((FIX / "coupon_gcpw_pads.kicad_pcb").read_text(encoding="utf-8"))
+    tp1 = next(f for f in children(root, "footprint") if ["Reference", "TP1"] in (p[1:3] for p in children(f, "property")))
+    file_y = float(child(tp1, "at")[2])
+    x, y = load_project(pj)["ports"][0]["reference"]["point"]
+    assert code == 0 and y * file_y > 0 and abs(y - file_y) < 1  # the same sign, and less than 1 mm off the pad
+    assert f"Port P1: signal TP1.1, reference ({x:.3f}, {y:.3f}) on F.Cu (copper)." in capsys.readouterr().out
+
+
+def test_a_reference_point_on_the_x_axis_is_not_minus_zero(tmp_path, mini_board_file):
+    pts = "(pts (xy 2 -1) (xy 5 -1) (xy 5 1) (xy 2 1))"  # GND copper whose nearest point to the pads is (2, 0)
+    pour = f'(zone (net "GND") (layer "F.Cu") (uuid "z") (polygon {pts}) (filled_polygon (layer "F.Cu") {pts}))'
+    board = mini_board_file(footprint("TP1", pad(1, "SIG")) + footprint("TP2", pad(1, "SIG", x=-5)) + pour)
+    out = tmp_path / "p"
+    code = main(["new", str(board), "--start", "TP1.1", "--end", "TP2.1", "--f0", "915MHz", "--stackup", "jlcpcb-2l",
+                 "-o", str(out)])
+    text = (out / "project.json").read_text(encoding="utf-8")
+    assert code == 0 and load_project(out / "project.json")["ports"][0]["reference"]["point"] == [2, 0]
+    assert "-0.0" not in text
 
 
 # --- where it is written --------------------------------------------------------------------------------------
@@ -333,8 +357,9 @@ def test_ports_without_a_reference(tmp_path, capsys, mini_board_file):
                  "-o", str(out)])
     d, (printed, err) = load_project(out / "project.json"), capsys.readouterr()
     assert code == 0 and err == ""
-    assert d["ports"] == [{"name": "P1", "signal": "TP1.1", "rule": None, "reference": None},
-                          {"name": "P2", "signal": "TP2.1", "rule": None, "reference": None}]
+    assert d["ports"] == [  # these pads have no uuid in the file
+        {"name": "P1", "signal": "TP1.1", "signal_uuid": "", "layer": "F.Cu", "rule": None, "reference": None},
+        {"name": "P2", "signal": "TP2.1", "signal_uuid": "", "layer": "F.Cu", "rule": None, "reference": None}]
     assert d["chain"] == {"start": "TP1.1", "end": "TP2.1", "nets": ["SIG"], "series": [], "shunt": []}
     assert d["lid_height_mm"] is None and d["stackup"]["source"] == "jlcpcb-2l"
     assert printed.splitlines() == [

@@ -1,6 +1,9 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """project.json, schema 1: the project and the job spec in one file. Its board path is relative to the project file
-and has forward slashes, so a project folder and its board can move together."""
+and has forward slashes, so a project folder and its board can move together.
+
+Coordinates in it are in KiCad's frame: mm, with y pointing down, as KiCad shows them and as a user types them in. The
+board as read (core.kicad) has y up, so a point [x, y] here is (x, -y) there, and the other way round."""
 import hashlib
 import json
 from pathlib import Path
