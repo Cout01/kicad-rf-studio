@@ -150,8 +150,9 @@ def _parser() -> argparse.ArgumentParser:
 
 
 def main(argv: list[str] | None = None) -> int:
-    sys.stdout.reconfigure(errors="replace")  # I_STACKUP's ε and I_CHAIN's → are not in cp1252
-    sys.stderr.reconfigure(errors="replace")
+    for stream in (sys.stdout, sys.stderr):  # I_STACKUP's ε and I_CHAIN's → are not in cp1252
+        if hasattr(stream, "reconfigure"):  # a StringIO, say, has none and needs none
+            stream.reconfigure(errors="replace")
     try:
         args = _parser().parse_args(argv)
         args.func(args)

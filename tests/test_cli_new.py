@@ -553,6 +553,14 @@ def test_unencodable_characters_become_question_marks_on_stdout(tmp_path, monkey
     assert "Stackup: board, dielectric 0.71 mm, ?r 4.5; mask 0.01 mm, ?r 3.3." in out and "Chain U1.1 ? J1.1:" in out
 
 
+def test_a_console_without_reconfigure_works(tmp_path, monkeypatch):
+    out, err = io.StringIO(), io.StringIO()  # an embedding program's streams need not be TextIOWrappers
+    monkeypatch.setattr(sys, "stdout", out)
+    monkeypatch.setattr(sys, "stderr", err)
+    code, pj = run_new(tmp_path)
+    assert code == 0 and out.getvalue().endswith(f"Wrote {pj}.\n") and err.getvalue() == ""
+
+
 def test_unencodable_characters_become_question_marks_on_stderr(tmp_path, monkeypatch):
     raw = io.BytesIO()
     console = io.TextIOWrapper(raw, encoding="cp1252")
