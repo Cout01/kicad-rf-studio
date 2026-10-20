@@ -1,0 +1,109 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+"""The copper pipeline (spec 5.3), in mm. Per (layer, net) the board's copper is made valid, united, clipped to the
+through-crop, simplified at 10 µm, put on the 1e-6 mm grid and cut into pieces with no holes, each solid or a sheet."""
+from __future__ import annotations
+
+from collections import defaultdict
+from dataclasses import dataclass
+
+import shapely
+from shapely.geometry import GeometryCollection, MultiPolygon, Polygon, box
+from shapely.geometry.base import BaseGeometry
+from shapely.strtree import STRtree
+
+from kicad_rf_studio.core.kicad.board import Board
+
+GRID = 1e-6  # mm, the grid every coordinate lies on
+SIMPLIFY = 0.01  # mm, the farthest the simplification moves an outline
+SOLID_T = 30  # copper with a width or a gap below SOLID_T times its thickness is solid
+
+
+@dataclass(frozen=True)
+class Piece:
+    """A polygon of copper with no holes, on the grid and normalised. A solid piece has its layer's thickness; the
+    others are sheets."""
+    layer: str
+    net: str
+    polygon: Polygon
+    solid: bool
+
+
+def _polygons(g: BaseGeometry) -> MultiPolygon:
+    """The polygons of `g`, without the lines and points an overlay can leave beside them."""
+    return MultiPolygon([p for p in shapely.get_parts(g) if isinstance(p, Polygon) and not p.is_empty])
+
+
+def _grid(g: BaseGeometry) -> MultiPolygon:
+    """The polygons of `g` on the grid, which can split or drop the thinnest."""
+    return _polygons(shapely.set_precision(_polygons(g), GRID))
+
+
+def clean(geom: BaseGeometry, crop: Polygon) -> MultiPolygon:
+    """Steps 1–5 of the pipeline: each part of `geom` made valid on its own (make_valid on overlapping parts of one
+    MultiPolygon would cut their overlap out), their union, the clip to `crop`, the simplification, which keeps the
+    topology, and the grid. Normalised."""
+    g = _polygons(shapely.union_all(shapely.make_valid(shapely.get_parts(geom))))
+    g = _polygons(g.intersection(crop)).simplify(SIMPLIFY, preserve_topology=True)
+    return shapely.normalize(_grid(g))
+
+
+def split_holes(p: Polygon) -> list[Polygon]:
+    """Step 6: `p` cut into polygons with no holes; every part a cut makes goes back on the grid. Each cut is vertical,
+    at the x of the vertex of the first hole nearest that hole's centroid, so it runs through the hole and opens it: a
+    cut through the hole's leftmost vertex only touches a round hole, which then stays a hole."""
+    queue, out = [p], []
+    while queue:
+        q = queue.pop()
+        if not q.interiors:
+            out.append(q)
+            continue
+        hole = q.interiors[0]
+        mid = Polygon(hole).centroid.x
+        x = min((v[0] for v in hole.coords), key=lambda v: abs(v - mid))
+        _, y0, x1, y1 = q.bounds
+        right = box(x, y0 - 1, x1 + 1, y1 + 1)
+        queue += [*_grid(q.intersection(right)).geoms, *_grid(q.difference(right)).geoms]
+    return out
+
+
+def is_solid(piece_geom: Polygon, others: BaseGeometry, t: float) -> bool:
+    """Whether copper of thickness `t` must be solid: a width of `piece_geom`, or its gap to `others`, is below 30·t.
+    A width is below when an opening by 15·t takes copper away, deeper than half the simplification: on the grid, an
+    opening also shaves nanometre slivers off a wide outline. The opening is mitred, so a wide shape keeps its corners
+    (a round one cuts every corner off), and only the copper it takes counts (a mitred one squares off a rounded
+    corner)."""
+    r = SOLID_T / 2 * t
+    opened = piece_geom.buffer(-r, join_style="mitre").buffer(r, join_style="mitre")
+    narrow = not piece_geom.difference(opened).buffer(-SIMPLIFY / 2).is_empty
+    return narrow or piece_geom.distance(others) < 2 * r
+
+
+def copper_pieces(board: Board, crop: Polygon,
+                  thickness: dict[str, float]) -> tuple[list[Piece], list[tuple[str, dict]]]:
+    """The copper of `board` in `crop` as pieces, top layer first, from its tracks, areas and pads per (layer, net).
+    A pad adds copper on exactly its `layers`, none for a paste-only pad or a covered NPTH, with every part of a
+    MultiPolygon. The pieces of one cleaned polygon share its `solid`, whose gaps are to every other polygon on the
+    layer, of any net; `thickness` gives each layer's t. A (layer, net) whose copper in the crop is all lost in the
+    cleanup is a W_COPPER_EMPTIED."""
+    groups: dict[tuple[str, str], list[BaseGeometry]] = defaultdict(list)
+    for t in board.tracks:
+        groups[t.layer, t.net].append(t.polygon())
+    for a in board.areas:
+        groups[a.layer, a.net].append(a.polygon)
+    for p in board.all_pads():
+        for layer in p.layers:
+            groups[layer, p.net].append(p.polygon)
+    cleaned, warnings = {}, []
+    for (layer, net), geoms in sorted(groups.items()):
+        cleaned[layer, net] = g = clean(GeometryCollection(geoms), crop)
+        if g.is_empty and shapely.area(shapely.intersection(geoms, crop)).sum() > 0:
+            warnings.append(("W_COPPER_EMPTIED", {"net": net, "layer": layer}))
+    pieces = []
+    for layer in board.copper_layers:
+        polygons = [(net, p) for (on, net), g in cleaned.items() if on == layer for p in g.geoms]
+        tree, t = STRtree([p for _, p in polygons]), thickness[layer]
+        for i, (net, p) in enumerate(polygons):
+            near = MultiPolygon([polygons[j][1] for j in tree.query(p, "dwithin", SOLID_T * t) if j != i])
+            solid = is_solid(p, near, t)
+            pieces += [Piece(layer, net, shapely.normalize(q), solid) for q in split_holes(p)]
+    return pieces, warnings

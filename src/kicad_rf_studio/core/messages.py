@@ -15,6 +15,7 @@ CATALOG: dict[str, str] = {
     "W_NO_OUTLINE": "The board has no Edge.Cuts outline, so the substrate is not clipped.",
     "W_COPPER_DROPPED": "{kind} {uuid} on {layer} is left out of the simulation; convert it to a filled shape or a solid zone in KiCad if it carries current.",
     "W_NETLESS_COPPER": "Copper shape {uuid} on {layer} has no net and is simulated as floating copper.",
+    "W_COPPER_EMPTIED": "Copper of net {net} on {layer} is smaller than the 10 µm simplification and was left out.",
     "W_PADSTACK": "Pad {pad} uses a per-layer padstack; its front shape is used on every layer.",
     "W_DUPLICATE_REF": "Footprints share the references {refs}; the copies were renamed with #2, #3 and so on. Annotate the board in KiCad to name them.",
     "E_BAD_FREQUENCY": 'Cannot read the frequency "{text}". Write it like 915MHz.',

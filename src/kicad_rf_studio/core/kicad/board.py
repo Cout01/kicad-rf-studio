@@ -121,9 +121,13 @@ class Board:
     stackup: Stackup | None  # the board's own; None when the file has none
     warnings: list[tuple[str, dict]]  # (message code, params)
 
+    def all_pads(self) -> Iterator[Pad]:
+        """Every pad of every footprint, in file order."""
+        return (p for fp in self.footprints.values() for p in fp.pads)
+
     def pads(self, name: str) -> list[Pad]:
         """The pads called `name`, "REF.NUM": more than one when a footprint repeats a number."""
-        return [p for fp in self.footprints.values() for p in fp.pads if p.name == name]
+        return [p for p in self.all_pads() if p.name == name]
 
 
 def _text(node: list, head: str) -> str:
