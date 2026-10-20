@@ -31,14 +31,16 @@ class Rod:
 
 def via_rods(board: Board, crop: Polygon, zs: tuple[Slab, ...], prot: Protected) -> list[Rod]:
     """The vias and plated holes whose centre lies in `crop`, each from the bottom face of the lowest copper layer it
-    joins to the top face of the highest. A rod is solid when its via's or pad's uuid is in `prot.vias`."""
+    joins to the top face of the highest, on the 1e-6 mm grid. A rod is solid when its via's or pad's uuid is in
+    `prot.vias`."""
     faces = {s.copper: (s.z0, s.z1) for s in zs if s.kind == "copper"}
     # ponytail: a slot is a rod of its width; a slot-shaped barrel when one matters
     holes = [(v.net, v.at, v.drill, v.layers, v.uuid) for v in board.vias]
     holes += [(p.net, p.at, p.drill, p.layers, p.uuid) for p in board.all_pads() if p.kind == "thru_hole" and p.layers]
     rods = []
-    for net, at, drill, layers, uuid in holes:
-        if crop.intersects(Point(at)):
+    for net, (x, y), drill, layers, uuid in holes:
+        if crop.intersects(Point(x, y)):
             z = [z for layer in layers for z in faces[layer]]
+            at = round(x, 6), round(y, 6)  # a turned footprint puts a pad's hole off the 1e-6 mm grid
             rods.append(Rod(net, at, round(drill / 2, 6), min(z), max(z), uuid in prot.vias))
     return rods

@@ -12,7 +12,7 @@ from kicad_rf_studio.core.geometry.zstack import substrate_h, zstack
 from kicad_rf_studio.core.kicad import classify, load_board, trace_chain
 from kicad_rf_studio.core.kicad.stackup import kicad_default
 from kicad_rf_studio.core.kicad.tracer import Chain
-from kicad_rf_studio.core.mesh.protect import protected_set
+from kicad_rf_studio.core.mesh.protect import Protected, protected_set
 
 FIX = Path(__file__).parent / "fixtures"
 T = {"F.Cu": .035, "B.Cu": .035}
@@ -138,6 +138,15 @@ def test_plated_holes_join_their_layers(mini_board):
     nets, roi, crop = {"LINE", "GND"}, region.roi, region.crop
     assert connectivity(pieces, rods, roi, nets, crop) == []
     assert connectivity(pieces, [], roi, nets, crop) == [("E_OPEN_IN_ROI", {"net": n}) for n in ("GND", "LINE")]
+
+
+def test_a_barrel_sits_at_its_hole_on_the_grid():
+    # Task 4 fix: pads_zoo's thru_hole pads ZOO1.6 and ZOO1.7 lie in a footprint turned 30 degrees. ZOO1.7's hole is
+    # offset (0.3, 0.2) from its copper, which pcbnew centres at (108.421281, -114.938268)
+    b = load_board(FIX / "pads_zoo.kicad_pcb")
+    rods = via_rods(b, box(0, -200, 200, 0), zstack(b.stackup, b.copper_layers),
+                    Protected(frozenset(), {}, frozenset(), ()))
+    assert {r.at for r in rods} == {(105.5, -116.598076), (108.098076, -115.098076)}
 
 
 def test_parts_that_run_out_of_the_crop_may_join_outside_it(mini_board):
