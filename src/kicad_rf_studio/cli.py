@@ -10,7 +10,7 @@ from pathlib import Path
 from kicad_rf_studio.core.kicad import choose_reference, classify, load_board, trace_chain
 from kicad_rf_studio.core.kicad.stackup import preset as stackup_preset
 from kicad_rf_studio.core.kicad.values import parse_frequency
-from kicad_rf_studio.core.messages import KrsError, render
+from kicad_rf_studio.core.messages import KrsError, reason, render
 from kicad_rf_studio.core.project import SCHEMA, board_hash, save_project
 
 PRESETS = ("draft", "normal", "strict")  # the run presets; `--stackup` names a stackup preset, which is another thing
@@ -58,8 +58,6 @@ def _shown(ref: dict | None) -> str:
 
 
 def _new(a: argparse.Namespace) -> None:
-    if not Path(a.board).is_file():
-        raise KrsError("E_NOT_A_BOARD", path=a.board)
     board = load_board(a.board)
     named = a.stackup is not None  # an empty --stackup is a name too, and an unknown one
     stackup = stackup_preset(a.stackup, board.thickness, len(board.copper_layers)) if named else board.stackup
@@ -88,10 +86,13 @@ def _new(a: argparse.Namespace) -> None:
         "chain": {"start": chain.start, "end": chain.end, "nets": list(chain.nets),
                   "series": [_part(board, p) for p in chain.series], "shunt": [_part(board, p) for p in chain.shunt]},
         "ports": ports}
-    folder.mkdir(parents=True, exist_ok=True)
     target = folder / "project.json"
     # ponytail: replaces a project.json that is already there, hand edits and all; refuse, or add --force, if that bites
-    save_project(target, project)
+    try:
+        folder.mkdir(parents=True, exist_ok=True)
+        save_project(target, project)
+    except OSError as e:  # the path the error names (the folder, a file in the way, project.json), else project.json
+        raise KrsError("E_OUTPUT_PATH", path=str(e.filename or target), reason=reason(e)) from None
 
     c = project["classes"]
     dielectric = next(x for x in stackup.layers if x.kind == "dielectric")  # there is one: its thickness is above 0
@@ -144,6 +145,7 @@ def main(argv: list[str] | None = None) -> int:
         print(e, file=sys.stderr)
         return 2
     except Exception as e:
-        print(render("E_INTERNAL", detail=" ".join(repr(e).split())), file=sys.stderr)  # the repr, on one line
+        detail = " ".join(f"{type(e).__name__}: {e}".split())  # on one line, and never the repr, which can hold a file
+        print(render("E_INTERNAL", detail=detail if len(detail) <= 200 else detail[:199] + "…"), file=sys.stderr)
         return 1
     return 0

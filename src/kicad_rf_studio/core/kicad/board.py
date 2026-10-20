@@ -16,7 +16,7 @@ from kicad_rf_studio.core.kicad.shapes import (
     GRAPHICS, XY, arc_points, covered, graphic_shape, is_filled, pad_shape, place, points, stroke_path,
     valid_polygons, xy)
 from kicad_rf_studio.core.kicad.stackup import Stackup, from_board as read_stackup
-from kicad_rf_studio.core.messages import KrsError
+from kicad_rf_studio.core.messages import KrsError, reason
 
 OLDEST_SUPPORTED = 20241229  # the file version of KiCad 9.0
 NEWEST_TESTED = 20241229  # moves up when CI tier (c) has read a KiCad 10 board
@@ -290,10 +290,20 @@ def _outline(lines: list[LineString]) -> Polygon | None:
 
 
 def load_board(path: str | Path) -> Board:
-    """Read a .kicad_pcb file. Raises KrsError: E_PARSE_UNBALANCED for a damaged file, E_NOT_A_BOARD for
-    another kind of KiCad file and E_BOARD_VERSION for a board older than KiCad 9."""
+    """Read a .kicad_pcb file. Raises KrsError: E_BOARD_UNREADABLE for a path that is not a file, or a file that
+    cannot be read as UTF-8 text; E_NOT_A_BOARD for text that is not an S-expression (a .kicad_pro is JSON, a legacy
+    board is neither) or another kind of KiCad file; E_PARSE_UNBALANCED for a damaged file; E_BOARD_VERSION for a
+    board older than KiCad 9."""
     path = Path(path)
-    text, repaired = repair(path.read_text(encoding="utf-8"))
+    try:
+        if not path.is_file():  # Windows reads a folder as PermissionError, so look before reading
+            raise IsADirectoryError() if path.exists() else FileNotFoundError()
+        text = path.read_text(encoding="utf-8-sig")  # -sig: a byte order mark is not part of the text
+    except (OSError, UnicodeError) as e:
+        raise KrsError("E_BOARD_UNREADABLE", path=str(path), reason=reason(e)) from None
+    if not text.lstrip().startswith("("):
+        raise KrsError("E_NOT_A_BOARD", path=str(path))
+    text, repaired = repair(text)
     root = parse(text)
     if not root or root[0] != "kicad_pcb":
         raise KrsError("E_NOT_A_BOARD", path=str(path))

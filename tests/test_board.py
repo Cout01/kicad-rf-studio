@@ -89,6 +89,56 @@ def test_a_file_that_is_not_a_board_is_refused(tmp_path, text):
     assert str(e.value) == f"{p} is not a KiCad board file."
 
 
+@pytest.mark.parametrize("text", [
+    '{\n  "board": {"design_settings": {}}\n}\n',  # a .kicad_pro is JSON
+    "PCBNEW-BOARD Version 1 date 01/01/2000\n$GENERAL\n(x)\n",  # a legacy board, with a "(" further on
+    "", "﻿ \r\n\t"])  # nothing at all, or only a byte order mark and blanks
+def test_text_that_does_not_start_with_a_bracket_is_not_a_board(tmp_path, text):
+    p = tmp_path / "x.kicad_pcb"
+    p.write_text(text, encoding="utf-8")
+    with pytest.raises(KrsError) as e:
+        load_board(p)
+    assert (e.value.code, e.value.params) == ("E_NOT_A_BOARD", {"path": str(p)})
+
+
+def test_a_board_may_start_with_a_byte_order_mark_and_blanks(tmp_path):
+    p = tmp_path / "x.kicad_pcb"
+    p.write_bytes(b"\xef\xbb\xbf\r\n  (kicad_pcb (version 20241229))")
+    assert load_board(p).version == 20241229
+
+
+def unreadable(path) -> str:
+    """The reason load_board gives for a path it cannot read."""
+    with pytest.raises(KrsError) as e:
+        load_board(path)
+    assert e.value.code == "E_BOARD_UNREADABLE" and set(e.value.params) == {"path", "reason"}
+    assert e.value.params["path"] == str(path)
+    return e.value.params["reason"]
+
+
+def test_a_board_that_cannot_be_read_is_refused_with_a_short_reason(tmp_path):
+    assert unreadable(tmp_path / "nope.kicad_pcb") == "file not found"
+    assert unreadable(tmp_path) == "not a file"  # Windows reads a folder as PermissionError: look before reading
+    latin1 = tmp_path / "latin1.kicad_pcb"
+    latin1.write_bytes(b'(kicad_pcb (version 20241229) (generator "caf\xe9"))')  # one Latin-1 byte
+    assert unreadable(latin1) == "not UTF-8 text"
+    with pytest.raises(KrsError) as e:
+        load_board(latin1)
+    assert str(e.value) == (f"Cannot read the board {latin1}: not UTF-8 text. "
+                            "Check the path, or open the board in KiCad and save it again.")
+
+
+def test_a_board_that_the_system_will_not_open_is_refused(tmp_path, monkeypatch):
+    p = tmp_path / "x.kicad_pcb"
+    p.write_text("(kicad_pcb (version 20241229))", encoding="utf-8")
+
+    def denied(self, *args, **kwargs):
+        raise PermissionError(13, "the system's own words, never shown", str(self))
+
+    monkeypatch.setattr(Path, "read_text", denied)
+    assert unreadable(p) == "permission denied"
+
+
 def test_version_messages_carry_the_version(mini_board):
     assert ("W_BOARD_NEWER", {"version": 20250901}) in mini_board(version=20250901).warnings
     assert "W_BOARD_NEWER" not in codes(mini_board(version=20241229))  # KiCad 9 itself is not newer

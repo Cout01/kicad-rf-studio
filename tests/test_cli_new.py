@@ -346,9 +346,21 @@ def test_a_bad_frequency_is_a_user_error(tmp_path, capsys):
 
 
 def test_a_missing_board_is_a_user_error(tmp_path, capsys):
-    code = main(["new", str(tmp_path / "nope.kicad_pcb"), "--start", "A.1", "--end", "B.1", "--f0", "915MHz",
-                 "-o", str(tmp_path / "p")])
-    assert code == 2 and "nope.kicad_pcb is not a KiCad board file." in capsys.readouterr().err
+    board = tmp_path / "nope.kicad_pcb"
+    code = main(["new", str(board), "--start", "A.1", "--end", "B.1", "--f0", "915MHz", "-o", str(tmp_path / "p")])
+    assert code == 2 and capsys.readouterr().err == (
+        f"Cannot read the board {board}: file not found. Check the path, or open the board in KiCad and save it again.\n")
+
+
+def test_a_board_that_is_not_utf8_is_a_short_user_error(tmp_path, monkeypatch, capsys):
+    monkeypatch.chdir(tmp_path)  # a relative path keeps the message's length independent of the temp folder
+    (tmp_path / "latin1.kicad_pcb").write_bytes(LPF.read_bytes().replace(b'"SHIELD"', b'"SHIELD\xe9"', 1))
+    code = main(["new", "latin1.kicad_pcb", "--start", "U1.1", "--end", "J1.1", "--f0", "915MHz", "-o", "p"])
+    err = capsys.readouterr().err
+    assert code == 2 and err == ("Cannot read the board latin1.kicad_pcb: not UTF-8 text. "
+                                 "Check the path, or open the board in KiCad and save it again.\n")
+    assert len(err) < 300  # not the board itself, which the repr of a UnicodeDecodeError would print
+    assert not (tmp_path / "p").exists()
 
 
 def test_another_kicad_file_is_a_user_error(tmp_path, capsys):
@@ -357,18 +369,41 @@ def test_another_kicad_file_is_a_user_error(tmp_path, capsys):
     assert code == 2 and "x.kicad_sch is not a KiCad board file." in capsys.readouterr().err
 
 
+def test_a_kicad_project_file_is_not_a_board(tmp_path, capsys):
+    pro = tmp_path / "x.kicad_pro"; pro.write_text('{\n  "board": {}\n}\n', encoding="utf-8")
+    code = main(["new", str(pro), "--start", "A.1", "--end", "B.1", "--f0", "915MHz", "-o", str(tmp_path / "p")])
+    assert code == 2 and capsys.readouterr().err == f"{pro} is not a KiCad board file.\n"
+
+
+def test_an_output_folder_that_is_a_file_is_a_user_error(tmp_path, capsys):
+    taken = tmp_path / "taken"; taken.write_bytes(b"x")
+    code, _ = run_new(tmp_path, out=taken)
+    assert code == 2 and capsys.readouterr().err == (
+        f"Cannot write {taken}: already exists as a file. Choose another -o folder.\n")
+    assert taken.read_bytes() == b"x"
+
+
+def test_a_project_file_that_cannot_be_written_is_a_user_error(tmp_path, monkeypatch, capsys):
+    def denied(path, data):
+        raise PermissionError(13, "the system's own words, never shown", str(path))
+
+    monkeypatch.setattr(cli, "save_project", denied)
+    code, pj = run_new(tmp_path)
+    assert code == 2 and capsys.readouterr().err == f"Cannot write {pj}: permission denied. Choose another -o folder.\n"
+
+
 def test_a_malformed_board_is_an_internal_error(tmp_path, capsys, mini_board_file):
     board = mini_board_file('(segment (end 1 1) (width 0.2) (layer "F.Cu") (net "A"))')  # no (start ...)
     code = main(["new", str(board), "--start", "A.1", "--end", "B.1", "--f0", "915MHz", "-o", str(tmp_path / "p")])
     out, err = capsys.readouterr()
     assert code == 1 and out == ""
-    assert err.startswith("Internal error: TypeError(") and err.endswith(". Please report it.\n")
+    assert err.startswith("Internal error: TypeError: ") and err.endswith(". Please report it.\n")
     assert len(err.splitlines()) == 1
 
 
 class Chatty(Exception):
-    def __repr__(self):
-        return "Chatty(\n    'first',\n    'second',\n)"
+    def __str__(self):
+        return "first\n    second\n"
 
 
 def test_the_internal_error_is_one_line(tmp_path, monkeypatch, capsys):
@@ -377,7 +412,17 @@ def test_the_internal_error_is_one_line(tmp_path, monkeypatch, capsys):
 
     monkeypatch.setattr(cli, "load_board", boom)
     code, _ = run_new(tmp_path)
-    assert code == 1 and capsys.readouterr().err == "Internal error: Chatty( 'first', 'second', ). Please report it.\n"
+    assert code == 1 and capsys.readouterr().err == "Internal error: Chatty: first second. Please report it.\n"
+
+
+def test_the_internal_error_is_cut_to_200_characters(tmp_path, monkeypatch, capsys):
+    def boom(path):
+        raise ValueError("x" * 1000)
+
+    monkeypatch.setattr(cli, "load_board", boom)
+    code, _ = run_new(tmp_path)
+    detail = "ValueError: " + "x" * 187 + "…"  # 200 characters
+    assert code == 1 and capsys.readouterr().err == f"Internal error: {detail}. Please report it.\n"
 
 
 @pytest.mark.parametrize("extra", [

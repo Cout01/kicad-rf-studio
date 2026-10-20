@@ -5,7 +5,7 @@ import pytest
 
 from kicad_rf_studio.core import messages
 from kicad_rf_studio.core.kicad.sexpr import Quoted, atom, child, children, num, parse, repair
-from kicad_rf_studio.core.messages import CATALOG, KrsError, render
+from kicad_rf_studio.core.messages import CATALOG, KrsError, reason, render
 
 
 def test_parse_nested_quoted_and_escaped():
@@ -108,6 +108,16 @@ def test_krs_error_carries_its_code_and_params_and_renders_them():
     assert err.code == "E_BOARD_VERSION" and err.params == {"version": 20231120}
     assert str(err) == render("E_BOARD_VERSION", version=20231120)
     assert "20231120" in str(err) and "{" not in str(err)
+
+
+@pytest.mark.parametrize("error, text", [
+    (FileNotFoundError(2, "x"), "file not found"), (IsADirectoryError(21, "x"), "not a file"),
+    (PermissionError(13, "x"), "permission denied"), (FileExistsError(17, "x"), "already exists as a file"),
+    (NotADirectoryError(20, "x"), "already exists as a file"),  # a folder on the way is a file
+    (UnicodeDecodeError("utf-8", b"\xe9", 0, 1, "invalid continuation byte"), "not UTF-8 text"),
+    (OSError(22, "x"), "cannot be read"), (OSError(), "cannot be read")])
+def test_a_file_error_has_a_short_reason_by_its_class(error, text):
+    assert reason(error) == text
 
 
 def test_render_falls_back_to_the_english_template():

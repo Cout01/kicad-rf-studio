@@ -7,6 +7,7 @@ from pathlib import Path
 CATALOG: dict[str, str] = {
     "E_PARSE_UNBALANCED": "The board file is damaged: unbalanced brackets near line {line}. Open it in KiCad and save it again.",
     "E_NOT_A_BOARD": "{path} is not a KiCad board file.",
+    "E_BOARD_UNREADABLE": "Cannot read the board {path}: {reason}. Check the path, or open the board in KiCad and save it again.",
     "E_BOARD_VERSION": "This board was saved by a KiCad older than 9 (file version {version}). Open it in KiCad 9 or newer and save it.",
     "W_BOARD_NEWER": "This board was saved by a newer KiCad (file version {version}); reading it was not tested.",
     "W_REPAIRED_FILTER_RATIO": "Repaired {count} teardrop entries damaged by a KiCad 9 writer bug; the file on disk is unchanged.",
@@ -25,6 +26,7 @@ CATALOG: dict[str, str] = {
     "E_START_ON_GND": 'Pad {name} is on net "{net}", which is GND, power or no net; a chain cannot start or end there.',
     "E_NO_CHAIN": "No chain from {start} to {end}: the walk stopped at nets {reached}. A DNP part, a GND or power net, or a part with three or more pads is in the way.",
     "E_PROJECT_SCHEMA": "{path} uses project schema {found}; this version reads schema {expected}.",
+    "E_OUTPUT_PATH": "Cannot write {path}: {reason}. Choose another -o folder.",
     "I_STACKUP": "Stackup: {source}, dielectric {thickness_mm} mm, εr {epsilon_r}.",
     "I_CLASSES": "GND nets: {gnd}. Power nets: {power}. Connectors: {connectors}. Shields: {shields}.",
     "I_CHAIN": "Chain {start} → {end}: series {series}; shunt {shunt}.",
@@ -45,6 +47,19 @@ _translation = gettext.translation(
 def render(code: str, **params) -> str:
     """The message for `code` in the user's language; English when there is no translation."""
     return _translation.gettext(CATALOG[code]).format(**params)
+
+
+# The `reason` of E_BOARD_UNREADABLE and E_OUTPUT_PATH, by the class of the error. Never the system's own message: it
+# is long, in the system's language, and a UnicodeDecodeError's repr holds every byte of the file. NotADirectoryError
+# is a file where a folder of the path should be.
+_REASONS = ((FileNotFoundError, "file not found"), (IsADirectoryError, "not a file"),
+            (PermissionError, "permission denied"), ((FileExistsError, NotADirectoryError), "already exists as a file"),
+            (UnicodeError, "not UTF-8 text"))
+
+
+def reason(error: Exception) -> str:
+    """A short English phrase for an OSError or a UnicodeError met reading or writing a file."""
+    return next((text for kind, text in _REASONS if isinstance(error, kind)), "cannot be read")
 
 
 class KrsError(Exception):
