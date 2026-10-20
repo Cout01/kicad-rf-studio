@@ -394,6 +394,29 @@ def test_facing_edges_across_a_gap_pass_the_lint(g):
     assert not lint(lines, edges, d)
 
 
+@pytest.mark.parametrize("edges", [[(110.0, -1), (110.010125, 1), (110.094875, -1)],
+                                   [(110.0, -1), (110.048, 1), (110.0855, -1)]])
+def test_the_facing_gap_step_keeps_the_next_cells_inside_line(edges):
+    # verifier (A): a's outside line was also the next same-side cell's inside line, and the facing-gap step moved both,
+    # so that cell's edge got its inside line 0.88d away against an outside line 0.75d away
+    lines, _ = xy_lines(edges, (100.0, 120.0), (80.0, 140.0), [], 0.075, 2.36)
+    assert not lint(lines, edges, 0.075)
+
+
+def test_facing_gaps_beside_a_narrow_strip_pass_the_lint():
+    # verifier (A): metal below a, a gap g·d, then a strip w·d wide; 139 configs (gaps under 0.83d, each way round)
+    # failed after the round-1 fix only. Here every config passes; 1d066c2 failed 1842 of the 0.02d grid's 17,820
+    d, fails = 0.075, []
+    for g in np.arange(0.02, 2.2, 0.06):
+        for w in np.arange(0.4, 2.01, 0.1):
+            for way in (1, -1):
+                edges = sorted([(110.0, -way), (round(110.0 + way * g * d, 6), way),
+                                (round(110.0 + way * (g + w) * d, 6), -way)])
+                lines, _ = xy_lines(edges, (100.0, 120.0), (80.0, 140.0), [], d, 2.36)
+                fails += [(round(float(g), 2), round(float(w), 2), way)] * bool(lint(lines, edges, d))
+    assert not fails
+
+
 def test_extra_edges_keep_their_own_pattern():
     # the lint's one re-mesh (spec 5.5) passes the failing edges back; their own pattern then wins over every line that
     # sharing or merging put in its cell, so the re-mesh changes something (verifier: it rebuilt the same lines)

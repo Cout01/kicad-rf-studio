@@ -135,11 +135,14 @@ def _patterns(edges: Iterable[Edge], d: float, prefer: Collection[Edge] = (), fo
       fits; or as shallow as allowed when the outer edge's cell will grow. Edges 4d/3 apart or more keep their own
       lines. Past the span cap no line may fit (a staircase of close steps over d): the outer edge then keeps its own
       inside line and the cell's far edge fails the lint, which a finer preset fixes, rather than cells many d wide
-      that pass it.
+      that pass it. Same-side edges with an edge of the other side between them are not a staircase but the far sides
+      of a strip and of what faces it: they neither join nor share a line (verifier (A): a 0.4d strip 0.02d from the
+      metal it faces failed the lint).
     - Facing edges across a gap (metal below one, above the next) whose outside lines cross, or come within d/3,
       share one line in the gap, or none where the gap is too narrow for one: then each edge's outside line is the
       other's inside line. Two outside lines 3d/4 out put one of them inside the other edge's cell (copper gaps of
-      0.6d to d failed the lint).
+      0.6d to d failed the lint). Only outside lines move: a line that is also another edge's inside line stays
+      that edge's (verifier (A): it jumped to the facing edge's inside line, 0.88d from its edge).
     - Lines closer than d/3 become the first of these that keeps every edge of the collision passing the lint: the
       one whose edge is nearer (Decisions), of equally near ones those of `prefer` (the edges at a measured section's
       cut, which fit2d reads) first; their mean; the others, nearer edges first. With none, the mean, else the nearest
@@ -157,23 +160,29 @@ def _patterns(edges: Iterable[Edge], d: float, prefer: Collection[Edge] = (), fo
         lo_w, hi_w = window(top, low, nxt)
         return lo_w > hi_w
 
+    def near(opp: list[float], u: float, v: float) -> bool:
+        """No edge of the other side (`opp`, in u, sorted) lies between u and v: they are a staircase."""
+        return bisect_left(opp, u) == bisect_left(opp, v)
+
     for side in (-1, 1):
         us = sorted((side * e for e, s in edges if s == side), reverse=True)  # u grows into the metal: deepest first
+        opp = sorted(side * e for e, s in edges if s != side)
         top, k = None, 0
         while k < len(us):
             cell = [us[k]]
             if top is None:  # a cell of its own: d/4 in, or as shallow as the lint allows if the next edge joins anyway
                 top = us[k] + d / 4
-                top = us[k] + deep if k + 1 < len(us) and joins(top, us[k], us[k + 1]) else top
+                if k + 1 < len(us) and near(opp, us[k], us[k + 1]) and joins(top, us[k], us[k + 1]):
+                    top = us[k] + deep
             k += 1
-            while k < len(us) and cell[0] - us[k] <= d and joins(top, cell[-1], us[k]):
+            while k < len(us) and cell[0] - us[k] <= d and near(opp, cell[-1], us[k]) and joins(top, cell[-1], us[k]):
                 cell.append(us[k])  # no line fits before us[k], and the cell spans d at most
                 k += 1
             low = cell[-1]
             bottom, shared = min(low - 3 * d / 4, 2 * low - top - lead), None
-            if k < len(us) and bottom - (us[k] + d / 4) < d / 3:  # the next cell's own inside line is near: share one
-                lo_w, hi_w = window(top, low, us[k])  # empty only past the span cap
-                shallow = k + 1 < len(us) and joins(us[k] + d / 4, us[k], us[k + 1])
+            if k < len(us) and near(opp, low, us[k]) and bottom - (us[k] + d / 4) < d / 3:  # share one line with the
+                lo_w, hi_w = window(top, low, us[k])  # next cell, whose own inside line is near; empty past the cap
+                shallow = k + 1 < len(us) and near(opp, us[k], us[k + 1]) and joins(us[k] + d / 4, us[k], us[k + 1])
                 bottom = shared = next((v for v in ((lo_w,) if shallow else (us[k] + d / 4, low - 3 * d / 4))
                                         if lo_w <= v <= hi_w), (lo_w + hi_w) / 2 if lo_w <= hi_w else us[k] + d / 4)
             for u in cell:
@@ -187,8 +196,8 @@ def _patterns(edges: Iterable[Edge], d: float, prefer: Collection[Edge] = (), fo
             lo_w, hi_w = 2 * a[0] - own[a][0] + lead, 2 * b[0] - own[b][0] - lead
             m = next((v for v in (oa, ob) if lo_w <= v <= hi_w), round((lo_w + hi_w) / 2, 6))
             new = {oa: m, ob: m} if lo_w <= hi_w else {oa: own[b][0], ob: own[a][0]}
-            for e in own:
-                own[e] = [new.get(v, v) for v in own[e]]
+            for e in own:  # outside lines only: oa may also be the next same-side cell's inside line
+                own[e][1] = new.get(own[e][1], own[e][1])
     users: dict[float, list[Edge]] = defaultdict(list)
     for e, pair in own.items():
         for v in pair:
