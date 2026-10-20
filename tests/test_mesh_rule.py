@@ -432,6 +432,17 @@ def test_colliding_inside_lines_keep_one_where_the_lint_allows():
     assert 1.01225 in pins and not lint(np.array(sorted(pins)), [line, other], d)
 
 
+def test_a_shallow_inside_line_wins_its_collision_as_the_nearer_edges_line():
+    # R-P2-21: lpf915's GND pour steps 20 µm by the pads (0.4d at n = 3), so its edges share one cell whose inside line
+    # sits d/8 + GRID_TOL inside the deepest edge; on the 1e-6 mm grid that line read 0.2 nm under the collision check's
+    # d/8 + GRID_TOL, lost to the facing edge's d/4 line, and the section's GND edge got its inside line 0.66d in
+    d = 0.05008166666666666  # lpf915 at n = 3
+    stair = [(-100.4705, -1), (-100.469115, -1), (-100.4555, -1), (-100.454091, -1), (-100.450658, -1), (-100.4505, -1)]
+    edges = [(-100.496202, 1), *stair]  # metal above -100.496202 overlaps the pour's by 26 µm
+    pins = _patterns(edges, d)
+    assert round(-100.4705 - (d / 8 + GRID_TOL), 6) in pins and not lint(np.array(sorted(pins)), edges, d)
+
+
 def test_section_edges_keep_their_lines_on_coupon_gcpw_pads():
     # verifier: the pads' edges pulled the GND inside lines to the mean along the whole line, at the section's cut too:
     # fit2d read +3.38 % (over 3 %), and +2.47 % with the GND lines kept

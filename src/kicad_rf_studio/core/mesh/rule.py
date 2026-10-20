@@ -198,8 +198,8 @@ def _patterns(edges: Iterable[Edge], d: float, prefer: Collection[Edge] = (), fo
         return min(abs(v - e) for e, _ in users[v])
 
     def passes(e: Edge, pair: list[float]) -> bool:  # the lint for an edge whose inside and outside lines are `pair`
-        inside, outside = ((v - e[0]) * e[1] for v in pair)
-        return deep <= inside < -outside - GRID_TOL
+        inside, outside = ((v - e[0]) * e[1] for v in pair)  # (on the grid, a line placed `deep` in is d/8 or more in)
+        return d / 8 <= inside < -outside - GRID_TOL
 
     prefer, lines, pins, k = set(prefer), sorted(users), {}, 0
     while k < len(lines):
