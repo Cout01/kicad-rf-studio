@@ -109,24 +109,24 @@ def _dirichlet(cs: CrossSection, x: np.ndarray, z: np.ndarray) -> tuple[np.ndarr
     """The fixed nodes and their potentials: the box's faces at 0 V (its left and right ones only when `sides` is
     "pec"), then each conductor, the signal at 1 V and any other at 0 V, on both ends of every grid edge whose middle
     lies in it. That is openEMS's rule for metal on a Yee edge, so a conductor that holds no edge's middle is lost, as
-    in the FDTD model."""
+    in the FDTD model, and a node held by the signal and another conductor joins them: ValueError, a short."""
     fixed = np.zeros((len(x), len(z)), bool)
     fixed[:, [0, -1]] = True
     if cs.sides == "pec":
         fixed[[0, -1]] = True
-    phi = np.zeros(fixed.shape)
+    sig, other = np.zeros(fixed.shape, bool), np.zeros(fixed.shape, bool)
     xm, zm = (x[:-1] + x[1:]) / 2, (z[:-1] + z[1:]) / 2
     for r in cs.conductors:
         across = _within(xm, r.x0, r.x1)[:, None] & _within(z, r.z0, r.z1)  # edges along x, by their left node
         up = _within(x, r.x0, r.x1)[:, None] & _within(zm, r.z0, r.z1)  # edges along z, by their lower node
-        on = np.zeros(fixed.shape, bool)
+        on = sig if r.role == "signal" else other
         on[:-1] |= across
         on[1:] |= across
         on[:, :-1] |= up
         on[:, 1:] |= up
-        fixed |= on
-        phi[on] = r.role == "signal"
-    return fixed, phi
+    if (sig & other).any():
+        raise ValueError("a grid node lies on the signal and on another conductor: the FDTD model shorts them")
+    return fixed | sig | other, sig.astype(float)
 
 
 def _capacitance(x: np.ndarray, z: np.ndarray, eps: np.ndarray, fixed: np.ndarray, phi: np.ndarray) -> float:
@@ -151,7 +151,8 @@ def solve(cs: CrossSection, x: np.ndarray | None = None, z: np.ndarray | None = 
     """Z0 and εeff of the signal of `cs` against its other conductors and its box. Without `x`/`z` it meshes that axis
     itself: lines at every rect edge, cells at most min(feature)/FINE next to conductor edges, graded by GRADE up to
     the box/COARSE. Given lines are used as they are, inside the box; its faces bound the solve either way. A cell takes
-    the εr of the last dielectric that holds its centre. Raises ValueError when the signal holds no grid edge."""
+    the εr of the last dielectric that holds its centre. Raises ValueError when the signal holds no grid edge, or when
+    a grid node joins it to another conductor (a short in the FDTD model)."""
     x0, x1, z0, z1 = cs.box
     inside = [replace(r, x0=max(r.x0, x0), x1=min(r.x1, x1), z0=max(r.z0, z0), z1=min(r.z1, z1)) for r in cs.conductors]
     inside = [r for r in inside if r.x0 <= r.x1 and r.z0 <= r.z1]

@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 import time
+from dataclasses import replace
 
 import numpy as np
 import pytest
@@ -126,3 +127,12 @@ def test_conductors_sit_on_the_grid_edges_they_hold():  # openEMS's rule: metal 
     assert solve(sheet(0.2, 0.3), x, z).z0 > 0  # it holds the middle of the edge from 0 to 0.5 at z = 0
     with pytest.raises(ValueError):
         solve(sheet(0.1, 0.2), x, z)  # it holds no node and no edge middle: lost, as in the FDTD model
+
+
+def test_a_node_held_by_the_signal_and_a_ground_is_a_short():  # FDTD zeroes E on both edges: the line is shorted
+    cs = gcpw_cs(0.6, 0.15, 0.76, 0.035, 4.5)
+    x = np.arange(-26, 27) * 0.3 + 0.05  # lines every 0.3 mm: at 0.35 the edge to the left lies in the strip and the
+    z = coarse_lines(cs, d=0.075)[1]  # edge to the right in the ground
+    for c in (cs, replace(cs, conductors=cs.conductors[::-1])):  # whatever the conductors' order
+        with pytest.raises(ValueError, match="short"):
+            solve(c, x, z)
