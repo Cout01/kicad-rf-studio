@@ -96,6 +96,7 @@ def test_clip_one_mm_past_walls_not_at_roi(mini_board):
 def test_solid_vs_sheet():
     t = 0.035
     assert is_solid(box(0, 0, 0.6, 20), box(0.75, 0, 5, 20), t)  # 0.15 mm gap < 30·t
+    assert is_solid(box(0, 0, 5, 20), box(6, 0, 11, 20), t)  # wide, so solid only through its 1 mm gap < 30·t
     assert not is_solid(box(0, 0, 5, 20), box(7, 0, 12, 20), t)  # 5 mm wide, 2 mm gap
     assert is_solid(box(0, 0, 5, 5).union(box(5, 2, 6, 2.5)), Polygon(), t)  # 0.5 mm neck
     assert is_solid(box(0, 0, 5, 5).union(box(5, 2, 7, 2.5)).union(box(7, 0, 12, 5)), Polygon(), t)  # between two
@@ -104,6 +105,9 @@ def test_solid_vs_sheet():
     assert not is_solid(box(0, 0, 5, 5).buffer(-0.2).buffer(0.2), Polygon(), t)
     (line,) = [pc for pc in copper_pieces(load_board(FIX / "coupon_ms.kicad_pcb"), BIG, T)[0] if pc.net == "LINE"]
     assert not line.solid
+    # coupon_gcpw_pads' two F.Cu GND pours are wide: they are solid through their 0.15 mm gap to LINE
+    gcpw = copper_pieces(load_board(FIX / "coupon_gcpw_pads.kicad_pcb"), BIG, T)[0]
+    assert [pc.solid for pc in gcpw if (pc.layer, pc.net) == ("F.Cu", "GND")] == [True, True]
 
 
 def test_copper_lost_in_cleanup_warns(mini_board):
