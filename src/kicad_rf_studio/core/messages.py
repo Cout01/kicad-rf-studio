@@ -20,6 +20,7 @@ CATALOG: dict[str, str] = {
     "E_SHORT_IN_ROI": "Nets {nets} touch inside the simulated region. Check the copper in KiCad and refill zones (B).",
     "W_OPEN_IN_MARGIN": "Net {net} is broken in the margin of the simulated region, which may affect the result. Check the copper in KiCad and refill zones (B).",
     "W_SHORT_IN_MARGIN": "Nets {nets} touch in the margin of the simulated region, which may affect the result. Check the copper in KiCad and refill zones (B).",
+    "W_STAIRCASED": "Net {net} has copper that is not axis-aligned (45° segments or arcs); it is staircased and its accuracy is not validated. For a validated result, route it with horizontal and vertical tracks.",
     "W_PADSTACK": "Pad {pad} uses a per-layer padstack; its front shape is used on every layer.",
     "W_DUPLICATE_REF": "Footprints share the references {refs}; the copies were renamed with #2, #3 and so on. Annotate the board in KiCad to name them.",
     "E_BAD_FREQUENCY": 'Cannot read the frequency "{text}". Write it like 915MHz.',
