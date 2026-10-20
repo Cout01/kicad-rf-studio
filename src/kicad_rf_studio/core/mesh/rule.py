@@ -26,12 +26,14 @@ MAX_ROUNDS = 10_000  # _grade's guard; random adversarial axes converge within a
 Edge = tuple[float, int]  # a protected copper edge: its position and the sign that points into its metal
 
 
-def cell_size(sections: list[Section], fallback_width: float, n: int, lam_min: float) -> float:
+def cell_size(sections: list[Section], fallback_width: float, n: int, lam_min: float,
+              fallback_gap: float | None = None) -> float:
     """d: the narrowest width or gap of the measured nets over `n`, at most 0.9·λ_min/20. The sections give the widths
     and gaps of the straight runs; `fallback_width`, the narrowest track of the measured nets, always counts too, so a
-    net with no straight run (all 45° or arcs) still gets a width and a narrower bend is not missed."""
+    net with no straight run (all 45° or arcs) still gets a width and a narrower bend is not missed, and so does
+    `fallback_gap`, the narrowest gap of the tracks no section measures (Geometry.track_gap)."""
     sizes = [fallback_width, *(s.width for s in sections), *(s.gap for s in sections if s.gap is not None)]
-    return min(min(sizes) / n, 0.9 * lam_min / 20)
+    return min(min(sizes + [fallback_gap] * (fallback_gap is not None)) / n, 0.9 * lam_min / 20)
 
 
 def edge_lines(edge: float, inside: int, d: float) -> tuple[float, float]:

@@ -161,6 +161,22 @@ def sections(board: Board, nets: Iterable[str], pieces: list[Piece]) -> tuple[li
     return out, notes
 
 
+def staircase_gap(board: Board, nets: Iterable[str], pieces: list[Piece]) -> float | None:
+    """The narrowest gap of the measured `nets` that no section measures: from each of their staircased tracks (a 45°
+    segment or an arc) to the copper of the other nets on its layer; None without such a track or copper. The d rule
+    takes it with the sections' widths and gaps (spec 5.4: the smallest width or gap of the measured nets): from the
+    width alone, coupon_gcpw_45 got d = 0.3 and a mesh that joined LINE and GND at grid nodes (verifier). Copper that
+    touches the track is a short, which the connectivity check reports, not a gap."""
+    # ponytail: other nets only, so a staircased hairpin's gap to its own arm is not seen (a section's gap counts it).
+    nets, gaps = set(nets), []
+    for t in board.tracks:
+        (x0, y0), (x1, y1) = t.start, t.end
+        if t.net in nets and t.start != t.end and (t.mid is not None or min(abs(x1 - x0), abs(y1 - y0)) >= ALIGN):
+            other = [pc.polygon for pc in pieces if pc.layer == t.layer and pc.net != t.net]
+            gaps += [g for g in shapely.distance(t.polygon(), other) if g > 0]
+    return round(float(min(gaps)), 6) if gaps else None
+
+
 def cross_section(sec: Section, pieces: list[Piece], zs: tuple[Slab, ...], mask: MaskModel | None, mode: str,
                   dz0: float | None = None) -> CrossSection:
     """The cut perpendicular to `sec` at `sec.cut`, BOX_H substrate heights past its edges either side, through every

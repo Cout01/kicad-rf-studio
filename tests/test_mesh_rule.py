@@ -10,7 +10,7 @@ from kicad_rf_studio.core.geometry import Geometry
 from kicad_rf_studio.core.geometry.copper import copper_pieces
 from kicad_rf_studio.core.geometry.mask import mask_model
 from kicad_rf_studio.core.geometry.region import build_region, lambda_min
-from kicad_rf_studio.core.geometry.sections import Section, sections
+from kicad_rf_studio.core.geometry.sections import Section, sections, staircase_gap
 from kicad_rf_studio.core.geometry.vias import via_rods
 from kicad_rf_studio.core.geometry.zstack import substrate_h, zstack
 from kicad_rf_studio.core.kicad import classify, load_board, trace_chain
@@ -45,7 +45,7 @@ def build(path, start="", end=""):
     secs, more = sections(b, chain.nets, pieces)
     width = min(t.width for t in b.tracks if t.net in chain.nets)
     return Geometry(region, zs, pieces, via_rods(b, region.crop, zs, prot), mask_model(b, pieces, zs, region.crop, "F"),
-                    secs, None, notes + more, width), prot
+                    secs, None, notes + more, width, staircase_gap(b, chain.nets, pieces)), prot
 
 
 @cache
@@ -132,6 +132,20 @@ def test_cell_size_takes_the_narrowest_track():
     assert cell_size([], 0.3, 2, 1e9) == pytest.approx(0.15)
     assert cell_size([section(width=1.35, gap=None)], 1.35, 2, 1e9) == pytest.approx(0.675)  # microstrip: no gap
     assert cell_size([section(width=0.6, gap=0.5)], 0.2, 2, 1e9) == pytest.approx(0.1)
+
+
+def test_cell_size_takes_the_gap_no_section_measures():
+    # verifier: a net of 45° tracks has no section, so its gap never counted; Geometry.track_gap carries it
+    assert cell_size([], 0.6, 2, 1e9, 0.15) == pytest.approx(0.075)
+    assert cell_size([section(width=0.6, gap=0.5)], 0.6, 2, 1e9, None) == pytest.approx(0.25)
+
+
+def test_staircased_net_gets_d_from_its_gap():
+    # verifier: on coupon_gcpw_45 d came from the 0.6 mm width alone, 0.3, and the mesh joined LINE and GND at 40 grid
+    # nodes, a short in FDTD (T7 ruling) that no gate saw: no section for fit2d, no axis-aligned edge for the lint
+    geom, _ = geometry("coupon_gcpw_45")
+    m = mesh("coupon_gcpw_45")
+    assert m.d == pytest.approx(0.1505 / 2, abs=1e-3) and not shared_nodes(m, geom, "F.Cu", "LINE", "GND")
 
 
 def test_edge_pattern():

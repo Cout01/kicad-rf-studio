@@ -8,7 +8,7 @@ from shapely.geometry import LineString, Point, box
 
 from kicad_rf_studio.core.geometry.copper import SIMPLIFY, copper_pieces
 from kicad_rf_studio.core.geometry.mask import mask_model, smeared_epsilon
-from kicad_rf_studio.core.geometry.sections import cross_section, sections
+from kicad_rf_studio.core.geometry.sections import cross_section, sections, staircase_gap
 from kicad_rf_studio.core.geometry.zstack import zstack
 from kicad_rf_studio.core.kicad import load_board
 from kicad_rf_studio.core.kicad.stackup import kicad_default
@@ -45,6 +45,16 @@ def test_microstrip_section_has_no_gap():
 def test_diagonal_net_has_no_sections():
     s, w = sections(b := load_board(FIX / "coupon_gcpw_45.kicad_pcb"), ("LINE",), pieces_of(b))
     assert s == [] and ("W_STAIRCASED", {"net": "LINE"}) in w
+
+
+def test_staircase_gap_is_the_gap_no_section_measures():
+    # verifier: the d rule never saw the gap of a net with no axis-aligned run (Review Focus 4)
+    b = load_board(FIX / "coupon_gcpw_45.kicad_pcb")
+    assert staircase_gap(b, ("LINE",), pieces_of(b)) == pytest.approx(0.1505, abs=1e-3)
+    b = load_board(FIX / "coupon_gcpw.kicad_pcb")
+    assert staircase_gap(b, ("LINE",), pieces_of(b)) is None  # its one track is a section
+    b = load_board(FIX / "coupon_gcpw_arc.kicad_pcb")
+    assert staircase_gap(b, ("LINE",), pieces_of(b)) == pytest.approx(0.1505, abs=1e-3)  # the arc's gap
 
 
 def test_arc_coupon_keeps_straight_parts():  # coupon_gcpw_arc: two straights either side of the arc

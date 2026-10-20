@@ -19,8 +19,9 @@ if TYPE_CHECKING:  # the types only: importing a submodule must not pull in the 
 class Geometry:
     """What build_geometry derives from a board and its project.json: the region, the z-stack, the copper pieces, the
     vias as rods, the F mask (None without one), the measured sections, the shield lid (None without one), every
-    warning and E_ gate entry in `notes`, and `track_width`, the narrowest track of the measured nets, which the d rule
-    takes with the sections' widths and gaps."""
+    warning and E_ gate entry in `notes`, `track_width`, the narrowest track of the measured nets, and `track_gap`,
+    sections.staircase_gap (None without a staircased track), which the d rule takes with the sections' widths and
+    gaps."""
     region: Region
     zs: tuple[Slab, ...]
     pieces: list[Piece]
@@ -30,3 +31,4 @@ class Geometry:
     lid: Lid | None
     notes: list[tuple[str, dict]]
     track_width: float
+    track_gap: float | None
