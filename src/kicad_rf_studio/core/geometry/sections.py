@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """The measured sections (spec 5.5), in mm: the straight runs of the measured nets along x or y, which fit2d and the
-2D readout of `cost` check, and the cross-section cut at the middle of each one."""
+2D readout of `cost` check, and the cross-section cut across each one where it is bare line."""
 from __future__ import annotations
 
 from collections import defaultdict
@@ -8,11 +8,11 @@ from collections.abc import Iterable
 from dataclasses import dataclass, replace
 
 import shapely
-from shapely.geometry import LineString
+from shapely.geometry import LineString, Polygon, box
 from shapely.geometry.base import BaseGeometry
 
 from kicad_rf_studio.core.cs2d import CrossSection, Rect
-from kicad_rf_studio.core.geometry.copper import Piece
+from kicad_rf_studio.core.geometry.copper import SIMPLIFY, Piece
 from kicad_rf_studio.core.geometry.mask import MaskModel, smeared_epsilon
 from kicad_rf_studio.core.geometry.zstack import Slab, substrate_h
 from kicad_rf_studio.core.kicad.board import Board
@@ -21,14 +21,16 @@ from kicad_rf_studio.core.kicad.shapes import XY
 ALIGN = 1.5e-6  # mm: ends one 1e-6 mm grid step apart still share x or y; the half step is float noise
 REACH = 1e4  # mm, half the cut a gap is looked for along: past any crop
 BOX_H = 10  # the cross-section's box runs this many substrate heights past the line's edges and past the stack
+NEAR = 1.0  # track widths past a run's edges within which its copper must not change where it is cut
 MODES = ("none", "exact", "smeared")
 
 
 @dataclass(frozen=True)
 class Section:
     """A straight run of a measured net's track along `axis` ("x" or "y"), from `start` to `end` (the lower end
-    first), `length` between its track ends. `gap` is the smaller distance from its copper to other copper on its
-    layer across the cut at its middle, None when the cut meets none in the crop."""
+    first), `length` between its track ends. `cut` is the point of its centre line where it is bare line (_bare_cut),
+    and `gap` the smaller distance from its copper to other copper on its layer across the cut there, None when the
+    cut meets none in the crop."""
     net: str
     layer: str
     axis: str
@@ -37,6 +39,7 @@ class Section:
     width: float
     gap: float | None
     length: float
+    cut: XY
 
 
 def _merge(spans: Iterable[tuple[float, float]]) -> list[list[float]]:
@@ -50,10 +53,48 @@ def _merge(spans: Iterable[tuple[float, float]]) -> list[list[float]]:
     return out
 
 
+def _bare_cut(sec: Section, board: Board, pieces: list[Piece]) -> XY:
+    """The middle of `sec`'s longest bare stretch; `sec.cut` (the run's middle) when it has none. Along a bare stretch
+    the copper of its layer within NEAR track widths of the track does not change (it has no edge there but along the
+    run), no other copper of its net touches the track and no pad with copper on its layer comes that near: the
+    cross-section is the line's (spec 5.5), not that of a stub, a via, a part or another track's end, any of which can
+    sit at the middle."""
+    # ponytail: an edge counts as along the run while it moves under 2 SIMPLIFY across it, so the flat chord at the tip
+    # of another net's round end or via ring stays free (about 0.15 mm on a 0.6 mm end); it wins only on a run with no
+    # longer bare stretch. Upgrade: stop the whole along-span of any other-net part that ends inside the band.
+    a, k = (0, 1) if sec.axis == "x" else (1, 0)  # the coordinates along and across the run
+    lo, hi, c, w = sec.start[a], sec.end[a], sec.start[k], sec.width
+
+    def band(d0: float, d1: float) -> Polygon:  # the run from lo to hi, from d0 to d1 off its centre line
+        return box(lo, c + d0, hi, c + d1) if a == 0 else box(c + d0, lo, c + d1, hi)
+
+    near, e = band(-w / 2 - NEAR * w, w / 2 + NEAR * w), w / 2 + 2 * SIMPLIFY
+    rim = band(-e - SIMPLIFY, -e).union(band(e, e + SIMPLIFY))  # just past the track's edges and their simplification
+    stops = [p.polygon.intersection(near).bounds[a::2] for p in board.all_pads()
+             if sec.layer in p.layers and p.polygon.intersects(near)]
+    for pc in pieces:
+        if pc.layer == sec.layer and pc.polygon.intersects(near):
+            for ring in shapely.get_rings(shapely.get_parts(pc.polygon.intersection(near))):
+                xy = shapely.get_coordinates(ring)
+                stops += [(min(p[a], q[a]), max(p[a], q[a])) for p, q in zip(xy, xy[1:])
+                          if abs(p[k] - q[k]) > 2 * SIMPLIFY]
+            if pc.net == sec.net:
+                stops += [g.bounds[a::2] for g in shapely.get_parts(pc.polygon.intersection(rim)) if g.area > 0]
+    free, x = [], lo
+    for s0, s1 in sorted(stops):
+        free.append((x, s0))
+        x = max(x, s1)
+    x0, x1 = max([*free, (x, hi)], key=lambda f: f[1] - f[0])
+    if x1 <= x0:
+        return sec.cut
+    m = round(float(x0 + x1) / 2, 6)
+    return (m, c) if a == 0 else (c, m)
+
+
 def _cut(sec: Section, half: float) -> tuple[LineString, int, float]:
-    """The cut through the middle of `sec`, perpendicular to it and `half` long either side of its centre line; the
-    index of the coordinate along the cut (y for a run along x) and the centre line's place on it."""
-    mx, my = (sec.start[0] + sec.end[0]) / 2, (sec.start[1] + sec.end[1]) / 2
+    """The cut through `sec.cut`, perpendicular to `sec` and `half` long either side of its centre line; the index of
+    the coordinate along the cut (y for a run along x) and the centre line's place on it."""
+    mx, my = sec.cut
     if sec.axis == "x":
         return LineString([(mx, my - half), (mx, my + half)]), 1, my
     return LineString([(mx - half, my), (mx + half, my)]), 0, mx
@@ -89,7 +130,8 @@ def _gap(sec: Section, pieces: list[Piece]) -> float | None:
 def sections(board: Board, nets: Iterable[str], pieces: list[Piece]) -> tuple[list[Section], list[tuple[str, dict]]]:
     """The straight runs of the tracks of `nets`, by net in that order, then by place. A track whose ends share x or y
     within 1e-6 mm is one, joined on its layer with the collinear tracks of its width that it touches. Any other track
-    of a net (a 45° segment, an arc) is staircased in the model: one W_STAIRCASED per net. `pieces` give the gaps."""
+    of a net (a 45° segment, an arc) is staircased in the model: one W_STAIRCASED per net. `pieces` and the board's
+    pads place each cut, `pieces` give the gaps."""
     out, notes = [], []
     for net in nets:
         runs: dict[tuple[str, str, float, float], list[tuple[float, float]]] = defaultdict(list)
@@ -111,7 +153,9 @@ def sections(board: Board, nets: Iterable[str], pieces: list[Piece]) -> tuple[li
             for lo, hi in _merge(spans):
                 lo, hi = round(lo, 6), round(hi, 6)
                 ends = ((lo, at), (hi, at)) if axis == "x" else ((at, lo), (at, hi))
-                sec = Section(net, layer, axis, *ends, width, None, round(hi - lo, 6))
+                mid = tuple(round((u + v) / 2, 6) for u, v in zip(*ends))
+                sec = Section(net, layer, axis, *ends, width, None, round(hi - lo, 6), mid)
+                sec = replace(sec, cut=_bare_cut(sec, board, pieces))
                 found.append(replace(sec, gap=_gap(sec, pieces)))
         out += sorted(found, key=lambda s: (s.start, s.end, s.layer))
     return out, notes
@@ -119,7 +163,7 @@ def sections(board: Board, nets: Iterable[str], pieces: list[Piece]) -> tuple[li
 
 def cross_section(sec: Section, pieces: list[Piece], zs: tuple[Slab, ...], mask: MaskModel | None, mode: str,
                   dz0: float | None = None) -> CrossSection:
-    """The cut perpendicular to `sec` at its middle, BOX_H substrate heights past its edges either side, through every
+    """The cut perpendicular to `sec` at `sec.cut`, BOX_H substrate heights past its edges either side, through every
     piece it meets there: copper of `sec`'s net is the signal, any other conductor ground, each as thick as its layer.
     The dielectric layers span the cut. The mask (Decisions): `mode` "none", or no `mask`, leaves it out; "exact" fills
     the gaps between the outer conductors over their z-cell and lays a coat t_m thick on the copper and the gaps;

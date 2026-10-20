@@ -1,15 +1,17 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
+from dataclasses import replace
 from pathlib import Path
 
 import numpy as np
 import pytest
-from shapely.geometry import box
+from shapely.geometry import LineString, Point, box
 
 from kicad_rf_studio.core.geometry.copper import SIMPLIFY, copper_pieces
 from kicad_rf_studio.core.geometry.mask import mask_model, smeared_epsilon
 from kicad_rf_studio.core.geometry.sections import cross_section, sections
 from kicad_rf_studio.core.geometry.zstack import zstack
 from kicad_rf_studio.core.kicad import load_board
+from kicad_rf_studio.core.kicad.stackup import kicad_default
 
 FIX = Path(__file__).parent / "fixtures"
 T = {"F.Cu": .035, "B.Cu": .035}
@@ -113,3 +115,51 @@ def test_cross_section_cuts_every_conductor_and_places_the_mask():
     # on B the coat runs down from B.Cu's outer face (Task 5 ruling), and the fill takes B.Cu's z-cell
     back = cross_section(sec, pieces, zs, mask_model(b, pieces, zs, BIG, "B"), "smeared", dz0=0.025)
     assert {(r.z0, r.z1) for r in back.dielectrics if r.eps_r != 4.5} == {(-0.025, 0.0), (0.0, 0.035)}
+
+
+def test_cut_misses_junctions_of_its_own_net_at_the_middle_of_a_run(mini_board):
+    # Task 6 fix: the middle of a run can hold a junction of its own net, here the centre node of a T (two collinear
+    # 0.5 mm tracks and a stub) and then a 0.6 mm via on a 0.3 mm line. The cut is taken on bare line instead, so the
+    # cross-section holds the track alone (not 3.5 mm of stub, nor the via's rings on both layers) and the gap is the
+    # design one (0.6, not 0.45 to the via's ring). So too past a 1.2 mm wide patch of the net's copper over 6 of the
+    # line's 10 mm: the copper does not change along it, but it is not the track
+    seg = '(segment (start {} {}) (end {} {}) (width {}) (layer "F.Cu") (net "{}") (uuid "s{}"))'
+    tee = [(0, 0, 5, 0, .5, "LINE"), (5, 0, 10, 0, .5, "LINE"), (5, 0, 5, 3, .5, "LINE"), (0, -1, 10, -1, .5, "GND")]
+    line = [(0, 0, 10, 0, .3, "LINE"), (0, -1, 10, -1, .5, "GND")]
+    via = '(via (at 5 0) (size 0.6) (drill 0.3) (layers "F.Cu" "B.Cu") (net "LINE") (uuid "v"))'
+    patch = '(gr_rect (start 2 -0.6) (end 8 0.6) (stroke (width 0)) (fill yes) (layer "F.Cu") (net "LINE"))'
+    zs = zstack(kicad_default(0.8), ("F.Cu", "B.Cu"))
+    for rows, extra, width, gap in [(tee, "", .5, .5), (line, via, .3, .6), (line, patch, .3, .6)]:
+        b = mini_board("".join(seg.format(*r, i) for i, r in enumerate(rows)) + extra)
+        sec = sections(b, ("LINE",), pieces := pieces_of(b))[0][0]
+        sig = [r for r in cross_section(sec, pieces, zs, None, "none").conductors if r.role == "signal"]
+        assert len(sig) == 1 and sig[0].x1 - sig[0].x0 == pytest.approx(width, abs=2 * SIMPLIFY)
+        assert sec.gap == pytest.approx(gap, abs=SIMPLIFY)
+
+
+def test_cuts_on_lpf915_miss_parts_and_other_tracks():
+    # Task 6 fix: three of lpf915's eight run middles land on parts. RF_B's and RF_C's fall on a shunt pad, whose mask
+    # opening takes the coat off the line; RF_OUT's falls on the DNP R2, so the cut runs along R2's RF_SMA pad and
+    # track, a "ground" 0.457 mm from the line where the pour is 0.1505 mm away on bare line. Every cut is on bare
+    # line now: one strip of the track's width, the coat over it, no pad at it
+    b, pieces, zs, mask = coupon("lpf915")
+    s, _ = sections(b, ("RF_A", "RF_B", "RF_C", "RF_OUT", "RF_SMA", "VDD"), pieces)
+    assert len(s) == 8
+    for sec in s:
+        cs = cross_section(sec, pieces, zs, mask, "exact")
+        (sig,) = [r for r in cs.conductors if r.role == "signal"]
+        assert sig.x1 - sig.x0 == pytest.approx(sec.width, abs=2 * SIMPLIFY)
+        assert any(r.z0 == mask.z_coat0 and r.x0 <= sig.x0 and sig.x1 <= r.x1 for r in cs.dielectrics), sec
+    out = next(sec for sec in s if sec.net == "RF_OUT")
+    cs = cross_section(out, pieces, zs, None, "none")
+    (sig,) = [r for r in cs.conductors if r.role == "signal"]
+    top = [r for r in cs.conductors if r.role == "ground" and r.z0 == sig.z0]
+    assert min(sig.x0 - r.x1 for r in top if r.x1 <= sig.x0) == pytest.approx(0.1505, abs=1e-3)
+    assert min(r.x0 - sig.x1 for r in top if r.x0 >= sig.x1) == pytest.approx(0.1505, abs=1e-3)
+    # the cut itself lies on no pad of any net, and RF_OUT's is the cut on bare line at x = 110.45, which meets no
+    # RF_SMA copper in its box
+    assert not [(sec.net, p.name) for sec in s for p in b.all_pads() if p.polygon.intersects(Point(sec.cut))]
+    ref = replace(out, cut=(110.45, -100.0))
+    across = LineString([(110.45, cs.box[0]), (110.45, cs.box[1])])
+    assert not any(pc.polygon.intersects(across) for pc in pieces if pc.net == "RF_SMA")
+    assert cross_section(out, pieces, zs, mask, "exact") == cross_section(ref, pieces, zs, mask, "exact")
