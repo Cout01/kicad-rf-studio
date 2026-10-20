@@ -20,8 +20,8 @@ if TYPE_CHECKING:
 RATIO = 1.3  # the largest ratio of neighbouring cells
 GROW = 1.25  # the ratio the rule grades at itself, under RATIO, so the 1e-6 mm grid cannot push a pair over it
 GRID_TOL = 3e-6  # mm: rounding to the 1e-6 mm grid moves big − RATIO·small by up to 2.3e-6 mm
-LEAD = 1 / 16  # ×d: the least lead of an edge's outside line over its inside line, and of that over the lint's d/8
-MAX_ROUNDS = 10_000  # _grade's guard; random adversarial axes converge within a few dozen rounds
+LEAD = 1 / 16  # ×d: the least lead of an edge's outside line over its inside line (the edge lint fails a tie)
+MAX_ROUNDS = 10_000  # _grade's guard; 3000 random axes (both passes of each) converged within 16 rounds
 
 Edge = tuple[float, int]  # a protected copper edge: its position and the sign that points into its metal
 
