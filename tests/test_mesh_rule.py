@@ -10,7 +10,7 @@ from kicad_rf_studio.core.geometry import Geometry
 from kicad_rf_studio.core.geometry.copper import copper_pieces
 from kicad_rf_studio.core.geometry.mask import mask_model
 from kicad_rf_studio.core.geometry.region import build_region, lambda_min
-from kicad_rf_studio.core.geometry.sections import Section, sections, staircase_gap
+from kicad_rf_studio.core.geometry.sections import Section, cross_section, sections, staircase_gap
 from kicad_rf_studio.core.geometry.vias import via_rods
 from kicad_rf_studio.core.geometry.zstack import substrate_h, zstack
 from kicad_rf_studio.core.kicad import classify, load_board, trace_chain
@@ -256,7 +256,7 @@ def test_every_fixture_axis_grades_and_passes_the_edge_lint(name, start, end, n)
     assert np.isin(m.pinned["z"], m.z).all()
 
 
-def test_protected_edges_come_from_solid_copper_outlines():
+def test_protected_edges_come_from_copper_outlines():
     def same(found, expected, tol):  # one physical edge may come as segments the simplification tilted apart
         def near(a, b):
             return a[1] == b[1] and abs(a[0] - b[0]) < tol
@@ -266,10 +266,35 @@ def test_protected_edges_come_from_solid_copper_outlines():
     m = mesh("coupon_gcpw_masked")
     # the 10 µm simplification tilts the LINE's top edge by 1.4 µm over 20 mm (T6 ruling); it is still an edge
     assert same(m.edges["y"], [(-100.4505, -1), (-100.3, 1), (-99.7, -1), (-99.5495, 1)], 1e-3)
-    assert same(m.edges["x"], [(99.5005, 1), (120.4995, -1)], 1e-3)  # the F.Cu pour's ends; B.Cu's is a sheet
-    assert not mesh("coupon_ms").edges["y"]  # a 1.35 mm microstrip alone on its layer is a sheet
+    assert same(m.edges["x"], [(99.5005, 1), (120.4995, -1)], 1e-3)  # the pours' ends (B.Cu's sheet ends there too)
     # the vertical cuts of the hole split are not edges: lpf915's GND pour was cut at x = 101.833481
     assert 101.833481 not in [e for e, _ in mesh("lpf915", "U1.1", "J1.1").edges["x"]]
+
+
+@pytest.mark.parametrize("n", [2, 3])
+@pytest.mark.parametrize(("name", "start", "end"), FIXTURES)
+def test_both_edges_of_every_section_are_protected_edges(name, start, end, n):
+    # R-P2-18: every protected in-plane copper edge, solid or sheet, takes the edge pattern. The lint runs over
+    # Mesh.edges alone, so coupon_ms's strip, a sheet (spec 5.3: wide everywhere), had no edge and passed it vacuously
+    geom, _ = geometry(name, start, end)
+    m = mesh(name, start, end, n)
+    for sec in geom.sections:
+        c, top = sec.cut[1] if sec.axis == "x" else sec.cut[0], slab(geom.zs, sec.layer).z1
+        strips = cross_section(sec, geom.pieces, geom.zs, None, "none").conductors
+        lo, hi = next((r.x0, r.x1) for r in strips if r.role == "signal" and r.z1 == top and r.x0 <= c <= r.x1)
+        edges = m.edges["y" if sec.axis == "x" else "x"]
+        # an edge sits at its segment's middle, and the 10 µm simplification tilts a segment: 1.8 µm at lpf915-45's cuts
+        assert all(any(s == side and abs(v - e) < 2e-3 for v, s in edges) for e, side in ((lo, 1), (hi, -1)))
+
+
+@pytest.mark.parametrize("n", [2, 3])
+def test_a_sheet_strip_carries_the_edge_pattern(n):
+    # R-P2-18: coupon_ms's y lines fell wherever the fill put them, and fit2d read −27 % at n = 2
+    m = mesh("coupon_ms", n=n)
+    edges = [e for e in m.edges["y"] if -101 < e[0] < -99]
+    assert [s for _, s in edges] == [1, -1]
+    for e in edges:
+        assert all(np.isclose(m.y, v, rtol=0, atol=1.5e-6).any() for v in edge_lines(*e, m.d))
 
 
 def test_extra_edges_get_a_pattern():  # Task 12 re-meshes once with the edges its lint failed

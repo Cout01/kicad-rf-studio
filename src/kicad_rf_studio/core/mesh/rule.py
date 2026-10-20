@@ -37,8 +37,8 @@ def cell_size(sections: list[Section], fallback_width: float, n: int, lam_min: f
 
 
 def edge_lines(edge: float, inside: int, d: float) -> tuple[float, float]:
-    """The lines at a solid-copper edge, (inner, outer): d/4 into the metal and 3d/4 out of it. `inside` (−1 or +1)
-    points from the edge into the metal."""
+    """The lines at a protected copper edge, solid or sheet (R-P2-18), (inner, outer): d/4 into the metal and 3d/4 out
+    of it. `inside` (−1 or +1) points from the edge into the metal."""
     return edge + inside * d / 4, edge - inside * 3 * d / 4
 
 
