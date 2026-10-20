@@ -166,3 +166,40 @@ def test_a_custom_pad_polygon_follows_its_fill_flag(mini_board, fill, area):
     square = f"(gr_poly (pts (xy -1 0) (xy 1 0) (xy 1 2) (xy -1 2)) (width 0.1) {fill})"
     pad = mini_board(custom_pad(square, "circle", size=0.1)).pads("U9.1")[0]
     assert pad.polygon.area == pytest.approx(area, rel=2e-3)
+
+
+# --- footprints that share a reference ----------------------------------------------------------------
+
+
+def footprint_ref(ref, uuid, at="0 0"):
+    """A footprint called `ref` with one pad, whose uuid is the footprint's plus "p"."""
+    return (f'(footprint "Lib:Part" (layer "F.Cu") (uuid "{uuid}") (at {at}) (property "Reference" "{ref}") '
+            f'(pad "1" smd rect (at 0 0) (size 1 1) (layers "F.Cu") (uuid "{uuid}p")))')
+
+
+def test_footprints_that_share_a_reference_are_all_kept(mini_board):
+    b = mini_board(footprint_ref("REF**", "a") + footprint_ref("REF**", "b", at="5 0"))
+    assert [(key, fp.ref, fp.uuid) for key, fp in b.footprints.items()] == [
+        ("REF**", "REF**", "a"), ("REF**#2", "REF**#2", "b")]  # the first keeps its reference
+    assert [p.uuid for p in b.pads("REF**.1")] == ["ap"]
+    (second,) = b.pads("REF**#2.1")  # its pad carries the new reference
+    assert (second.uuid, second.ref, second.name) == ("bp", "REF**#2", "REF**#2.1")
+    assert b.warnings.count(("W_DUPLICATE_REF", {"refs": "REF**"})) == 1
+
+
+def test_copies_are_numbered_in_file_order_and_reported_once(mini_board):
+    refs = ["U1", "REF**", "U1", "REF**", "U1", "C1"]
+    b = mini_board("".join(footprint_ref(ref, f"f{i}") for i, ref in enumerate(refs)))
+    assert list(b.footprints) == ["U1", "REF**", "U1#2", "REF**#2", "U1#3", "C1"]
+    assert [w for w in b.warnings if w[0] == "W_DUPLICATE_REF"] == [("W_DUPLICATE_REF", {"refs": "REF**, U1"})]
+
+
+def test_a_copy_never_takes_the_name_of_another_footprint(mini_board):
+    b = mini_board(footprint_ref("U1", "a") + footprint_ref("U1#2", "b") + footprint_ref("U1", "c"))
+    assert {key: fp.uuid for key, fp in b.footprints.items()} == {"U1": "a", "U1#2": "b", "U1#3": "c"}
+    assert len([w for w in b.warnings if w[0] == "W_DUPLICATE_REF"]) == 1
+
+
+def test_distinct_references_raise_no_duplicate_warning(mini_board):
+    b = mini_board(footprint_ref("U1", "a") + footprint_ref("U2", "b"))
+    assert list(b.footprints) == ["U1", "U2"] and "W_DUPLICATE_REF" not in [code for code, _ in b.warnings]

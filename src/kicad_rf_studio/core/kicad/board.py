@@ -108,7 +108,7 @@ class Board:
     thickness: float
     copper_layers: tuple[str, ...]  # top to bottom: F.Cu, In1.Cu, ..., B.Cu
     nets: tuple[str, ...]
-    footprints: dict[str, Footprint]  # by reference
+    footprints: dict[str, Footprint]  # by reference; a repeated one is kept as REF#2, REF#3, ...
     tracks: list[Track]
     vias: list[Via]
     areas: list[CopperArea]
@@ -238,12 +238,19 @@ def _pad_layers(pad: list, copper: tuple[str, ...]) -> tuple[tuple[str, ...], tu
     return tuple(layer for layer in copper if layer in names), tuple(s for s in "FB" if f"{s}.Mask" in names)
 
 
-def _footprint(b: Board, node: list, table: dict[str, str], edge: list[LineString]) -> None:
+def _footprint(b: Board, node: list, table: dict[str, str], edge: list[LineString], copies: set[str]) -> None:
     """A footprint with its pads. Its graphics go where a board graphic's would, with no net, and its zones
-    follow the board-zone rules."""
+    follow the board-zone rules. A reference already taken (an unannotated REF**, a repeated logo) is kept
+    as REF#2, REF#3, ... in file order, and the original goes into `copies`."""
     at, angle = xy(node, "at"), num(node, "at", 3, 0.0)
     props = {str(p[1]): str(p[2]) for p in children(node, "property") if len(p) > 2}
     ref = props.get("Reference", "")
+    if ref in b.footprints:
+        copies.add(ref)
+        n = 2
+        while f"{ref}#{n}" in b.footprints:
+            n += 1
+        ref = f"{ref}#{n}"
     pads = []
     for p in children(node, "pad"):
         center, polygon, warnings = pad_shape(p, at, angle)
@@ -261,8 +268,6 @@ def _footprint(b: Board, node: list, table: dict[str, str], edge: list[LineStrin
             _zone(b, g, table)
     mpn = next((v for k, v in props.items() if k.lower() in _MPN), None)
     dnp = "dnp" in (child(node, "attr") or [])[1:] or atom(node, "dnp") == "yes"
-    # ponytail: footprints are kept by reference, so of two with the same one (an unannotated "REF**", a repeated
-    # logo) only the last is kept. Upgrade: a list of footprints, with the lookups by reference built from it.
     b.footprints[ref] = Footprint(ref, props.get("Value", ""), mpn, str(node[1]), _text(node, "uuid"),
                                   _text(node, "layer"), at, angle, dnp, tuple(pads),
                                   num(node, "solder_mask_margin", 1, None))
@@ -309,6 +314,7 @@ def load_board(path: str | Path) -> Board:
         solder_mask_min_width=num(setup, "solder_mask_min_width", 1, 0.0),
         mask_graphics={"F": [], "B": []}, stackup=None, warnings=warnings)
     edge: list[LineString] = []
+    copies: set[str] = set()  # the references more than one footprint carries
     for node in root:
         if not isinstance(node, list) or not node:
             continue
@@ -321,7 +327,9 @@ def load_board(path: str | Path) -> Board:
         elif node[0] in GRAPHICS:
             _graphic(b, node, table, edge)
         elif node[0] == "footprint":
-            _footprint(b, node, table, edge)
+            _footprint(b, node, table, edge, copies)
+    if copies:
+        b.warnings.append(("W_DUPLICATE_REF", {"refs": ", ".join(sorted(copies))}))
     b.outline = _outline(edge)
     if b.outline is None:
         b.warnings.append(("W_NO_OUTLINE", {}))
