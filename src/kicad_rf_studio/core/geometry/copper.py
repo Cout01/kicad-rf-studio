@@ -1,18 +1,23 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """The copper pipeline (spec 5.3), in mm. Per (layer, net) the board's copper is made valid, united, clipped to the
-through-crop, simplified at 10 µm, put on the 1e-6 mm grid and cut into pieces with no holes, each solid or a sheet."""
+through-crop, simplified at 10 µm, put on the 1e-6 mm grid and cut into pieces with no holes, each solid or a sheet.
+The connectivity check (spec 5.1) finds where those pieces and the vias break a net or join two."""
 from __future__ import annotations
 
 from collections import defaultdict
+from collections.abc import Collection
 from dataclasses import dataclass
 
 import numpy as np
 import shapely
-from shapely.geometry import GeometryCollection, MultiPolygon, Polygon, box
+from scipy.sparse import coo_matrix
+from scipy.sparse.csgraph import connected_components
+from shapely.geometry import GeometryCollection, MultiPolygon, Point, Polygon, box
 from shapely.geometry.base import BaseGeometry
 from shapely.geometry.polygon import orient
 from shapely.strtree import STRtree
 
+from kicad_rf_studio.core.geometry.vias import Rod
 from kicad_rf_studio.core.kicad.board import Board
 from kicad_rf_studio.core.kicad.shapes import circle
 
@@ -134,3 +139,37 @@ def copper_pieces(board: Board, crop: Polygon,
             solid = is_solid(p, near, t)
             pieces += [Piece(layer, net, shapely.normalize(q), solid) for q in split_holes(p)]
     return pieces, warnings
+
+
+def connectivity(pieces: list[Piece], rods: list[Rod], roi: BaseGeometry,
+                 nets: Collection[str]) -> list[tuple[str, dict]]:
+    """The opens and shorts of `nets`. Pieces on one layer that touch are joined, and a rod joins the pieces its
+    barrel touches. A net of `nets` in two or more joined parts is open: E_OPEN_IN_ROI when two of them reach `roi`,
+    else W_OPEN_IN_MARGIN. Copper of another net touching theirs is a short: E_SHORT_IN_ROI when the touch lies in
+    `roi`, else W_SHORT_IN_MARGIN. Copper with no net floats, so it is never open and shorts nothing. Opens come
+    first, by net, then shorts, by pair of nets."""
+    # ponytail: a rod joins every layer, as a through via does; a blind or buried via needs its layer span here
+    geoms = [pc.polygon for pc in pieces] + [Point(r.at).buffer(r.radius) for r in rods]
+    layers = [pc.layer for pc in pieces] + [None] * len(rods)
+    names = [pc.net for pc in pieces] + [r.net for r in rods]
+    if not geoms:  # STRtree's bulk query cannot take an empty list
+        return []
+    a, b = STRtree(geoms).query(geoms, "intersects")
+    touch = [(i, j) for i, j in zip(a, b) if i < j and (layers[i] == layers[j] or None in (layers[i], layers[j]))]
+    same = np.array([(i, j) for i, j in touch if names[i] == names[j]], dtype=int).reshape(-1, 2)
+    graph = coo_matrix((np.ones(len(same)), (same[:, 0], same[:, 1])), shape=(len(geoms), len(geoms)))
+    part = connected_components(graph, directed=False)[1]
+    in_roi = shapely.intersects(geoms, roi)
+    notes = []
+    for net in sorted(set(nets) - {""}):
+        parts = {part[k] for k, n in enumerate(names) if n == net}
+        if len(parts) > 1:
+            inside = {part[k] for k, n in enumerate(names) if n == net and in_roi[k]}
+            notes.append(("E_OPEN_IN_ROI" if len(inside) > 1 else "W_OPEN_IN_MARGIN", {"net": net}))
+    shorts: dict[tuple[str, ...], bool] = {}
+    for i, j in touch:
+        if names[i] != names[j] and names[i] and names[j] and (names[i] in nets or names[j] in nets):
+            pair = tuple(sorted((names[i], names[j])))
+            shorts[pair] = shorts.get(pair, False) or geoms[i].intersection(geoms[j]).intersects(roi)
+    return notes + [("E_SHORT_IN_ROI" if hit else "W_SHORT_IN_MARGIN", {"nets": ", ".join(pair)})
+                    for pair, hit in sorted(shorts.items())]
