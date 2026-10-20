@@ -1,0 +1,10 @@
+{
+  "name": "jlcpcb-2l",
+  "source": "https://jlcpcb.com/capabilities/pcb-capabilities",
+  "retrieved": "2026-10-19",
+  "spec_frequency_hz": 1000000,
+  "copper_mm": 0.035,
+  "mask": {"thickness_mm": 0.01524, "epsilon_r": 3.8, "loss_tangent": null},
+  "dielectric": {"material": "FR-4", "epsilon_r": 4.5, "loss_tangent": 0.02},
+  "notes": "Transcribed from JLCPCB's public pages on the retrieved date; no value is measured or assumed. dielectric epsilon_r 4.5: the row 'FR-4 Dielectric Constants' of the source page reads '4.5 (2-Layer PCB)', and https://jlcpcb.com/resources/custom-pcb agrees ('a Dk value of about 4.5'). dielectric loss_tangent 0.02 and spec_frequency_hz 1000000: https://jlcpcb.com/pcb-fabrication/fr4-pcb states 'Dielectric constant: around 4.5 at 1MHz' and 'Loss tangent: around 0.02 at 1MHz'. That is JLCPCB's general FR-4 statement at 1 MHz, not an RF figure and not the data sheet of one laminate (JLCPCB uses Grade A laminates from several suppliers). mask epsilon_r 3.8: the row 'Solder mask dielectric constant' of the source page, with no frequency stated (spec_frequency_hz is the dielectric's). mask thickness_mm 0.01524 is 0.6 mil, the 'Soldermask Thickness On Copper' of https://jlcpcb.com/help/article/multi-layer-pcb-standard-laminated-structures (the 'Coating Above Trace C2' of https://jlcpcb.com/impedance); on bare FR-4 and between traces JLCPCB gives 1.2 mil = 0.03048 mm, and the source page gives only a floor, a 'Solder mask ink thickness' of at least 10 um. mask loss_tangent is null: JLCPCB publishes none. copper_mm 0.035 is the '1 oz (35 um)' of https://jlcpcb.com/resources/custom-pcb; JLCPCB's multilayer impedance model lists 1.6 mil (0.0406 mm) of finished outer copper. The dielectric takes the rest of the board thickness, which the source page holds to +-0.1 mm below 1.0 mm and +-10 % from 1.0 mm."
+}

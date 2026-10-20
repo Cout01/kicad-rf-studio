@@ -15,6 +15,7 @@ from kicad_rf_studio.core.kicad.sexpr import Quoted, atom, child, children, num,
 from kicad_rf_studio.core.kicad.shapes import (
     GRAPHICS, XY, arc_points, covered, graphic_shape, is_filled, pad_shape, place, points, stroke_path,
     valid_polygons, xy)
+from kicad_rf_studio.core.kicad.stackup import Stackup, from_board as read_stackup
 from kicad_rf_studio.core.messages import KrsError
 
 OLDEST_SUPPORTED = 20241229  # the file version of KiCad 9.0
@@ -116,7 +117,7 @@ class Board:
     pad_to_mask_clearance: float
     solder_mask_min_width: float
     mask_graphics: dict[str, list[Polygon]]  # "F" / "B": shapes drawn on F.Mask / B.Mask
-    stackup: Stackup | None  # filled in Task 9
+    stackup: Stackup | None  # the board's own; None when the file has none
     warnings: list[tuple[str, dict]]  # (message code, params)
 
     def pads(self, name: str) -> list[Pad]:
@@ -312,7 +313,7 @@ def load_board(path: str | Path) -> Board:
         footprints={}, tracks=[], vias=[], areas=[], outline=None,
         pad_to_mask_clearance=num(setup, "pad_to_mask_clearance", 1, 0.0),
         solder_mask_min_width=num(setup, "solder_mask_min_width", 1, 0.0),
-        mask_graphics={"F": [], "B": []}, stackup=None, warnings=warnings)
+        mask_graphics={"F": [], "B": []}, stackup=read_stackup(root), warnings=warnings)
     edge: list[LineString] = []
     copies: set[str] = set()  # the references more than one footprint carries
     for node in root:
