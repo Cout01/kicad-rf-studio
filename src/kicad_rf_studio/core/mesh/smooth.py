@@ -16,7 +16,7 @@
 # You should have received a copy of the GNU Lesser General Public License
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #
-# From CSXCAD v0.7.0 (pinned by openEMS-Project v0.37.0), python/CSXCAD/SmoothMeshLines.py; changed 2026-10-20: renamed smooth_mesh_lines, ratio default 1.3, MeshLinesSymmetric and demo cut.
+# From CSXCAD v0.7.0 (pinned by openEMS-Project v0.37.0), python/CSXCAD/SmoothMeshLines.py; changed 2026-10-20: renamed smooth_mesh_lines, ratio default 1.3, SmoothRange's stop-side step fixed, MeshLinesSymmetric and demo cut.
 
 import numpy as np
 
@@ -142,7 +142,7 @@ def SmoothRange(start, stop, start_res, stop_res, max_res, ratio):
             l.append(l[-1]+start_res)
         else:
             stop_res  *= ratio
-            r.append(r[-1]+start_res)
+            r.append(r[-1]+stop_res)  # upstream: start_res
 
     length = l[-1]+r[-1]
     c = Unique(np.r_[np.array(l), length-np.array(r)])

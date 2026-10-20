@@ -8,7 +8,8 @@ CSXCAD SmoothMeshLines
   Copyright: (C) 2015, 2016 Thorsten Liebig
   Licence:   GNU Lesser General Public License v3.0 or later (LGPL-3.0-or-later)
   Here:      src/kicad_rf_studio/core/mesh/smooth.py, a copy of SmoothMeshLines and its helpers that keeps the
-             original licence header
+             original licence header. Changed: renamed smooth_mesh_lines, ratio default 1.3, and one fix in
+             SmoothRange (its stop-side taper steps by stop_res, where upstream steps by start_res)
 
 
 KiCad line-calculator formulas
