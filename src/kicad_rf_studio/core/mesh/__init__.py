@@ -83,10 +83,10 @@ def _edges(pieces: list[Piece], prot: Protected, sections: Iterable[Section] = (
     """The protected in-plane copper edges, per axis, as sorted (position, inside sign): the segments of the outlines
     of copper, solid or sheet (R-P2-18: a sheet's edges take edge_lines too, and the lint checks them), that run along
     y or x and lie in the protected area of their layer for more than SIMPLIFY. Each (layer, net)'s pieces are united
-    first, so the hole split's cuts are not edges. A
-    segment the 10 µm simplification tilted (a track's edge where its round cap began) still runs along its axis when
-    it leaves it by under 2·SIMPLIFY and 1/ALONG of its length, and sits at its middle. Also, per axis, the edges that
-    cross a section's cut on its layer: the cross-section fit2d checks (spec 5.5) is theirs."""
+    first, so the hole split's cuts are not edges. A segment the 10 µm simplification tilted (a track's edge where its
+    round cap began) still runs along its axis when it leaves it by under 2·SIMPLIFY and 1/ALONG of its length, and
+    sits at its middle. Also, per axis, the edges that cross a section's cut on its layer: the cross-section fit2d
+    checks (spec 5.5) is theirs."""
     groups: dict[tuple[str, str], list] = defaultdict(list)
     for pc in pieces:
         groups[pc.layer, pc.net].append(pc.polygon)

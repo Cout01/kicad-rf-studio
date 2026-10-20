@@ -303,8 +303,8 @@ def _pieces(g: float, a: float, b: float, cap: float, held_a: bool = False, held
     of the front that grew last. Every piece is at most `cap` and each end piece at most RATIO times its neighbour; of
     the two, the one whose end pieces are also no less than 1/RATIO of their neighbours wins, then the one scaled least.
     A held neighbour (a cell the rule fixes, exempt as the larger of a pair) sets no such floor, nor can one that no
-    piece reaches. A run too short for both floors (1.3 to 1.54 times its neighbours) gets the scaled-down pieces, and
-    _grade then re-fills the neighbour's run to match."""
+    piece reaches. A run too short for both floors (1.3 to 1.54 times its neighbours) gets the fit down, and _grade
+    then re-fills the neighbour's run to match."""
     left, right, nl, nr, total, last_left = [], [], min(a, cap), min(b, cap), 0.0, True
     while total < g - GRID_TOL:
         last_left = nl <= nr
