@@ -15,7 +15,7 @@ from kicad_rf_studio.core.geometry.vias import via_rods
 from kicad_rf_studio.core.geometry.zstack import substrate_h, zstack
 from kicad_rf_studio.core.kicad import classify, load_board, trace_chain
 from kicad_rf_studio.core.kicad.tracer import Chain
-from kicad_rf_studio.core.mesh import Mesh, build_mesh
+from kicad_rf_studio.core.mesh import Mesh, _edges, build_mesh
 from kicad_rf_studio.core.mesh.protect import protected_set
 from kicad_rf_studio.core.mesh.rule import (RATIO, _grade, _patterns, cell_size, dz0, edge_lines, merge, xy_lines,
                                             z_lines)
@@ -91,10 +91,11 @@ def bad_pairs(lines, fixed=()):
 
 def lint(lines, edges, d):
     """The edge lint of spec 5.5, as Task 12 will run it: the edges with a line on them, their nearest inside line
-    closer than d/8, or their first outside line no farther than the nearest inside one (T7 carry: a tie fails)."""
+    closer than d/8, or their first outside line no farther than the nearest inside one (T7 carry: a tie fails). The
+    distances go to 1e-9 mm, below the 1e-6 mm grid, so that a tie compares equal."""
     hits = []
     for e, inside in edges:
-        off = (lines - e) * inside  # > 0 inside the metal
+        off = np.round((lines - e) * inside, 9)  # > 0 inside the metal
         near_in, near_out = off[off > 0].min(initial=np.inf), -off[off < 0].max(initial=-np.inf)
         if (off == 0).any() or near_in < d / 8 or near_out <= near_in:
             hits.append((e, inside))
@@ -149,6 +150,13 @@ def test_staircased_net_gets_d_from_its_gap():
     assert m.d == pytest.approx(0.1505 / 2, abs=1e-3) and not shared_nodes(m, geom, "F.Cu", "LINE", "GND")
 
 
+@pytest.mark.parametrize(("e", "a", "side"), [(-100.889, 0.02, 1), (-100.778, 0.01875, -1), (110.0015, 0.01875, 1)])
+def test_the_lint_fails_a_tie(e, a, side):
+    # R-P2-22 and the T7 carry: a line pair symmetric about an edge ties the outer line to the metal, and Task 12's lint
+    # fails it; on the 1e-6 mm grid the tie is exact, but float noise put either distance ahead (4302 of 16,008 ties)
+    assert lint(np.round(np.array([e - a, e + a]), 6), [(e, side)], 0.075)
+
+
 def test_edge_pattern():
     d = 0.075
     assert edge_lines(1.0, -1, d) == pytest.approx((1.0 - d / 4, 1.0 + 3 * d / 4))  # metal at x < 1
@@ -175,6 +183,25 @@ def test_one_z_cell_across_copper_then_dz0():
     # Task 10 ruling: 35 µm of copper beside a 25 µm dz0 is 1.4, which the rule fixes; every other pair grades
     c = np.diff(z)
     assert max(c[i] / c[i - 1], c[i] / c[i + 1]) == pytest.approx(1.4) and not bad_pairs(z, z_fixed(zs, 0.025))
+
+
+def test_dz0_cells_stay_whole_beside_thin_copper(tmp_path):
+    # R-P2-22: 18 µm of copper beside a 25 µm dz0 cell is 1.39 apart, over RATIO, but the dz0 cell holds the smeared
+    # mask (spec 5.3), so it never splits (unheld, it split into 13.9 + 11.1 µm)
+    cu = '(layer "F.Cu"\n\t\t\t\t(type "copper")\n\t\t\t\t(thickness 0.035)'
+    geom, prot = variant(tmp_path, "coupon_gcpw_masked", cu, cu.replace("0.035", "0.018"))
+    m, top = build_mesh(geom, prot, 2), slab(geom.zs, "F.Cu")
+    i, j = np.flatnonzero(m.z == top.z1)[0], np.flatnonzero(m.z == top.z0)[0]
+    assert m.z[i] - m.z[j] == pytest.approx(0.018) and i == j + 1
+    assert [m.z[i + 1] - m.z[i], m.z[j] - m.z[j - 1]] == pytest.approx([m.dz0] * 2, abs=1e-6)
+
+
+def test_dz0_is_the_mask_when_it_is_thicker_than_d_over_3(tmp_path):
+    # spec 5.4: dz0 = max(t_m, min(d/3, h/4)); a 30 µm mask over d/3 = 25 µm fills the first z-cell whole
+    mask = '(layer "F.Mask"\n\t\t\t\t(type "Top Solder Mask")\n\t\t\t\t(thickness 0.01)'
+    geom, prot = variant(tmp_path, "coupon_gcpw_masked", mask, mask.replace("0.01)", "0.03)"))
+    m, top = build_mesh(geom, prot, 2), slab(geom.zs, "F.Cu")
+    assert m.d / 3 < 0.03 and m.dz0 == pytest.approx(0.03) and np.isclose(m.z, top.z1 + 0.03, rtol=0, atol=1e-6).any()
 
 
 def test_copper_faces_never_merge():
@@ -231,6 +258,27 @@ def test_curve_vias_snap_to_lines():
     assert len(m.snapped_rods) == len(geom.rods) and sum(not r.solid for r in m.snapped_rods) == 15
     assert all(r.at[0] in m.x and r.at[1] in m.y for r in m.snapped_rods if not r.solid)
     assert [r for r in m.snapped_rods if r.solid] == [r for r in geom.rods if r.solid]
+    # R-P2-22: to the nearest line, not merely to one (the brief: "move to the nearest x and y lines")
+    assert all(s.at == (m.x[np.abs(m.x - r.at[0]).argmin()], m.y[np.abs(m.y - r.at[1]).argmin()])
+               for r, s in zip(geom.rods, m.snapped_rods) if not r.solid)
+
+
+def test_pinned_lines_are_the_rules_own():
+    # Task 10 ruling 7 and R-P2-22: Task 12's dt reference reads Mesh.pinned, which holds the walls, the edge lines and
+    # the protected extent's ends and fill in x and y, and the walls, copper faces and dz0 lines in z: never a line
+    # that smooth_mesh_lines or the grading placed in the margins
+    geom, prot = geometry("coupon_gcpw_pads")
+    m = mesh("coupon_gcpw_pads")
+    _, prefer = _edges(geom.pieces, prot, geom.sections)
+    box = shapely.total_bounds([*prot.area.values(), *prot.boxes])
+    for k, axis in enumerate("xy"):
+        lines, (lo, hi) = getattr(m, axis), (round(box[k], 6), round(box[k + 2], 6))
+        rule = {*geom.region.walls[2 * k:2 * k + 2], *_patterns(m.edges[axis], m.d, prefer[axis])}
+        assert set(m.pinned[axis]) == rule | set(lines[(lines >= lo) & (lines <= hi)])
+        assert len(lines) > len(m.pinned[axis])  # the margins hold graded lines that are not pinned
+    cu, dz = [s for s in geom.zs if s.kind == "copper"], m.dz0
+    rule = {*geom.region.walls[4:], *(v for s in cu for v in (s.z0, s.z1, round(s.z0 - dz, 6), round(s.z1 + dz, 6)))}
+    assert set(m.pinned["z"]) == rule and len(m.z) > len(rule)
 
 
 def test_mesh_takes_no_rods_by_default():  # Task 12 builds meshes by hand for its lint and dt tests
@@ -456,6 +504,16 @@ def test_extra_edges_keep_their_own_pattern():
     assert lint(lines, edges, d)
     lines, _ = xy_lines(edges, (100.0, 120.0), (80.0, 140.0), [], d, 2.36, force=edges[:1])
     assert not lint(lines, edges[:1], d) and {round(v, 6) for v in edge_lines(*edges[0], d)} <= set(lines)
+
+
+@pytest.mark.parametrize("s", [0.2, 0.3, 0.4, 0.5, 0.6])
+def test_no_graded_line_enters_an_edge_cell_at_the_cap_of_d(s):
+    # R-P2-22: at the λ cap, d = 0.9·coarse, a shared edge cell can be wider than coarse; smooth_mesh_lines knows no
+    # edges and put a line into it: 0.06d outside the edge at s = 0.3, so the outside line came nearer than the inside
+    coarse, d = 1.0, 0.9
+    edges = [(10.0, 1), (round(10.0 + s * d, 6), 1), (round(13.0 + s * d, 6), -1)]
+    lines, _ = xy_lines(edges, (9.0, edges[-1][0] + 1.0), (0.0, 30.0), [], d, coarse)
+    assert not lint(lines, edges, d) and not bad_pairs(lines, [e for e, _ in edges])
 
 
 def test_extent_end_just_past_an_edge_is_no_line():

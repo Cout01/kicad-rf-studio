@@ -81,7 +81,7 @@ def z_lines(zs: tuple[Slab, ...], d: float, t_m: float, h: float, z_walls: tuple
     outside = [round(f + side * dz, 6) for f, side in zip(faces, [-1] * len(cu) + [1] * len(cu))]
     lines = np.array(_add(sorted({*z_walls, *faces}), [*outside, *(round(v, 6) for v in extra)], dz / 3))
     fixed = [(s.z0 + s.z1) / 2 for s in cu] + [(f + v) / 2 for f, v in zip(faces, outside) if v in lines]
-    return _grade(_smooth(lines, coarse, dz / 3), fixed, coarse, lines)
+    return _grade(_smooth(lines, coarse, dz / 3, fixed), fixed, coarse, lines)
 
 
 def xy_lines(edges: list[Edge], extent: tuple[float, float], walls: tuple[float, float], free: Iterable[float],
@@ -117,7 +117,8 @@ def xy_lines(edges: list[Edge], extent: tuple[float, float], walls: tuple[float,
     mid = (hard[1:] + hard[:-1]) / 2
     held = [e for e, _ in edges]
     lines = _grade(hard, [*held, *mid[(mid < lo) | (mid > hi)]], d, hard)  # the fill: the cells outside the extent wait
-    lines = _grade(_smooth(lines, coarse, d / 3), held, lambda m: np.where((m >= lo) & (m <= hi), d, coarse), hard)
+    lines = _grade(_smooth(lines, coarse, d / 3, held), held, lambda m: np.where((m >= lo) & (m <= hi), d, coarse),
+                   hard)
     return lines, np.union1d(base, lines[(lines >= lo) & (lines <= hi)])
 
 
@@ -242,12 +243,14 @@ def _add(kept: list[float], lines: Iterable[float], tol: float) -> list[float]:
     return kept
 
 
-def _smooth(lines: np.ndarray, coarse: float, tol: float) -> np.ndarray:
+def _smooth(lines: np.ndarray, coarse: float, tol: float, held: Iterable[float] = ()) -> np.ndarray:
     """`lines` and smooth_mesh_lines' grading of their gaps above `coarse`, on the 1e-6 mm grid; of its new lines,
-    those within `tol` of a given one are dropped."""
+    those within `tol` of a given one, or in a cell that holds a `held` point (a cell the rule fixes, which at the λ
+    cap can be wider than `coarse`: R-P2-22), are dropped."""
     new = np.setdiff1d(np.round(smooth_mesh_lines(lines, coarse, RATIO), 6), lines)
     i = np.clip(np.searchsorted(lines, new), 1, len(lines) - 1)
-    return np.union1d(lines, new[np.minimum(new - lines[i - 1], lines[i] - new) >= tol])
+    keep = (np.minimum(new - lines[i - 1], lines[i] - new) >= tol) & ~np.isin(i, np.searchsorted(lines, list(held)))
+    return np.union1d(lines, new[keep])
 
 
 def _grade(lines: np.ndarray, fixed: Iterable[float], cap: float | Callable[[np.ndarray], np.ndarray],
