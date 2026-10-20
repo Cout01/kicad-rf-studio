@@ -62,6 +62,17 @@ def stage(repo, path, text):
     git(repo, "add", path)
 
 
+def tag(repo, name, message, tagger):
+    """An annotated tag of HEAD. Returns the sha of the tag object, which `git rev-parse <tag>` gives unpeeled."""
+    git(repo, "-c", "user.name=" + tagger, *IDENT[2:], "-c", "tag.gpgsign=false", "tag", "-a", name, "-m", message)
+    return git(repo, "rev-parse", name)
+
+
+# the deny word in the tagger, in the message, or nowhere; the clean tag's tagger address trips no generic rule (R8)
+TAGS = pytest.mark.parametrize("tagger, message, exit_code", [("acme", "v1", 1), ("t", "Release ACME", 1),
+                                                              ("t", "v1", 0)], ids=["tagger", "message", "clean"])
+
+
 def hits(out):
     """Parse '<where>:<line>: <rule>' output lines into (where, line, rule)."""
     return [re.fullmatch(r"(.+):(\d+): (\S+)", line).groups() for line in out.splitlines()]
@@ -184,6 +195,32 @@ def test_a_file_named_like_an_archive_but_not_one_is_scanned_as_text(repo):
     assert gate.main(["--all"]) == 1
 
 
+@pytest.mark.parametrize("encoding", ["utf-16-le", "utf-16-be"])
+def test_a_utf16_file_with_a_byte_order_mark_is_text_not_binary(repo, capsys, encoding):
+    sha = commit_bytes(repo, "notes.txt", "﻿clean\r\nProject ACME\r\n".encode(encoding))  # NULs in every line
+    assert gate.main(["--all"]) == 1
+    assert hits(capsys.readouterr().out) == [(f"{sha[:8]}:notes.txt", "2", "deny#1")]
+
+
+@pytest.mark.parametrize("data", [
+    "Projeto ação\n".encode("cp1252"),                    # what a Windows editor saves: not UTF-8
+    "Projeto ação\n".encode() + b"\xe9\n",                # UTF-8 with one stray byte: its UTF-8 reading still counts
+], ids=["cp1252", "utf8-with-a-stray-byte"])
+def test_an_accented_entry_matches_text_that_is_not_utf8(repo, monkeypatch, tmp_path_factory, data):
+    monkeypatch.setenv("KRS_PRIVATE_LIST", str(private_list(tmp_path_factory, "ação\n".encode())))
+    commit_bytes(repo, "notes.txt", data)
+    assert gate.main(["--all"]) == 1
+
+
+@TAGS
+def test_all_scans_annotated_tags(repo, capsys, tagger, message, exit_code):
+    commit(repo, "a.txt", "clean\n")
+    sha = tag(repo, "v1", message, tagger)
+    assert gate.main(["--all"]) == exit_code
+    out = capsys.readouterr().out
+    assert [where for where, _, _ in hits(out)] == [f"{sha[:8]}:tag"] * exit_code and "acme" not in out.lower()
+
+
 def test_a_blob_is_checked_at_every_path_it_has(repo):
     commit(repo, "tools/privacy_allow.txt", "path:a-allowed.md\n")
     stage(repo, "a-allowed.md", "D" + ":" + "/x\n")
@@ -276,6 +313,19 @@ def test_pre_push_skips_deletions(repo, monkeypatch):
 def test_pre_push_checks_ref_names(repo, monkeypatch):
     sha = commit(repo, "a.txt", "clean\n")
     assert push(monkeypatch, f"refs/heads/main {sha} refs/heads/acme-x {NEVER}") == 1
+
+
+@TAGS
+def test_pre_push_scans_a_pushed_tag(repo, monkeypatch, tagger, message, exit_code):
+    commit(repo, "a.txt", "clean\n")
+    sha = tag(repo, "v1", message, tagger)
+    assert push(monkeypatch, f"refs/tags/v1 {sha} refs/tags/v1 {NEVER}") == exit_code
+
+
+def test_pre_push_of_a_tag_scans_the_commits_it_brings(repo, monkeypatch):
+    commit(repo, "a.txt", "acme\n"); commit(repo, "a.txt", "clean\n")
+    sha = tag(repo, "v1", "v1", "t")  # a clean tag of a clean commit, whose parent the remote lacks
+    assert push(monkeypatch, f"refs/tags/v1 {sha} refs/tags/v1 {NEVER}") == 1
 
 
 # --- the hooks -------------------------------------------------------------------------------

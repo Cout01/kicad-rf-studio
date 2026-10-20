@@ -2,12 +2,14 @@
 """Local privacy gate for the git hooks in .githooks. Standard library only.
 
 Refuses to commit or push when an entry of the private list (the file named by $KRS_PRIVATE_LIST)
-appears anywhere: file contents, file names, ref names, commit messages, author fields or archive
-member names. It also refuses an absolute drive path, home path, UNC share or e-mail address in a
-file's contents (the generic rules; tools/privacy_allow.txt can exempt a path from those only).
+appears anywhere: file contents, file names, ref names, commit messages, author fields, annotated
+tags (tagger and message) or archive member names. It also refuses an absolute drive path, home
+path, UNC share or e-mail address in a file's contents (the generic rules; tools/privacy_allow.txt
+can exempt a path from those only).
 
 A hit is printed as <where>:<line>: <rule>, where <where> is <commit>:<path>, <commit>:commit (the
-header and message) or refs, and <rule> is deny#<n> (the n-th entry of the list) or generic:<kind>.
+header and message), <tag>:tag (an annotated tag object) or refs, and <rule> is deny#<n> (the n-th
+entry of the list) or generic:<kind>.
 The matched text is never printed, nor is a name that matched: such a file shows as path#<n> (its
 position in the listing) with line 0 standing for the name itself.
 """
@@ -75,16 +77,26 @@ def _check(where: str, text: str, deny: list[str], generic: bool) -> list[str]:
 
 
 def _scan_file(where: str, path: str, data: bytes, deny: list[str], generic: bool) -> list[str]:
-    """Archives are checked by member name, other binaries are skipped, the rest is UTF-8 text."""
+    """Archives are checked by member name, other binaries are skipped, the rest is text: UTF-16 when it
+    starts with a byte order mark, else UTF-8, else cp1252 (what a Windows editor saves), so that an
+    accented entry matches. Text that is not UTF-8 is also read as UTF-8 with the bad bytes replaced, so
+    that one stray byte does not hide the rest of a UTF-8 file."""
     if path.lower().endswith(ARCHIVES):
         try:
             with zipfile.ZipFile(io.BytesIO(data)) as z:
                 return _check(where, "\n".join(z.namelist()), deny, generic)
         except zipfile.BadZipFile:
             pass  # named like an archive but is not one: treat it like any other file
+    if data[:2] in (b"\xff\xfe", b"\xfe\xff"):  # UTF-16 is full of NULs: read it before the binary test
+        return _check(where, data.decode("utf-16", "replace"), deny, generic)
     if b"\0" in data[:8192]:
         return []
-    return _check(where, data.decode("utf-8", "replace"), deny, generic)
+    try:
+        return _check(where, data.decode("utf-8"), deny, generic)
+    except UnicodeDecodeError:
+        both = [data.decode("cp1252", "replace"), data.decode("utf-8", "replace")]  # the same lines: "\n" is ASCII
+        found = dict.fromkeys(hit for text in both for hit in scan_text(text, deny, generic))  # each hit once
+        return [f"{where}:{n}: {rule}" for n, rule in sorted(found, key=lambda hit: hit[0])]
 
 
 def _scan_files(prefix: str, files: list[tuple[str, str]], deny: list[str], allow: set[str],
@@ -116,21 +128,24 @@ def _scan_commit(sha: str, deny: list[str], allow: set[str], seen: set) -> list[
     return out + _scan_files(prefix, files, deny, allow, seen)
 
 
-def _pushed(stdin_text: str, remote_name: str) -> tuple[list[str], list[str]]:
-    """Commits and ref names of the updates git feeds the pre-push hook on stdin. A new remote ref
-    skips only what remote-tracking refs of that remote reach: another remote proves nothing here."""
-    commits, refs = [], []
+def _pushed(stdin_text: str, remote_name: str) -> tuple[list[str], list[str], list[str]]:
+    """Commits, ref names and annotated tags of the updates git feeds the pre-push hook on stdin. A
+    new remote ref skips only what remote-tracking refs of that remote reach: another remote proves
+    nothing here. A pushed tag object is scanned itself; rev-list peels it to its commit."""
+    commits, refs, tags = [], [], []
     for line in filter(str.strip, stdin_text.splitlines()):
         local_ref, local, remote_ref, remote = line.split()
         if set(local) == {"0"}:  # a deletion pushes no commit
             continue
         refs += [local_ref, remote_ref]
+        if git("cat-file", "-t", local).strip() == "tag":
+            tags.append(local)
         if set(remote) == {"0"}:  # a new remote ref
             span = ["rev-list", local, "--not", f"--remotes={remote_name}"]
         else:
             span = ["rev-list", f"{remote}..{local}"]
         commits += git(*span).split()
-    return list(dict.fromkeys(commits)), refs
+    return list(dict.fromkeys(commits)), refs, tags
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -157,9 +172,13 @@ def main(argv: list[str] | None = None) -> int:
         if args.all:
             commits = git("rev-list", "--all").split()
             refs = git("for-each-ref", "--format=%(refname)").split()
+            tagged = git("for-each-ref", "--format=%(objecttype) %(objectname)", "refs/tags").splitlines()
+            tags = [sha for kind, sha in map(str.split, tagged) if kind == "tag"]  # not a lightweight tag
         else:
-            commits, refs = _pushed(sys.stdin.read(), args.pre_push[0])
+            commits, refs, tags = _pushed(sys.stdin.read(), args.pre_push[0])
         out = _check("refs", "\n".join(refs), deny, False)
+        for sha in tags:  # the tagger and the message: the private list only, as for a commit's header
+            out += _check(sha[:8] + ":tag", git("cat-file", "tag", sha), deny, False)
         for sha in commits:
             out += _scan_commit(sha, deny, allow, seen)
     if out:
