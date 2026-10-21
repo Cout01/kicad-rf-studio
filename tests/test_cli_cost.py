@@ -161,8 +161,9 @@ def test_a_line_on_the_bottom_copper_reads_under_the_bottom_mask(tmp_path, capsy
     # mask; the mask over each line is the one on its own side
     rows = []
     for line, plane in (("F.Cu", "B.Cu"), ("B.Cu", "F.Cu")):
-        board = mini_board_file(EDGE + SEG.format(5, 10, 35, 10, 0.6, line, "SIG", "s") + zone(plane, "GND", 0, 0, 40, 20)
-                                + zone(line, "GND", 0, 0, 40, 9.55) + zone(line, "GND", 0, 10.45, 40, 20))
+        board = mini_board_file(EDGE + SEG.format(5, 10, 35, 10, 0.6, line, "SIG", "s") +
+                                zone(line, "GND", 0, 0, 40, 9.55) + zone(line, "GND", 0, 10.45, 40, 20) +
+                                zone(plane, "GND", 0, 0, 40, 20))
         code, out = cost_on(tmp_path / line, capsys, board)
         assert code == 0 and out[1].startswith(f"SIG on {line}: width 0.600 mm, gap 0.150")
         rows.append(parse_z0s(out[1]))
