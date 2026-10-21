@@ -1,9 +1,9 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """The command line. `new` reads a board, traces the RF chain between two pads and writes project.json, which it never
-replaces. `cost` prints the 2D Z0 and εeff of the measured nets' straight sections (plan 3 adds the setup-only run
-after them). `setup-openems` installs openEMS from the official Windows package into this Python, and `calibrate`
-measures this machine's simulation speed. There is no help= text: every string a user sees is a code in
-core.messages, and argparse itself writes the usage line."""
+replaces. `cost` prints the 2D Z0 and εeff of the measured nets' straight sections, then runs openEMS's setup-only
+gate and prints the cost (pipeline.cost). `setup-openems` installs openEMS from the official Windows package into this
+Python, and `calibrate` measures this machine's simulation speed. A command returns its exit code, None for 0. There
+is no help= text: every string a user sees is a code in core.messages, and argparse itself writes the usage line."""
 import argparse
 import math
 import os
@@ -17,7 +17,7 @@ from kicad_rf_studio.core.kicad.tracer import signal_layer
 from kicad_rf_studio.core.kicad.values import parse_frequency
 from kicad_rf_studio.core.messages import KrsError, reason, render
 from kicad_rf_studio.core.project import (BAND_FACTOR, DEFAULT_PRESET, EXPAND_H, HARMONICS, MESH_N, T_MAX_S,
-                                          board_file, board_hash, load_project, make_project, save_project)
+                                          board_hash, make_project, save_project)
 
 PRESETS = ("draft", "normal", "strict")  # the run presets; `--stackup` names a stackup preset, which is another thing
 
@@ -147,33 +147,10 @@ def _new(a: argparse.Namespace) -> None:
         print(render(code, **params))
 
 
-def _cost(a: argparse.Namespace) -> None:
-    """The 2D readout (spec 3.2): each measured section solved on cs2d's own grid without and with the exact mask of
-    its own side (none on inner copper), in chain-net order and then by place, or W_2D_SHORT in its place where other
-    copper touches the line at its cut; then the board's warnings and the geometry's notes, gate entries included,
-    which `run` blocks on. No mesh and no worker."""
-    # imported here, as in `new`: the CLI adds no work at import time
-    from kicad_rf_studio.core.cs2d import ShortError, solve
-    from kicad_rf_studio.core.geometry import build_geometry
-    from kicad_rf_studio.core.geometry.sections import cross_section
+def _cost(a: argparse.Namespace) -> int:
+    from kicad_rf_studio import pipeline  # here, as in `new`: the CLI adds no work at import time
 
-    path = Path(a.project)
-    project = load_project(path)
-    board = load_board(board_file(path, project))
-    geom = build_geometry(board, project)
-    print(render("I_2D_HEADER" if geom.sections else "W_NO_SECTIONS"))
-    for s in geom.sections:
-        named = {"net": s.net, "layer": s.layer, "width_mm": f"{s.width:.3f}", "length_mm": f"{s.length:.3f}"}
-        try:
-            bare, coated = [solve(cross_section(s, geom.pieces, geom.zs, geom.masks.get(s.layer), m))
-                            for m in ("none", "exact")]
-        except ShortError:  # another net's copper (E_SHORT_IN_ROI) or copper with none, which no check reports
-            print(render("W_2D_SHORT", **named))
-            continue
-        print(render("I_2D_SECTION", **named, gap_mm="none" if s.gap is None else f"{s.gap:.3f}", z0=f"{bare.z0:.2f}",
-                     eeff=f"{bare.eps_eff:.3f}", z0_mask=f"{coated.z0:.2f}", eeff_mask=f"{coated.eps_eff:.3f}"))
-    for code, params in [*board.warnings, *geom.notes]:
-        print(render(code, **params))
+    return pipeline.cost(pipeline.project_path(a.project))
 
 
 def _setup_openems(a: argparse.Namespace) -> None:
@@ -218,12 +195,13 @@ def main(argv: list[str] | None = None) -> int:
             stream.reconfigure(errors="replace")
     try:
         args = _parser().parse_args(argv)
-        args.func(args)
+        return args.func(args) or 0
     except KrsError as e:
         print(e, file=sys.stderr)
         return 2
+    except KeyboardInterrupt:  # Ctrl+C, or a STOP file in the run folder (C-26)
+        return 130
     except Exception as e:
         detail = " ".join(f"{type(e).__name__}: {e}".split())  # on one line, and never the repr, which can hold a file
         print(render("E_INTERNAL", detail=detail if len(detail) <= 200 else detail[:199] + "…"), file=sys.stderr)
         return 1
-    return 0

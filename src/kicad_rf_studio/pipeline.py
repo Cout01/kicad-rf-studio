@@ -1,8 +1,10 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """What `cost`, `run` and `preview` share (spec 6.1): a project read with its board and geometry, its model built
-through the mesh gates, the port connectivity gate on openEMS's setup, and the cost model (spec 6.4)."""
+through the mesh gates, the calibration that sizes its jobs, the setup gate on openEMS's setup-only run (timestep
+floor, port connectivity, unused primitives) and the cost model (spec 6.4); and `cost` itself (spec 3.2)."""
 from __future__ import annotations
 
+import json
 import math
 from dataclasses import dataclass, replace
 from pathlib import Path
@@ -10,17 +12,21 @@ from typing import TYPE_CHECKING
 
 import numpy as np
 
+from kicad_rf_studio import runs
+from kicad_rf_studio.core.cs2d import ShortError, solve
 from kicad_rf_studio.core.geometry import build_geometry
+from kicad_rf_studio.core.geometry.sections import cross_section
 from kicad_rf_studio.core.kicad import load_board
 from kicad_rf_studio.core.mesh.gates import check_fit2d, dt_floor_reference, fit2d, mesh_with_lint
-from kicad_rf_studio.core.messages import KrsError
+from kicad_rf_studio.core.messages import KrsError, render
 from kicad_rf_studio.core.model.parts import GRID
 from kicad_rf_studio.core.model.ports import ends, nominal_boxes, place
 from kicad_rf_studio.core.model.spec import grid_entry, model_spec
-from kicad_rf_studio.core.project import board_file, board_hash, mesh_n, read_project
-from kicad_rf_studio.runs import MB_PER_MCELL, MB_PER_WORKER
+from kicad_rf_studio.core.project import GATES, board_file, board_hash, mesh_n, read_project
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
+
     from kicad_rf_studio.core.geometry import Geometry
     from kicad_rf_studio.core.kicad.board import Board
     from kicad_rf_studio.core.mesh import Mesh
@@ -143,6 +149,16 @@ def driver(mesh: Mesh, runs: int, parts: int) -> tuple[str, dict]:
     return "I_COST_DRIVER_CELLS", {"d_mm": f"{mesh.d:.4f}"}
 
 
+def dt_params(model: Model, floor: float, setup: dict) -> dict:
+    """The params of I_COST_DT and E_DT_FLOOR: openEMS's dt in `setup` (setup.json) against `floor` × the model's
+    reference, and the edge that sets it, setup's node [n, i, j, k]: its axis n and its point at mesh lines (i, j, k),
+    in KiCad's frame."""
+    mesh, (n, *ijk) = model.mesh, setup["node"]
+    x, y, z = (float(lines[k]) for lines, k in zip((mesh.x, mesh.y, mesh.z), ijk))
+    return {"dt": f"{setup['dt']:.4e}", "floor": f"{floor:g}", "ref": f"{model.dt_ref:.4e}", "axis": "xyz"[n],
+            "x": f"{x:.3f}", "y": f"{0.0 - y:.3f}", "z": f"{z:.3f}"}
+
+
 def cost_notes(model: Model, project: dict, setup: dict, threads: int, pool: int,
                per_job_mcs: float) -> list[tuple[str, dict]]:
     """The cost lines (spec 6.4) of a built `model`, from openEMS's setup (setup.json: its dt and the node [n, i, j, k]
@@ -152,26 +168,121 @@ def cost_notes(model: Model, project: dict, setup: dict, threads: int, pool: int
     has one; the RAM; the main cost (driver)."""
     mesh, ports, dt = model.mesh, model.spec["ports"], setup["dt"]
     nx, ny, nz = len(mesh.x), len(mesh.y), len(mesh.z)
-    cells, runs = nx * ny * nz, len(ports)
+    cells, n_runs = nx * ny * nz, len(ports)
 
     def time(t_stop: float) -> str:
-        return duration(math.ceil(runs / pool) * cells * (t_stop / dt) / (per_job_mcs * 1e6))
+        return duration(math.ceil(n_runs / pool) * cells * (t_stop / dt) / (per_job_mcs * 1e6))
 
     size, axis, at = smallest_cell(mesh)
-    n, *ijk = setup["node"]
-    x, y, z = (float(lines[k]) for lines, k in zip((mesh.x, mesh.y, mesh.z), ijk))
     t_max = project["t_max_s"]
     notes = [
         ("I_COST_CELLS", {"nx": nx, "ny": ny, "nz": nz, "mcells": f"{cells / 1e6:.2f}", "n": mesh_n(project),
                           "d_mm": f"{mesh.d:.4f}"}),
         ("I_COST_SMALLEST", {"size_um": f"{size * 1e3:.1f}", "axis": axis, "at_mm": f"{at:.3f}"}),
-        ("I_COST_DT", {"dt": f"{dt:.4e}", "floor": f"{project['gates']['dt_floor']:g}", "ref": f"{model.dt_ref:.4e}",
-                       "axis": "xyz"[n], "x": f"{x:.3f}", "y": f"{0.0 - y:.3f}", "z": f"{z:.3f}"}),
-        ("I_COST_TIME", {"time": time(t_max), "runs": runs, "t_max_ns": f"{t_max * 1e9:g}", "pool": pool,
+        ("I_COST_DT", dt_params(model, project["gates"]["dt_floor"], setup)),
+        ("I_COST_TIME", {"time": time(t_max), "runs": n_runs, "t_max_ns": f"{t_max * 1e9:g}", "pool": pool,
                          "threads": threads})]
     t_stops = [j["t_stop"] for j in project.get("results", {}).get("jobs", ()) if j["t_stop"] is not None]
     if t_stops:  # a job with no samples has no stop time
         notes.append(("I_COST_PREDICTED", {"time": time(max(t_stops))}))
-    gb = pool * (MB_PER_MCELL * cells / 1e6 + MB_PER_WORKER) / 1024
+    gb = pool * (runs.MB_PER_MCELL * cells / 1e6 + runs.MB_PER_WORKER) / 1024
     return [*notes, ("I_COST_RAM", {"gb": f"{gb:.1f}", "pool": pool}),
-            driver(mesh, runs, sum(q["part"] for q in ports))]
+            driver(mesh, n_runs, sum(q["part"] for q in ports))]
+
+
+def prepare(model: Model, emit: Callable[[str, dict], None]) -> tuple[int, int, float]:
+    """What the jobs of a built `model` (one with a mesh) run with: (threads, pool, per-job MC/s), from this machine's
+    calibration, measured first on a machine that has none (spec 6.4). Calls `emit(code, params)` with
+    check_openems()'s warnings, before any worker (C-31), and with W_RAM when one job needs more RAM than is free.
+    Raises check_openems()'s refusals and what calibrate raises."""
+    for code, params in runs.check_openems():
+        emit(code, params)
+    entry = runs.ensure_calibrated(runs.load_settings())
+    cells = len(model.mesh.x) * len(model.mesh.y) * len(model.mesh.z)
+    threads, pool = runs.sizing(entry, cells)
+    need = runs.MB_PER_MCELL * cells / 1e6 + runs.MB_PER_WORKER  # one job's RAM in MB, as pool_size counts it
+    free = runs.free_ram_mb()
+    if need > free:
+        emit("W_RAM", {"need_gb": f"{need / 1024:.1f}", "free_gb": f"{free / 1024:.1f}"})
+    return threads, pool, entry["aggregate_mcs"] / entry["pool"]
+
+
+def setup_gate(model: Model, project: dict, run_dir: Path, settings: dict, threads: int) -> tuple[dict, list, list]:
+    """openEMS's setup of a built `model` and the gates on it (spec 6.1 step 2): model.json in `run_dir`, one
+    setup-only worker in job-0-setup, then (its setup.json, the gates that block a run, the warnings). Blocking:
+    E_DT_FLOOR when dt is under gates.dt_floor × the model's reference (C-17), port_gates (C-15), and
+    E_UNUSED_PRIMITIVE for each "unused" entry of a port_* or lumped_* property (a port, its probes, a grid part);
+    W_UNUSED_PRIMITIVE for any other property, copper (C-16). Raises what check_job raises, KeyboardInterrupt when STOP
+    or Ctrl+C stopped the job."""
+    runs.write_spec(run_dir, model.spec)
+    # T_max 2·t0, the pulse's end: nothing in setup depends on T_max, and openEMS's excitation arrays et and ht hold
+    # NrTS lines
+    job = runs.write_job(runs.job_dir(run_dir, 0, "setup"), 1, "setup", threads, 2 * model.spec["excitation"]["t0"])
+    runs.check_job(job, runs.run_jobs([job], 1, run_dir, settings)[job], "setup", settings)
+    setup = json.loads((job / "setup.json").read_text(encoding="utf-8"))
+    floor, blocked, warnings = project["gates"]["dt_floor"], [], []
+    # ponytail: dt from the setup log (6 digits); openEMS_stats.txt exists only after a run
+    if setup["dt"] < floor * model.dt_ref:
+        blocked.append(("E_DT_FLOOR", dt_params(model, floor, setup)))
+    blocked += port_gates(model.spec["ports"], setup["pec"])
+    for kind, prop in setup["unused"]:  # [type, property], ["none", property] or ["outside", property]
+        note = {"property": prop, "type": kind}
+        if prop.startswith(("port_", "lumped_")):
+            blocked.append(("E_UNUSED_PRIMITIVE", note))
+        else:
+            warnings.append(("W_UNUSED_PRIMITIVE", note))
+    return setup, blocked, warnings
+
+
+def readout_2d(geom: Geometry) -> None:
+    """Prints the 2D readout (spec 3.2): each measured section solved on cs2d's own grid without and with the exact
+    mask of its own side (none on inner copper), in chain-net order and then by place, or W_2D_SHORT in its place
+    where other copper touches the line at its cut."""
+    print(render("I_2D_HEADER" if geom.sections else "W_NO_SECTIONS"))
+    for s in geom.sections:
+        named = {"net": s.net, "layer": s.layer, "width_mm": f"{s.width:.3f}", "length_mm": f"{s.length:.3f}"}
+        try:
+            bare, coated = [solve(cross_section(s, geom.pieces, geom.zs, geom.masks.get(s.layer), m))
+                            for m in ("none", "exact")]
+        except ShortError:  # another net's copper (E_SHORT_IN_ROI) or copper with none, which no check reports
+            print(render("W_2D_SHORT", **named))
+            continue
+        print(render("I_2D_SECTION", **named, gap_mm="none" if s.gap is None else f"{s.gap:.3f}", z0=f"{bare.z0:.2f}",
+                     eeff=f"{bare.eps_eff:.3f}", z0_mask=f"{coated.z0:.2f}", eeff_mask=f"{coated.eps_eff:.3f}"))
+
+
+def cost(path: Path) -> int:
+    """`cost` on the project at `path` (spec 3.2), returning its exit code (C-22): W_FILLS_AS_SAVED, the 2D readout and
+    load()'s notes, then 2 on a refusal among them; a project without ports stops there with W_NO_PORTS. Then the
+    model and its mesh gates; with a spec, prepare, the setup gate in a run folder of its own, its lines as events,
+    W_GATE_LIMITS when the gate limits are not GATES (C-10), and the cost lines. 3 if any gate blocked (geometry, mesh
+    or setup), else 0."""
+    project, board, geom, notes = load(path)
+    print(render("W_FILLS_AS_SAVED"))
+    readout_2d(geom)
+    for code, params in notes:
+        print(render(code, **params))
+    if stops(notes) == 2:
+        return 2
+    if not project["ports"]:
+        print(render("W_NO_PORTS"))
+        return stops(notes)
+    model = build_model(project, board, geom)
+    for code, params in model.blocked:
+        print(render(code, **params))
+    if model.spec is None:  # E_EDGE_LINT left no mesh to set up
+        return 3
+    threads, pool, per_job_mcs = prepare(model, lambda code, params: print(render(code, **params)))
+    # absolute: `cost .` names the run folder after the project's folder too
+    run_dir, settings = runs.run_dir_for(path.absolute().parent.name), runs.load_settings()
+    setup, blocked, warnings = setup_gate(model, project, run_dir, settings, threads)
+    for code, params in blocked:
+        runs.emit(run_dir, "verdict", code, params, job=0)
+    for code, params in warnings:
+        runs.emit(run_dir, "message", code, params, job=0)
+    if (gates := project["gates"]) != GATES:  # C-10
+        runs.emit(run_dir, "message", "W_GATE_LIMITS",
+                  {"fit2d_limit": f"{gates['fit2d_limit']:g}", "dt_floor": f"{gates['dt_floor']:g}"})
+    for code, params in cost_notes(model, project, setup, threads, pool, per_job_mcs):
+        runs.emit(run_dir, "cost", code, params)
+    return 3 if stops(notes) or model.blocked or blocked else 0

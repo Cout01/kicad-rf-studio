@@ -105,7 +105,13 @@ CATALOG: dict[str, str] = {
     "I_COST_DRIVER_CELL": "Main cost: the {size_um} µm cell across {axis} at {at_mm} mm, under d/3, sets dt. Move or merge the copper edges there in KiCad.",
     "I_COST_DRIVER_RUNS": "Main cost: {runs} runs, one per port, {parts} of them part ports.",
     "I_COST_DRIVER_CELLS": "Main cost: the cell count. The cell d {d_mm} mm follows the narrowest width, gap or substrate height; a smaller region.expand_h shrinks it.",
-    "E_INTERNAL":"Internal error: {detail}. Please report it.",
+    "W_NO_PORTS": "project.json has no ports, so cost stops after the 2D estimate. Create the project with `new` between two pads to simulate it.",
+    "W_RAM": "One job needs about {need_gb} GB of RAM and {free_gb} GB is free, so jobs run one at a time and may still swap. Close other programs, or shrink the model (region.expand_h, mesh.n in project.json).",
+    "E_DT_FLOOR": "openEMS's timestep {dt} s is below {floor} × the reference {ref} s, set by the {axis} edge at ({x}, {y}, {z}) mm. A tiny cell there makes the run slow; move or merge the copper edges near it in KiCad.",
+    "E_UNUSED_PRIMITIVE": "openEMS left part of {property} out of the model ({type}). A primitive type such as Box touches no mesh edge, \"none\" means the property holds no primitive, and \"outside\" means it lies outside the simulated region. So that port or part is not in the model. Look at it with `preview`.",
+    "W_UNUSED_PRIMITIVE": "openEMS left part of {property} out of the model ({type}). A primitive type such as LinPoly is a sliver smaller than a cell, \"none\" means the property holds no primitive, and \"outside\" means it lies outside the simulated region. Look at it with `preview` if it should carry current.",
+    "W_GATE_LIMITS": "project.json sets gates.fit2d_limit {fit2d_limit} and gates.dt_floor {dt_floor}, not 0.03 and 0.8, so this verdict is outside the validated limits. Set them back to 0.03 and 0.8 for a validated result.",
+    "E_INTERNAL": "Internal error: {detail}. Please report it.",
 }
 
 _translation = gettext.translation(
