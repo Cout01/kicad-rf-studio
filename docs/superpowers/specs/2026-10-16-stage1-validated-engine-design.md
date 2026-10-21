@@ -1,7 +1,7 @@
 # kicad-rf-studio — Stage 1 design: a validated simulation engine
 
 - **Date:** 2026-10-16
-- **Status:** design approved section by section in conversation, then revised on 2026-10-19 after an independent review; this document awaits the owner's review.
+- **Status:** design approved section by section in conversation, revised on 2026-10-19 after an independent review, and approved by the owner. On 2026-10-21 the owner confirmed one amendment to §5.4: the substrate height now counts in the cell size.
 - **Scope:** Stage 1 of the project: the headless engine, the command-line orchestrator and the validation gates. The GUI and the KiCad toolbar button (Stage 2) get their own spec, written with Stage 1's results.
 
 ---
@@ -283,7 +283,7 @@ Per footprint, the reader takes:
   - the part pads;
   - the port boxes.
 - **Rule for the protected set:**
-  - one cell size d for the whole set: the smallest width or gap of the measured nets, divided by n, with n = 2 (standard) or 3 (fine), capped at 0.9·λ_min/20;
+  - one cell size d for the whole set: the smallest width or gap of the measured nets, or the substrate height h under them, divided by n, with n = 2 (standard) or 3 (fine), capped at 0.9·λ_min/20. The height counts because a strip's fringing field spreads over about h: a 3 mm microstrip on 0.71 mm meshed at d = w/2 read Z0 5.4 % low;
   - at solid-copper edges, lines sit d/4 inside and 3d/4 outside;
   - every feature is filled at d or finer.
 - **Everything else:** vertex lines are clustered to a minimum cell, then graded with `SmoothMeshLines` at a ratio of 1.3 or less.
