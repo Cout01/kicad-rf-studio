@@ -1,7 +1,8 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """The command line. `new` reads a board, traces the RF chain between two pads and writes project.json, which it never
 replaces. `cost` prints the 2D Z0 and εeff of the measured nets' straight sections, then runs openEMS's setup-only
-gate and prints the cost (pipeline.cost). `setup-openems` installs openEMS from the official Windows package into this
+gate and prints the cost (pipeline.cost). `run` runs the gates and one job per port under the stop rule, and records
+the results in project.json (pipeline.run). `setup-openems` installs openEMS from the official Windows package into this
 Python, and `calibrate` measures this machine's simulation speed. A command returns its exit code, None for 0. There
 is no help= text: every string a user sees is a code in core.messages, and argparse itself writes the usage line."""
 import argparse
@@ -153,6 +154,12 @@ def _cost(a: argparse.Namespace) -> int:
     return pipeline.cost(pipeline.project_path(a.project))
 
 
+def _run(a: argparse.Namespace) -> int:
+    from kicad_rf_studio import pipeline
+
+    return pipeline.run(pipeline.project_path(a.project))
+
+
 def _setup_openems(a: argparse.Namespace) -> None:
     for code, params in runs.setup_openems(a.folder):
         print(render(code, **params))
@@ -182,6 +189,9 @@ def _parser() -> argparse.ArgumentParser:
     cost = commands.add_parser("cost")
     cost.add_argument("project")
     cost.set_defaults(func=_cost)
+    run = commands.add_parser("run")
+    run.add_argument("project")
+    run.set_defaults(func=_run)
     setup = commands.add_parser("setup-openems")
     setup.add_argument("folder", type=Path, metavar="DIR")
     setup.set_defaults(func=_setup_openems)

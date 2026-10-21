@@ -111,6 +111,17 @@ CATALOG: dict[str, str] = {
     "E_UNUSED_PRIMITIVE": "openEMS left part of {property} out of the model ({type}). A primitive type such as Box touches no mesh edge, \"none\" means the property holds no primitive, and \"outside\" means it lies outside the simulated region. So that port or part is not in the model. Look at it with `preview`.",
     "W_UNUSED_PRIMITIVE": "openEMS left part of {property} out of the model ({type}). A primitive type such as LinPoly is a sliver smaller than a cell, \"none\" means the property holds no primitive, and \"outside\" means it lies outside the simulated region. Look at it with `preview` if it should carry current.",
     "W_GATE_LIMITS": "project.json sets gates.fit2d_limit {fit2d_limit} and gates.dt_floor {dt_floor}, not 0.03 and 0.8, so this verdict is outside the validated limits. Set them back to 0.03 and 0.8 for a validated result.",
+    "I_GATES_PASSED": "Gates passed: edge lint, fit2d, timestep floor (dt {dt} s), port connectivity and unused primitives.",
+    "I_RUN_START": "Running {runs} jobs, {pool} at once, in {folder}. Create a file named STOP there, or press Ctrl+C, to stop.",
+    "I_PROGRESS": "{port}: {t_ns} ns, residual {residual_db} dB, {speed_mcs} MC/s.",
+    "I_JOB_CONVERGED": "{port}: converged at {t_ns} ns (residual {residual_db} dB).",
+    "W_JOB_FLAT": "{port}: not converged at {residual_db} dB; the residual stopped falling at {t_ns} ns. S is kept and flagged; look for a resonance or an open port with `preview`.",
+    "W_JOB_T_MAX": "{port}: reached T_max ({t_ns} ns) at a residual of {residual_db} dB. S is kept and flagged; raise t_max_s in project.json for a converged result.",
+    "E_JOB_DIVERGED": "{port}: diverged at {t_ns} ns (NaN or inf), so its S is not kept. Look for tiny cells with `cost` and at the model with `preview`.",
+    "E_JOB_GROWTH": "{port}: the energy grew 20 dB after the pulse, at {t_ns} ns, so its S is not kept. Look at the model with `preview`.",
+    "W_JOB_UNCLASSIFIED": "{port}: the worker ended before T_max without a verdict, so its S is not kept. See {log}.",
+    "W_JOB_STOPPED": "{port}: stopped, so its S is not kept. Run `run` again for results.",
+    "I_RESULTS": "{kept} of {runs} jobs kept S, in {wall}; results recorded in {path}.",
     "E_INTERNAL": "Internal error: {detail}. Please report it.",
 }
 

@@ -1,12 +1,15 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """What `cost`, `run` and `preview` share (spec 6.1): a project read with its board and geometry, its model built
 through the mesh gates, the calibration that sizes its jobs, the setup gate on openEMS's setup-only run (timestep
-floor, port connectivity, unused primitives) and the cost model (spec 6.4); and `cost` itself (spec 3.2)."""
+floor, port connectivity, unused primitives) and the cost model (spec 6.4); and `cost` (spec 3.2) and `run` (spec 6.1)
+themselves."""
 from __future__ import annotations
 
 import json
 import math
+import time
 from dataclasses import dataclass, replace
+from functools import partial
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -21,8 +24,12 @@ from kicad_rf_studio.core.mesh.gates import check_fit2d, dt_floor_reference, fit
 from kicad_rf_studio.core.messages import KrsError, render
 from kicad_rf_studio.core.model.parts import GRID
 from kicad_rf_studio.core.model.ports import ends, nominal_boxes, place
-from kicad_rf_studio.core.model.spec import grid_entry, model_spec
-from kicad_rf_studio.core.project import GATES, board_file, board_hash, mesh_n, read_project
+from kicad_rf_studio.core.model.readers import read_log, read_probe, read_run_stats, read_stats
+from kicad_rf_studio.core.model.spec import grid_entry, model_spec, spec_hash
+from kicad_rf_studio.core.project import (GATES, board_file, board_hash, load_project, mesh_n, read_project,
+                                          save_project)
+from kicad_rf_studio.stoprule import KEPT, Records, Verdict, residual_db, stop_rule
+from kicad_rf_studio.worker import LOG
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -32,6 +39,8 @@ if TYPE_CHECKING:
     from kicad_rf_studio.core.mesh import Mesh
 
 GEOMETRY_GATES = ("E_OPEN_IN_ROI", "E_SHORT_IN_ROI")  # the geometry's notes that block a run
+VERDICTS = {"converged": "I_JOB_CONVERGED", "flat": "W_JOB_FLAT", "t_max": "W_JOB_T_MAX", "diverged": "E_JOB_DIVERGED",
+            "growth": "E_JOB_GROWTH", "unclassified": "W_JOB_UNCLASSIFIED", "stopped": "W_JOB_STOPPED"}  # spec 6.3
 
 
 def project_path(arg: str) -> Path:
@@ -286,3 +295,159 @@ def cost(path: Path) -> int:
     for code, params in cost_notes(model, project, setup, threads, pool, per_job_mcs):
         runs.emit(run_dir, "cost", code, params)
     return 3 if stops(notes) or model.blocked or blocked else 0
+
+
+def records(job: Path, ports: int, dt: float) -> Records:
+    """The records of the job in folder `job` as they stand: the probe files of its `ports` ports cut to the shortest,
+    and the energy of openEMS_run_stats.txt at te = timestep × `dt`. A missing file reads as empty: setup is still
+    running, or the worker died."""
+    def text(name: str) -> str:
+        try:
+            return (job / name).read_text(encoding="utf-8")
+        except FileNotFoundError:
+            return ""
+
+    probes = [[read_probe(text(f"port_{q}t_{k}")) for k in range(1, ports + 1)] for q in "ui"]
+    n = min(len(t) for files in probes for t, _ in files)
+    (t_u, u), (t_i, i) = ((files[0][0][:n], np.array([v[:n] for _, v in files])) for files in probes)
+    steps, _, e = read_run_stats(text("openEMS_run_stats.txt"))
+    return Records(t_u, u, t_i, i, steps * dt, e)
+
+
+def last_sample(rec: Records) -> tuple[float | None, float | None]:
+    """The time and the port residual (dB) of the last sample of `rec`; None and None without samples."""
+    return (float(rec.t_u[-1]), float(residual_db(rec)[-1])) if len(rec.t_u) else (None, None)
+
+
+def classify_job(job: Path, result: dict, live: Verdict | None, rec: Records, k: int, preset: str,
+                 exc: dict) -> tuple[str, Verdict | None]:
+    """The verdict on the job in `job`, port `k`, once it exited (spec 6.3), the first match winning: a non-finite
+    sample in its final records `rec`, diverged; a non-zero exit or no waves.npz, stopped when the run was stopped, else
+    unclassified; the `live` verdict; the stop rule on `rec`; stopped; t_max when the log's iterations are its NrTS;
+    else unclassified, never silently done. `result` is the job's entry in what run_jobs returns. Returns the verdict
+    and the Verdict that gives its time and residual, None for t_max, stopped and unclassified."""
+    bad = ((rec.t_u, ~np.isfinite(rec.u).all(0)), (rec.t_i, ~np.isfinite(rec.i).all(0)), (rec.te, ~np.isfinite(rec.e)))
+    t_bad = min(np.min(t, initial=np.inf, where=b) for t, b in bad)  # as stop_rule finds it
+    if t_bad < np.inf:
+        return "diverged", Verdict("diverged", float(t_bad), math.nan)
+    if result["code"] != 0 or not (job / "waves.npz").is_file():
+        return ("stopped" if result["stopped"] else "unclassified"), None
+    if verdict := live or stop_rule(rec, k - 1, preset, exc):
+        return verdict.kind, verdict
+    if result["stopped"]:
+        return "stopped", None
+    log = read_log((job / LOG).read_text(encoding="utf-8"))
+    return ("t_max" if log["nrts"] is not None and log["iterations"] == log["nrts"] else "unclassified"), None
+
+
+def run(path: Path) -> int:
+    """`run` on the project at `path` (spec 6.1, C-42), returning its exit code (C-22). Raises E_NO_PORTS for a project
+    without ports, and E_LOCKED while another run holds the project lock. Then, under the lock, in a fresh run folder
+    whose events.jsonl gets every line, with any KrsError a message event and exit 2: W_FILLS_AS_SAVED and load()'s
+    notes, stopping with stops(); the model, 3 when a mesh gate blocks; prepare and the setup gate, 3 when it blocks,
+    else I_GATES_PASSED and the cost lines; then one job per port under the stop rule, each job's verdict
+    (classify_job), the results in project.json, the calibration's speed refreshed and I_RESULTS: 0 when every job kept
+    S, else 4 (C-29). W_GATE_LIMITS follows the gate lines and each verdict when the gate limits are not GATES (C-10).
+    STOP or Ctrl+C before the jobs start propagates as KeyboardInterrupt (exit 130, results untouched); once they run,
+    it stops them, and their results say so."""
+    if not read_project(path)["ports"]:
+        raise KrsError("E_NO_PORTS")
+    run_dir = runs.run_dir_for(path.absolute().parent.name)  # absolute: as in cost
+    with runs.project_lock(path, run_dir):
+        run_dir.mkdir(parents=True)
+        try:
+            return _run(path, run_dir)
+        except KrsError as err:
+            runs.emit(run_dir, "message", err.code, err.params)
+            return 2
+
+
+def _run(path: Path, run_dir: Path) -> int:
+    """run() under the lock, with `run_dir` made."""
+    emit = partial(runs.emit, run_dir)  # (kind, code, params, job=None)
+    project, board, geom, notes = load(path)
+    gates, preset = project["gates"], project["preset"]
+
+    def limits() -> None:  # C-10
+        if gates != GATES:
+            emit("message", "W_GATE_LIMITS",
+                 {"fit2d_limit": f"{gates['fit2d_limit']:g}", "dt_floor": f"{gates['dt_floor']:g}"})
+
+    for code, params in [("W_FILLS_AS_SAVED", {}), *notes]:
+        emit("message", code, params)
+    if stop := stops(notes):
+        return stop
+    model = build_model(project, board, geom)
+    if model.blocked:
+        for code, params in model.blocked:
+            emit("verdict", code, params)
+        limits()
+        return 3
+    threads, pool, per_job_mcs = prepare(model, partial(emit, "message"))
+    settings = runs.load_settings()
+    setup, blocked, warnings = setup_gate(model, project, run_dir, settings, threads)
+    for code, params in blocked:
+        emit("verdict", code, params, 0)
+    for code, params in warnings:
+        emit("message", code, params, 0)
+    if blocked:
+        limits()
+        return 3
+    emit("message", "I_GATES_PASSED", {"dt": f"{setup['dt']:.4e}"})
+    limits()
+    for code, params in cost_notes(model, project, setup, threads, pool, per_job_mcs):
+        emit("cost", code, params)
+
+    names, exc, dt = [q["name"] for q in model.spec["ports"]], model.spec["excitation"], setup["dt"]
+    jobs = [runs.write_job(runs.job_dir(run_dir, k, name), k, "run", threads, exc["t_max"])
+            for k, name in enumerate(names, 1)]
+    live, rows = {}, {}  # each job's live verdict, and the energy rows its last I_PROGRESS saw
+
+    def watch(job: Path) -> bool:
+        """Whether the stop rule has a verdict on `job`; I_PROGRESS when its energy log has a new row."""
+        k = jobs.index(job) + 1
+        rec = records(job, len(names), dt)
+        live[job] = stop_rule(rec, k - 1, preset, exc)
+        if len(rec.e) > rows.get(job, 0) and len(rec.t_u):
+            rows[job] = len(rec.e)
+            t, r = last_sample(rec)
+            speed = read_run_stats((job / "openEMS_run_stats.txt").read_text(encoding="utf-8"))[1][-1]
+            emit("progress", "I_PROGRESS", {"port": names[k - 1], "t_ns": f"{t * 1e9:.2f}", "residual_db": f"{r:.1f}",
+                                            "speed_mcs": f"{speed / 1e6:.1f}"}, k)
+        return live[job] is not None
+
+    emit("message", "I_RUN_START", {"runs": len(jobs), "pool": min(pool, len(jobs)), "folder": str(run_dir)})
+    start = time.monotonic()
+    out = runs.run_jobs(jobs, pool, run_dir, settings, watch)
+    wall_s = time.monotonic() - start
+
+    done, work = [], 0  # each job's results, and Σ cells·iterations
+    for k, job in enumerate(jobs, 1):
+        rec = records(job, len(names), dt)
+        kind, verdict = classify_job(job, out[job], live.get(job), rec, k, preset, exc)
+        t_stop, r_last = last_sample(rec)
+        t, r = (verdict.t, verdict.residual_db) if verdict else (t_stop, r_last)
+        r = r if r is not None and math.isfinite(r) else None  # a diverged job's NaN is no residual, nor in JSON
+        emit("verdict", VERDICTS[kind], {"port": names[k - 1], "t_ns": None if t is None else f"{t * 1e9:.2f}",
+                                         "residual_db": None if r is None else f"{r:.1f}", "log": str(job / LOG)}, k)
+        limits()
+        waves = f"{job.name}/waves.npz"
+        done.append({"port": names[k - 1], "verdict": kind, "t_cut": verdict.t if verdict else None, "t_stop": t_stop,
+                     "residual_db": r, "waves": waves if (run_dir / waves).is_file() else None})
+        if (stats := job / "openEMS_stats.txt").is_file():  # a killed or crashed job has none
+            s = read_stats(stats.read_text(encoding="utf-8"))
+            work += s["cells"] * s["iterations"]
+
+    data = load_project(path)  # as it is now: only results is replaced
+    data["results"] = {"model_hash": spec_hash(model.spec), "run_dir": str(run_dir), "gates": gates, "dt": dt,
+                       "c_box": setup["c_box"], "wall_s": wall_s, "jobs": done}
+    save_project(path, data)
+    # ponytail: this run's own concurrency sets the speed, so fewer jobs at once than the calibration's pool (fewer
+    # ports, or the RAM) under-reports it; scale by the jobs that ran at once if cost's predictions drift
+    if work:  # a run whose every job died measured nothing
+        settings = runs.load_settings()
+        settings["machines"][runs.machine_key()]["aggregate_mcs"] = work / wall_s / 1e6
+        runs.save_settings(settings)
+    kept = sum(j["verdict"] in KEPT for j in done)
+    emit("result", "I_RESULTS", {"kept": kept, "runs": len(jobs), "wall": duration(wall_s), "path": str(path)})
+    return 0 if kept == len(jobs) else 4
