@@ -34,6 +34,8 @@ class Piece:
     layer: str
     net: str
     polygon: Polygon
+    # ponytail: informational since plan 3: the CSX builds every piece solid (C-5); sheets come back only if P0 shows
+    # a gain
     solid: bool
 
 

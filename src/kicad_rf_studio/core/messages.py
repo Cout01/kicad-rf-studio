@@ -83,6 +83,8 @@ CATALOG: dict[str, str] = {
     "E_ROTATED_PART": "Part {ref} is not at a multiple of 90°, so its port would be a CurvePort, which P0-B has not validated. Rotate it in KiCad, or set \"allow_curve_port\": true in project.json at your own risk.",
     "E_PORT_SPANS": "Port {name}: its two pads face each other neither along x nor along y, so no box joins them. Choose a reference straight across from the signal pad in project.json.",
     "E_PORT_BOX": "Port {name}: no mesh line lies inside its pads, so its box cannot sit on them. Set mesh.n to 3 in project.json, or use larger pads.",
+    "E_PART_VALUE": "Part {ref} is in the grid but its value \"{value}\" cannot be read. Fix its value in project.json, or set its role to \"open\" or \"port\".",
+    "E_GRID_KIND": "Part {ref} cannot sit in the grid: only a C or an R can. Set its role to \"port\" or \"open\" in project.json.",
     "E_INTERNAL": "Internal error: {detail}. Please report it.",
 }
 
