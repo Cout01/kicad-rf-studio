@@ -1,8 +1,9 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """The command line. `new` reads a board, traces the RF chain between two pads and writes project.json, which it never
 replaces. `cost` prints the 2D Z0 and εeff of the measured nets' straight sections (plan 3 adds the setup-only run
-after them). `setup-openems` installs openEMS from the official Windows package into this Python. There is no help=
-text: every string a user sees is a code in core.messages, and argparse itself writes the usage line."""
+after them). `setup-openems` installs openEMS from the official Windows package into this Python, and `calibrate`
+measures this machine's simulation speed. There is no help= text: every string a user sees is a code in
+core.messages, and argparse itself writes the usage line."""
 import argparse
 import math
 import os
@@ -180,6 +181,13 @@ def _setup_openems(a: argparse.Namespace) -> None:
         print(render(code, **params))
 
 
+def _calibrate(a: argparse.Namespace) -> None:
+    """Measures and stores this machine's speed after the openEMS check (C-31): E_OPENEMS_* come before any worker."""
+    for code, params in runs.check_openems():
+        print(render(code, **params))
+    runs.calibrate(runs.load_settings())
+
+
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="kicad-rf-studio")
     commands = parser.add_subparsers(dest="command", required=True)
@@ -200,6 +208,7 @@ def _parser() -> argparse.ArgumentParser:
     setup = commands.add_parser("setup-openems")
     setup.add_argument("folder", type=Path, metavar="DIR")
     setup.set_defaults(func=_setup_openems)
+    commands.add_parser("calibrate").set_defaults(func=_calibrate)
     return parser
 
 

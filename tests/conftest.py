@@ -42,6 +42,15 @@ def fake(tmp_path, monkeypatch):
 
 
 @pytest.fixture
+def calibrated(fake):
+    """A stored calibration of this machine: 2 jobs of 2 threads, 400 MC/s in all. Returns the data folder."""
+    runs.save_settings({"machines": {runs.machine_key(): {
+        "threads": 2, "pool": 2, "aggregate_mcs": 400.0, "single": {"2": 200.0}, "parallel": {"2": 400.0},
+        "at": "2026-10-21T00:00:00"}}})
+    return fake
+
+
+@pytest.fixture
 def ctrl_c_on_third_poll(monkeypatch):
     """subprocess.Popen records each process it starts, and the third time.sleep raises KeyboardInterrupt. Returns
     the list of started processes."""

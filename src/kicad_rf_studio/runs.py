@@ -1,13 +1,15 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """What a run needs besides the project: the per-user data folder with its settings.json, openEMS in this Python, the
-run and job folders, the project lock, events.jsonl, and the pool of worker processes with its size. `setup-openems`
-installs the wheels of the official Windows package; `check_openems` reads the installed versions."""
+run and job folders, the project lock, events.jsonl, the pool of worker processes, and the calibration that sizes it.
+`setup-openems` installs the wheels of the official Windows package; `check_openems` reads the installed versions."""
 import contextlib
 import ctypes
+import itertools
 import json
 import os
 import re
 import secrets
+import socket
 import subprocess
 import sys
 import time
@@ -15,7 +17,8 @@ from collections.abc import Callable, Iterator
 from pathlib import Path
 
 from kicad_rf_studio.core.messages import KrsError, reason, render
-from kicad_rf_studio.core.project import save_project
+from kicad_rf_studio.core.model.readers import read_stats
+from kicad_rf_studio.core.project import BAND_FACTOR, HARMONICS, save_project
 from kicad_rf_studio.worker import ERR, LOG, SETUP_FAILED
 
 WINDOWS = sys.platform == "win32"  # tests patch it, so the Windows API calls below test sys.platform itself
@@ -25,6 +28,7 @@ MB_PER_MCELL, MB_PER_WORKER = 170, 50  # ponytail: provisional (spec 6.4); P0-C 
 WORKER = ("-I", "-u", "-m", "kicad_rf_studio.worker")  # after sys.executable; -u: log.txt follows the run
 POLL_S = 1.0  # how often the pool looks at its jobs
 ABORT_WAIT_S = 60.0  # how long a stopped job may take to write its data before it is killed
+CAL_STEPS = 300  # the timesteps of a calibration job
 
 
 def data_dir() -> Path:
@@ -274,3 +278,79 @@ def check_job(job: Path, result: dict, name: str, settings: dict) -> None:
         raise KrsError("E_SETUP_FAILED", log=log)
     if code:
         raise KrsError("E_WORKER_FAILED", job=name, exit_code=code, log=log)
+
+
+def machine_key() -> str:
+    """This machine's key in settings.json's "machines": its host name and its number of CPUs (C-32)."""
+    return f"{socket.gethostname()}/{os.cpu_count()}"
+
+
+def calibration_spec() -> dict:
+    """The calibration model (spec 6.4), a full model spec, as build_csx and the worker read every key: 100 lines per
+    axis at 1 mm (about 1e6 cells), substrate_0 from z 0 to 49 mm, and one lumped port "z" up from its top, excited
+    with the 915 MHz band's pulse for CAL_STEPS timesteps."""
+    # ponytail: a uniform model; real runs refresh the speed
+    from kicad_rf_studio.core.model.spec import excitation, kappa  # here: it loads scipy, and the CLI imports runs
+
+    lines, start, stop = [float(i) for i in range(100)], [50.0, 50.0, 49.0], [50.0, 50.0, 50.0]
+    return {"mesh": {axis: lines for axis in "xyz"},
+            "excitation": excitation({"f0_hz": 915e6, "harmonics": HARMONICS, "band_factor": BAND_FACTOR,
+                                      "t_max_s": CAL_STEPS * 1.9258e-12}),  # the Courant step of 1 mm cells, in s
+            "materials": [{"name": "substrate_0", "eps": 4.5, "kappa": kappa(4.5, 0.02, 915e6), "priority": 10,
+                           "solids": [{"x": [0.0, 99.0, 99.0, 0.0], "y": [0.0, 0.0, 99.0, 99.0], "z": [0.0, 49.0]}]}],
+            "metal": {"copper": [], "lid": {"plate": None, "walls": []}, "cylinders": [], "curves": []},
+            "ports": [{"name": "z", "kind": "lumped", "dir": "z", "start": start, "stop": stop,
+                       "nodes": [start, stop, start, stop], "part": False}],
+            "grid": []}
+
+
+def choose(single: dict[int, float], parallel: dict[int, float], cpus: int) -> tuple[int, int, float]:
+    """(threads, pool, aggregate MC/s) of the fastest use of `cpus` CPUs: one job at `cpus` threads (`single` holds
+    the MC/s by threads) or k jobs at once at cpus // k threads each (`parallel` holds their MC/s in all by k). A tie
+    goes to fewer jobs."""
+    aggregate = {1: single[cpus], **parallel}
+    pool = max(aggregate, key=lambda k: (aggregate[k], -k))
+    return cpus // pool, pool, aggregate[pool]
+
+
+def calibrate(settings: dict) -> dict:
+    """Measures this machine (spec 6.4, C-35) in a run folder of its own: one job at a time at 1, 2, 4 and N threads,
+    N being os.cpu_count(), then k jobs at once at N // k threads for k = 2 and 4 up to N, each job's speed read from
+    its openEMS_stats.txt. Stores what choose() makes of them, with the speeds, in settings["machines"] under
+    machine_key(), saves settings.json and returns the entry. Raises what check_job raises."""
+    n, run_dir, spec = os.cpu_count(), run_dir_for("calibrate"), calibration_spec()
+    number = itertools.count(1)  # the jobs' k, counted on from one group to the next
+    print(render("I_CALIBRATING"))
+    write_spec(run_dir, spec)
+
+    def measure(k: int, threads: int, name: str) -> float:
+        """The MC/s, in all, of k jobs at once of `threads` threads each, named `name`."""
+        jobs = [write_job(job_dir(run_dir, next(number), name), 1, "run", threads, spec["excitation"]["t_max"])
+                for _ in range(k)]
+        out = run_jobs(jobs, k, run_dir, settings)
+        for job in jobs:
+            check_job(job, out[job], "calibration", settings)
+        return sum(read_stats((job / "openEMS_stats.txt").read_text(encoding="utf-8"))["speed"] for job in jobs) / 1e6
+
+    single = {t: measure(1, t, f"{t}t") for t in sorted({1, 2, 4, n}) if t <= n}
+    parallel = {k: measure(k, n // k, f"{k}x{n // k}t") for k in (2, 4) if k <= n}
+    threads, pool, aggregate = choose(single, parallel, n)
+    entry = {"threads": threads, "pool": pool, "aggregate_mcs": aggregate,
+             "single": {str(t): mcs for t, mcs in single.items()},
+             "parallel": {str(k): mcs for k, mcs in parallel.items()}, "at": time.strftime("%Y-%m-%dT%H:%M:%S")}
+    settings.setdefault("machines", {})[machine_key()] = entry
+    save_settings(settings)
+    print(render("I_CALIBRATED", threads=threads, pool=pool, speed=f"{aggregate:.0f}"))
+    return entry
+
+
+def ensure_calibrated(settings: dict) -> dict:
+    """This machine's calibration in `settings`, measured first on a machine that has none (spec 6.4)."""
+    return settings.get("machines", {}).get(machine_key()) or calibrate(settings)
+
+
+def sizing(entry: dict, cells: int) -> tuple[int, int]:
+    """(threads, pool) for a model of `cells` cells: the calibration `entry`'s, with the pool cut to what the cores
+    and the free RAM allow (pool_size)."""
+    threads = entry["threads"]
+    return threads, min(entry["pool"], pool_size(cells, threads, free_ram_mb(), os.cpu_count()))

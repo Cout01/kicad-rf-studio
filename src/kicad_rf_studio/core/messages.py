@@ -90,6 +90,8 @@ CATALOG: dict[str, str] = {
     "E_OPENEMS_DLL": "openEMS could not load its libraries (CSXCAD_INSTALL_PATH is {value}). Run setup-openems again, or set CSXCAD_INSTALL_PATH to the openEMS folder.",
     "E_SETUP_FAILED": "openEMS could not set up the model; see {log}. Look at the model with `preview`.",
     "E_WORKER_FAILED": "The {job} worker ended with code {exit_code}; see {log}. Report it if the log shows no cause.",
+    "I_CALIBRATING": "Measuring this machine's simulation speed, once (20–30 s)…",
+    "I_CALIBRATED": "Calibrated: {pool} jobs at once with {threads} threads each, {speed} MC/s in all; `kicad-rf-studio calibrate` measures again.",
     "E_INTERNAL": "Internal error: {detail}. Please report it.",
 }
 
