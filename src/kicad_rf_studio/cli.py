@@ -1,14 +1,15 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """The command line. `new` reads a board, traces the RF chain between two pads and writes project.json, which it never
 replaces. `cost` prints the 2D Z0 and εeff of the measured nets' straight sections (plan 3 adds the setup-only run
-after them). There is no help= text: every string a user sees is a code in core.messages, and argparse itself writes
-the usage line."""
+after them). `setup-openems` installs openEMS from the official Windows package into this Python. There is no help=
+text: every string a user sees is a code in core.messages, and argparse itself writes the usage line."""
 import argparse
 import math
 import os
 import sys
 from pathlib import Path
 
+from kicad_rf_studio import runs
 from kicad_rf_studio.core.kicad import choose_reference, classify, load_board, trace_chain
 from kicad_rf_studio.core.kicad.stackup import preset as stackup_preset
 from kicad_rf_studio.core.kicad.values import parse_frequency, parse_value
@@ -168,6 +169,11 @@ def _cost(a: argparse.Namespace) -> None:
         print(render(code, **params))
 
 
+def _setup_openems(a: argparse.Namespace) -> None:
+    for code, params in runs.setup_openems(a.folder):
+        print(render(code, **params))
+
+
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="kicad-rf-studio")
     commands = parser.add_subparsers(dest="command", required=True)
@@ -185,6 +191,9 @@ def _parser() -> argparse.ArgumentParser:
     cost = commands.add_parser("cost")
     cost.add_argument("project")
     cost.set_defaults(func=_cost)
+    setup = commands.add_parser("setup-openems")
+    setup.add_argument("folder", type=Path, metavar="DIR")
+    setup.set_defaults(func=_setup_openems)
     return parser
 
 

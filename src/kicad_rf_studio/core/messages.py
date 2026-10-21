@@ -61,6 +61,14 @@ CATALOG: dict[str, str] = {
     "W_NO_REFERENCE": "No reference found for {signal}; set it in project.json before `run`.",
     "W_ABSOLUTE_BOARD_PATH": "The board is on another drive, so project.json stores its absolute path.",
     "I_WROTE": "Wrote {path}.",
+    "E_SETTINGS_UNREADABLE": "Cannot read {path}: {reason}. Delete it; setup-openems and calibrate write it again.",
+    "E_OPENEMS_MISSING": "openEMS is not installed for {python}. Install it: {command}",
+    "E_OPENEMS_OLD": "This Python has openEMS {openems} and CSXCAD {csxcad}; kicad-rf-studio needs openEMS 0.37 and CSXCAD 0.7 or newer. Install them: {command}",
+    "W_OPENEMS_UNTESTED": "openEMS {openems} is not 0.37.x, the version kicad-rf-studio is tested with, so results may differ. Install 0.37 for validated results: {command}",
+    "E_SETUP_OPENEMS_WINDOWS": "setup-openems is for Windows. On Linux, build openEMS with update_openEMS.sh <prefix> --python while this venv is active (see README).",
+    "E_SETUP_OPENEMS_DIR": "{dir} is not an openEMS package for this Python: it needs openEMS.exe and the openems and csxcad wheels for {tag} in its python folder. Give the folder of the official Windows package of openEMS 0.37.",
+    "E_SETUP_OPENEMS_PIP": "pip could not install the openEMS wheels (exit code {exit_code}). Read pip's output above, then run setup-openems again.",
+    "I_OPENEMS_INSTALLED": "Installed openEMS {openems} and CSXCAD {csxcad} from {dir}; the folder is recorded in {settings}.",
     "E_INTERNAL": "Internal error: {detail}. Please report it.",
 }
 
@@ -73,9 +81,9 @@ def render(code: str, **params) -> str:
     return _translation.gettext(CATALOG[code]).format(**params)
 
 
-# The `reason` of E_BOARD_UNREADABLE, E_PROJECT_UNREADABLE and E_OUTPUT_PATH, by the class of the error. Never the
-# system's own message: it is long, in the system's language, and a UnicodeDecodeError's repr holds every byte of the
-# file. NotADirectoryError is a file where a folder of the path should be.
+# The `reason` of E_BOARD_UNREADABLE, E_PROJECT_UNREADABLE, E_SETTINGS_UNREADABLE and E_OUTPUT_PATH, by the class of
+# the error. Never the system's own message: it is long, in the system's language, and a UnicodeDecodeError's repr
+# holds every byte of the file. NotADirectoryError is a file where a folder of the path should be.
 _REASONS = ((FileNotFoundError, "file not found"), (IsADirectoryError, "not a file"),
             (PermissionError, "permission denied"), ((FileExistsError, NotADirectoryError), "already exists as a file"),
             (UnicodeError, "not UTF-8 text"), (json.JSONDecodeError, "not JSON"))

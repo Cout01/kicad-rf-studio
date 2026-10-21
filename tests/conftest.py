@@ -1,4 +1,7 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
+import subprocess
+import sys
+
 import pytest
 
 from kicad_rf_studio.core.kicad import load_board
@@ -20,3 +23,11 @@ def mini_board_file(tmp_path):
 @pytest.fixture
 def mini_board(mini_board_file):
     return lambda body="", **kw: load_board(mini_board_file(body, **kw))
+
+
+def pytest_collection_modifyitems(config, items):
+    """@pytest.mark.openems tests run only where the worker's own interpreter imports openEMS (CI tier b)."""
+    marked = [item for item in items if "openems" in item.keywords]
+    if marked and subprocess.run([sys.executable, "-I", "-c", "import openEMS"], capture_output=True).returncode:
+        for item in marked:
+            item.add_marker(pytest.mark.skip(reason="openEMS does not import in this Python"))

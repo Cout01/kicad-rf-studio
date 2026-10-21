@@ -9,7 +9,7 @@ description = "Simulate the RF parts of a KiCad board with openEMS"
 readme = "README.md"
 license = "GPL-3.0-or-later AND LGPL-3.0-or-later"
 requires-python = ">=3.11"
-dependencies = ["shapely>=2.0", "numpy", "scipy"]
+dependencies = ["shapely>=2.0", "numpy", "scipy", "h5py", "matplotlib"]
 
 [project.optional-dependencies]
 dev = ["pytest>=8"]
@@ -25,3 +25,4 @@ kicad_rf_studio = ["data/**/*.json"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+markers = ["openems: needs openEMS importable in this Python (CI tier b)"]
