@@ -30,7 +30,7 @@ class Section:
     """A straight run of a measured net's track along `axis` ("x" or "y"), from `start` to `end` (the lower end
     first), `length` between its track ends. `cut` is the point of its centre line where it is bare line (_bare_cut),
     and `gap` the smaller distance from its copper to other copper on its layer across the cut there, None when the
-    cut meets none in the crop."""
+    cut meets none in the crop. Copper of another net, or of none, that touches the run is no gap (_gap)."""
     net: str
     layer: str
     axis: str
@@ -119,7 +119,11 @@ def _strips(pieces: list[Piece], layer: str, line: LineString, k: int) -> list[t
 
 def _gap(sec: Section, pieces: list[Piece]) -> float | None:
     line, k, c = _cut(sec, REACH)
-    strips = _strips(pieces, sec.layer, line, k)
+    # other copper that touches the run's body (within ALIGN) is a short or floating copper, never a gap, as in
+    # staircase_gap: at the cut the simplification can leave a hair (0.36 µm) between it and the track
+    body = LineString([sec.start, sec.end]).buffer(sec.width / 2, cap_style="flat")
+    strips = _strips([pc for pc in pieces if pc.net == sec.net or not shapely.dwithin(pc.polygon, body, ALIGN)],
+                     sec.layer, line, k)
     # the copper under the middle of the run, or the track's own width if the pieces hold none there
     lo, hi = next(((a, b) for net, a, b in strips if net == sec.net and a <= c <= b),
                   (c - sec.width / 2, c + sec.width / 2))

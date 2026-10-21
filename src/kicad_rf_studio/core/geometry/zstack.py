@@ -24,10 +24,13 @@ def zstack(stackup: Stackup, copper_layers: tuple[str, ...]) -> tuple[Slab, ...]
     """The stackup's layers bottom to top, quantised to 1e-6 mm. Its copper layers take the board's names (top to
     bottom, as `copper_layers` lists them) by position, since a stackup may repeat a name for copper sub-layers. The
     masks are the stackup's outer layers, so they sit outside the copper. Raises E_STACKUP_LAYERS when the stackup's
-    copper count is not the board's."""
+    copper count is not the board's, and E_DIELECTRIC_THICKNESS, naming the top one, when a dielectric has no
+    thickness (the reader takes a missing one for 0): the copper on either side would touch, and the mesh's d be 0."""
     count = sum(layer.kind == "copper" for layer in stackup.layers)
     if count != len(copper_layers):
         raise KrsError("E_STACKUP_LAYERS", stackup=count, board=len(copper_layers))
+    if thin := [layer.name for layer in stackup.layers if layer.kind == "dielectric" and layer.thickness <= 0]:
+        raise KrsError("E_DIELECTRIC_THICKNESS", layer=thin[0])
     layers = stackup.layers[::-1]
     faces = list(accumulate((layer.thickness for layer in layers), initial=0.0))  # layer i spans faces[i], faces[i + 1]
     base = faces[next(i for i, layer in enumerate(layers) if layer.kind == "copper")]

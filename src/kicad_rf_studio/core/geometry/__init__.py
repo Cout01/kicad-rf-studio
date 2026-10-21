@@ -53,7 +53,7 @@ def build_geometry(board: Board, project: dict) -> Geometry:
     its stackup and the region (its ports, its band, `region.expand_h`); the copper pieces; the rods, solid in the
     protected set, and the connectivity check; the F mask; the measured sections; the shield lid. `notes` holds their
     warnings and E_ gate entries in that order, which the caller reports and blocks on; `track_width` is inf when the
-    measured nets have no track. Raises KrsError: E_STACKUP_LAYERS, E_CHAIN_OFF_OUTLINE."""
+    measured nets have no track. Raises KrsError: E_STACKUP_LAYERS, E_DIELECTRIC_THICKNESS, E_CHAIN_OFF_OUTLINE."""
     # imported here, so that importing a submodule still pulls in none of the others, nor core.mesh, built on them
     from kicad_rf_studio.core.geometry.copper import connectivity, copper_pieces
     from kicad_rf_studio.core.geometry.lid import find_lid

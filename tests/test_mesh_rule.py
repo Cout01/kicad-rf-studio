@@ -164,6 +164,13 @@ def test_cell_size_takes_the_gap_no_section_measures():
     assert cell_size([section(width=0.6, gap=0.5)], 0.6, 2, 1e9, None) == pytest.approx(0.25)
 
 
+def test_cell_size_is_never_0():
+    # final review: a gap or substrate height of 0 (copper that touches the line, a dielectric with no thickness) made
+    # d = 0, which ran build_mesh into a MemoryError after about 60 s. A size of 0 is no feature to resolve
+    assert cell_size([section(width=0.6, gap=0.0)], 0.6, 2, 1e9, 0.0, 0.0) == pytest.approx(0.3)
+    assert cell_size([section(width=0.0, gap=None)], 0.0, 2, 1.0, None, 0.0) == pytest.approx(0.9 / 20)
+
+
 def test_staircased_net_gets_d_from_its_gap():
     # verifier: on coupon_gcpw_45 d came from the 0.6 mm width alone, 0.3, and the mesh joined LINE and GND at 40 grid
     # nodes, a short in FDTD (T7 ruling) that no gate saw: no section for fit2d, no axis-aligned edge for the lint

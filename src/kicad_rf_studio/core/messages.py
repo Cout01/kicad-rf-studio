@@ -38,6 +38,7 @@ CATALOG: dict[str, str] = {
     "W_COPPER_WEIGHT": "Copper layers {layers} are not 35 µm; the mesh rule is not validated for this copper weight.",
     "E_NO_STACKUP": "The board has no stackup. Give --stackup jlcpcb-2l, or --stackup kicad-default to accept KiCad's default rule.",
     "E_STACKUP_LAYERS": "The stackup has {stackup} copper layers but the board has {board}. Fix the board stackup in KiCad, or choose a matching --stackup.",
+    "E_DIELECTRIC_THICKNESS": 'The stackup layer "{layer}" has no thickness. Set its thickness in KiCad (Board Setup → Physical Stackup), save the board and re-create the project.',
     "E_UNKNOWN_PAD": "Pad {name} does not exist. Closest pads: {candidates}.",
     "E_AMBIGUOUS_PAD": "Pads named {name} sit on different nets ({nets}). Name a pad with a unique number.",
     "E_START_ON_GND": 'Pad {name} is on net "{net}", which is GND, power or no net; a chain cannot start or end there.',

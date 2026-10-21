@@ -39,9 +39,11 @@ def cell_size(sections: list[Section], fallback_width: float, n: int, lam_min: f
     net with no straight run (all 45° or arcs) still gets a width and a narrower bend is not missed, and so does
     `fallback_gap`, the narrowest gap of the tracks no section measures (Geometry.track_gap). `h`, the substrate under
     the measured nets, is a microstrip's gap to its plane (R-P2-23): the fringing field at a strip's edge spreads over
-    about h, which an edge cell wider than h cannot resolve (coupon_ms 3 mm wide at d = w/2: fit2d −5.37 %)."""
-    sizes = [fallback_width, *(s.width for s in sections), *(s.gap for s in sections if s.gap is not None)]
-    return min(min(sizes + [v for v in (fallback_gap, h) if v is not None]) / n, 0.9 * lam_min / 20)
+    about h, which an edge cell wider than h cannot resolve (coupon_ms 3 mm wide at d = w/2: fit2d −5.37 %). A size of
+    0 is no feature to resolve (copper that touches, a dielectric with no thickness: the checks report both), so d is
+    never 0, which ran build_mesh into a MemoryError after about 60 s."""
+    sizes = [fallback_width, *(s.width for s in sections), *(s.gap for s in sections), fallback_gap, h]
+    return min(min((v for v in sizes if v is not None and v > 0), default=math.inf) / n, 0.9 * lam_min / 20)
 
 
 def edge_lines(edge: float, inside: int, d: float) -> tuple[float, float]:

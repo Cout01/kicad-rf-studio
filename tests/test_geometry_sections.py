@@ -13,6 +13,7 @@ from kicad_rf_studio.core.geometry.sections import cross_section, sections, stai
 from kicad_rf_studio.core.geometry.zstack import zstack
 from kicad_rf_studio.core.kicad import load_board
 from kicad_rf_studio.core.kicad.stackup import kicad_default
+from kicad_rf_studio.core.mesh.rule import cell_size
 
 FIX = Path(__file__).parent / "fixtures"
 T = {"F.Cu": .035, "B.Cu": .035}
@@ -217,3 +218,16 @@ def test_a_stripline_embedded_in_one_eps_r_reads_that_eps_r(mini_board_file):
     # control: a 0.35 mm line on F.Cu over a solid In1 plane reads as it did (outer copper stays air, but for the mask)
     top = solved(SEG.format(0.35, "F.Cu") + plane("In1.Cu"))
     assert (top.z0, top.eps_eff) == pytest.approx((50.344, 3.0965), rel=1e-4)
+
+
+def test_copper_that_touches_the_line_is_no_gap(mini_board):
+    # final review: _gap took copper that touches the track for a gap of 0, and d = 0 ran build_mesh into a
+    # MemoryError after about 60 s. A GND rectangle abuts one edge of SIG and a netless one the other, where the 10 µm
+    # simplification leaves 0.36 µm between them at the cut. Touching copper is a short (E_SHORT_IN_ROI) or floating
+    # copper, never a gap, as in staircase_gap: the gap is the nearest copper that does not touch, a GND track
+    rect = '(gr_rect (start 5 {}) (end 35 {}) (stroke (width 0)) (fill yes) (layer "F.Cu") {})'
+    far = '(segment (start 5 12) (end 35 12) (width 0.3) (layer "F.Cu") (net "GND") (uuid "g"))'
+    b = mini_board(SEG.format(0.3, "F.Cu") + rect.format(10.15, 11, '(net "GND")') + rect.format(9, 9.85, "") + far)
+    (sec,), _ = sections(b, ("SIG",), pieces_of(b))
+    assert sec.gap == pytest.approx(1.7, abs=SIMPLIFY)
+    assert cell_size([sec], sec.width, 2, 1e9) > 0

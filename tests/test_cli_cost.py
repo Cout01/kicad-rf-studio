@@ -8,10 +8,12 @@ import pytest
 
 from kicad_rf_studio.cli import main
 from kicad_rf_studio.core import cs2d
+from kicad_rf_studio.core.geometry import build_geometry
 from kicad_rf_studio.core.kicad import load_board
 from kicad_rf_studio.core.kicad.stackup import kicad_default
-from kicad_rf_studio.core.messages import render
+from kicad_rf_studio.core.messages import KrsError, render
 from kicad_rf_studio.core.project import SCHEMA, board_hash, load_project, mesh_n, region_expand_h, save_project
+from test_geometry_sections import four_layer
 
 FIX = Path(__file__).parent / "fixtures"
 PADS = {"coupon_gcpw_pads": ("TP1.1", "TP2.1"), "lpf915": ("U1.1", "J1.1")}
@@ -179,6 +181,20 @@ def test_any_other_fault_in_the_2d_solve_is_an_internal_error(tmp_path, capsys, 
     assert main(["cost", str(new_project(tmp_path, "coupon_gcpw_masked"))]) == 1
     assert capsys.readouterr().err == render("E_INTERNAL", detail="ValueError: operands could not be broadcast "
                                                                   "together") + "\n"
+
+
+def test_a_dielectric_with_no_thickness_stops_cost_at_once(tmp_path, capsys, mini_board_file):
+    # final review: the reader takes a dielectric that gives no thickness for 0 mm, and `new` refuses only a stackup
+    # with no dielectric at all, so a 4-layer board whose top prepreg gives none got h = 0: `cost` printed Z0 3.05 Ω
+    # with exit 0, and the mesh's d = 0 would run into a MemoryError after about 60 s. The z-stack refuses it first
+    board = four_layer(mini_board_file, SEG.format(5, 10, 35, 10, 0.3, "F.Cu", "SIG", "s"),
+                       top='(material "FR4") (epsilon_r 4.3) (loss_tangent 0.02)')
+    pj = by_hand(tmp_path / "p" / "project.json", board, nets=("SIG",))
+    with pytest.raises(KrsError) as e:
+        build_geometry(load_board(board), load_project(pj))
+    assert (e.value.code, e.value.params) == ("E_DIELECTRIC_THICKNESS", {"layer": "dielectric 1"})
+    assert main(["cost", str(pj)]) == 2
+    assert capsys.readouterr() == ("", render("E_DIELECTRIC_THICKNESS", layer="dielectric 1") + "\n")
 
 
 def test_a_geometry_error_is_printed_as_new_prints_errors(tmp_path, capsys):
