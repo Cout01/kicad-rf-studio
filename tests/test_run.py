@@ -40,7 +40,8 @@ def test_run_converges_and_records_its_results(tmp_path, calibrated):  # spec 6.
     kinds = {json.loads(line)["kind"] for line in (run_dir / "events.jsonl").read_text(encoding="utf-8").splitlines()}
     assert kinds == {"message", "verdict", "cost", "progress", "result"}
     assert not (pj.parent / "project.json.lock").exists()
-    assert runs.load_settings()["machines"][runs.machine_key()]["aggregate_mcs"] != 400.0  # refreshed
+    # refreshed from openEMS's per-job speed: the fake's 5e7 × 2 threads = 1e8 cells/s a job, × the calibration's pool 2
+    assert runs.load_settings()["machines"][runs.machine_key()]["aggregate_mcs"] == pytest.approx(200.0)
 
 
 @pytest.mark.parametrize(("kind", "code", "verdict"), [

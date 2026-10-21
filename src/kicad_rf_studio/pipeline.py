@@ -421,7 +421,7 @@ def _run(path: Path, run_dir: Path) -> int:
     out = runs.run_jobs(jobs, pool, run_dir, settings, watch)
     wall_s = time.monotonic() - start
 
-    done, work = [], 0  # each job's results, and Σ cells·iterations
+    done, speeds = [], []  # each job's results, and openEMS's speed (cells/s) of each job that wrote its stats
     for k, job in enumerate(jobs, 1):
         rec = records(job, len(names), dt)
         kind, verdict = classify_job(job, out[job], live.get(job), rec, k, preset, exc)
@@ -435,18 +435,16 @@ def _run(path: Path, run_dir: Path) -> int:
         done.append({"port": names[k - 1], "verdict": kind, "t_cut": verdict.t if verdict else None, "t_stop": t_stop,
                      "residual_db": r, "waves": waves if (run_dir / waves).is_file() else None})
         if (stats := job / "openEMS_stats.txt").is_file():  # a killed or crashed job has none
-            s = read_stats(stats.read_text(encoding="utf-8"))
-            work += s["cells"] * s["iterations"]
+            speeds.append(read_stats(stats.read_text(encoding="utf-8"))["speed"])
 
     data = load_project(path)  # as it is now: only results is replaced
     data["results"] = {"model_hash": spec_hash(model.spec), "run_dir": str(run_dir), "gates": gates, "dt": dt,
                        "c_box": setup["c_box"], "wall_s": wall_s, "jobs": done}
     save_project(path, data)
-    # ponytail: this run's own concurrency sets the speed, so fewer jobs at once than the calibration's pool (fewer
-    # ports, or the RAM) under-reports it; scale by the jobs that ran at once if cost's predictions drift
-    if work:  # a run whose every job died measured nothing
+    if speeds:  # spec 6.4: refreshed from the run's Speed lines; a run whose every job died measured nothing
         settings = runs.load_settings()
-        settings["machines"][runs.machine_key()]["aggregate_mcs"] = work / wall_s / 1e6
+        entry = settings["machines"][runs.machine_key()]
+        entry["aggregate_mcs"] = sum(speeds) / len(speeds) * entry["pool"] / 1e6  # prepare's / pool: the per-job speed
         runs.save_settings(settings)
     kept = sum(j["verdict"] in KEPT for j in done)
     emit("result", "I_RESULTS", {"kept": kept, "runs": len(jobs), "wall": duration(wall_s), "path": str(path)})
