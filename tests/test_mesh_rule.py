@@ -476,6 +476,22 @@ def test_narrower_end_pads_keep_a_microstrip_under_the_fit2d_gate(tmp_path, name
     assert max(map(abs, fit2d(geom, m))) < 3 and not lint(m.x, m.edges["x"], m.d) and not lint(m.y, m.edges["y"], m.d)
 
 
+@pytest.mark.parametrize("name", ["coupon_ms", "coupon_ms_masked"])
+def test_a_tilted_piece_of_a_cut_edge_is_a_cut_edge(tmp_path, name):
+    # verifier: two LINE pads 0.9 x 2.2 mm mid-line break the strip's edge into pieces, and the piece that ends on the
+    # round cap is tilted by the 10 µm simplification, so it sits at its middle 1.6 µm deeper than the cut edge. Not cut,
+    # it was the cell's deepest edge and the cell fell back to the shared cell (R-P2-24): fit2d −4.21 % (masked −3.67 %)
+    # at n = 2, −1.49 % (−0.93 %) with the piece counted as the cut edge it is part of
+    net = '\t(net 2 "GND")\n'
+    pads = "".join(PAD.format(k=k, x=x, L=0.9, w=2.2) for k, x in ((3, 109.2), (4, 110.8)))
+    geom, prot = variant(tmp_path, name, net, net + pads)
+    m = build_mesh(geom, prot, 2)
+    _, cut = _edges(geom.pieces, prot, geom.sections)
+    strip = [e for e in m.edges["y"] if abs(abs(e[0] + 100) - 0.675) < 0.01]
+    assert len(strip) == 4 and set(strip) <= cut["y"]
+    assert max(map(abs, fit2d(geom, m))) < 3 and not lint(m.x, m.edges["x"], m.d) and not lint(m.y, m.edges["y"], m.d)
+
+
 @pytest.mark.parametrize(("w", "h", "pad", "length"), [(1.2, 0.6, 1.0, 1.6), (1.5, 0.9, 1.8, 1.0)])
 def test_end_pads_exactly_d_over_3_off_the_strip_pass_the_lint(tmp_path, w, h, pad, length):
     # verifier: d = h/2 (R-P2-23) on a round stackup makes a pad step of 100 µm on 0.6 mm, or 150 µm on 0.9 mm, exactly

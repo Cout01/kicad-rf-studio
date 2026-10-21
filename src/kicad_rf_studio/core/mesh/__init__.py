@@ -87,7 +87,9 @@ def _edges(pieces: list[Piece], prot: Protected, sections: Iterable[Section] = (
     first, so the hole split's cuts are not edges. A segment the 10 µm simplification tilted (a track's edge where its
     round cap began) still runs along its axis when it leaves it by under 2·SIMPLIFY and 1/ALONG of its length, and
     sits at its middle. Also, per axis, the edges that cross a section's cut on its layer: the cross-section fit2d
-    checks (spec 5.5) is theirs."""
+    checks (spec 5.5) is theirs; and the edges of the same sign whose segment reaches one of theirs across the axis,
+    pieces of the same physical edge that the simplification tilted (a strip's edge past a mid-line pad, ending on its
+    round cap, sat 1.6 µm deeper than the cut edge and took the cell from it: fit2d −4.21 %, −1.49 % as a cut edge)."""
     groups: dict[tuple[str, str], list] = defaultdict(list)
     for pc in pieces:
         groups[pc.layer, pc.net].append(pc.polygon)
@@ -97,6 +99,7 @@ def _edges(pieces: list[Piece], prot: Protected, sections: Iterable[Section] = (
     zones = {layer: area.buffer(1e-4) for layer, area in prot.area.items()}  # 0.1 µm for the grid
     found: dict[str, set[tuple[float, int]]] = {"x": set(), "y": set()}
     at_cut: dict[str, set[tuple[float, int]]] = {"x": set(), "y": set()}
+    spans: dict[str, dict[tuple[float, int], list[list[float]]]] = {"x": defaultdict(list), "y": defaultdict(list)}
     for (layer, _), polygons in groups.items():
         for p in shapely.get_parts(shapely.union_all(polygons)):
             p = orient(p)  # the copper is left of every ring
@@ -112,9 +115,13 @@ def _edges(pieces: list[Piece], prot: Protected, sections: Iterable[Section] = (
                         continue
                     if LineString([(x0, y0), (x1, y1)]).intersection(zones[layer]).length > SIMPLIFY:
                         found[axis].add(edge := (round(float(at), 6), inside))
+                        spans[axis][edge].append(sorted((x0, x1) if axis == "x" else (y0, y1)))  # across the axis
                         a, b = sorted((x0, x1) if axis == "y" else (y0, y1))
                         if any(a <= c <= b for c in cuts[layer, axis]):
                             at_cut[axis].add(edge)
+    for axis in "xy":
+        at_cut[axis] |= {e for e in found[axis] for c in at_cut[axis] if e[1] == c[1] and any(
+            a0 <= b1 + 1e-6 and b0 <= a1 + 1e-6 for a0, a1 in spans[axis][e] for b0, b1 in spans[axis][c])}
     return {axis: sorted(v) for axis, v in found.items()}, at_cut
 
 
