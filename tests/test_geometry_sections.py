@@ -6,6 +6,7 @@ import numpy as np
 import pytest
 from shapely.geometry import LineString, Point, box
 
+from kicad_rf_studio.core.cs2d import solve
 from kicad_rf_studio.core.geometry.copper import SIMPLIFY, copper_pieces
 from kicad_rf_studio.core.geometry.mask import mask_model, smeared_epsilon
 from kicad_rf_studio.core.geometry.sections import cross_section, sections, staircase_gap
@@ -16,10 +17,33 @@ from kicad_rf_studio.core.kicad.stackup import kicad_default
 FIX = Path(__file__).parent / "fixtures"
 T = {"F.Cu": .035, "B.Cu": .035}
 BIG = box(-1000, -1000, 1000, 1000)  # a crop that holds every test board
+FR4 = '(thickness 0.2) (material "FR4") (epsilon_r 4.3) (loss_tangent 0.02)'
+SEG = '(segment (start 5 10) (end 35 10) (width {}) (layer "{}") (net "SIG") (uuid "s")) '
 
 
 def pieces_of(b):
     return copper_pieces(b, BIG, T)[0]
+
+
+def four_layer(mini_board_file, body, top=FR4):
+    """A mini board of four 35 µm copper layers between three 0.2 mm dielectrics of εr 4.3, the top one given by `top`
+    (its properties), and no mask."""
+    cu = "(thickness 0.035)"
+    layers = [("F.Cu", "copper", cu), ("dielectric 1", "prepreg", top), ("In1.Cu", "copper", cu),
+              ("dielectric 2", "core", FR4), ("In2.Cu", "copper", cu), ("dielectric 3", "prepreg", FR4),
+              ("B.Cu", "copper", cu)]
+    path = mini_board_file(body, stackup="(stackup " + "".join(f'(layer "{n}" (type "{t}") {p})' for n, t, p in layers)
+                           + ")")
+    text = path.read_text(encoding="utf-8").replace('(2 "B.Cu" signal)', '(2 "B.Cu" signal) (4 "In1.Cu" signal) '
+                                                    '(6 "In2.Cu" signal)')
+    path.write_text(text, encoding="utf-8")
+    return path
+
+
+def plane(layer):
+    """A filled GND zone over the 40 × 20 mm of a mini board's lines, on `layer`."""
+    pts = "(pts (xy 0 0) (xy 40 0) (xy 40 20) (xy 0 20))"
+    return f'(zone (net "GND") (layer "{layer}") (polygon {pts}) (filled_polygon (layer "{layer}") {pts})) '
 
 
 def coupon(name):
@@ -173,3 +197,23 @@ def test_cuts_on_lpf915_miss_parts_and_other_tracks():
     across = LineString([(110.45, cs.box[0]), (110.45, cs.box[1])])
     assert not any(pc.polygon.intersects(across) for pc in pieces if pc.net == "RF_SMA")
     assert cross_section(out, pieces, zs, mask, "exact") == cross_section(ref, pieces, zs, mask, "exact")
+
+
+def test_a_stripline_embedded_in_one_eps_r_reads_that_eps_r(mini_board_file):
+    # final review: only the dielectric slabs spanned the cut, so an inner copper slab was air beside its copper. SIG,
+    # 0.15 mm on In1.Cu between GND planes on F.Cu and In2.Cu with 0.2 mm of εr 4.3 either side, is a TEM line in one
+    # dielectric: εeff 4.3 and Z0 49.0 Ω (Wheeler's thick stripline gives 49.03); it read 3.913 and 51.29 Ω. The resin
+    # of a pressed board fills an inner copper layer's gaps, so its slab spans the cut too, at its neighbours' mean εr
+    def solved(body):
+        b = load_board(four_layer(mini_board_file, body))
+        zs = zstack(b.stackup, b.copper_layers)
+        pieces = copper_pieces(b, BIG, {s.copper: round(s.z1 - s.z0, 6) for s in zs if s.kind == "copper"})[0]
+        (sec,), _ = sections(b, ("SIG",), pieces)
+        return solve(cross_section(sec, pieces, zs, None, "none"))
+
+    line = solved(SEG.format(0.15, "In1.Cu") + plane("F.Cu") + plane("In2.Cu"))
+    assert line.eps_eff == pytest.approx(4.3, rel=0.005)
+    assert line.z0 == pytest.approx(49.0, rel=0.01)
+    # control: a 0.35 mm line on F.Cu over a solid In1 plane reads as it did (outer copper stays air, but for the mask)
+    top = solved(SEG.format(0.35, "F.Cu") + plane("In1.Cu"))
+    assert (top.z0, top.eps_eff) == pytest.approx((50.344, 3.0965), rel=1e-4)

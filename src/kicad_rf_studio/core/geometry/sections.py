@@ -182,11 +182,13 @@ def cross_section(sec: Section, pieces: list[Piece], zs: tuple[Slab, ...], mask:
     """The cut perpendicular to `sec` at `sec.cut`, BOX_H substrate heights past its edges either side, through every
     piece it meets there, each as thick as its layer: the strip of `sec`'s net under its centre line is the signal,
     and any other conductor ground, its net's other copper too (as signal, a hairpin's two arms read as one line of
-    half the Z0, and an arm cut at the box's side touched its 0 V face). The dielectric layers span the cut. The mask
-    (Decisions): `mode` "none", or no `mask`, leaves it out; "exact" fills the gaps between the outer conductors over
-    their z-cell and lays a coat t_m thick on the copper and the gaps; "smeared" fills the same gaps and smears the
-    coat over the first z-cell, `dz0` thick, as the FDTD model does. The box runs BOX_H substrate heights past the
-    stack too, in air."""
+    half the Z0, and an arm cut at the box's side touched its 0 V face). The dielectric layers span the cut, and so
+    does each inner copper layer (a copper layer between two dielectrics), at the mean εr of those two: on a pressed
+    board their resin fills its gaps. The copper wins where it lies, since cs2d holds a conductor's nodes whatever
+    dielectric is under it. The outer copper layers are in air, with the mask (Decisions): `mode` "none", or no
+    `mask`, leaves it out; "exact" fills the gaps between the outer conductors over their z-cell and lays a coat t_m
+    thick on the copper and the gaps; "smeared" fills the same gaps and smears the coat over the first z-cell, `dz0`
+    thick, as the FDTD model does. The box runs BOX_H substrate heights past the stack too, in air."""
     if mode not in MODES:
         raise ValueError(f"cross-section mode {mode!r} is not one of {MODES}")
     m = BOX_H * substrate_h(zs)
@@ -196,6 +198,8 @@ def cross_section(sec: Section, pieces: list[Piece], zs: tuple[Slab, ...], mask:
     conductors = [Rect(a, b, s.z0, s.z1, role="signal" if (net, s.copper) == own and a <= c <= b else "ground")
                   for s in zs if s.kind == "copper" for net, a, b in _strips(pieces, s.copper, line, k)]
     dielectrics = [Rect(lo, hi, s.z0, s.z1, s.eps_r) for s in zs if s.kind == "dielectric"]
+    dielectrics += [Rect(lo, hi, s.z0, s.z1, (a.eps_r + b.eps_r) / 2) for a, s, b in zip(zs, zs[1:], zs[2:])
+                    if s.kind == "copper" and a.kind == b.kind == "dielectric"]
     if mask is not None and mode != "none":
         t, eps = (mask.t_m, mask.eps_m) if mode == "exact" else (dz0, smeared_epsilon(mask.t_m, mask.eps_m, dz0))
         z0 = mask.z_coat0 if mask.side == "F" else round(mask.z_coat0 - t, 6)  # the coat runs away from the board
