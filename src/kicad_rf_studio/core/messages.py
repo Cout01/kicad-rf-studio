@@ -94,7 +94,18 @@ CATALOG: dict[str, str] = {
     "I_CALIBRATED": "Calibrated: {pool} jobs at once with {threads} threads each, {speed} MC/s in all; `kicad-rf-studio calibrate` measures again.",
     "W_BOARD_CHANGED": "The board {path} changed since `new` wrote project.json; its chain, ports and parts may be stale. Re-create the project with `new` if you moved copper.",
     "W_OFF_TOP_LAYER": "Net {net} runs on {layer}, not on the top copper; the region, the cell size and dz0 use the top layer's substrate height (a Stage 1 limit). Check its fit2d result.",
-    "E_INTERNAL": "Internal error: {detail}. Please report it.",
+    "E_PORT_OPEN": "Port {name}: its {end} end does not lie in its own pad's copper on the mesh. Check the port in project.json and look at it with `preview`.",
+    "E_PORT_SHORT": "Port {name}: its signal and reference are one piece of copper on the mesh, a short. Check the copper between them in KiCad and with `preview`.",
+    "I_COST_CELLS": "Cells: {nx} × {ny} × {nz} = {mcells} M (mesh n {n}, cell d {d_mm} mm).",
+    "I_COST_SMALLEST": "Smallest cell: {size_um} µm across {axis}, at {axis} = {at_mm} mm.",
+    "I_COST_DT": "dt {dt} s (floor {floor} × {ref} s), set by the {axis} edge at ({x}, {y}, {z}) mm.",
+    "I_COST_TIME": "Worst case: {time} for {runs} runs to T_max {t_max_ns} ns, {pool} at once with {threads} threads each.",
+    "I_COST_PREDICTED": "Predicted from the last run's stop times: {time}.",
+    "I_COST_RAM": "RAM: about {gb} GB ({pool} jobs at once).",
+    "I_COST_DRIVER_CELL": "Main cost: the {size_um} µm cell across {axis} at {at_mm} mm, under d/3, sets dt. Move or merge the copper edges there in KiCad.",
+    "I_COST_DRIVER_RUNS": "Main cost: {runs} runs, one per port, {parts} of them part ports.",
+    "I_COST_DRIVER_CELLS": "Main cost: the cell count. The cell d {d_mm} mm follows the narrowest width, gap or substrate height; a smaller region.expand_h shrinks it.",
+    "E_INTERNAL":"Internal error: {detail}. Please report it.",
 }
 
 _translation = gettext.translation(
