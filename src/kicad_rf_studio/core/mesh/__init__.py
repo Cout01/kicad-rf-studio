@@ -57,7 +57,7 @@ def build_mesh(geom: Geometry, prot: Protected, n: int,
     region, zs = geom.region, geom.zs
     h, coarse, walls = substrate_h(zs), region.coarse, region.walls
     d = cell_size(geom.sections, geom.track_width, n, 20 * coarse, geom.track_gap, h)  # the coarse cell is λ_min/20
-    t_m = geom.mask.t_m if geom.mask is not None else 0.0
+    t_m = max((m.t_m for m in geom.masks.values()), default=0.0)
     edges, prefer = _edges(geom.pieces, prot, geom.sections)
     force = {axis: sorted(set((extra_edges or {}).get(axis, ()))) for axis in "xy"}
     for axis in "xy":

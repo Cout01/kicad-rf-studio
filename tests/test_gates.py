@@ -11,6 +11,7 @@ import pytest
 from kicad_rf_studio.cli import main
 from kicad_rf_studio.core.geometry import build_geometry, chain_of
 from kicad_rf_studio.core.geometry.sections import Section
+from kicad_rf_studio.core.geometry.vias import via_rods
 from kicad_rf_studio.core.geometry.zstack import substrate_h
 from kicad_rf_studio.core.kicad import classify, load_board, trace_chain
 from kicad_rf_studio.core.kicad.stackup import kicad_default
@@ -18,8 +19,9 @@ from kicad_rf_studio.core.mesh import Mesh, build_mesh, gates
 from kicad_rf_studio.core.mesh.gates import (Fit, LintHit, check_fit2d, dt_floor_reference, edge_lint, fit2d,
                                              mesh_with_lint)
 from kicad_rf_studio.core.mesh.protect import protected_set
-from kicad_rf_studio.core.messages import KrsError
+from kicad_rf_studio.core.messages import KrsError, render
 from kicad_rf_studio.core.project import load_project
+from test_cli_cost import SEG, gcpw
 from test_mesh_rule import FIXTURES, build
 
 FIX = Path(__file__).parent / "fixtures"
@@ -43,11 +45,11 @@ def project_of(name, start="", end="", *more):
 
 @cache
 def geom_of(name, start="", end=""):
-    """build_geometry's geometry of `name` (with a 2 mm lid where `new` makes the project) and its protected set, as
-    build_geometry makes it."""
+    """build_geometry's geometry of `name` (with a 2 mm lid where `new` makes the project) and the protected set it
+    keeps."""
     board, p = project_of(name, start, end, *(["--lid-height", "2"] if start else []))
     g = build_geometry(board, p)
-    return g, protected_set(board, chain_of(p), classify(board, p.get("classes")), g.pieces, substrate_h(g.zs))
+    return g, g.protected
 
 
 def lint_mesh(x, edges):
@@ -109,9 +111,9 @@ def test_remesh_failure_blocks(monkeypatch):
     monkeypatch.setattr(gates, "build_mesh", always_puts_a_line_on_the_edge)
     with pytest.raises(KrsError) as e:  # Task 2 ruling: str(KrsError) is the message, so check .code, not match=
         mesh_with_lint(geom, prot, 2)
-    assert e.value.code == "E_EDGE_LINT" and e.value.params == {"axis": "x", "edge_mm": edge, "reason": "on_edge"}
-    assert str(e.value) == (f"A mesh line sits badly at the copper edge {edge} mm (x, on_edge) even after one re-mesh. "
-                            "Use --preset strict, or widen the gap at that edge.")
+    assert (e.value.code, e.value.params) == ("E_EDGE_LINT", {"axis": "x", "edge_mm": edge, "reason": "on edge",
+                                                              "n": 2})
+    assert str(e.value) == render("E_EDGE_LINT", axis="x", edge_mm=edge, reason="on edge", n=2)
 
 
 @pytest.mark.parametrize(("name", "n", "pct"), [("coupon_gcpw", 2, 2.55), ("coupon_gcpw_masked", 3, 2.79)])
@@ -121,7 +123,7 @@ def test_fit2d_passes_on_rule_mesh(name, n, pct):
     fits = fit2d(g, mesh_with_lint(g, prot, n))
     assert [f.section for f in fits] == g.sections and all(f.err < 0.03 for f in fits)
     assert 100 * (fits[0].z0_mesh / fits[0].z0_ref - 1) == pytest.approx(pct, abs=0.01)
-    check_fit2d(fits)
+    check_fit2d(fits, 0.03, n)
 
 
 @pytest.mark.parametrize("lines", [
@@ -134,18 +136,20 @@ def test_fit2d_blocks_on_coarse_mesh(lines):
     fits = fit2d(g, replace(mesh_with_lint(g, prot, 2), y=lines))
     assert [(f.z0_mesh, f.err) for f in fits] == [(0.0, 1.0)]
     with pytest.raises(KrsError) as e:
-        check_fit2d(fits)
+        check_fit2d(fits, 0.03, 2)
     assert e.value.code == "E_FIT2D"
-    assert e.value.params == {"net": "LINE", "layer": "F.Cu", "err_pct": 100.0, "limit_pct": 3}
+    assert e.value.params == {"net": "LINE", "layer": "F.Cu", "err_pct": 100.0, "limit_pct": "3", "n": 2}
 
 
 def test_check_fit2d_names_the_worst_section_over_3_percent():
     a, b = (Section(net, "F.Cu", "x", (0.0, 0.0), (10.0, 0.0), 0.6, 0.15, 10.0, (5.0, 0.0)) for net in ("A", "B"))
-    check_fit2d([Fit(a, 51.5, 50.0, 0.03), Fit(b, 48.5, 50.0, 0.03)])  # at the limit
+    check_fit2d([Fit(a, 51.5, 50.0, 0.03), Fit(b, 48.5, 50.0, 0.03)], 0.03, 2)  # at the limit
     with pytest.raises(KrsError) as e:
-        check_fit2d([Fit(a, 51.6, 50.0, 0.032), Fit(b, 47.5, 50.0, 0.05)])
-    assert e.value.code == "E_FIT2D" and e.value.params == {"net": "B", "layer": "F.Cu", "err_pct": 5.0, "limit_pct": 3}
-    assert str(e.value) == "The mesh misses the 2D reference on net B (F.Cu) by 5.0 % (limit 3 %). Use --preset strict."
+        check_fit2d([Fit(a, 51.6, 50.0, 0.032), Fit(b, 47.5, 50.0, 0.05)], 0.03, 2)
+    assert (e.value.code, e.value.params) == ("E_FIT2D", {"net": "B", "layer": "F.Cu", "err_pct": 5.0,
+                                                          "limit_pct": "3", "n": 2})
+    assert str(e.value) == ("The mesh misses the 2D reference on net B (F.Cu) by 5.0 % (limit 3 %) at mesh.n 2. "
+                            "Set mesh.n to 3 in project.json.")
 
 
 def approx_s(t):
@@ -292,3 +296,67 @@ def test_a_chain_on_the_kept_outline_builds(mini_board):
 def test_build_geometry_notes_the_connectivity_gate(mini_board):  # Task 4: E_OPEN_IN_ROI is a gate entry in notes
     body = edge_cuts((0, 0, 40, 30)) + track(5, 15, 15) + track(16, 30, 15, "t2")
     assert ("E_OPEN_IN_ROI", {"net": "SIG"}) in build_geometry(mini_board(body), mini()).notes
+
+
+def twin(mini_board_file, line):
+    """test_cli_cost's 0.6 mm GCPW of SIG on `line`, the plane on the other outer layer."""
+    return build_geometry(load_board(mini_board_file(gcpw(line))), mini())  # tests/test_cli_cost.py
+
+
+def test_geometry_keeps_both_masks_and_the_protected_set_it_built():  # C-41, M-4
+    board, p = project_of("lpf915", "U1.1", "J1.1", "--lid-height", "2")
+    g = build_geometry(board, p)
+    assert {k: m.side for k, m in g.masks.items()} == {"F.Cu": "F", "B.Cu": "B"}
+    assert g.protected == protected_set(board, chain_of(p), classify(board, p["classes"]), g.pieces,
+                                        substrate_h(g.zs))
+    assert via_rods(board, g.region.crop, g.zs, g.protected) == g.rods
+
+
+def test_an_off_chain_part_made_a_port_is_protected():  # spec 5.4, R3-069
+    board, p = project_of("lpf915", "U1.1", "J1.1", "--lid-height", "2")
+    c4 = board.pads("C4.1")[0].polygon  # on VDD: neither measured nor ground copper
+    for role, inside in (("open", False), ("port", True)):
+        g = build_geometry(board, {**p, "others": [{**p["others"][0], "role": role}]})
+        assert g.protected.area["F.Cu"].buffer(1e-6).contains(c4) == inside
+
+
+def test_fit2d_reads_each_section_under_its_own_sides_mask(mini_board_file):  # C-7
+    refs = []
+    for line in ("F.Cu", "B.Cu"):
+        g = twin(mini_board_file, line)
+        refs.append(fit2d(g, mesh_with_lint(g, g.protected, 2))[0].z0_ref)
+    assert refs[1] == pytest.approx(refs[0], rel=1e-3)
+
+
+def test_copper_on_the_line_at_the_reference_cut_is_a_gate(mini_board_file):  # C-42: never E_INTERNAL
+    rect = '(gr_rect (start 4 14.95) (end 36 15.05) (stroke (width 0)) (fill yes) (layer "F.Cu") (uuid "r1")) '
+    g = build_geometry(load_board(mini_board_file(SEG.format(5, 15, 35, 15, 0.3, "F.Cu", "SIG", "s") + rect)), mini())
+    with pytest.raises(KrsError) as e:
+        fit2d(g, mesh_with_lint(g, g.protected, 2))
+    assert (e.value.code, e.value.params) == ("E_FIT2D_SHORT", {"net": "SIG", "layer": "F.Cu"})
+
+
+def fit(err):
+    s = Section("RF_B", "F.Cu", "x", (0.0, 0.0), (1.0, 0.0), 0.6, 0.15, 1.0, (0.5, 0.0))
+    return Fit(s, 50.0, 50.0 / (1 + err), err)
+
+
+@pytest.mark.parametrize(("n", "code"), [(2, "E_FIT2D"), (3, "E_FIT2D_FINE")])
+def test_the_fit2d_advice_follows_n_and_the_limit_is_a_project_field(n, code):  # C-43, C-10
+    with pytest.raises(KrsError) as e:
+        check_fit2d([fit(0.044)], 0.03, n)
+    assert (e.value.code, e.value.params) == (code, {"net": "RF_B", "layer": "F.Cu", "err_pct": 4.4,
+                                                     "limit_pct": "3", "n": n})
+    check_fit2d([fit(0.044)], 0.05, n)  # a raised gates.fit2d_limit lets it pass
+
+
+BAD_Y = Mesh(np.array([0.0, 1.0]), np.array([-100.6, -100.4505, -100.3]), np.array([0.0, 1.0]), D, 0.01, {},
+             {"x": [], "y": [(-100.4505, -1)]})
+
+
+def test_the_edge_lint_names_a_y_edge_in_kicads_frame(monkeypatch):  # C-43, L-4
+    monkeypatch.setattr(gates, "build_mesh", lambda *a, **k: BAD_Y)
+    with pytest.raises(KrsError) as e:
+        mesh_with_lint(None, None, 2)
+    assert (e.value.code, e.value.params) == ("E_EDGE_LINT", {"axis": "y", "edge_mm": 100.4505,
+                                                              "reason": "on edge", "n": 2})

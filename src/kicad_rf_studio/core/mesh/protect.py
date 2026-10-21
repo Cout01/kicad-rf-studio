@@ -17,9 +17,10 @@ from kicad_rf_studio.core.kicad.tracer import Chain, Classes
 
 @dataclass(frozen=True)
 class Protected:
-    """The protected set of a chain. `area` holds, per copper layer, the copper of the measured `nets`, the chain
-    parts' pads and the reference (GND) copper within reach of the measured nets; `vias` are the uuids of the vias
-    and plated holes (thru_hole pads) that stay solid; `boxes` are the port boxes (plan 3)."""
+    """The protected set of a chain. `area` holds, per copper layer, the copper of the measured `nets`, the pads of the
+    chain's parts and of the other parts given, and the reference (GND) copper within reach of the measured nets;
+    `vias` are the uuids of the vias and plated holes (thru_hole pads) that stay solid; `boxes` are the port boxes
+    (plan 3)."""
     nets: frozenset[str]
     area: dict[str, BaseGeometry]
     vias: frozenset[str]
@@ -27,17 +28,17 @@ class Protected:
 
 
 def protected_set(board: Board, chain: Chain, classes: Classes, pieces: list[Piece], h: float,
-                  reach_h: float = 3.0, boxes: tuple[Polygon, ...] = ()) -> Protected:
+                  reach_h: float = 3.0, boxes: tuple[Polygon, ...] = (), pads: tuple[str, ...] = ()) -> Protected:
     """The protected set of `chain`, whose nets are the measured nets. The reach, `reach_h` substrate heights `h`
     (provisional: P0-B checks it), is measured in plane from the measured nets' copper on every layer. The GND copper
     within it is protected, cut where the reach ends, and so is every GND via whose ring comes within it; the measured
     nets' own vias are protected wherever they are. A plated hole (a thru_hole pad) is a via whose ring is its pad.
-    `area` is on the 1e-6 mm grid."""
+    `pads` names ("REF.NUM") more part pads to protect as the chain parts' pads are. `area` is on the 1e-6 mm grid."""
     nets = frozenset(chain.nets)
     measured = shapely.union_all([pc.polygon for pc in pieces if pc.net in nets])
     reach = reach_h * h
     within = measured.buffer(reach)
-    names = {name for part in chain.series + chain.shunt for name in part.pads}
+    names = {name for part in chain.series + chain.shunt for name in part.pads} | set(pads)
     area = {}
     for layer in board.copper_layers:
         shapes = [pc.polygon for pc in pieces if pc.layer == layer and pc.net in nets]

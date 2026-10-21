@@ -45,8 +45,10 @@ def build(path, start="", end=""):
     prot = protected_set(b, chain, classify(b), pieces, substrate_h(zs))
     secs, more = sections(b, chain.nets, pieces)
     width = min(t.width for t in b.tracks if t.net in chain.nets)
-    return Geometry(region, zs, pieces, via_rods(b, region.crop, zs, prot), mask_model(b, pieces, zs, region.crop, "F"),
-                    secs, None, notes + more, width, staircase_gap(b, chain.nets, pieces)), prot
+    masks = {layer: m for layer, side in (("F.Cu", "F"), ("B.Cu", "B"))
+             if (m := mask_model(b, pieces, zs, region.crop, side)) is not None}
+    return Geometry(region, zs, pieces, prot, via_rods(b, region.crop, zs, prot), masks, secs, None, notes + more,
+                    width, staircase_gap(b, chain.nets, pieces)), prot
 
 
 @cache
@@ -107,11 +109,12 @@ def lint(lines, edges, d):
 
 def fit2d(geom, m):
     """fit2d as R-P2-16 defines it, ahead of Task 12's gate: each section's Z0 from cs2d on the mesh lines across it
-    (the mask smeared over dz0), in % against cs2d on its own grid (the mask exact), in the same box."""
-    masked, out = geom.mask is not None, []
+    (its own side's mask smeared over dz0), in % against cs2d on its own grid (that mask exact), in the same box."""
+    out = []
     for sec in geom.sections:
-        cs = cross_section(sec, geom.pieces, geom.zs, geom.mask, "smeared" if masked else "none", m.dz0)
-        ref = solve(cross_section(sec, geom.pieces, geom.zs, geom.mask, "exact" if masked else "none")).z0
+        mask = geom.masks.get(sec.layer)
+        cs = cross_section(sec, geom.pieces, geom.zs, mask, "smeared", m.dz0)
+        ref = solve(cross_section(sec, geom.pieces, geom.zs, mask, "exact")).z0
         out.append(100 * (solve(cs, m.y if sec.axis == "x" else m.x, m.z).z0 / ref - 1))
     return out
 
@@ -672,7 +675,7 @@ def test_a_staircase_of_close_edges_passes_the_lint(steps):
 def test_a_shared_cell_spans_d_at_most():
     # Task 10 fix ruling: steps under 5d/16 leave no room for a line, so a staircase joins one cell, and each join
     # widens it for its far edge; uncapped, such joins chained into cells many d wide that passed the lint (9.6d in a
-    # probe). Past d the far edge fails it instead: E_EDGE_LINT, whose advice (the strict preset, 2d/3) passes
+    # probe). Past d the far edge fails it instead: E_EDGE_LINT, whose advice (mesh.n 3, 2d/3) passes
     edges = [(round(110.0 + v * 0.075, 6), -1) for v in (0, 0.3, 0.6, 0.9, 1.2)]
     lines, _ = xy_lines(edges, (100.0, 120.0), (80.0, 140.0), [], 0.075, 2.36)
     assert lint(lines, edges, 0.075) and np.diff(lines[(lines > 109.8) & (lines < 110.4)]).max() < 2 * 0.075

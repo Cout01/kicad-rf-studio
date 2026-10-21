@@ -10,7 +10,7 @@ from typing import TYPE_CHECKING
 import numpy as np
 from scipy.constants import c as C_0
 
-from kicad_rf_studio.core.cs2d import solve
+from kicad_rf_studio.core.cs2d import ShortError, solve
 from kicad_rf_studio.core.geometry.sections import cross_section
 from kicad_rf_studio.core.mesh import build_mesh
 from kicad_rf_studio.core.messages import KrsError
@@ -20,8 +20,6 @@ if TYPE_CHECKING:
     from kicad_rf_studio.core.geometry.sections import Section
     from kicad_rf_studio.core.mesh import Mesh
     from kicad_rf_studio.core.mesh.protect import Protected
-
-FIT2D_LIMIT = 0.03  # spec 5.5: above 3 % in Z0 the run is blocked (P0-A confirms the threshold)
 
 
 @dataclass(frozen=True)
@@ -62,27 +60,34 @@ def edge_lint(mesh: Mesh) -> list[LintHit]:
 
 def mesh_with_lint(geom: Geometry, prot: Protected, n: int) -> Mesh:
     """build_mesh's mesh, linted; on a failure rebuilt once (spec 5.5) with the failing edges as `extra_edges`, which
-    keep their own pattern. Raises E_EDGE_LINT, naming the first edge that still fails: a neighbour may fail instead
-    after the re-mesh (T10)."""
+    keep their own pattern. Raises E_EDGE_LINT with `n`, naming the first edge that still fails (a neighbour may fail
+    instead after the re-mesh, T10) as KiCad shows it: y down, and the reason in words ("on edge")."""
     mesh = build_mesh(geom, prot, n)
     if hits := edge_lint(mesh):
         bad = {(h.axis, h.edge) for h in hits}
         mesh = build_mesh(geom, prot, n, {axis: [e for e in mesh.edges[axis] if (axis, e[0]) in bad] for axis in "xy"})
         if hits := edge_lint(mesh):
-            raise KrsError("E_EDGE_LINT", axis=hits[0].axis, edge_mm=hits[0].edge, reason=hits[0].reason)
+            hit = hits[0]
+            raise KrsError("E_EDGE_LINT", axis=hit.axis, edge_mm=0.0 - hit.edge if hit.axis == "y" else hit.edge,
+                           reason=hit.reason.replace("_", " "), n=n)
     return mesh
 
 
 def fit2d(geom: Geometry, mesh: Mesh) -> list[Fit]:
-    """Each section's Z0 on the mesh against the 2D reference (spec 5.5), the mask in both, in the one box
-    cross_section gives (R-P2-16): on the mesh lines across the section and `mesh.z`, the coat smeared over dz0 as in
-    the FDTD model, against cs2d's own grid with the exact mask. A mesh that puts a grid node on the line and on
-    another conductor (a short in FDTD) or holds no grid edge in it (the line is lost) carries no such line: z0_mesh
-    0 and err 1, never a skip or NaN (T7)."""
+    """Each section's Z0 on the mesh against the 2D reference (spec 5.5), the mask of its own side in both (none on
+    inner copper), in the one box cross_section gives (R-P2-16): on the mesh lines across the section and `mesh.z`,
+    the coat smeared over dz0 as in the FDTD model, against cs2d's own grid with the exact mask. A mesh that puts a
+    grid node on the line and on another conductor (a short in FDTD) or holds no grid edge in it (the line is lost)
+    carries no such line: z0_mesh 0 and err 1, never a skip or NaN (T7). Raises E_FIT2D_SHORT when other copper
+    touches the line at its cut, which leaves the reference no line to solve."""
     fits = []
     for sec in geom.sections:
-        ref = solve(cross_section(sec, geom.pieces, geom.zs, geom.mask, "exact")).z0
-        cs = cross_section(sec, geom.pieces, geom.zs, geom.mask, "smeared", mesh.dz0)
+        mask = geom.masks.get(sec.layer)
+        try:
+            ref = solve(cross_section(sec, geom.pieces, geom.zs, mask, "exact")).z0
+        except ShortError:
+            raise KrsError("E_FIT2D_SHORT", net=sec.net, layer=sec.layer) from None
+        cs = cross_section(sec, geom.pieces, geom.zs, mask, "smeared", mesh.dz0)
         try:
             z0 = solve(cs, mesh.y if sec.axis == "x" else mesh.x, mesh.z).z0
         except ValueError:
@@ -91,12 +96,13 @@ def fit2d(geom: Geometry, mesh: Mesh) -> list[Fit]:
     return fits
 
 
-def check_fit2d(fits: list[Fit]) -> None:
-    """Raises E_FIT2D for the section that misses the reference most, when it misses it by more than 3 %."""
+def check_fit2d(fits: list[Fit], limit: float, n: int) -> None:
+    """Raises, for the section that misses the reference most, when it misses it by more than `limit` (project.json's
+    gates.fit2d_limit): E_FIT2D at mesh.n `n` under 3, whose advice is the fine mesh, else E_FIT2D_FINE."""
     worst = max(fits, key=lambda f: f.err, default=None)
-    if worst is not None and worst.err > FIT2D_LIMIT:
-        raise KrsError("E_FIT2D", net=worst.section.net, layer=worst.section.layer, err_pct=round(100 * worst.err, 2),
-                       limit_pct=round(100 * FIT2D_LIMIT))
+    if worst is not None and worst.err > limit:
+        raise KrsError("E_FIT2D" if n < 3 else "E_FIT2D_FINE", net=worst.section.net, layer=worst.section.layer,
+                       err_pct=round(100 * worst.err, 2), limit_pct=f"{100 * limit:g}", n=n)
 
 
 def dt_floor_reference(mesh: Mesh) -> float:

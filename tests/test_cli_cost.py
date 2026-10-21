@@ -29,6 +29,13 @@ def zone(layer, net, x0, y0, x1, y1):
     return f'(zone (net "{net}") (layer "{layer}") (polygon {pts}) (filled_polygon (layer "{layer}") {pts})) '
 
 
+def gcpw(line):
+    """A 0.6 mm GCPW of SIG on `line`, the plane on the other outer layer."""
+    plane = "B.Cu" if line == "F.Cu" else "F.Cu"
+    return (EDGE + SEG.format(5, 10, 35, 10, 0.6, line, "SIG", "s") + zone(line, "GND", 0, 0, 40, 9.55)
+            + zone(line, "GND", 0, 10.45, 40, 20) + zone(plane, "GND", 0, 0, 40, 20))
+
+
 def by_hand(pj, board, nets=("LINE",), stackup=None, preset="normal"):
     """project.json written as `new` writes it, for a board `new` cannot trace (R-P2-8: no parts and no ports)."""
     pj.parent.mkdir(parents=True, exist_ok=True)
@@ -162,11 +169,8 @@ def test_a_line_on_the_bottom_copper_reads_under_the_bottom_mask(tmp_path, capsy
     # verifier: a 0.6 mm GCPW mirrored onto B.Cu printed its bare numbers as "with mask", since every row took the F
     # mask; the mask over each line is the one on its own side
     rows = []
-    for line, plane in (("F.Cu", "B.Cu"), ("B.Cu", "F.Cu")):
-        board = mini_board_file(EDGE + SEG.format(5, 10, 35, 10, 0.6, line, "SIG", "s") +
-                                zone(line, "GND", 0, 0, 40, 9.55) + zone(line, "GND", 0, 10.45, 40, 20) +
-                                zone(plane, "GND", 0, 0, 40, 20))
-        code, out = cost_on(tmp_path / line, capsys, board)
+    for line in ("F.Cu", "B.Cu"):
+        code, out = cost_on(tmp_path / line, capsys, mini_board_file(gcpw(line)))
         assert code == 0 and out[1].startswith(f"SIG on {line}: width 0.600 mm, gap 0.150")
         rows.append(parse_z0s(out[1]))
     (z_top, zm_top), (z_bottom, zm_bottom) = rows
