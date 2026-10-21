@@ -42,8 +42,8 @@ def test_no_height_reports():
     lid, notes = find_lid(*setup(*LPF), {**P, "lid_height_mm": None})
     assert lid is None and notes[0][0] == "E_LID_HEIGHT"
     assert notes == [("E_LID_HEIGHT", {"refs": "SH1"})] and render("E_LID_HEIGHT", refs="SH1") == (
-        "Shield SH1 covers the simulated region but project.json has no lid_height_mm. Set it, or re-create the "
-        "project with --lid-height.")
+        "Shield SH1 covers the simulated region but project.json has no lid_height_mm. Set lid_height_mm in "
+        "project.json, or set \"lid\": false to leave the lid out.")
 
 
 @pytest.mark.parametrize("height", [0, -1.0, np.nan, np.inf])  # 0 put the plate on F.Cu's traces, NaN on the MUR

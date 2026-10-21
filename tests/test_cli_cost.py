@@ -9,10 +9,11 @@ import pytest
 from kicad_rf_studio.cli import main
 from kicad_rf_studio.core import cs2d
 from kicad_rf_studio.core.geometry import build_geometry
-from kicad_rf_studio.core.kicad import load_board
+from kicad_rf_studio.core.kicad import classify, load_board
 from kicad_rf_studio.core.kicad.stackup import kicad_default
 from kicad_rf_studio.core.messages import KrsError, render
-from kicad_rf_studio.core.project import SCHEMA, board_hash, load_project, mesh_n, region_expand_h, save_project
+from kicad_rf_studio.core.project import (board_hash, load_project, make_project, mesh_n, region_expand_h,
+                                          save_project)
 from test_geometry_sections import four_layer
 
 FIX = Path(__file__).parent / "fixtures"
@@ -29,13 +30,12 @@ def zone(layer, net, x0, y0, x1, y1):
 
 
 def by_hand(pj, board, nets=("LINE",), stackup=None, preset="normal"):
-    """project.json written as `new` lays it out, for a board `new` cannot trace (R-P2-8: schema 1, no ports)."""
+    """project.json written as `new` writes it, for a board `new` cannot trace (R-P2-8: no parts and no ports)."""
     pj.parent.mkdir(parents=True, exist_ok=True)
-    save_project(pj, {
-        "schema": SCHEMA, "board": {"path": board.as_posix(), "sha256": board_hash(board)},
-        "f0_hz": 915e6, "harmonics": 3, "preset": preset, "band_factor": 1.1, "t_max_s": 40e-9,
-        "stackup": stackup or load_board(board).stackup.to_json(), "lid_height_mm": None,
-        "chain": {"start": "", "end": "", "nets": list(nets), "series": [], "shunt": []}, "ports": []})
+    b = load_board(board)
+    chain = {"start": "", "end": "", "nets": list(nets), "series": [], "shunt": []}
+    save_project(pj, make_project(board.as_posix(), board_hash(board), 915e6, stackup or b.stackup, classify(b), chain,
+                                  [], [], preset=preset))
     return pj
 
 
@@ -90,7 +90,7 @@ def test_new_writes_region_and_mesh_defaults(tmp_path, preset, n):
     assert d["region"] == {"expand_h": 3.0} and d["mesh"] == {"n": n}
 
 
-def test_a_project_without_region_or_mesh_reads_their_defaults():  # both optional: schema 1 is unchanged
+def test_a_project_without_region_or_mesh_reads_their_defaults():  # a bare dict; read_project requires both
     assert region_expand_h({}) == 3.0 and region_expand_h({"region": {"expand_h": 2}}) == 2
     assert mesh_n({"preset": "strict"}) == 3 and mesh_n({"preset": "draft"}) == 2 and mesh_n({"preset": "normal"}) == 2
     assert mesh_n({"preset": "strict", "mesh": {"n": 2}}) == 2
@@ -119,7 +119,7 @@ def test_rows_follow_the_chain_then_the_position_and_the_notes_come_last(tmp_pat
 
 def cost_on(tmp_path, capsys, board, nets=("SIG",)):
     """`cost`'s exit code and stdout lines on a mini board, with a 0.8 mm kicad-default stackup."""
-    pj = by_hand(tmp_path / board.stem / "project.json", board, nets=nets, stackup=kicad_default(0.8).to_json())
+    pj = by_hand(tmp_path / board.stem / "project.json", board, nets=nets, stackup=kicad_default(0.8))
     return main(["cost", str(pj)]), capsys.readouterr().out.splitlines()
 
 

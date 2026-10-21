@@ -12,14 +12,13 @@ from pathlib import Path
 from kicad_rf_studio import runs
 from kicad_rf_studio.core.kicad import choose_reference, classify, load_board, trace_chain
 from kicad_rf_studio.core.kicad.stackup import preset as stackup_preset
-from kicad_rf_studio.core.kicad.values import parse_frequency, parse_value
+from kicad_rf_studio.core.kicad.tracer import signal_layer
+from kicad_rf_studio.core.kicad.values import parse_frequency
 from kicad_rf_studio.core.messages import KrsError, reason, render
-from kicad_rf_studio.core.project import (EXPAND_H, MESH_N, SCHEMA, board_file, board_hash, load_project,
-                                          save_project)
+from kicad_rf_studio.core.project import (BAND_FACTOR, DEFAULT_PRESET, EXPAND_H, HARMONICS, MESH_N, T_MAX_S,
+                                          board_file, board_hash, load_project, make_project, save_project)
 
 PRESETS = ("draft", "normal", "strict")  # the run presets; `--stackup` names a stackup preset, which is another thing
-# ponytail: provisional constants, the same for every preset; the owner sets the time policy (spec 1.1) after P0-C.
-DEFAULT_PRESET, HARMONICS, BAND_FACTOR, T_MAX_S = "normal", 3, 1.1, 40e-9
 
 
 def _positive(kind):
@@ -37,9 +36,13 @@ def _list(names) -> str:
     return ", ".join(names) or "none"
 
 
-def _part(board, part) -> dict:
-    value = board.footprints[part.ref].value
-    return {"ref": part.ref, "pads": list(part.pads), "nets": list(part.nets), "value": value}
+def _part_note(part: dict) -> tuple[str, dict]:
+    """A part as I_PART prints it, or I_PART_NO_MODEL for one with no package preset."""
+    named, model = {"ref": part["ref"], "value": part["value"], "role": part["role"]}, part["model"]
+    if model is None:
+        return "I_PART_NO_MODEL", named
+    return "I_PART", {**named, "package": model["package"], "esl_nh": f"{model['esl_h'] * 1e9:g}",
+                      "esr_ohm": f"{model['esr_ohm']:g}"}
 
 
 def _reference(ref) -> dict | None:
@@ -64,44 +67,50 @@ def _shown(ref: dict | None) -> str:
 
 
 def _new(a: argparse.Namespace) -> None:
+    """Board, stackup, z-stack, classes, chain, ports, region, parts and lid, then project.json and the summary: every
+    refusal (E_STACKUP_LAYERS, E_DIELECTRIC_THICKNESS, E_CHAIN_OFF_OUTLINE among them) comes before anything is
+    written (C-44)."""
+    # imported here, as in `cost`: the CLI adds no work at import time
+    from kicad_rf_studio.core.geometry.lid import find_lid
+    from kicad_rf_studio.core.geometry.region import band, build_region
+    from kicad_rf_studio.core.geometry.zstack import zstack
+    from kicad_rf_studio.core.model.parts import project_parts
+
     board = load_board(a.board)
     named = a.stackup is not None  # an empty --stackup is a name too, and an unknown one
     stackup = stackup_preset(a.stackup, board.thickness, len(board.copper_layers)) if named else board.stackup
     if stackup is None or stackup.dielectric_thickness() <= 0:  # no stackup, or none that leaves a dielectric
         raise KrsError("E_NO_STACKUP")
+    zs = zstack(stackup, board.copper_layers)
     classes = classify(board)
     chain = trace_chain(board, a.start, a.end, classes)
     ports = []
     for n, signal in enumerate((a.start, a.end), 1):
         ref = choose_reference(board, classes, signal)
         sig = next(p for p in board.pads(signal) if p.layers)  # the pad trace_chain resolved: the first with copper
-        ports.append({"name": f"P{n}", "signal": signal, "signal_uuid": sig.uuid, "layer": sig.layers[0],
+        ports.append({"name": f"P{n}", "signal": signal, "signal_uuid": sig.uuid, "layer": signal_layer(board, sig),
                       "rule": ref and ref.rule, "reference": _reference(ref)})
+    f1, f2 = band({"f0_hz": a.f0, "harmonics": a.harmonics, "band_factor": BAND_FACTOR})
+    region = build_region(board, chain, ports, zs, f2, EXPAND_H)
+    series, shunt, others, part_notes = project_parts(board, chain, classes, region.roi, f1, f2)
+    _, gate = find_lid(board, classes, region, zs,
+                       {"harmonics": a.harmonics, "lid": None, "lid_height_mm": a.lid_height})
     folder, other_drive = Path(a.output or "."), False
     try:
         board_path = Path(os.path.relpath(a.board, folder)).as_posix()
     except ValueError:  # relpath cannot cross drives
         board_path, other_drive = Path(a.board).absolute().as_posix(), True
-    project = {
-        "schema": SCHEMA,
-        "board": {"path": board_path, "sha256": board_hash(a.board)},
-        "f0_hz": a.f0, "harmonics": a.harmonics, "preset": a.preset, "band_factor": BAND_FACTOR, "t_max_s": T_MAX_S,
-        "region": {"expand_h": EXPAND_H}, "mesh": {"n": MESH_N[a.preset]},
-        "stackup": stackup.to_json(),
-        "lid_height_mm": a.lid_height,
-        # the sets as computed: classify() reads back any list that is present, even an empty one, as a replacement
-        "classes": {"gnd_nets": sorted(classes.gnd), "power_nets": sorted(classes.power),
-                    "connectors": sorted(classes.connectors), "shields": sorted(classes.shields)},
-        "chain": {"start": chain.start, "end": chain.end, "nets": list(chain.nets),
-                  "series": [_part(board, p) for p in chain.series], "shunt": [_part(board, p) for p in chain.shunt]},
-        "ports": ports}
+    project = make_project(
+        board_path, board_hash(a.board), a.f0, stackup, classes,
+        {"start": chain.start, "end": chain.end, "nets": list(chain.nets), "series": series, "shunt": shunt}, others,
+        ports, harmonics=a.harmonics, preset=a.preset, lid_height_mm=a.lid_height)
     target = folder / "project.json"
     try:
         if target.exists():  # it may hold the hand edits that W_NO_REFERENCE and W_LID_HEIGHT_MISSING ask for
             raise KrsError("E_PROJECT_EXISTS", path=str(target))
         folder.mkdir(parents=True, exist_ok=True)
         save_project(target, project)
-    except OSError as e:  # the path the error names (the folder, a file in the way, project.json), else project.json
+    except OSError as e:  # the path the error names (the folder, a file in the way, the file written), else target
         raise KrsError("E_OUTPUT_PATH", path=str(e.filename or target), reason=reason(e)) from None
 
     c = project["classes"]
@@ -115,18 +124,18 @@ def _new(a: argparse.Namespace) -> None:
                             "connectors": _list(c["connectors"]), "shields": _list(c["shields"])}),
              ("I_CHAIN", {"start": chain.start, "end": chain.end, "series": _list(p.ref for p in chain.series),
                           "shunt": _list(p.ref for p in chain.shunt)}),
+             *map(_part_note, series + shunt + others),
              *(("I_PORT", {"name": p["name"], "signal": p["signal"], "reference": _shown(p["reference"]),
                            "rule": p["rule"] or "none"}) for p in ports),
              ("I_F0", {"f0_mhz": f"{a.f0 / 1e6:g}", "harmonics": a.harmonics}),
              ("I_DEFAULTS", {"preset": a.preset, "band_factor": BAND_FACTOR, "t_max_ns": f"{T_MAX_S * 1e9:g}",
-                             "harmonics": a.harmonics, "mesh_n": MESH_N[a.preset], "expand_h": f"{EXPAND_H:g}"})]
+                             "harmonics": a.harmonics, "mesh_n": MESH_N[a.preset], "expand_h": f"{EXPAND_H:g}"}),
+             ("I_LID", {"state": "on" if a.harmonics > 1 else "off"})]
     if heavy := stackup.nonstandard_copper():
         notes.append(("W_COPPER_WEIGHT", {"layers": _list(heavy)}))
-    if c["shields"] and a.lid_height is None:
-        notes.append(("W_LID_HEIGHT_MISSING", {"refs": _list(c["shields"])}))
-    parts = project["chain"]["series"] + project["chain"]["shunt"]  # DNP ones too
-    if unreadable := sorted(p["ref"] for p in parts if parse_value(p["value"]) is None):
-        notes.append(("W_VALUE_UNREADABLE", {"refs": _list(unreadable)}))
+    # what `run` refuses (E_LID_HEIGHT) is a warning here: lid_height_mm can still be set in project.json
+    notes += [("W_LID_HEIGHT_MISSING", params) for code, params in gate if code == "E_LID_HEIGHT"]
+    notes += part_notes  # W_VALUE_UNREADABLE (DNP parts too), W_PART_OPEN
     notes += [("W_NO_REFERENCE", {"signal": p["signal"]}) for p in ports if p["reference"] is None]
     if not 1e6 <= a.f0 <= 1e11:  # a bare --f0 915 is 915 Hz
         notes.append(("W_F0_RANGE", {"f0_hz": f"{a.f0:g}"}))
@@ -142,7 +151,7 @@ def _cost(a: argparse.Namespace) -> None:
     its own side (none on inner copper), in chain-net order and then by place, or W_2D_SHORT in its place where other
     copper touches the line at its cut; then the board's warnings and the geometry's notes, gate entries included,
     which `run` blocks on. No mesh and no worker."""
-    # imported here: `new` needs neither the geometry nor cs2d's scipy, and the CLI adds no work at import time
+    # imported here, as in `new`: the CLI adds no work at import time
     from kicad_rf_studio.core.cs2d import ShortError, solve
     from kicad_rf_studio.core.geometry import build_geometry
     from kicad_rf_studio.core.geometry.mask import mask_model

@@ -12,12 +12,17 @@ from kicad_rf_studio.cli import main
 from kicad_rf_studio.core.kicad import choose_reference, classify, load_board
 from kicad_rf_studio.core.kicad.sexpr import child, children, parse
 from kicad_rf_studio.core.kicad.tracer import Classes
-from kicad_rf_studio.core.project import board_file, board_hash, load_project
+from kicad_rf_studio.core.messages import render
+from kicad_rf_studio.core.project import board_file, board_hash, load_project, read_project
+from test_cli_cost import EDGE, SEG
+from test_geometry_sections import four_layer
 
 FIX = Path(__file__).parent / "fixtures"
 LPF = FIX / "lpf915.kicad_pcb"
 DEFAULTS = ("Preset normal (provisional default), band factor 1.1, T_max 40 ns, harmonics 3, mesh n 2, "
             "region 3 substrate heights past the chain.")  # spec 3.2: `new` prints every value it assumed
+KEYS = {"schema", "board", "f0_hz", "harmonics", "preset", "band_factor", "t_max_s", "region", "mesh", "stackup",
+        "lid_height_mm", "lid", "classes", "chain", "others", "ports", "gates", "allow_curve_port"}
 
 
 def run_new(tmp_path, *extra, board="lpf915.kicad_pcb", start="U1.1", end="J1.1", out=None):
@@ -85,20 +90,29 @@ def test_project_layout(tmp_path):
     code, pj = run_new(tmp_path, "--lid-height", "2.5")
     d, board = load_project(pj), load_board(LPF)
     assert code == 0
-    assert set(d) == {"schema", "board", "f0_hz", "harmonics", "preset", "band_factor", "t_max_s", "region", "mesh",
-                      "stackup", "lid_height_mm", "classes", "chain", "ports"}
+    assert set(d) == KEYS
     assert set(d["board"]) == {"path", "sha256"} and d["board"]["sha256"] == board_hash(LPF)
     assert d["stackup"] == board.stackup.to_json()
+    m0402 = {"package": "0402", "esl_h": 5e-10, "esr_ohm": 0.1, "cp_f": 3e-14}
     assert d["chain"] == {
         "start": "U1.1", "end": "J1.1", "nets": ["RF_A", "RF_B", "RF_C", "RF_OUT"],
         "series": [
-            {"ref": "C1", "pads": ["C1.1", "C1.2"], "nets": ["RF_A", "RF_B"], "value": "100pF"},
-            {"ref": "L1", "pads": ["L1.1", "L1.2"], "nets": ["RF_B", "RF_C"], "value": "15nH"},
-            {"ref": "R1", "pads": ["R1.1", "R1.2"], "nets": ["RF_C", "RF_OUT"], "value": "0R"}],
+            {"ref": "C1", "pads": ["C1.1", "C1.2"], "nets": ["RF_A", "RF_B"], "value": "100pF", "dnp": False,
+             "role": "port", "model": m0402},
+            {"ref": "L1", "pads": ["L1.1", "L1.2"], "nets": ["RF_B", "RF_C"], "value": "15nH", "dnp": False,
+             "role": "port", "model": m0402},
+            {"ref": "R1", "pads": ["R1.1", "R1.2"], "nets": ["RF_C", "RF_OUT"], "value": "0R", "dnp": False,
+             "role": "copper", "model": m0402}],
         "shunt": [
-            {"ref": "C2", "pads": ["C2.1", "C2.2"], "nets": ["RF_B", "GND"], "value": "3.3pF"},
-            {"ref": "C3", "pads": ["C3.1", "C3.2"], "nets": ["RF_C", "GND"], "value": "3.3pF"},
-            {"ref": "R2", "pads": ["R2.1", "R2.2"], "nets": ["RF_OUT", "RF_SMA"], "value": "0R"}]}
+            {"ref": "C2", "pads": ["C2.1", "C2.2"], "nets": ["RF_B", "GND"], "value": "3.3pF", "dnp": False,
+             "role": "port", "model": m0402},
+            {"ref": "C3", "pads": ["C3.1", "C3.2"], "nets": ["RF_C", "GND"], "value": "3.3pF", "dnp": False,
+             "role": "port", "model": m0402},
+            {"ref": "R2", "pads": ["R2.1", "R2.2"], "nets": ["RF_OUT", "RF_SMA"], "value": "0R", "dnp": True,
+             "role": "open", "model": m0402}]}
+    assert d["others"] == [  # VDD's decoupling capacitor, in the region but on no chain net
+        {"ref": "C4", "pads": ["C4.1", "C4.2"], "nets": ["VDD", "GND"], "value": "10uF/16V", "dnp": False,
+         "role": "open", "model": {"package": "0603", "esl_h": 7e-10, "esr_ohm": 0.1, "cp_f": 5e-14}}]
     assert d["ports"] == [  # a port records the pad it resolved: a number can repeat in a footprint
         {"name": "P1", "signal": "U1.1", "signal_uuid": board.pads("U1.1")[0].uuid, "layer": "F.Cu", "rule": "ic",
          "reference": {"pad": "U1.2", "uuid": board.pads("U1.2")[0].uuid}},
@@ -252,10 +266,19 @@ def test_the_printed_summary(tmp_path, monkeypatch, capsys):
         "Stackup: board, dielectric 0.71 mm, εr 4.5; mask 0.01 mm, εr 3.3.",
         "GND nets: GND. Power nets: VDD. Connectors: J1, J2. Shields: SH1.",
         "Chain U1.1 → J1.1: series C1, L1, R1; shunt C2, C3, R2.",
+        "Part C1 100pF: port; package 0402, ESL 0.5 nH, ESR 0.1 Ω.",
+        "Part L1 15nH: port; package 0402, ESL 0.5 nH, ESR 0.1 Ω.",
+        "Part R1 0R: copper; package 0402, ESL 0.5 nH, ESR 0.1 Ω.",
+        "Part C2 3.3pF: port; package 0402, ESL 0.5 nH, ESR 0.1 Ω.",
+        "Part C3 3.3pF: port; package 0402, ESL 0.5 nH, ESR 0.1 Ω.",
+        "Part R2 0R: open; package 0402, ESL 0.5 nH, ESR 0.1 Ω.",
+        "Part C4 10uF/16V: open; package 0603, ESL 0.7 nH, ESR 0.1 Ω.",
         "Port P1: signal U1.1, reference U1.2 (ic).",
         "Port P2: signal J1.1, reference J1.2 (connector).",
         "f0 915 MHz, with 3 harmonics.",
         DEFAULTS,
+        render("I_LID", state="on"),
+        render("W_PART_OPEN", refs="C4"),
         f"Wrote {pj}."]
 
 
@@ -291,7 +314,7 @@ def test_a_stackup_without_a_mask_shows_none_for_it(tmp_path, capsys, mini_board
 
 def test_the_lid_warning_names_the_shield(tmp_path, capsys):
     run_new(tmp_path)
-    assert "Shield SH1 found but no --lid-height was given" in capsys.readouterr().out
+    assert render("W_LID_HEIGHT_MISSING", refs="SH1") in capsys.readouterr().out.splitlines()
 
 
 @pytest.mark.parametrize("board, start, end, extra, warned", [
@@ -311,7 +334,8 @@ def test_heavy_copper_is_warned_between_the_defaults_and_the_lid(tmp_path, capsy
     code = main(["new", str(heavy), "--start", "U1.1", "--end", "J1.1", "--f0", "915MHz", "-o", str(tmp_path / "p")])
     lines = capsys.readouterr().out.splitlines()
     n = next(i for i, line in enumerate(lines) if line.startswith("Copper layers F.Cu are not 35"))
-    assert code == 0 and lines[n - 1].startswith("Preset normal") and lines[n + 1].startswith("Shield SH1 found")
+    assert code == 0 and lines[n - 1] == render("I_LID", state="on")
+    assert lines[n + 1] == render("W_LID_HEIGHT_MISSING", refs="SH1")
     assert not any("Copper layers" in line for line in lines[:n] + lines[n + 1:])
 
 
@@ -337,11 +361,11 @@ def test_a_part_value_that_cannot_be_read_is_warned(tmp_path, capsys):
 
 
 def test_unreadable_values_are_one_warning_for_series_shunt_and_dnp_parts(tmp_path, capsys):
-    # L1 is a series part, R2 a DNP shunt part; C4, a decoupling capacitor on VDD, is no part of the chain
+    # L1 is a series part, R2 a DNP shunt part; C4, a decoupling capacitor on VDD, is an `others` part
     board = with_values(tmp_path, R2="TBD", L1="", C2="3,3pF", C4="??")  # C2's decimal comma reads
     code = main(["new", str(board), "--start", "U1.1", "--end", "J1.1", "--f0", "915MHz", "-o", str(tmp_path / "p")])
     warned = [line for line in capsys.readouterr().out.splitlines() if line.startswith("Cannot read the value")]
-    assert code == 0 and warned == ["Cannot read the value of L1, R2. Write values like 4.7pF, 4p7 or 15nH."]
+    assert code == 0 and warned == ["Cannot read the value of C4, L1, R2. Write values like 4.7pF, 4p7 or 15nH."]
 
 
 def pad(number, net, x=0.0):
@@ -376,6 +400,7 @@ def test_ports_without_a_reference(tmp_path, capsys, mini_board_file):
         "Port P2: signal TP2.1, reference none (none).",
         "f0 915 MHz, with 3 harmonics.",
         DEFAULTS,
+        render("I_LID", state="on"),
         "No reference found for TP1.1; set it in project.json before `run`.",
         "No reference found for TP2.1; set it in project.json before `run`.",
         f"Wrote {out / 'project.json'}."]
@@ -573,3 +598,69 @@ def test_unencodable_characters_become_question_marks_on_stderr(tmp_path, monkey
     code, _ = run_new(tmp_path, start="Ω.1")  # a Greek capital omega: not in cp1252
     console.flush()
     assert code == 2 and "Pad ?.1 does not exist." in raw.getvalue().decode("cp1252")
+
+
+# --- plan 3, task 4: the complete project.json ----------------------------------------------------------------
+
+
+def test_new_writes_every_key_and_reads_it_back(tmp_path):  # C-3, C-10, C-13, C-46
+    code, pj = run_new(tmp_path, "--lid-height", "2.5")
+    d = read_project(pj)
+    assert code == 0 and set(d) == KEYS
+    assert (d["lid"], d["gates"], d["allow_curve_port"]) == (None, {"fit2d_limit": 0.03, "dt_floor": 0.8}, False)
+    assert d["chain"]["series"][0] == {"ref": "C1", "pads": ["C1.1", "C1.2"], "nets": ["RF_A", "RF_B"],
+                                       "value": "100pF", "dnp": False, "role": "port",
+                                       "model": {"package": "0402", "esl_h": 5e-10, "esr_ohm": 0.1, "cp_f": 3e-14}}
+    assert [(p["ref"], p["dnp"], p["role"]) for p in d["chain"]["shunt"]][-1] == ("R2", True, "open")
+    assert [(p["ref"], p["role"]) for p in d["others"]] == [("C4", "open")]
+
+
+def test_new_refuses_a_dielectric_with_no_thickness_before_writing(tmp_path, capsys, mini_board_file):  # C-44
+    board = four_layer(mini_board_file, "", top='(material "FR4") (epsilon_r 4.3) (loss_tangent 0.02)')
+    out = tmp_path / "p"
+    assert main(["new", str(board), "--start", "A.1", "--end", "B.1", "--f0", "915MHz", "-o", str(out)]) == 2
+    assert capsys.readouterr().err == render("E_DIELECTRIC_THICKNESS", layer="dielectric 1") + "\n"
+    assert not out.exists()
+
+
+@pytest.mark.parametrize(("extra", "warned"), [((), True), (("--harmonics", "1"), False),
+                                               (("--lid-height", "2.5"), False)])
+def test_the_lid_warning_follows_find_lids_condition(tmp_path, capsys, extra, warned):  # C-46, L-2
+    run_new(tmp_path, *extra)
+    out = capsys.readouterr().out.splitlines()
+    assert (render("W_LID_HEIGHT_MISSING", refs="SH1") in out) == warned
+    assert render("I_LID", state="off" if "1" in extra else "on") in out
+
+
+def test_a_through_hole_port_takes_the_layer_its_track_reaches(tmp_path, mini_board_file):  # M-6
+    tht = '(pad "1" thru_hole circle (at 0 0) (size 1.6 1.6) (drill 0.8) (layers "*.Cu" "*.Mask") (net "SIG"))'
+    smd = '(pad "1" smd rect (at 0 0) (size 1 1) (layers "B.Cu") (net "SIG"))'
+    board = mini_board_file(
+        f'(footprint "L:J" (layer "F.Cu") (uuid "j") (at 5 10) (property "Reference" "J9") {tht}) '
+        f'(footprint "L:T" (layer "B.Cu") (uuid "t") (at 25 10) (property "Reference" "TP2") {smd}) '
+        + SEG.format(5, 10, 25, 10, 0.3, "B.Cu", "SIG", "s"))
+    out = tmp_path / "p"
+    assert main(["new", str(board), "--start", "J9.1", "--end", "TP2.1", "--f0", "915MHz", "--stackup", "jlcpcb-2l",
+                 "-o", str(out)]) == 0
+    assert [p["layer"] for p in load_project(out / "project.json")["ports"]] == ["B.Cu", "B.Cu"]
+
+
+# --- beyond the brief's tests ---------------------------------------------------------------------------------
+
+
+def test_a_part_that_is_no_c_l_or_r_has_no_package_preset(tmp_path, capsys, mini_board_file):
+    # FB1, a ferrite bead in series: no preset, so `retune` takes it at its ideal value
+    board = mini_board_file(footprint("TP1", pad(1, "A")) + footprint("FB1", pad(1, "A", x=2), pad(2, "B", x=4))
+                            + footprint("TP2", pad(1, "B", x=6)))
+    code = main(["new", str(board), "--start", "TP1.1", "--end", "TP2.1", "--f0", "915MHz", "--stackup", "jlcpcb-2l",
+                 "-o", str(tmp_path / "p")])
+    assert code == 0 and render("I_PART_NO_MODEL", ref="FB1", value="x", role="port") in (
+        capsys.readouterr().out.splitlines())
+
+
+def test_a_chain_off_the_outline_is_refused_before_writing(tmp_path, capsys, mini_board_file):  # C-44
+    board = mini_board_file(EDGE + footprint("TP1", pad(1, "SIG", x=50)) + footprint("TP2", pad(1, "SIG", x=55)))
+    out = tmp_path / "p"
+    assert main(["new", str(board), "--start", "TP1.1", "--end", "TP2.1", "--f0", "915MHz", "--stackup", "jlcpcb-2l",
+                 "-o", str(out)]) == 2
+    assert capsys.readouterr().err == render("E_CHAIN_OFF_OUTLINE", nets="SIG") + "\n" and not out.exists()

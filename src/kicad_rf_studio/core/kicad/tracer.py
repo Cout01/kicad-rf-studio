@@ -177,13 +177,21 @@ class Reference:
     layer: str
 
 
+def signal_layer(board: Board, pad: Pad) -> str:
+    """The copper layer of a port at `pad` (M-6): the first of its layers where a track of its net touches it, else
+    its first layer. A through-hole pad lists every copper layer, and its signal leaves on the track's."""
+    return next((layer for layer in pad.layers if any(
+        t.layer == layer and t.net == pad.net and t.polygon().intersects(pad.polygon) for t in board.tracks)),
+        pad.layers[0])
+
+
 def choose_reference(board: Board, classes: Classes, signal: str) -> Reference | None:
     """The reference of the port at pad `signal` (spec 5.6): the nearest ground pad of its connector or IC (centre to
     centre; a tie goes to the lower pad number, then the lower uuid), else the nearest ground copper. It always lies
-    on the signal pad's first copper layer. None when there is none. Raises KrsError for a signal that `trace_chain`
-    would refuse as an end."""
+    on the signal pad's layer, `signal_layer`. None when there is none. Raises KrsError for a signal that
+    `trace_chain` would refuse as an end."""
     sig = _resolve(board, classes, signal)[0]
-    layer = sig.layers[0]
+    layer = signal_layer(board, sig)
     fp = board.footprints[sig.ref]
     rule = "connector" if sig.ref in classes.connectors else "ic" if len(_copper(fp)) >= 3 else None
     # a pad that lists `layer` has copper there, so the layer test also leaves out the pads without copper
