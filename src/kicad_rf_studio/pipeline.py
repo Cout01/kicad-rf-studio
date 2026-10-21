@@ -1,12 +1,16 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """What `cost`, `run` and `preview` share (spec 6.1): a project read with its board and geometry, its model built
 through the mesh gates, the calibration that sizes its jobs, the setup gate on openEMS's setup-only run (timestep
-floor, port connectivity, unused primitives) and the cost model (spec 6.4); and `cost` (spec 3.2) and `run` (spec 6.1)
-themselves."""
+floor, port connectivity, unused primitives) and the cost model (spec 6.4); and `cost` (spec 3.2), `run` (spec 6.1)
+and `preview` (C-34) themselves."""
 from __future__ import annotations
 
 import json
 import math
+import os
+import shutil
+import subprocess
+import sys
 import time
 from dataclasses import dataclass, replace
 from functools import partial
@@ -449,3 +453,48 @@ def _run(path: Path, run_dir: Path) -> int:
     kept = sum(j["verdict"] in KEPT for j in done)
     emit("result", "I_RESULTS", {"kept": kept, "runs": len(jobs), "wall": duration(wall_s), "path": str(path)})
     return 0 if kept == len(jobs) else 4
+
+
+def appcsxcad(settings: dict) -> str | None:
+    """AppCSXCAD's path: in settings.json's openems_dir, then in CSXCAD_INSTALL_PATH, then on PATH; None when none of
+    them has it."""
+    folders = (settings.get("openems_dir"), os.environ.get("CSXCAD_INSTALL_PATH"), os.environ.get("PATH"))
+    return shutil.which("AppCSXCAD", path=os.pathsep.join(filter(None, folders)))
+
+
+def open_viewer(exe: str, job: Path) -> None:
+    """Opens model.xml in AppCSXCAD `exe`, detached and not waited for, with the job folder `job` as its working
+    directory and a relative file name: AppCSXCAD fails on non-ASCII paths (spec 8)."""
+    detach = ({"creationflags": subprocess.DETACHED_PROCESS | subprocess.CREATE_NEW_PROCESS_GROUP}
+              if sys.platform == "win32" else {"start_new_session": True})
+    subprocess.Popen([exe, "model.xml"], cwd=job, **detach)
+
+
+def preview(path: Path) -> int:
+    """`preview` on the project at `path` (C-34), returning its exit code: W_FILLS_AS_SAVED and load()'s notes, then 2
+    on a refusal among them; the model and its mesh gates, then 3 when the edge lint left no spec. A blocking gate,
+    geometry or mesh, does not stop it: preview is how one looks at a failing model. Then check_openems(), model.json
+    in a run folder of its own and one xml worker in job-0-xml (port 1, one thread; preview does not calibrate);
+    E_APPCSXCAD_MISSING, naming its model.xml, when no AppCSXCAD is found, else AppCSXCAD opens it, I_PREVIEW and 0."""
+    project, board, geom, notes = load(path)
+    for code, params in [("W_FILLS_AS_SAVED", {}), *notes]:
+        print(render(code, **params))
+    if stops(notes) == 2:
+        return 2
+    model = build_model(project, board, geom)
+    for code, params in model.blocked:
+        print(render(code, **params))
+    if model.spec is None:  # E_EDGE_LINT left no mesh to write
+        return 3
+    for code, params in runs.check_openems():
+        print(render(code, **params))
+    run_dir, settings = runs.run_dir_for(path.absolute().parent.name), runs.load_settings()  # absolute: as in cost
+    runs.write_spec(run_dir, model.spec)
+    job = runs.write_job(runs.job_dir(run_dir, 0, "xml"), 1, "xml", 1, model.spec["excitation"]["t_max"])
+    runs.check_job(job, runs.run_jobs([job], 1, run_dir, settings)[job], "xml", settings)
+    xml = str(job / "model.xml")
+    if (exe := appcsxcad(settings)) is None:
+        raise KrsError("E_APPCSXCAD_MISSING", path=xml)
+    open_viewer(exe, job)
+    print(render("I_PREVIEW", path=xml))
+    return 0

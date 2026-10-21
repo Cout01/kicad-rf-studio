@@ -122,6 +122,8 @@ CATALOG: dict[str, str] = {
     "W_JOB_UNCLASSIFIED": "{port}: the worker ended before T_max without a verdict, so its S is not kept. See {log}.",
     "W_JOB_STOPPED": "{port}: stopped, so its S is not kept. Run `run` again for results.",
     "I_RESULTS": "{kept} of {runs} jobs kept S, in {wall}; results recorded in {path}.",
+    "I_PREVIEW": "Opened {path} in AppCSXCAD.",
+    "E_APPCSXCAD_MISSING": "AppCSXCAD was not found; open {path} in it by hand, or run setup-openems to record the openEMS folder.",
     "E_INTERNAL": "Internal error: {detail}. Please report it.",
 }
 
