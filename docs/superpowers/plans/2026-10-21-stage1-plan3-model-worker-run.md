@@ -27,7 +27,7 @@
 - **Python:** ≥ 3.11 (CI floor); every new `.py` file starts with `# SPDX-License-Identifier: GPL-3.0-or-later`.
 - **Dependencies:** runtime `shapely>=2.0`, `numpy`, `scipy`, `h5py`, `matplotlib`; dev `pytest>=8`; openEMS and CSXCAD are never declared (`setup-openems` installs them); scikit-rf waits for plan 4.
 - **openEMS:** 0.37.0 with CSXCAD 0.7.0; the version check refuses openEMS < 0.37 or CSXCAD < 0.7, warns outside 0.37.x, and runs before `cost`'s setup part and before `run`, `preview` and `calibrate`.
-- **Imports:** only worker processes import openEMS or CSXCAD, only inside `core.model.csx.build_csx`; the worker imports the stdlib, numpy, h5py, openEMS and CSXCAD only; the core never imports Qt.
+- **Imports:** only worker processes import openEMS or CSXCAD, only inside `core.model.csx.build_csx`; the worker imports the stdlib, numpy, h5py, openEMS and CSXCAD only; the core never imports Qt. This rule governs the package: dev-time fixture builders under `tools/` (`tools/make_dumps.py`) are outside it.
 - **Messages:** every user-visible string is a code with parameters in `core.messages` (English template = msgid) and says what to do next; events carry codes and parameters, never text; tests check `KrsError.code` and `.params`, never `match=`. No message field is named `code`: `render()` and `KrsError()` take the code as their first argument.
 - **Units and frames:** mm, Hz, s; CSX delta unit 1e-3 m; the model spec uses the internal frame (x, −y), y up; `project.json`, messages and events use KiCad's frame, y down; every coordinate and mesh line sits on the 1e-6 mm grid.
 - **Engine settings:** MUR on all six faces; `openEMS(EndCriteria=1e-15)`; `SetMaxTime` always; `SetCustomExcite(expr, f2, f2)`; TimeStepMethod/TimeStep/TimeStepFactor never set (method 3 stays); `exact_endcriteria` never passed and no `Run` keyword is `False` or `0`; `numThreads` always explicit; every worker gets `OPENBLAS_NUM_THREADS=1`.
@@ -296,7 +296,7 @@ def test_a_bezier_on_edge_cuts_closes_the_outline(mini_board):  # L-6
     assert b.outline is not None and b.outline.area == pytest.approx(100, abs=1e-3)
 ```
 
-  Revise on purpose: `test_values.py::test_text_that_is_not_a_value_gives_none` drops "4,7uF", "0,1uF" and "2,2k" (they read now; "100,50V" stays); `test_cli_new.py::test_a_part_value_that_cannot_be_read_is_warned` writes C2 = "3.3.3pF" and expects `["3.3.3pF", "3.3pF", "0R"]` as the stored shunt values.
+  Revise on purpose: `test_values.py::test_text_that_is_not_a_value_gives_none` drops "4,7uF", "0,1uF" and "2,2k" (they read now; "100,50V" stays); `test_cli_new.py::test_a_part_value_that_cannot_be_read_is_warned` writes C2 = "3.3.3pF" and expects `["3.3.3pF", "3.3pF", "0R"]` as the stored shunt values; `test_cli_new.py::test_unreadable_values_are_one_warning_for_series_shunt_and_dnp_parts`: C2 "3,3pF" reads now, so `warned == ["Cannot read the value of L1, R2. Write values like 4.7pF, 4p7 or 15nH."]`.
 - [ ] **Step 2: Run** `python -m pytest tests/test_values.py tests/test_board.py -q`. Expected: FAIL.
 - [ ] **Step 3: Implement**, spelling µ and Ω with the module's `_MU` and `_OMEGA`:
   - `_COMMA = re.compile(rf"^(\d+),(\d{{1,3}})(?=(?i:meg|ohm|[fhr])|[pnu{_MU}mkKMG{_OMEGA}])")`: a match whose second group has 3 digits and whose first is not "0" returns None; otherwise `_COMMA.sub(r"\1.\2", s)`, before the RKM substitution;
@@ -331,7 +331,7 @@ def test_a_bezier_on_edge_cuts_closes_the_outline(mini_board):  # L-6
     5. An angle that is not a multiple of 90° → "curve_port".
     6. A shunt or other L with a value and a model, and `is_choke` → "open".
     7. Otherwise → "port".
-  - `parts.project_parts(board, chain, classes, roi, f1, f2) -> tuple[list[dict], list[dict], list[dict], list[tuple[str, dict]]]`: series, shunt, others, notes; each part `{"ref", "pads", "nets", "value", "dnp", "role", "model"}`; `others` are the two-pad parts (two netted copper pads on two nets, no connector or shield) with a pad in `roi` and neither pad on a chain net, in reference order; notes `("W_VALUE_UNREADABLE", {"refs"})` for C, L or R parts (any place, DNP included) whose value does not read, and `("W_PART_OPEN", {"refs"})` for `others` left open that are not DNP (refs sorted, comma-joined).
+  - `parts.project_parts(board, chain, classes, roi, f1, f2) -> tuple[list[dict], list[dict], list[dict], list[tuple[str, dict]]]`: series, shunt, others, notes; each part `{"ref", "pads", "nets", "value", "dnp", "role", "model"}`, its `"value"` the board's `Footprint.value` as written (text; `part_value` only chooses the role); `others` are the two-pad parts (two netted copper pads on two nets, no connector or shield) with a pad in `roi` and neither pad on a chain net, in reference order; notes `("W_VALUE_UNREADABLE", {"refs"})` for C, L or R parts (any place, DNP included) whose value does not read, and `("W_PART_OPEN", {"refs"})` for `others` left open that are not DNP (refs sorted and joined with ", ").
 
 - [ ] **Step 1: Write the failing tests**
 
@@ -378,7 +378,7 @@ def test_a_choke_is_open_only_while_it_holds_200_z0_over_the_band():  # C-12, sp
 ```
 
 - [ ] **Step 2: Run** `python -m pytest tests/test_model_parts.py -q`. Expected: FAIL (module missing).
-- [ ] **Step 3: Implement** `band`, `ROLES` and `parts.py` (kind from `part_kind`, value from `part_value`, angle from `Footprint.angle`). Message `W_PART_OPEN`: "Left open in the simulated region: {refs}. Their self-resonance from the package preset is below 3·f2, or they are chokes or not C, L or R; make one a port in project.json if it matters (each port adds a run)."
+- [ ] **Step 3: Implement** `band`, `ROLES` and `parts.py` (kind from `part_kind`, the role's value from `part_value`, the stored `"value"` the `Footprint.value` text, angle from `Footprint.angle`). Message `W_PART_OPEN`: "Left open in the simulated region: {refs}. Their self-resonance from the package preset is below 3·f2, or they are chokes or not C, L or R; make one a port in project.json if it matters (each port adds a run)."
 - [ ] **Step 4: Run** the tests. Expected: PASS.
 - [ ] **Step 5: Commit.** `feat: assign part roles and package models (spec 5.7)`
 
@@ -388,14 +388,14 @@ def test_a_choke_is_open_only_while_it_holds_200_z0_over_the_band():  # C-12, sp
 
 **Files:**
 - Modify: `src/kicad_rf_studio/core/project.py`, `src/kicad_rf_studio/cli.py`, `src/kicad_rf_studio/core/messages.py`, `src/kicad_rf_studio/core/kicad/tracer.py`
-- Test: `tests/test_project.py`, `tests/test_cli_new.py`, `tests/test_cli_cost.py` (`by_hand` writes through `make_project` with the computed classes, `others=[]`, `ports=[]`)
+- Test: `tests/test_project.py`, `tests/test_cli_new.py`, `tests/test_cli_cost.py` (`by_hand` writes through `make_project` with the computed classes, `others=[]`, `ports=[]`), `tests/test_geometry_lid.py`
 
 **Interfaces:**
 - Consumes: `project_parts`, `band` (Task 3); `zstack`, `build_region`, `find_lid`.
 - Produces:
   - `project.DEFAULT_PRESET, HARMONICS, BAND_FACTOR, T_MAX_S` (moved from cli.py); `project.GATES = {"fit2d_limit": 0.03, "dt_floor": 0.8}` with `# ponytail: provisional until P0-A confirms them` (C-10).
   - `project.make_project(board_path, board_sha256, f0_hz, stackup, classes, chain, others, ports, *, harmonics=HARMONICS, preset=DEFAULT_PRESET, lid_height_mm=None) -> dict`: every key — schema, board, f0_hz, harmonics, preset, band_factor, t_max_s, region `{"expand_h": EXPAND_H}`, mesh `{"n": MESH_N[preset]}`, stackup, lid_height_mm, `lid` (None), classes, chain, others, ports, `gates` (a copy of GATES), `allow_curve_port` (False).
-  - `project.check_project(data: dict, path: Path) -> dict`: `KrsError("E_PROJECT_FIELD", path=str(path), field=..., expected=...)` for the first missing or mistyped field (C-3, R42), named with dots and `[k]`; never E_INTERNAL, never a silent misread. `project.read_project(path) = check_project(load_project(path), path)`.
+  - `project.check_project(data: dict, path: Path) -> dict`: `KrsError("E_PROJECT_FIELD", path=str(path), field=..., expected=...)` for the first missing or mistyped field (C-3, R42), named with dots and `[k]`; never E_INTERNAL, never a silent misread. `project.read_project(path) = check_project(load_project(path), path)`. A project.json written by plan 2's `new` is refused with E_PROJECT_FIELD (re-create it with `new`); `SCHEMA` stays 1, and project.py's docstring no longer calls `region` and `mesh` optional.
   - `save_project` writes atomically: a temporary file next to the target, then `os.replace` (it creates no folder).
   - `tracer.signal_layer(board, pad) -> str`: the first layer of the pad holding a track of its net that touches it, else `pad.layers[0]` (M-6); `choose_reference` and `new` use it.
   - `new` (C-44, C-46, C-12): board → stackup → `zstack` → classes → chain → ports → `build_region` → `project_parts` → `find_lid` → `make_project` → write → print. So E_STACKUP_LAYERS, E_DIELECTRIC_THICKNESS and E_CHAIN_OFF_OUTLINE are refused before anything is written. When `find_lid(board, classes, region, zs, {"harmonics": h, "lid": None, "lid_height_mm": height})` returns E_LID_HEIGHT, `new` warns `W_LID_HEIGHT_MISSING {refs}` instead. `new` still refuses an existing `project.json` (R38).
@@ -508,15 +508,20 @@ def test_a_through_hole_port_takes_the_layer_its_track_reaches(tmp_path, mini_bo
     assert [p["layer"] for p in load_project(out / "project.json")["ports"]] == ["B.Cu", "B.Cu"]
 ```
 
+  Test imports: `from test_cli_cost import SEG` (8 slots; never `test_geometry_sections`' SEG, which has 2), `from test_geometry_sections import four_layer`.
+
   Revise on purpose in `tests/test_cli_new.py`:
   - `test_project_layout`: the key set is `KEYS`; parts gain `dnp`, `role`, `model`; `others` is `[C4]`.
   - `test_the_printed_summary`: after the I_CHAIN line, the I_PART lines "Part C1 100pF: port; package 0402, ESL 0.5 nH, ESR 0.1 Ω." and the like for L1, R1 (copper), C2, C3, R2 (open) and C4 (open, package 0603, ESL 0.7 nH); after DEFAULTS, `render("I_LID", state="on")`; then `render("W_PART_OPEN", refs="C4")`.
   - `test_the_lid_warning_names_the_shield`: expects `render("W_LID_HEIGHT_MISSING", refs="SH1")`.
   - `test_heavy_copper_is_warned_between_the_defaults_and_the_lid`: `lines[n - 1]` is the I_LID line and `lines[n + 1]` the W_LID_HEIGHT_MISSING line.
   - `test_ports_without_a_reference`: the expected stdout gains `render("I_LID", state="on")` after DEFAULTS.
-  - `test_unreadable_values_are_one_warning_for_series_shunt_and_dnp_parts`: C2 "3,3pF" reads now and C4 "??" is an `others` part, so `warned == ["Cannot read the value of C4, L1, R2. Write values like 4.7pF, 4p7 or 15nH."]`.
-- [ ] **Step 2: Run** `python -m pytest tests/test_project.py tests/test_cli_new.py tests/test_cli_cost.py -q`. Expected: the new and revised tests FAIL.
-- [ ] **Step 3: Implement** the writer and reader, the atomic write, `signal_layer` and `new`'s order. Messages:
+  - `test_unreadable_values_are_one_warning_for_series_shunt_and_dnp_parts`: C4 "??" is now an `others` part, so `warned == ["Cannot read the value of C4, L1, R2. Write values like 4.7pF, 4p7 or 15nH."]`.
+
+  Revise on purpose in `tests/test_geometry_lid.py`:
+  - `test_no_height_reports`: `render("E_LID_HEIGHT", refs="SH1") == "Shield SH1 covers the simulated region but project.json has no lid_height_mm. Set lid_height_mm in project.json, or set \"lid\": false to leave the lid out."`.
+- [ ] **Step 2: Run** `python -m pytest tests/test_project.py tests/test_cli_new.py tests/test_cli_cost.py tests/test_geometry_lid.py -q`. Expected: the new and revised tests FAIL.
+- [ ] **Step 3: Implement** the writer and reader, the atomic write, `signal_layer`, `new`'s order and project.py's docstring. Messages (E_LID_HEIGHT and W_LID_HEIGHT_MISSING already exist in CATALOG: replace their templates, params still `{refs}`, with no second dict entry):
   - `E_PROJECT_FIELD`: "{path}: {field} is missing or is not {expected}. Fix it in a text editor, or re-create the project with `new`."
   - `E_LID_HEIGHT` (C-4): "Shield {refs} covers the simulated region but project.json has no lid_height_mm. Set lid_height_mm in project.json, or set \"lid\": false to leave the lid out."
   - `W_LID_HEIGHT_MISSING`: "Shield {refs} covers the simulated region and no --lid-height was given; set lid_height_mm in project.json before `run`, or \"lid\": false to leave the lid out."
@@ -532,7 +537,7 @@ def test_a_through_hole_port_takes_the_layer_its_track_reaches(tmp_path, mini_bo
 
 **Files:**
 - Modify: `src/kicad_rf_studio/core/geometry/__init__.py`, `src/kicad_rf_studio/core/mesh/__init__.py`, `src/kicad_rf_studio/core/mesh/protect.py`, `src/kicad_rf_studio/core/mesh/gates.py`, `src/kicad_rf_studio/core/messages.py`, `src/kicad_rf_studio/cli.py` (`_cost` takes `geom.masks`)
-- Test: `tests/test_gates.py`; `tests/test_mesh_rule.py` (its hand-built Geometry; `geom.mask` read as `geom.masks.get(sec.layer)`)
+- Test: `tests/test_gates.py`; `tests/test_mesh_rule.py` (its hand-built Geometry; `geom.mask` read as `geom.masks.get(sec.layer)`); `tests/test_cli_cost.py` (the `gcpw` helper)
 
 **Interfaces:**
 - Produces:
@@ -548,10 +553,7 @@ def test_a_through_hole_port_takes_the_layer_its_track_reaches(tmp_path, mini_bo
 ```python
 def twin(mini_board_file, line):
     """test_cli_cost's 0.6 mm GCPW of SIG on `line`, the plane on the other outer layer."""
-    plane = "B.Cu" if line == "F.Cu" else "F.Cu"
-    path = mini_board_file(EDGE + SEG.format(5, 10, 35, 10, 0.6, line, "SIG", "s") + zone(line, "GND", 0, 0, 40, 9.55)
-                           + zone(line, "GND", 0, 10.45, 40, 20) + zone(plane, "GND", 0, 0, 40, 20))
-    return build_geometry(load_board(path), mini())
+    return build_geometry(load_board(mini_board_file(gcpw(line))), mini())  # tests/test_cli_cost.py
 
 
 def test_geometry_keeps_both_masks_and_the_protected_set_it_built():  # C-41, M-4
@@ -613,7 +615,17 @@ def test_the_edge_lint_names_a_y_edge_in_kicads_frame(monkeypatch):  # C-43, L-4
                                                               "reason": "on edge", "n": 2})
 ```
 
-  Revise on purpose: `geom_of` returns `(g, g.protected)`; every `check_fit2d(fits)` becomes `check_fit2d(fits, 0.03, 2)`; `test_remesh_failure_blocks` expects `{"axis": "x", "edge_mm": edge, "reason": "on edge", "n": 2}` and `str(e.value) == render("E_EDGE_LINT", axis="x", edge_mm=edge, reason="on edge", n=2)`; `test_fit2d_blocks_on_coarse_mesh` expects `{"net": "LINE", "layer": "F.Cu", "err_pct": 100.0, "limit_pct": "3", "n": 2}`; `test_check_fit2d_names_the_worst_section_over_3_percent` expects `{"net": "B", "layer": "F.Cu", "err_pct": 5.0, "limit_pct": "3", "n": 2}` and the new E_FIT2D text.
+  `tests/test_cli_cost.py` gains the one helper both tests use for the mirrored-GCPW board body:
+
+```python
+def gcpw(line):
+    """A 0.6 mm GCPW of SIG on `line`, the plane on the other outer layer."""
+    plane = "B.Cu" if line == "F.Cu" else "F.Cu"
+    return (EDGE + SEG.format(5, 10, 35, 10, 0.6, line, "SIG", "s") + zone(line, "GND", 0, 0, 40, 9.55)
+            + zone(line, "GND", 0, 10.45, 40, 20) + zone(plane, "GND", 0, 0, 40, 20))
+```
+
+  Revise on purpose: `test_cli_cost.py::test_a_line_on_the_bottom_copper_reads_under_the_bottom_mask` loops over `("F.Cu", "B.Cu")` and builds its board with `mini_board_file(gcpw(line))`; `geom_of` returns `(g, g.protected)`; every `check_fit2d(fits)` becomes `check_fit2d(fits, 0.03, 2)`, except in `test_fit2d_passes_on_rule_mesh`, which calls `check_fit2d(fits, 0.03, n)` with its own parametrized n (coupon_gcpw_masked runs at n = 3); `test_remesh_failure_blocks` expects `{"axis": "x", "edge_mm": edge, "reason": "on edge", "n": 2}` and `str(e.value) == render("E_EDGE_LINT", axis="x", edge_mm=edge, reason="on edge", n=2)`; `test_fit2d_blocks_on_coarse_mesh` expects `{"net": "LINE", "layer": "F.Cu", "err_pct": 100.0, "limit_pct": "3", "n": 2}`; `test_check_fit2d_names_the_worst_section_over_3_percent` expects `{"net": "B", "layer": "F.Cu", "err_pct": 5.0, "limit_pct": "3", "n": 2}` and the new E_FIT2D text.
 - [ ] **Step 2: Run** `python -m pytest tests/test_gates.py tests/test_mesh_rule.py -q`. Expected: FAIL.
 - [ ] **Step 3: Implement.** Messages:
   - `E_EDGE_LINT`: "A mesh line sits badly at the copper edge {edge_mm} mm ({axis}, {reason}) even after one re-mesh. Widen the gap at that edge in KiCad, or change mesh.n in project.json (now {n})."
@@ -629,16 +641,16 @@ def test_the_edge_lint_names_a_y_edge_in_kicads_frame(monkeypatch):  # C-43, L-4
 
 **Files:**
 - Create: `src/kicad_rf_studio/core/model/ports.py`
-- Modify: `src/kicad_rf_studio/core/messages.py`
+- Modify: `src/kicad_rf_studio/core/messages.py`, `src/kicad_rf_studio/core/kicad/tracer.py` (the unknown-pad helper)
 - Test: `tests/test_model_ports.py`
 
 **Interfaces:**
 - Consumes: `Board`, `Piece`, `Mesh`, `Slab`, `SIMPLIFY`; the project's `ports`, `chain`, `others`, `allow_curve_port`.
 - Produces:
   - `@dataclass(frozen=True) class End`: `name: str`, `signal: BaseGeometry`, `reference: BaseGeometry` (internal frame), `layer: str`, `role: str` ("external", "port", "curve_port" or "grid").
-  - `ends(board, project, pieces) -> list[End]` in job order: the external ports in project order, then the parts with role port, curve_port or grid in project order (series, shunt, others); a part's signal is `pads[0]`, its reference `pads[1]`. A pad reference is found by its uuid, else by its name: the first pad of that name with copper on the port's layer (`# ponytail: a reference by pad name alone takes the first pad of that name`). A point reference resolves to the nearest piece on its layer within `SIMPLIFY` (pieces are simplified at 10 µm, the stored point lies on the raw copper), cut to the box over the signal pad's span across the direction from the signal centre to the point and over the signal pad's length beyond the point. Raises `E_NO_PORTS`; `E_NO_REFERENCE {signal}` for a null reference; `E_UNKNOWN_PAD {name, candidates}` (the tracer's own lookup) for a pad that is not on the board; `E_REFERENCE_POINT {name, point, layer}` for a point with no copper within `SIMPLIFY`; `E_REFERENCE_LAYER {name, signal_layer, reference_layer}` (C-14: no vertical ports); `E_ROTATED_PART {ref}` for a curve_port while `allow_curve_port` is false (C-12, C-37).
+  - `ends(board, project, pieces) -> list[End]` in job order: the external ports in project order, then the parts with role port, curve_port or grid in project order (series, shunt, others); a part's signal is `pads[0]`, its reference `pads[1]`. A pad reference is found by its uuid, else by its name: the first pad of that name with copper on the port's layer (`# ponytail: a reference by pad name alone takes the first pad of that name`). A point reference resolves to the nearest piece on its layer within `SIMPLIFY` (pieces are simplified at 10 µm, the stored point lies on the raw copper), cut to the box over the signal pad's span across the direction from the signal centre to the point and over the signal pad's length beyond the point. Raises `E_NO_PORTS`; `E_NO_REFERENCE {signal}` for a null reference; `E_UNKNOWN_PAD {name, candidates}` for a pad that is not on the board, raised through a small tracer helper extracted from `_resolve`'s unknown-pad branch (the same code, params and candidate list), which `_resolve` also uses (`ends` never calls `tracer._resolve`: it needs `classes` and refuses GND-net pads, and every reference pad is on GND); `E_REFERENCE_POINT {name, point, layer}` for a point with no copper within `SIMPLIFY`; `E_REFERENCE_LAYER {name, signal_layer, reference_layer}` (C-14: no vertical ports); `E_ROTATED_PART {ref}` for a curve_port while `allow_curve_port` is false (C-12, C-37).
   - `nominal_boxes(ends) -> tuple[Polygon, ...]`: the convex hull of each pair, for `Protected.boxes` (they widen the protected extent; part pads get their edge lines from Task 5).
-  - `place(end, mesh, zs) -> dict`: `{"name", "kind": "lumped", "dir": "x"|"y", "start": [x, y, z], "stop": [x, y, z], "nodes": [ref cap, sig cap, ref witness, sig witness], "part": bool}`, every coordinate a line of `mesh`, the box starting at the reference end so that openEMS's u is V_signal − V_reference; raises `E_PORT_SPANS {name}` and `E_PORT_BOX {name}`.
+  - `place(end, mesh, zs) -> dict`: `{"name", "kind": "lumped", "dir": "x"|"y", "start": [x, y, z], "stop": [x, y, z], "nodes": [ref cap, sig cap, ref witness, sig witness], "part": bool}`, every coordinate a line of `mesh`, the box starting at the reference end so that openEMS's u is V_signal − V_reference; raises `E_PORT_SPANS {name}` and `E_PORT_BOX {name}`. Every field it returns is JSON-native: `start`, `stop` and every node are lists, never tuples, of plain Python floats.
 
   `place` works on bounding boxes (`# ponytail: pads are taken as their bounding boxes; a round pad's corner can leave a cap edge in air, which the PEC check tolerates`):
 
@@ -704,8 +716,8 @@ def edited(name, start, end, where, value, *more):
     (["ports", 0, "reference"], None, "E_NO_REFERENCE", {"signal": "TP1.1"}),
     (["ports", 0, "reference"], {"point": [100.0, 100.6505], "layer": "B.Cu"}, "E_REFERENCE_LAYER",
      {"name": "P1", "signal_layer": "F.Cu", "reference_layer": "B.Cu"}),
-    (["ports", 0, "reference"], {"point": [100.0, 100.3], "layer": "F.Cu"}, "E_REFERENCE_POINT",  # in the gap
-     {"name": "P1", "point": "(100.000, 100.300)", "layer": "F.Cu"}),
+    (["ports", 0, "reference"], {"point": [100.0, 100.575], "layer": "F.Cu"}, "E_REFERENCE_POINT",  # in the gap
+     {"name": "P1", "point": "(100.000, 100.575)", "layer": "F.Cu"}),
     (["ports"], [], "E_NO_PORTS", {})])
 def test_refusals_on_the_coupon(where, value, code, params):
     board, p = edited("coupon_gcpw_pads", "TP1.1", "TP2.1", where, value)
@@ -743,6 +755,7 @@ def test_a_rotated_part_needs_the_switch():  # C-12, C-37
     assert (e.value.code, e.value.params) == ("E_ROTATED_PART", {"ref": "L1"})
 ```
 
+  The E_REFERENCE_POINT case's point must lie in the gap, more than `SIMPLIFY` from all copper (0.075 mm from LINE and 0.0755 mm from GND by the scan); confirm it, and if it does not, move it along y inside the gap (and its `point` param with it). The point lookup itself does not change.
 - [ ] **Step 2: Run** `python -m pytest tests/test_model_ports.py -q`. Expected: FAIL.
 - [ ] **Step 3: Implement.** `point` is formatted `f"({x:.3f}, {y:.3f})"` in KiCad's frame. Messages:
   - `E_NO_PORTS`: "project.json has no ports, so there is nothing to excite. Create the project with `new` between two pads."
@@ -785,8 +798,8 @@ def test_a_rotated_part_needs_the_switch():  # C-12, C-37
 
   - `spec_hash(spec) -> str` = sha256 of `json.dumps(spec, sort_keys=True, separators=(",", ":"))` (C-19); the excited port, threads and paths stay out; port parts' values stay out (a retune keeps the results), grid values are in.
   - How the spec is built:
-    - **Materials**, in this order, each at priority 10 + its index in the final list (openEMS breaks priority ties arbitrarily); a material with no solids is left out (openEMS warns "No primitives found" for an empty property):
-      - each dielectric slab `substrate_<i>`, bottom up: εr and κ at f0;
+    - **Materials**, in this order, each at priority 10 + its index in the final list (openEMS breaks priority ties arbitrarily); a material with no solids is left out (openEMS warns "No primitives found" for an empty property); every substrate material, dielectric or inner-copper fill alike, is named `substrate_<i>`, i its position in the materials list (a per-layer index would collide in Task 9's property names):
+      - each dielectric slab, bottom up: εr and κ at f0;
       - each copper slab between two dielectrics: a substrate entry at their mean εr and mean κ (C-8);
       - per mask (F first) `mask_<side>_fill` at ε_m and κ_m = `kappa(ε_m, tanδ of the stackup's mask slab, f0)` over `z_fill`, and `mask_<side>_coat` at ε_h = `smeared_epsilon(t_m, ε_m, dz0)` and κ_m·t_m/dz0 over [z_coat0, z_coat0 + dz0] on F, [z_coat0 − dz0, z_coat0] on B (C-6). The stackup's mask slabs never become materials (X-3).
     - **Footprints:** every polygon → solids through `split_holes` of each part (X-2, X-4); substrate solids from `clean(board.outline or region.crop, region.crop)`; mask solids from `gap_fill` and `coat`.
@@ -893,6 +906,8 @@ def test_a_grid_part_must_be_a_c_or_r_with_a_readable_value(ref, value, code):  
     assert (e.value.code, e.value.params["ref"]) == (code, ref)
 ```
 
+  Test imports: `from test_cli_cost import SEG` (8 slots; never `test_geometry_sections`' SEG, which has 2, and str.format ignores extra arguments), `from test_geometry_sections import four_layer, plane`, `from test_gates import mini, project_of`, `from test_model_ports import lpf_model`.
+
 - [ ] **Step 2: Run** `python -m pytest tests/test_model_spec.py -q`. Expected: FAIL.
 - [ ] **Step 3: Implement.** Messages:
   - `E_PART_VALUE`: "Part {ref} is in the grid but its value \"{value}\" cannot be read. Fix its value in project.json, or set its role to \"open\" or \"port\"."
@@ -934,7 +949,7 @@ C_box = 1 / Σ (1 / C_layer).
 
   `# ponytail: pure-Python union-find, about 1 s per million PEC edges; numpy label propagation if it shows`
 
-- [ ] **Step 1: Generate the dump fixtures** with `tools/make_dumps.py` (dev-time, SPDX header, needs Task 1's venv, runs openEMS directly), in mm (`SetDeltaUnit(1e-3)`): mesh x −8…8 step 0.25 (65 lines), y −4…4 step 0.25 (33), z `[-1, -0.5, 0, 0.125, 0.25, 0.375, 0.5, 0.535, 0.6, 0.75, 1, 1.5, 2, 2.5, 3, 3.5]` (16); material `FR4` (εr 4.3, κ = `kappa(4.3, 0.02, 915e6)`) box [−8, −4, 0]–[8, 4, 0.5] at priority 0; metal `PEC` boxes [−8, −4, 0]–[8, 4, 0] and [−5, −0.5, 0.5]–[5, 0.5, 0.535] at priority 10; `AddLumpedPort(1, 50, [-5, -0.5, 0], [-5, 0.5, 0.5], "z", excite=1)` and `(2, 50, [5, -0.5, 0], [5, 0.5, 0.5], "z", excite=0)`; `openEMS(EndCriteria=1e-15)`, MUR×6, `SetCustomExcite` with `excitation(P915)`'s pulse, `SetMaxTime(5e-9)`; `Run(".", setup_only=True, numThreads=1, debug_PEC=True, debug_operator=True)` with the working folder `tests/fixtures/dumps`; it deletes `et` and `ht`. Run `python tools/make_dumps.py`. Expected: two files of about 34 and 16 KB.
+- [ ] **Step 1: Generate the dump fixtures** with `tools/make_dumps.py` (dev-time, SPDX header, needs Task 1's venv; it imports openEMS and CSXCAD itself, since Task 8 comes before `build_csx` and the worker, and imports nothing from `tests/`), in mm (`SetDeltaUnit(1e-3)`): mesh x −8…8 step 0.25 (65 lines), y −4…4 step 0.25 (33), z `[-1, -0.5, 0, 0.125, 0.25, 0.375, 0.5, 0.535, 0.6, 0.75, 1, 1.5, 2, 2.5, 3, 3.5]` (16); material `FR4` (εr 4.3, κ = `kappa(4.3, 0.02, 915e6)`) box [−8, −4, 0]–[8, 4, 0.5] at priority 0; metal `PEC` boxes [−8, −4, 0]–[8, 4, 0] and [−5, −0.5, 0.5]–[5, 0.5, 0.535] at priority 10; `AddLumpedPort(1, 50, [-5, -0.5, 0], [-5, 0.5, 0.5], "z", excite=1)` and `(2, 50, [5, -0.5, 0], [5, 0.5, 0.5], "z", excite=0)`; `openEMS(EndCriteria=1e-15)`, MUR×6, `SetCustomExcite` with the pulse of the package's `excitation()` on the tool's own 915 MHz project values (`{"f0_hz": 915e6, "harmonics": 3, "band_factor": 1.1, "t_max_s": 40e-9}`, defined in the tool), `SetMaxTime(5e-9)`; `Run(".", setup_only=True, numThreads=1, debug_PEC=True, debug_operator=True)` with the working folder `tests/fixtures/dumps`; it deletes `et` and `ht`. Run `python tools/make_dumps.py`. Expected: two files of about 34 and 16 KB.
 - [ ] **Step 2: Write the failing tests**
 
 ```python
@@ -1111,12 +1126,12 @@ def test_grid_parts_are_lumped_elements_named_for_the_gate(monkeypatch):  # C-16
   - `job.json`, exactly: `{"spec": "../model.json", "port": int, "mode": "run" | "setup" | "xml", "threads": int, "t_max": float}`, `port` the excited port, 1-based.
   - `LOG, ERR = "log.txt", "err.txt"`: the orchestrator sends stdout and stderr there.
   - `SETUP_FAILED = 10`.
-  - `run_kwargs(mode, threads, parts) -> dict`: setup `{"setup_only": True, "verbose": 2, "numThreads": threads, "debug_PEC": True}` plus `"debug_operator": True` when `parts`; run `{"numThreads": threads, "dump_statistics": True}`. No value is ever False (spec §11), `exact_endcriteria` never passed.
-  - `main(argv=None) -> int`: deletes a stale `ABORT` first (C-20, r5); wraps the `build_csx(...)` call in `try/except ImportError` → 2 (openEMS imports inside it); calls `fdtd.Run(".", **run_kwargs(...))` from inside the job folder, so no absolute path reaches openEMS; a non-zero return in setup mode → `SETUP_FAILED` (MSVC's `abort()` and openEMS's console handler exit 3, so 3 is a crash); any other code is a crash.
+  - `run_kwargs(mode, threads, parts) -> dict`: setup `{"setup_only": True, "verbose": 2, "numThreads": threads, "debug_PEC": True}` plus `"debug_operator": True` when `parts`, which `main` sets to `any(p["part"] for p in spec["ports"])`; run `{"numThreads": threads, "dump_statistics": True}`. No value is ever False (spec §11), `exact_endcriteria` never passed.
+  - `main(argv=None) -> int`: deletes a stale `ABORT` first (C-20, r5); wraps the `build_csx(...)` call in `try/except ImportError` → 2 (openEMS imports inside it); calls `rc = fdtd.Run(".", **run_kwargs(...))` from inside the job folder, so no absolute path reaches openEMS; a non-zero int `rc` in either mode → `SETUP_FAILED`, None or 0 is success (openEMS returns None after a full run) (MSVC's `abort()` and openEMS's console handler exit 3, so 3 is a crash); any other code is a crash.
   - Outputs:
     - run: `waves.npz` = `{"t_u": (n,), "u": (ports, n), "t_i": (n,), "i": (ports, n)}` from `port_ut_k` and `port_it_k`, cut to the shortest file.
     - setup: `setup.json` = `{"dt", "cells", "node", "unused", "dumps", "pec", "c_box"}`: dt, cells, node from `read_log(log.txt)`; unused from `read_unused(err.txt)`; `dumps` the relative names of the dump files written; `pec[k]` = `pec_roots` of port k's `nodes`; `c_box` = `{name: farads}` for the ports with `"part"`, at the log's dt (C-18). A log with no dt line raises (a crash).
-    - xml: `Write2XML("model.xml")` (C-34).
+    - xml: `fdtd.Write2XML("model.xml")` (C-34), on the openEMS (FDTD) object that `build_csx` returns, so the file's root is `openEMS` with the FDTD setup, ports and excitation, which AppCSXCAD also reads; Write2XML writes an XML declaration first.
 
 - [ ] **Step 1: Write the failing tests**
 
@@ -1207,7 +1222,7 @@ def test_the_worker_on_a_tiny_model(tmp_path, mode, parent):
                               stdout=out, stderr=err, env={**os.environ, "OPENBLAS_NUM_THREADS": "1"}).returncode
     assert code == 0
     if mode == "xml":
-        assert (job / "model.xml").read_text(encoding="utf-8").startswith("<openEMS>")
+        assert xml.etree.ElementTree.parse(job / "model.xml").getroot().tag == "openEMS"  # import xml.etree.ElementTree
     if mode == "setup":
         s = json.loads((job / "setup.json").read_text(encoding="utf-8"))
         assert s["cells"] == [5, 5, 5] and s["dt"] > 0 and s["unused"] == [] and len(s["pec"]) == 1
@@ -1316,9 +1331,9 @@ def test_no_growth_before_the_pulse_ends():  # armed only after 2·t0
   - `ascii_name(text) -> str` = `re.sub(r"[^A-Za-z0-9_-]", "_", text) or "_"`.
   - `run_dir_for(stem: str) -> Path` (not created) = `data_dir() / "runs" / f"{ascii_name(stem)}-{YYYYMMDD-HHMMSS}-{secrets.token_hex(2)}"` (C-23); callers pass the project folder's name, or "calibrate". `# ponytail: run folders are never deleted (C-23)`.
   - `job_dir(run_dir, k, name) -> Path` = `run_dir / f"job-{k}-{ascii_name(name)}"`; k is 1-based for run jobs and 0 for `job-0-setup` / `job-0-xml`.
-  - `write_spec(run_dir, spec) -> None`: `run_dir.mkdir(parents=True)` (runs/ may not exist yet), then `model.json`.
-  - `write_job(job, port, mode, threads, t_max) -> Path`: creates `job`, writes `job.json` (Task 10's fields), returns `job`.
-  - `project_lock(project_path, run_dir)`, a context manager (C-24): creates `<project>.lock` with `os.O_CREAT | os.O_EXCL`, holding `{"pid", "run_dir", "started"}` (ISO time); a live holder raises `E_LOCKED {lock, run, started}`; a dead one prints `W_STALE_LOCK {lock, run}` and is replaced; removed on exit, exceptions included. Liveness: on Windows `OpenProcess(0x1000)` then `GetExitCodeProcess == 259` (STILL_ACTIVE), never `os.kill` (it terminates the process); elsewhere `os.kill(pid, 0)`, `PermissionError` counting as alive. `# ponytail: one lock per project, so two projects share the CPU; a reused pid keeps a stale lock alive, and E_LOCKED says to delete it`.
+  - `write_spec(run_dir, spec) -> None`: `run_dir.mkdir(parents=True, exist_ok=True)` (runs/ may not exist yet; `run` makes its folder before the model exists), then `model.json`.
+  - `write_job(job, port, mode, threads, t_max) -> Path`: `job.mkdir(parents=True)` (`run_dir_for` creates nothing), then writes `job.json` (Task 10's fields), returns `job`.
+  - `project_lock(project_path, run_dir)`, a context manager (C-24): creates `<project>.lock` with `os.O_CREAT | os.O_EXCL`, holding `{"pid", "run_dir", "started"}` (ISO time); a live holder raises `E_LOCKED {lock, run, started}`; a dead one prints `W_STALE_LOCK {lock, run}` and is replaced; removed on exit, exceptions included, but only when this call created it (a refused second run must not delete the live holder's lock, spec §3.3). Liveness: on Windows `OpenProcess(0x1000)` then `GetExitCodeProcess == 259` (STILL_ACTIVE), never `os.kill` (it terminates the process); elsewhere `os.kill(pid, 0)`, `PermissionError` counting as alive. `# ponytail: one lock per project, so two projects share the CPU; a reused pid keeps a stale lock alive, and E_LOCKED says to delete it`.
   - `emit(run_dir, kind, code, params: dict, job: int | None = None) -> None` (C-21): appends `{"t": round(time.time(), 3), "kind", "job", "code", "params"}` to `events.jsonl` and prints `render(code, **params)`; kinds progress, verdict, cost, result, message; `job` k for a job, 0 for `job-0-*`, None for run-level events. The params travel as one dict, so a field named `kind` or `job` cannot collide.
   - `MB_PER_MCELL, MB_PER_WORKER = 170, 50` (`# ponytail: provisional (spec 6.4); P0-C measures RAM`); `free_ram_mb() -> float`: `GlobalMemoryStatusEx`'s ullAvailPhys through ctypes on Windows, `MemAvailable` from `/proc/meminfo` elsewhere; `pool_size(cells, threads, free_mb, cpus) -> int` = `max(1, min(cpus // threads, int(free_mb // (MB_PER_MCELL * cells / 1e6 + MB_PER_WORKER))))` (spec 6.4).
 
@@ -1340,6 +1355,7 @@ def test_a_live_lock_refuses_and_a_stale_one_is_reclaimed(tmp_path, capsys):  # 
         with runs.project_lock(pj, tmp_path / "new"):
             pass
     assert (e.value.code, e.value.params) == ("E_LOCKED", {"lock": str(lock), "run": "R", "started": "S"})
+    assert json.loads(lock.read_text(encoding="utf-8"))["run_dir"] == "R"  # the holder's lock is intact
     dead = subprocess.Popen([sys.executable, "-c", "pass"])
     dead.wait()
     lock.write_text(json.dumps({"pid": dead.pid, "run_dir": "R", "started": "S"}), encoding="utf-8")
@@ -1397,6 +1413,7 @@ loop: keep up to `pool` jobs running, in list order; time.sleep(POLL_S) between 
   killed if still alive after ABORT_WAIT_S; every job of a stopped run is "stopped".
   Otherwise a running job with watch(job) true gets ABORT once.
 finally: any live worker is killed, so no process outlives the orchestrator.
+every kill is proc.kill() followed by proc.wait(), so no process outlives run_jobs.
 ```
 
   `tests/fake_worker.py` stands in for the worker, run as `python -I -u tests/fake_worker.py job.json`; it puts its own folder on `sys.path` (to import `traces`). On start it writes `env.json` = `{"cwd": os.getcwd(), "isolated": sys.flags.isolated, "OPENBLAS_NUM_THREADS": ..., "CSXCAD_INSTALL_PATH": ...}`, appends `start|end <port> <time.time()>` to `$KRS_FAKE_LOG` when set, reads `job.json` and `../model.json`. Then:
@@ -1427,6 +1444,27 @@ def fake(tmp_path, monkeypatch):
     monkeypatch.setattr(runs, "data_dir", lambda: tmp_path / "data")
     monkeypatch.setattr(runs, "check_openems", lambda: [])
     return tmp_path / "data"
+
+
+@pytest.fixture
+def ctrl_c_on_third_poll(monkeypatch):
+    """subprocess.Popen records each process it starts, and the third time.sleep raises KeyboardInterrupt. Returns
+    the list of started processes."""
+    started, real_popen, real_sleep, calls = [], subprocess.Popen, time.sleep, []
+
+    def popen(*a, **kw):
+        started.append(real_popen(*a, **kw))
+        return started[-1]
+
+    def sleep(s):
+        calls.append(s)
+        if len(calls) == 3:
+            raise KeyboardInterrupt
+        real_sleep(s)
+
+    monkeypatch.setattr(subprocess, "Popen", popen)
+    monkeypatch.setattr(time, "sleep", sleep)
+    return started
 ```
 
 - [ ] **Step 1: Write the failing tests** in `tests/test_pool.py`
@@ -1466,22 +1504,10 @@ def test_a_stop_file_aborts_the_running_jobs(tmp_path, fake, monkeypatch):  # C-
     assert (js[0] / "ABORT").is_file() and not (js[2] / "log.txt").exists()  # the third never started
 
 
-def test_ctrl_c_kills_a_job_in_setup_and_leaves_no_process(tmp_path, fake, monkeypatch):  # Review Focus 5
+def test_ctrl_c_kills_a_job_in_setup_and_leaves_no_process(tmp_path, fake, ctrl_c_on_third_poll,
+                                                           monkeypatch):  # Review Focus 5
     monkeypatch.setenv("KRS_FAKE", "hang")
-    started, real_popen, real_sleep, calls = [], subprocess.Popen, time.sleep, []
-
-    def popen(*a, **kw):
-        started.append(real_popen(*a, **kw))
-        return started[-1]
-
-    def sleep(s):
-        calls.append(s)
-        if len(calls) == 3:
-            raise KeyboardInterrupt
-        real_sleep(s)
-
-    monkeypatch.setattr(subprocess, "Popen", popen)
-    monkeypatch.setattr(time, "sleep", sleep)
+    started = ctrl_c_on_third_poll
     run_dir = tmp_path / "run"
     t = time.monotonic()
     out = runs.run_jobs(tiny_jobs(run_dir, 1), 1, run_dir, {})
@@ -1534,7 +1560,7 @@ def test_a_failed_job_maps_to_one_coded_error(tmp_path, fake, monkeypatch, exit_
 - Consumes: `run_jobs`, `check_job`, `write_spec`, `write_job`, `job_dir`, `run_dir_for` (Tasks 12–13); `read_stats` (Task 8); `excitation`, `kappa` (Task 7).
 - Produces:
   - `machine_key() -> str` = `f"{socket.gethostname()}/{os.cpu_count()}"` (C-32; never `platform.*`, R21).
-  - `CAL_STEPS = 300`; `calibration_spec() -> dict`: 100 lines per axis at 1 mm (about 1e6 cells), one `substrate_0` (εr 4.5, κ = `kappa(4.5, 0.02, 915e6)`) over z 0–49 mm, one lumped port `"z"` from [50, 50, 49] to [50, 50, 50], the 915 MHz band's `excitation` with `t_max = CAL_STEPS × 1.9258e-12` (the 1 mm Courant step). `# ponytail: a uniform model; real runs refresh the speed`.
+  - `CAL_STEPS = 300`; `calibration_spec() -> dict`: a full Task-7-shaped spec, like the TINY test spec (`build_csx` and the worker read every key): 100 lines per axis at 1 mm (about 1e6 cells), one `substrate_0` (εr 4.5, κ = `kappa(4.5, 0.02, 915e6)`) over z 0–49 mm, `metal` `{"copper": [], "lid": {"plate": None, "walls": []}, "cylinders": [], "curves": []}`, `grid` `[]`, one lumped port `"z"` from [50, 50, 49] to [50, 50, 50] carrying every port field (`{"name": "z", "kind": "lumped", "dir": "z", "start", "stop", "nodes": [start, stop, start, stop], "part": False}`), the 915 MHz band's `excitation` with `t_max = CAL_STEPS × 1.9258e-12` (the 1 mm Courant step). `# ponytail: a uniform model; real runs refresh the speed`.
   - `choose(single: dict[int, float], parallel: dict[int, float], cpus) -> tuple[int, int, float]` (threads, pool, aggregate MC/s): 1 job at `cpus` threads or k jobs at `cpus // k` threads for the k in `parallel`; the best aggregate wins, a tie goes to fewer jobs.
   - `calibrate(settings) -> dict`: with N = `os.cpu_count()`, single jobs at 1, 2, 4 and N threads (deduplicated, at most N), then k parallel jobs at N // k threads for k ∈ {2, 4} with k ≤ N, in `run_dir_for("calibrate")`; job folders `job_dir(run_dir, i, f"{t}t")` for singles and `f"{k}x{N // k}t"` for each parallel job, i counting from 1; every job passes `check_job(job, result, "calibration", settings)`; each job's speed from `openEMS_stats.txt`; stores `settings["machines"][machine_key()] = {"threads", "pool", "aggregate_mcs", "single": {str(t): mcs}, "parallel": {str(k): aggregate mcs}, "at"}` and saves; prints `I_CALIBRATING` and `I_CALIBRATED`; returns the entry.
   - `ensure_calibrated(settings) -> dict`: the stored entry, or `calibrate(settings)` on a machine with none (spec 6.4).
@@ -1697,11 +1723,11 @@ def test_a_missing_lid_height_is_a_refusal(tmp_path):
 **Interfaces:**
 - Consumes: `Model` (Task 15), `KrsError`.
 - Produces:
-  - `port_gates(ports, roots) -> list[tuple[str, dict]]` (C-15): 4 roots [rc, sc, rw, sw] (lumped): `E_PORT_OPEN {name, end: "reference"}` unless rc == rw ≥ 0; `E_PORT_OPEN {name, end: "signal"}` unless sc == sw ≥ 0; `E_PORT_SHORT {name}` when rw == sw; 2 roots (CurvePort, no caps): `E_PORT_OPEN` for a −1, `E_PORT_SHORT` when equal.
+  - `port_gates(ports, roots) -> list[tuple[str, dict]]` (C-15): 4 roots [rc, sc, rw, sw] (lumped): `E_PORT_OPEN {name, end: "reference"}` unless rc == rw ≥ 0; `E_PORT_OPEN {name, end: "signal"}` unless sc == sw ≥ 0; `E_PORT_SHORT {name}` only when rw == sw ≥ 0; 2 roots (CurvePort, no caps; root 0 the reference end, root 1 the signal end): `E_PORT_OPEN` for a −1, `E_PORT_SHORT` only when the two are equal and ≥ 0 (`pec_roots` gives −1 for an untouched node, so two open ends must not read as a short).
   - `duration(seconds) -> str`, floored: under 60 s "N s", under 1 h "N min", else "H h M min".
   - `smallest_cell(mesh) -> tuple[float, str, float]`: size in mm, axis, the cell's middle in KiCad's frame; the first smallest wins, in x, y, z order.
   - `driver(mesh, runs, parts) -> tuple[str, dict]` (C-36): a cell under d/3 − 1e-6 mm → `I_COST_DRIVER_CELL {size_um, axis, at_mm}`; else more than 2 runs → `I_COST_DRIVER_RUNS {runs, parts}`; else `I_COST_DRIVER_CELLS {d_mm}`.
-  - `cost_notes(model, project, setup, threads, pool, per_job_mcs) -> list[tuple[str, dict]]` (spec 6.4): `I_COST_CELLS {nx, ny, nz, mcells, n, d_mm}`; `I_COST_SMALLEST {size_um, axis, at_mm}`; `I_COST_DT {dt, floor, ref, axis, x, y, z}` (the node mapped through the mesh lines, KiCad's frame); `I_COST_TIME {time, runs, t_max_ns, pool, threads}` with time = ceil(runs/pool) × cells × (T_max/dt) / (per_job_mcs·1e6); `I_COST_PREDICTED {time}` with the longest `t_stop` of `project["results"]["jobs"]` for T_max, when there are results; `I_COST_RAM {gb, pool}`, gb = pool·(MB_PER_MCELL·cells/1e6 + MB_PER_WORKER)/1024; then the driver. Formats: dt and ref `:.4e`; coordinates `:.3f`; mcells `:.2f`; d_mm `:.4f`; size_um `:.1f`; gb `:.1f`; floor and t_max_ns `:g`.
+  - `cost_notes(model, project, setup, threads, pool, per_job_mcs) -> list[tuple[str, dict]]` (spec 6.4): `I_COST_CELLS {nx, ny, nz, mcells, n, d_mm}`; `I_COST_SMALLEST {size_um, axis, at_mm}`; `I_COST_DT {dt, floor, ref, axis, x, y, z}` (the node mapped through the mesh lines, KiCad's frame); `I_COST_TIME {time, runs, t_max_ns, pool, threads}` with time = ceil(runs/pool) × cells × (T_max/dt) / (per_job_mcs·1e6); `I_COST_PREDICTED {time}` with the longest non-None `t_stop` of `project["results"]["jobs"]` for T_max, when there are results, and left out when no non-None `t_stop` is left (Task 18 writes None for a job with no samples); `I_COST_RAM {gb, pool}`, gb = pool·(MB_PER_MCELL·cells/1e6 + MB_PER_WORKER)/1024; then the driver. Formats: dt and ref `:.4e`; coordinates `:.3f`; mcells `:.2f`; d_mm `:.4f`; size_um `:.1f`; gb `:.1f`; floor and t_max_ns `:g`.
 
 - [ ] **Step 1: Write the failing tests**
 
@@ -1720,9 +1746,12 @@ def test_cost_notes_follow_the_cost_model():  # spec 6.4
         ("I_COST_TIME", {"time": "2 s", "runs": 3, "t_max_ns": "1", "pool": 2, "threads": 4}),
         ("I_COST_RAM", {"gb": "0.1", "pool": 2}),
         ("I_COST_DRIVER_RUNS", {"runs": 3, "parts": 1})]
-    later = cost_notes(m, {**p, "results": {"jobs": [{"t_stop": 5e-10}, {"t_stop": 2e-10}]}}, {"dt": 1e-12,
-                       "node": [0, 1, 2, 3]}, 4, 2, 1.0)
+    later = cost_notes(m, {**p, "results": {"jobs": [{"t_stop": 5e-10}, {"t_stop": None}, {"t_stop": 2e-10}]}},
+                       {"dt": 1e-12, "node": [0, 1, 2, 3]}, 4, 2, 1.0)
     assert ("I_COST_PREDICTED", {"time": "1 s"}) in later
+    none = cost_notes(m, {**p, "results": {"jobs": [{"t_stop": None}, {"t_stop": None}]}}, {"dt": 1e-12,
+                      "node": [0, 1, 2, 3]}, 4, 2, 1.0)
+    assert "I_COST_PREDICTED" not in [c for c, _ in none]
     assert (duration(5307.2), duration(840), duration(45.4)) == ("1 h 28 min", "14 min", "45 s")
 
 
@@ -1763,8 +1792,8 @@ def test_port_gates(roots, notes):  # C-15
 **Interfaces:**
 - Consumes: Tasks 12–16 (`runs.check_openems`, `runs.ensure_calibrated`, `runs.sizing`, `runs.free_ram_mb`, `runs.run_dir_for`, `runs.write_spec`, `runs.job_dir`, `runs.write_job`, `runs.run_jobs`, `runs.check_job`, `runs.emit`, `runs.load_settings`).
 - Produces:
-  - `prepare(model, emit) -> tuple[int, int, float]` (threads, pool, per-job MC/s), shared by `cost` and `run`: emits `check_openems()`'s warnings; `entry = ensure_calibrated(load_settings())`; `(threads, pool) = sizing(entry, cells)`; `W_RAM {need_gb, free_gb}` (`:.1f`) when one job needs more than the free RAM; per-job MC/s = `entry["aggregate_mcs"] / entry["pool"]`.
-  - `setup_gate(model, project, run_dir, settings, threads) -> tuple[dict, list, list]` (setup data, blocked gates, warnings): one job `job-0-setup`, port 1, mode "setup", `t_max = 2·t0` (nothing in setup depends on T_max; `et`/`ht` hold NrTS lines); `check_job(job, result, "setup", settings)`; gates: `E_DT_FLOOR {dt, floor, ref, axis, x, y, z}` when dt < `gates.dt_floor` × `model.dt_ref` (C-17, W-3; `# ponytail: dt from the setup log (6 digits); openEMS_stats.txt exists only after a run`); `port_gates`; an unused primitive of a `port_*` or `lumped_*` property → `E_UNUSED_PRIMITIVE {property, type}`, of any other → `W_UNUSED_PRIMITIVE` (C-16, X-8).
+  - `prepare(model, emit) -> tuple[int, int, float]` (threads, pool, per-job MC/s), shared by `cost` and `run`; `emit` is a callable `(code, params)`: `cost` passes one that prints the rendered message (it has no run folder yet), `run` one that calls `runs.emit(run_dir, "message", code, params)`. It emits `check_openems()`'s warnings; `entry = ensure_calibrated(load_settings())`; `(threads, pool) = sizing(entry, cells)`; `W_RAM {need_gb, free_gb}` (`:.1f`) when one job needs more than the free RAM; per-job MC/s = `entry["aggregate_mcs"] / entry["pool"]`.
+  - `setup_gate(model, project, run_dir, settings, threads) -> tuple[dict, list, list]` (setup data, blocked gates, warnings): it starts with `runs.write_spec(run_dir, model.spec)`, before it writes `job-0-setup`; one job `job-0-setup`, port 1, mode "setup", `t_max = 2·t0` (nothing in setup depends on T_max; `et`/`ht` hold NrTS lines); `check_job(job, result, "setup", settings)`; gates: `E_DT_FLOOR {dt, floor, ref, axis, x, y, z}` when dt < `gates.dt_floor` × `model.dt_ref` (C-17, W-3; `# ponytail: dt from the setup log (6 digits); openEMS_stats.txt exists only after a run`); `port_gates`; every `read_unused` entry, of all three kinds (`[T, P]`, `["none", P]`, `["outside", P]`), splits by property prefix: a `port_*` or `lumped_*` property → `E_UNUSED_PRIMITIVE {property, type}`, any other → `W_UNUSED_PRIMITIVE` (C-16, X-8), so a probe or port box outside the domain still blocks.
   - `cost(path) -> int`:
     1. `load`; print W_FILLS_AS_SAVED, the 2D readout (moved from cli.py, unchanged), the notes.
     2. `stops == 2` → return 2. No ports → print `W_NO_PORTS`, return `stops(notes)`.
@@ -1858,22 +1887,10 @@ def test_cost_prints_the_readout_before_it_needs_openems(tmp_path, capsys, fake,
     assert err == render("E_OPENEMS_MISSING", python="py", command="cmd") + "\n"
 
 
-def test_ctrl_c_during_the_setup_job_exits_130_and_leaves_no_process(tmp_path, calibrated, monkeypatch):  # RF 5
+def test_ctrl_c_during_the_setup_job_exits_130_and_leaves_no_process(tmp_path, calibrated, ctrl_c_on_third_poll,
+                                                                       monkeypatch):  # RF 5
     monkeypatch.setenv("KRS_FAKE", "hang")
-    started, real_popen, real_sleep, calls = [], subprocess.Popen, time.sleep, []
-
-    def popen(*a, **kw):
-        started.append(real_popen(*a, **kw))
-        return started[-1]
-
-    def sleep(s):
-        calls.append(s)
-        if len(calls) == 3:
-            raise KeyboardInterrupt
-        real_sleep(s)
-
-    monkeypatch.setattr(subprocess, "Popen", popen)
-    monkeypatch.setattr(time, "sleep", sleep)
+    started = ctrl_c_on_third_poll  # tests/conftest.py (Task 13)
     assert main(["cost", str(new_project(tmp_path, "coupon_gcpw_pads", preset="draft"))]) == 130
     assert len(started) == 1 and started[0].poll() is not None
 
@@ -1893,8 +1910,8 @@ def test_cost_on_the_pad_coupon_with_openems(tmp_path, capsys, monkeypatch):  # 
   - `W_NO_PORTS`: "project.json has no ports, so cost stops after the 2D estimate. Create the project with `new` between two pads to simulate it."
   - `W_RAM`: "One job needs about {need_gb} GB of RAM and {free_gb} GB is free, so jobs run one at a time and may still swap. Close other programs, or shrink the model (region.expand_h, mesh.n in project.json)."
   - `E_DT_FLOOR`: "openEMS's timestep {dt} s is below {floor} × the reference {ref} s, set by the {axis} edge at ({x}, {y}, {z}) mm. A tiny cell there makes the run slow; move or merge the copper edges near it in KiCad."
-  - `E_UNUSED_PRIMITIVE`: "openEMS left a {type} of {property} unused: it touches no mesh edge, so that port or part is not in the model. Look at it with `preview`."
-  - `W_UNUSED_PRIMITIVE`: "openEMS left a {type} of {property} unused: a sliver smaller than a cell, left out of the model. Look at it with `preview` if it should carry current."
+  - `E_UNUSED_PRIMITIVE`: "openEMS left part of {property} out of the model ({type}). A primitive type such as Box touches no mesh edge, \"none\" means the property holds no primitive, and \"outside\" means it lies outside the simulated region. So that port or part is not in the model. Look at it with `preview`."
+  - `W_UNUSED_PRIMITIVE`: "openEMS left part of {property} out of the model ({type}). A primitive type such as LinPoly is a sliver smaller than a cell, \"none\" means the property holds no primitive, and \"outside\" means it lies outside the simulated region. Look at it with `preview` if it should carry current."
   - `W_GATE_LIMITS`: "project.json sets gates.fit2d_limit {fit2d_limit} and gates.dt_floor {dt_floor}, not 0.03 and 0.8, so this verdict is outside the validated limits. Set them back to 0.03 and 0.8 for a validated result." (`:g`)
 - [ ] **Step 4: Run** the full suite, then `python -m pytest -m openems tests/test_cli_cost.py -q`. Expected: PASS.
 - [ ] **Step 5: Commit.** `feat: run the setup-only gate in cost and print the cost model (spec 3.2, 6.4)`
@@ -1911,13 +1928,13 @@ def test_cost_on_the_pad_coupon_with_openems(tmp_path, capsys, monkeypatch):  # 
 - Consumes: everything above; `stop_rule`, `Records`, `KEPT` (Task 11); `read_probe`, `read_run_stats`, `read_stats`, `read_log` (Task 8); `spec_hash` (Task 7).
 - Produces:
   - `records(job, ports, dt) -> Records`: every port's probe files cut to the shortest, the energy from `openEMS_run_stats.txt` at te = timestep × dt; a missing file gives empty arrays (setup is still running, or the worker died).
-  - `VERDICTS = {"converged": "I_JOB_CONVERGED", "flat": "W_JOB_FLAT", "t_max": "W_JOB_T_MAX", "diverged": "E_JOB_DIVERGED", "growth": "E_JOB_GROWTH", "unclassified": "W_JOB_UNCLASSIFIED", "stopped": "W_JOB_STOPPED"}`; every verdict event's params are `{"port", "t_ns", "residual_db", "log"}` (`:.2f`, `:.1f`, the job's log path).
+  - `VERDICTS = {"converged": "I_JOB_CONVERGED", "flat": "W_JOB_FLAT", "t_max": "W_JOB_T_MAX", "diverged": "E_JOB_DIVERGED", "growth": "E_JOB_GROWTH", "unclassified": "W_JOB_UNCLASSIFIED", "stopped": "W_JOB_STOPPED"}`; every verdict event's params are `{"port", "t_ns", "residual_db", "log"}` (`:.2f`, `:.1f`, the job's log path). `t_ns` and `residual_db` are formatted only when a value exists: converged, flat, diverged and growth use the Verdict's `t` and `residual_db`; t_max, stopped and unclassified use the last sample's when the job has samples; otherwise both are null. W_JOB_STOPPED and W_JOB_UNCLASSIFIED do not use them.
   - `run(path) -> int` (spec 6.1, C-42):
     1. `read_project`; no ports → `E_NO_PORTS` (exit 2).
     2. Take `project_lock(path, run_dir_for(path.parent.name))`, create the run folder. From here a `KrsError` is emitted as a message event and `run` returns 2.
     3. Emit `W_FILLS_AS_SAVED` and the notes; `stops(notes)` → return 2 or 3.
     4. `build_model`; blocked → emit as verdicts (and `W_GATE_LIMITS` when the gates differ) and return 3.
-    5. `prepare` (Task 17).
+    5. `prepare` (Task 17), with an emit that calls `runs.emit(run_dir, "message", code, params)`.
     6. `setup_gate`; blocked → return 3; else emit `I_GATES_PASSED {dt}` (`:.4e`), `W_GATE_LIMITS` when the gates differ, and the cost notes (runtime shown before every run). A STOP or Ctrl+C up to here propagates as KeyboardInterrupt: exit 130, the lock released, `results` untouched.
     7. One job per port: `job-k-<name>`, port k, mode "run", T_max. Emit `I_RUN_START`, then `run_jobs` with a `watch` that reads `records`, calls `stop_rule` with the project's preset, keeps the verdict, and emits `I_PROGRESS {port, t_ns, residual_db, speed_mcs}` (speed from `read_run_stats`, /1e6, `:.1f`) once per new energy row.
     8. Classify each job after it exits, the first match winning:
@@ -2123,7 +2140,7 @@ def test_new_cost_run_on_the_pad_coupon(tmp_path, monkeypatch):  # spec 9.2: P =
 - Produces:
   - `appcsxcad(settings) -> str | None` = `shutil.which("AppCSXCAD", path=os.pathsep.join(filter(None, (settings.get("openems_dir"), os.environ.get("CSXCAD_INSTALL_PATH"), os.environ.get("PATH")))))`.
   - `open_viewer(exe, job) -> None`: `subprocess.Popen([exe, "model.xml"], cwd=job, ...)`, detached (DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP on Windows, `start_new_session=True` elsewhere), not waited for; AppCSXCAD fails on non-ASCII paths, so it gets a relative name (spec 8).
-  - `preview(path) -> int`: `load` (`stops == 2` → 2); `build_model`, print the blocked gates, return 3 when the spec is None (otherwise go on: preview is how one looks at a failing model); `check_openems()`; a run folder with `job-0-xml` (mode "xml", port 1) and `check_job(job, result, "xml", settings)`; no AppCSXCAD → `E_APPCSXCAD_MISSING {path}`; `open_viewer`; print `I_PREVIEW {path}`; return 0.
+  - `preview(path) -> int`: `load` (`stops == 2` → 2); `build_model`, print the blocked gates, return 3 when the spec is None (otherwise go on: preview is how one looks at a failing model); `check_openems()`; a run folder, `runs.write_spec(run_dir, model.spec)`, then `job-0-xml` (mode "xml", port 1, threads 1, `t_max = spec["excitation"]["t_max"]`; preview does not calibrate) and `check_job(job, result, "xml", settings)`; no AppCSXCAD → `E_APPCSXCAD_MISSING {path}`; `open_viewer`; print `I_PREVIEW {path}`; return 0.
   - The command `kicad-rf-studio preview PROJECT`.
 
 - [ ] **Step 1: Write the failing tests**
