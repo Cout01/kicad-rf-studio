@@ -16,6 +16,7 @@ from kicad_rf_studio.core.messages import KrsError, reason
 SCHEMA = 1
 EXPAND_H = 3.0  # substrate heights the ROI grows by past the chain (spec 5.1)
 MESH_N = {"draft": 2, "normal": 2, "strict": 3}  # the mesh rule's n by preset (spec 5.4, plan 2 Decisions)
+ROLES = ("port", "copper", "open", "grid", "curve_port")  # what a part is in the model (spec 5.7)
 
 
 def region_expand_h(data: dict) -> float:

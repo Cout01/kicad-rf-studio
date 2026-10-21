@@ -25,6 +25,11 @@ def f_max(project: dict) -> float:
     return project["band_factor"] * project["harmonics"] * project["f0_hz"]
 
 
+def band(project: dict) -> tuple[float, float]:
+    """The band (f1, f2), in Hz: from half of f0 to the top of the band (spec 5.8)."""
+    return project["f0_hz"] / 2, f_max(project)
+
+
 def lambda_min(f_max: float, eps_r_max: float) -> float:
     """The shortest wavelength in the board, in mm."""
     return C0 * 1e3 / (f_max * math.sqrt(eps_r_max))

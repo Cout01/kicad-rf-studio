@@ -57,6 +57,7 @@ CATALOG: dict[str, str] = {
     "W_FILLS_AS_SAVED": "Fills as saved — refill (B) in KiCad and save if you changed copper.",
     "W_LID_HEIGHT_MISSING": "Shield {refs} found but no --lid-height was given; `run` will refuse until project.json has lid_height_mm.",
     "W_VALUE_UNREADABLE": "Cannot read the value of {refs}. Write values like 4.7pF, 4p7 or 15nH.",
+    "W_PART_OPEN": "Left open in the simulated region: {refs}. Their self-resonance from the package preset is below 3·f2, or they are chokes or not C, L or R; make one a port in project.json if it matters (each port adds a run).",
     "W_F0_RANGE": "f0 = {f0_hz} Hz is outside 1 MHz to 100 GHz. Did you forget the unit, as in 915MHz?",
     "W_NO_REFERENCE": "No reference found for {signal}; set it in project.json before `run`.",
     "W_ABSOLUTE_BOARD_PATH": "The board is on another drive, so project.json stores its absolute path.",
