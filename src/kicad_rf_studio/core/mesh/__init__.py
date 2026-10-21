@@ -51,8 +51,9 @@ def build_mesh(geom: Geometry, prot: Protected, n: int,
     Each in-plane axis comes from xy_lines with the protected edges (_edges; those at a section's cut are preferred in
     collisions) and `extra_edges`, which the edge lint's re-mesh passes and which keep their own pattern, the extent
     of the protected area and port boxes, and the vertices of every copper piece, rod and lid as free coordinates; z
-    comes from z_lines. A rod that is not solid moves to the nearest x and y lines in `snapped_rods`; `geom` is not
-    changed."""
+    comes from z_lines, with the top wall raised by as much as the lid rises above the board, so it stays as far from
+    the lid as from the board (R-P2-3; spec 5.2: the lid is never the boundary) and snap_lid finds a line near its
+    top. A rod that is not solid moves to the nearest x and y lines in `snapped_rods`; `geom` is not changed."""
     region, zs = geom.region, geom.zs
     h, coarse, walls = substrate_h(zs), region.coarse, region.walls
     d = cell_size(geom.sections, geom.track_width, n, 20 * coarse, geom.track_gap, h)  # the coarse cell is λ_min/20
@@ -69,11 +70,14 @@ def build_mesh(geom: Geometry, prot: Protected, n: int,
         extent = (box[k], box[k + 2]) if not np.isnan(box[k]) else (np.inf, -np.inf)
         lines[axis], pinned[axis] = xy_lines(edges[axis], extent, walls[2 * k:2 * k + 2], free[:, k], d, coarse,
                                              prefer[axis], force[axis], h)
+    z_walls = walls[4:]
+    if geom.lid is not None:
+        z_walls = (walls[4], round(walls[5] + max(0.0, geom.lid.z1 - zs[-1].z1), 6))
     dz = dz0(t_m, d, h)
-    z = z_lines(zs, d, t_m, h, walls[4:], coarse=coarse)
+    z = z_lines(zs, d, t_m, h, z_walls, coarse=coarse)
     cu = [s for s in zs if s.kind == "copper"]
-    pinned["z"] = z[np.isin(z, [*walls[4:], *(v for s in cu for v in (s.z0, s.z1, round(s.z0 - dz, 6),
-                                                                      round(s.z1 + dz, 6)))])]
+    pinned["z"] = z[np.isin(z, [*z_walls, *(v for s in cu for v in (s.z0, s.z1, round(s.z0 - dz, 6),
+                                                                   round(s.z1 + dz, 6)))])]
     rods = tuple(r if r.solid else replace(r, at=(_nearest(lines["x"], r.at[0]), _nearest(lines["y"], r.at[1])))
                  for r in geom.rods)
     return Mesh(lines["x"], lines["y"], z, d, dz, pinned, edges, rods)
