@@ -28,17 +28,18 @@ class Lid:
 
 def find_lid(board: Board, classes: Classes, region: Region, zs: tuple[Slab, ...],
              project: dict) -> tuple[Lid | None, list[tuple[str, dict]]]:
-    """The lid over the ROI and its gate entry. A shield covers the ROI when its plate, the convex hull of its pads on
-    the top copper, overlaps it. The lid is on when harmonics are shown, unless project.json's `lid` says otherwise
-    (plan Decisions); then it is lid_height_mm high, and E_LID_HEIGHT names the covering shields when that is missing
-    (plan 3's `run` refuses on it)."""
+    """The lid over the ROI and its gate entry. A shield on the top side covers the ROI when its plate, the convex hull
+    of its pads on the top copper, overlaps it. The lid is on when harmonics are shown, unless project.json's `lid`
+    says otherwise (plan Decisions); then it is lid_height_mm high, and E_LID_HEIGHT names the covering shields when
+    that is missing (plan 3's `run` refuses on it)."""
     on = project.get("lid")
     if not (project["harmonics"] > 1 if on is None else on):
         return None, []
-    # ponytail: a shield on the bottom side has no pads on the top copper, so no lid; one under the board if it matters
+    # ponytail: a shield on the bottom side gets no lid, though its THT legs reach the top copper; add one under the
+    # board if it matters
     top = [s for s in zs if s.kind == "copper"][-1]
     covering = {}  # ref -> (plate area over the ROI, plate, frame pads)
-    for ref in sorted(r for r in classes.shields if r in board.footprints):
+    for ref in sorted(r for r in classes.shields if r in board.footprints and board.footprints[r].layer == top.copper):
         frame = GeometryCollection([p.polygon for p in board.footprints[ref].pads if top.copper in p.layers])
         plate = frame.convex_hull
         if (area := plate.intersection(region.roi).area) > 0:

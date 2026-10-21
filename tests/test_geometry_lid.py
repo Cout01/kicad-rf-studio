@@ -73,12 +73,21 @@ def test_a_shield_off_the_roi_is_ignored():  # and so is its missing height
     assert find_lid(b, classes, off, zs, {**P, "lid_height_mm": None}) == (None, [])
 
 
-def test_a_shield_on_the_bottom_side_has_no_lid():  # the lid stands on the top copper: z0 is its top face
+@pytest.mark.parametrize("kind, layers", [("smd", ("B.Cu",)), ("thru_hole", ("F.Cu", "B.Cu"))])  # THT legs: *.Cu
+def test_a_shield_on_the_bottom_side_has_no_lid(kind, layers):  # the lid stands on the top copper: z0 is its top face
     b, classes, region, zs = setup(*LPF)
     sh1 = b.footprints["SH1"]
-    flipped = replace(sh1, layer="B.Cu", pads=tuple(replace(p, layers=("B.Cu",)) for p in sh1.pads))
+    flipped = replace(sh1, layer="B.Cu", pads=tuple(replace(p, kind=kind, layers=layers) for p in sh1.pads))
     under = replace(b, footprints={**b.footprints, "SH1": flipped})
     assert find_lid(under, classes, region, zs, {**P, "lid_height_mm": None}) == (None, [])
+
+
+def test_a_peg_hole_is_not_frame():  # an np_thru_hole with no copper neither widens the plate nor stands as a wall
+    b, classes, region, zs = setup(*LPF)
+    sh1 = b.footprints["SH1"]
+    peg = replace(sh1.pads[0], kind="np_thru_hole", layers=(), polygon=Point(94, -100).buffer(0.5))  # left of SH1
+    pegged = replace(b, footprints={**b.footprints, "SH1": replace(sh1, pads=(*sh1.pads, peg))})
+    assert find_lid(pegged, classes, region, zs, P) == find_lid(b, classes, region, zs, P)
 
 
 def test_the_lid_is_clipped_to_the_crop_and_on_the_grid():
