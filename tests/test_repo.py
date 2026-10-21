@@ -17,6 +17,15 @@ def test_every_python_file_has_spdx_header():
                if LGPL.get(p.relative_to(ROOT).as_posix(), SPDX) not in p.read_text(encoding="utf-8").splitlines()[:2]]
     assert missing == []
 
+def test_the_lgpl_text_ships_with_the_lgpl_code():
+    # R-P2-17: smooth.py is LGPL-3.0-or-later code conveyed in a GPL-3.0-or-later package, which carries both texts
+    lesser = (ROOT / "COPYING.LESSER").read_text(encoding="utf-8").splitlines()
+    assert [line.strip() for line in lesser[:2]] == ["GNU LESSER GENERAL PUBLIC LICENSE", "Version 3, 29 June 2007"]
+    entries = (ROOT / "NOTICE").read_text(encoding="utf-8").split("\n\n\n")
+    assert "COPYING.LESSER" in next(e for e in entries if "SmoothMeshLines" in e)
+    licence = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))["project"]["license"]
+    assert licence == "GPL-3.0-or-later AND LGPL-3.0-or-later"
+
 def test_ci_tests_the_declared_python_floor_with_read_only_permissions():
     ci = (ROOT / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
     floor = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))["project"]["requires-python"]
