@@ -22,20 +22,24 @@ GROW = 1.25  # the ratio the rule grades at itself, under RATIO, so the 1e-6 mm 
 GRID_TOL = 3e-6  # mm: rounding to the 1e-6 mm grid moves big − RATIO·small by up to 2.3e-6 mm
 LEAD = 1 / 16  # ×d: the least lead of an edge's outside line over its inside line (the edge lint fails a tie)
 SERVE = 7 / 16  # ×d: same-side edges within this of a cell's deepest edge keep its d/4 inside line (a pair joins here)
+CUT_SERVE = 1 / 3  # ×d: SERVE for a cut edge's cell: from here the d/8 line splits the pair, which reads better
 ALONE = 11 / 6  # ×d: where no edge of the other side is this near; there the gap step and collisions need d/8
+FACE = 4  # ×d: a cut edge that faces the other side's metal across a gap this narrow (n·d at a section) wants d/8
 MAX_ROUNDS = 10_000  # _grade's guard; 3000 random axes (both passes of each) converged within 16 rounds
 
 Edge = tuple[float, int]  # a protected copper edge: its position and the sign that points into its metal
 
 
 def cell_size(sections: list[Section], fallback_width: float, n: int, lam_min: float,
-              fallback_gap: float | None = None) -> float:
+              fallback_gap: float | None = None, h: float | None = None) -> float:
     """d: the narrowest width or gap of the measured nets over `n`, at most 0.9·λ_min/20. The sections give the widths
     and gaps of the straight runs; `fallback_width`, the narrowest track of the measured nets, always counts too, so a
     net with no straight run (all 45° or arcs) still gets a width and a narrower bend is not missed, and so does
-    `fallback_gap`, the narrowest gap of the tracks no section measures (Geometry.track_gap)."""
+    `fallback_gap`, the narrowest gap of the tracks no section measures (Geometry.track_gap). `h`, the substrate under
+    the measured nets, is a microstrip's gap to its plane (R-P2-23): the fringing field at a strip's edge spreads over
+    about h, which an edge cell wider than h cannot resolve (coupon_ms 3 mm wide at d = w/2: fit2d −5.37 %)."""
     sizes = [fallback_width, *(s.width for s in sections), *(s.gap for s in sections if s.gap is not None)]
-    return min(min(sizes + [fallback_gap] * (fallback_gap is not None)) / n, 0.9 * lam_min / 20)
+    return min(min(sizes + [v for v in (fallback_gap, h) if v is not None]) / n, 0.9 * lam_min / 20)
 
 
 def edge_lines(edge: float, inside: int, d: float) -> tuple[float, float]:
@@ -134,10 +138,16 @@ def _patterns(edges: Iterable[Edge], d: float, prefer: Collection[Edge] = (), fo
       under 7d/16 apart) and they span d at most. A cell within SERVE·d, and ALONE·d from the other side's edges, keeps
       its deepest edge's d/4 inside line, and 3d/4 out of it, or further so that the farthest edge leads (verifier:
       pads 20 µm wider than coupon_ms's strip put its inside line d/8 deep at d = 0.675: fit2d −6.85 %, −1.58 %
-      without them). In other shared cells the inside line is d/8 inside the deepest, as the gap step and collisions
-      with the other side's lines need (d/4 failed the lint on 59 of 6000 random axes), and the outside line 3d/4
-      outside the farthest, or further out so that this edge's outside line leads (verifier: a shared pair failed the
-      lint once the edges spanned d/2 or more). Between two cells one line serves
+      without them). Where it holds an edge of `prefer` (a cut edge, which fit2d measures), the cut edge's pattern
+      wins (R-P2-24): the cell is served only when its deepest edge is a cut edge, within CUT_SERVE·d (from d/3 on
+      the d/8 line splits the pair: 150 µm end pads at d = h/2 read −0.36 %, served −3.16 %), and no edge of the
+      other side faces it across a gap within FACE·d: a coplanar edge reads best with the shallow line, a microstrip
+      edge, facing open space, with d/4 (recheck (i): pads with the pour following them read +5.11 % served); several
+      cut edges get the pattern centred between the deepest and the farthest (a wider segment of the strip: +4.49 %
+      with the deepest's). In other shared cells the inside line is d/8 inside the deepest, as the gap step and
+      collisions with the other side's lines need (d/4 failed the lint on 59 of 6000 random axes), and the outside
+      line 3d/4 outside the farthest, or further out so that this edge's outside line leads (verifier: a shared pair
+      failed the lint once the edges spanned d/2 or more). Between two cells one line serves
       both: the outer edge's own inside line, else the inner edge's own outside line, else the middle of where a line
       fits; or as shallow as allowed when the outer edge's cell will grow. Edges 4d/3 apart or more keep their own
       lines. Past the span cap no line may fit (a staircase of close steps over d): the outer edge then keeps its own
@@ -177,13 +187,18 @@ def _patterns(edges: Iterable[Edge], d: float, prefer: Collection[Edge] = (), fo
         top, k = None, 0
         while k < len(us):
             j, served = k + 1, False
-            if top is None:  # a cell of its own: d/4 in, also for the same-side edges within SERVE·d where it is alone
+            if top is None:  # a cell of its own: d/4 in, also for the same-side edges within reach where it is alone
                 top, served = us[k] + d / 4, True
-                while j < len(us) and us[k] - us[j] <= SERVE * d and near(opp, us[j - 1], us[j]):
+                reach = (CUT_SERVE if (side * us[k], side) in prefer else SERVE) * d
+                while j < len(us) and us[k] - us[j] <= reach and near(opp, us[j - 1], us[j]):
                     j += 1
-                if j < len(us) and near(opp, us[j - 1], us[j]) and joins(top, us[j - 1], us[j]) or j > k + 1 and \
-                        bisect_left(opp, us[k] - ALONE * d) < bisect_right(opp, us[k] + ALONE * d):
+                cut = [(side * u, side) in prefer for u in us[k:j]]
+                if j < len(us) and near(opp, us[j - 1], us[j]) and joins(top, us[j - 1], us[j]) or j > k + 1 and (
+                        bisect_left(opp, us[k] - ALONE * d) < bisect_right(opp, us[k] + ALONE * d)
+                        or any(cut) and not (cut[0] and bisect_left(opp, us[k] - FACE * d) == bisect_left(opp, us[k]))):
                     top, served, j = us[k] + deep, False, k + 1  # else d/8 in, as shallow as the lint allows
+                elif sum(cut) > 1:  # several cut edges: their pattern, centred between the deepest and the farthest
+                    top = max(top - (us[k] - us[k + max(i for i, c in enumerate(cut) if c)]) / 2, us[k] + deep)
             cell, k = us[k:j], j
             while k < len(us) and cell[0] - us[k] <= d and near(opp, cell[-1], us[k]) and joins(top, cell[-1], us[k]):
                 cell.append(us[k])  # no line fits before us[k], and the cell spans d at most

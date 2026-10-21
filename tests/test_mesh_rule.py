@@ -54,11 +54,13 @@ def geometry(name, start="", end=""):
     return build(FIX / f"{name}.kicad_pcb", start, end)
 
 
-def variant(tmp_path, name, old, new, count=1):
-    """The geometry of fixture `name` with a token of its file changed, `count` times: a synthetic variant of a
-    synthetic board."""
+def variant(tmp_path, name, old, new, count=1, more=()):
+    """The geometry of fixture `name` with a token of its file changed, `count` times, and each (old, new) token of
+    `more` once: a synthetic variant of a synthetic board."""
     text = (FIX / f"{name}.kicad_pcb").read_text(encoding="utf-8")
-    assert text.count(old) == count
+    assert text.count(old) == count and all(text.count(o) == 1 for o, _ in more)
+    for o, n in more:
+        text = text.replace(o, n)
     path = tmp_path / f"{name}.kicad_pcb"
     path.write_text(text.replace(old, new), encoding="utf-8")
     return build(path)
@@ -148,6 +150,14 @@ def test_cell_size_takes_the_narrowest_track():
     assert cell_size([section(width=0.6, gap=0.5)], 0.2, 2, 1e9) == pytest.approx(0.1)
 
 
+def test_cell_size_counts_the_substrate_height():
+    # R-P2-23: d = min(width, gap, h)/n, still capped at 0.9·λ_min/20; a microstrip's strip-to-plane gap counts
+    assert cell_size([section(width=1.35, gap=None)], 1.35, 2, 1e9, None, 0.71) == pytest.approx(0.355)
+    assert cell_size([], 3.0, 3, 1e9, None, 0.2) == pytest.approx(0.2 / 3)
+    assert cell_size([section(width=0.6, gap=0.15)], 0.6, 2, 1e9, None, 0.71) == pytest.approx(0.075)
+    assert cell_size([section(width=1.35, gap=None)], 1.35, 2, 1.0, None, 0.71) == pytest.approx(0.9 / 20)
+
+
 def test_cell_size_takes_the_gap_no_section_measures():
     # verifier: a net of 45° tracks has no section, so its gap never counted; Geometry.track_gap carries it
     assert cell_size([], 0.6, 2, 1e9, 0.15) == pytest.approx(0.075)
@@ -217,8 +227,8 @@ def test_dz0_is_the_mask_when_it_is_thicker_than_d_over_3(tmp_path):
 
 
 def test_copper_faces_never_merge():
-    # dz0/3 can exceed the copper's thickness (a 1.35 mm microstrip: d = 0.675, dz0 = h/4 = 0.1775); one z-cell per
-    # copper thickness must survive the dz0/3 merge
+    # dz0/3 can exceed the copper's thickness (d = 0.675, dz0 = h/4 = 0.1775: a 1.35 mm microstrip before R-P2-23); one
+    # z-cell per copper thickness must survive the dz0/3 merge
     geom, _ = geometry("coupon_ms")
     z = z_lines(geom.zs, 0.675, 0.010, substrate_h(geom.zs), geom.region.walls[4:], coarse=geom.region.coarse)
     for s in geom.zs:
@@ -436,22 +446,101 @@ def test_the_fill_beside_a_pad_step_stays_over_d_over_3():
 
 
 PAD = ('\t(footprint "TestPoint:Pad"\n\t\t(layer "F.Cu")\n\t\t(uuid "00000000-0000-4000-8000-0000000000{k}0")\n'
-       '\t\t(at {x} 100)\n\t\t(attr smd)\n\t\t(pad "1" smd rect\n\t\t\t(at 0 0)\n\t\t\t(size 1 {w})\n'
+       '\t\t(at {x} 100)\n\t\t(attr smd)\n\t\t(pad "1" smd rect\n\t\t\t(at 0 0)\n\t\t\t(size {L} {w})\n'
        '\t\t\t(layers "F.Cu" "F.Mask")\n\t\t\t(net 1 "LINE")\n\t\t\t(uuid "00000000-0000-4000-8000-0000000000{k}1")\n'
        '\t\t)\n\t\t(embedded_fonts no)\n\t)\n')
 
 
-@pytest.mark.parametrize("n", [2, 3])
-@pytest.mark.parametrize("s", [0.02, 0.1])
+@pytest.mark.parametrize(("s", "n"), [(0.02, 2), (0.02, 3), (0.1, 2), (0.1, 3), (0.15, 2)])
 def test_end_pads_a_step_wider_keep_a_microstrip_under_the_fit2d_gate(tmp_path, s, n):
     # verifier: LINE pads 20 µm wider each side than coupon_ms's 1.35 mm strip (d = 0.675) shared one cell with the
     # strip's edge, whose inside line then went d/8 deep instead of d/4: fit2d −6.85 % at n = 2 and −4.27 % at n = 3
-    # (100 µm: −8.59 and −6.02 %), against −1.58 and −0.49 % without the pads
+    # (100 µm: −8.59 and −6.02 %), against −1.58 and −0.49 % without the pads. Round 4: at d = h/n (R-P2-23) 150 µm is
+    # 0.42d at n = 2, where the served cell's outside line went 1.16d out so that the pad edge leads: −3.16 %
     net = '\t(net 2 "GND")\n'
-    pads = "".join(PAD.format(k=k, x=x, w=round(1.35 + 2 * s, 6)) for k, x in ((1, 100), (2, 120)))
+    pads = "".join(PAD.format(k=k, x=x, L=1, w=round(1.35 + 2 * s, 6)) for k, x in ((1, 100), (2, 120)))
     geom, prot = variant(tmp_path, "coupon_ms", net, net + pads)
     m = build_mesh(geom, prot, n)
     assert max(map(abs, fit2d(geom, m))) < 3 and not lint(m.x, m.edges["x"], m.d) and not lint(m.y, m.edges["y"], m.d)
+
+
+@pytest.mark.parametrize(("name", "n"), [("coupon_ms", 2), ("coupon_ms", 3), ("coupon_ms_masked", 2)])
+def test_narrower_end_pads_keep_a_microstrip_under_the_fit2d_gate(tmp_path, name, n):
+    # R-P2-24 (recheck (ii)): 1.25 mm SMD pads, 1.6 mm long, reach past the 1.35 mm strip's round cap, so each pad edge
+    # lies 50 µm inside the strip edge at the cut; the round-3 served cell gave the deeper pad edge d/4 and the cut edge
+    # d/4 + 50 µm: fit2d +4.52 / +4.76 % (n = 2 / 3) on coupon_ms and +5.01 % on coupon_ms_masked once d = h/n
+    net = '\t(net 2 "GND")\n'
+    pads = "".join(PAD.format(k=k, x=x, L=1.6, w=1.25) for k, x in ((1, 100), (2, 120)))
+    geom, prot = variant(tmp_path, name, net, net + pads)
+    m = build_mesh(geom, prot, n)
+    assert max(map(abs, fit2d(geom, m))) < 3 and not lint(m.x, m.edges["x"], m.d) and not lint(m.y, m.edges["y"], m.d)
+
+
+@pytest.mark.parametrize("n", [2, 3])
+def test_a_wider_segment_of_the_strip_keeps_both_sections_under_the_fit2d_gate(tmp_path, n):
+    # round 4 (R-P2-25's ratchet): a 1.45 mm segment of coupon_ms's 1.35 mm strip is a second section, whose cut edges
+    # lie 50 µm outside the strip's, in one served cell; the deepest (the strip's) edge's d/4 line put the segment's
+    # inside line d/4 + 50 µm deep once d = h/n: fit2d −0.03 / +4.49 % at n = 2 and +0.26 / +4.78 % at n = 3
+    seg = ('\t(segment\n\t\t(start 104 100)\n\t\t(end 108 100)\n\t\t(width 1.45)\n\t\t(layer "F.Cu")\n\t\t(net 1)\n'
+           '\t\t(uuid "00000000-0000-4000-8000-00000000abcd")\n\t)\n')
+    geom, prot = variant(tmp_path, "coupon_ms", "\t(zone\n", seg + "\t(zone\n")
+    m = build_mesh(geom, prot, n)
+    assert sorted(s.width for s in geom.sections) == pytest.approx([1.35, 1.45])
+    assert max(map(abs, fit2d(geom, m))) < 3 and not lint(m.x, m.edges["x"], m.d) and not lint(m.y, m.edges["y"], m.d)
+
+
+def gcpw_pads_following(tmp_path, s):
+    """coupon_gcpw_pads with its LINE pads 0.6 + 2s wide (narrower when s < 0) and the F.Cu GND pour refilled to follow
+    them at the fill's 0.1505 mm gap (the round-3 recheck's (i))."""
+    text, pad = (FIX / "coupon_gcpw_pads.kicad_pcb").read_text(encoding="utf-8"), '(at 0 0)\n\t\t\t(size 1 1)'
+    z0 = text.index("\t(zone\n")
+    fp0, z1 = text.index("\t\t(filled_polygon\n", z0), text.index("\t(zone\n", z0 + 1)
+    w = round(0.6 + 2 * s, 6)
+    keep = shapely.union_all([shapely.LineString([(100, 100), (120, 100)]).buffer(0.3, quad_segs=16),
+                              shapely.box(99.5, 100 - w / 2, 100.5, 100 + w / 2),
+                              shapely.box(119.5, 100 - w / 2, 120.5, 100 + w / 2)]).buffer(0.1505, quad_segs=16)
+    fill = "".join('\t\t(filled_polygon\n\t\t\t(layer "F.Cu")\n\t\t\t(pts\n'
+                   + "".join(f"\t\t\t\t(xy {x:.6f} {y:.6f})\n" for x, y in p.exterior.coords[:-1]) + "\t\t\t)\n\t\t)\n"
+                   for p in shapely.get_parts(shapely.box(99.5005, 95.5005, 120.4995, 104.4995).difference(keep)))
+    assert text.count(pad) == 2 and '(layer "F.Cu")' in text[z0:fp0]
+    path = tmp_path / "coupon_gcpw_pads.kicad_pcb"
+    path.write_text((text[:fp0] + fill + "\t)\n" + text[z1:]).replace(pad, pad.replace("1 1", f"1 {w}")),
+                    encoding="utf-8")
+    return build(path)
+
+
+@pytest.mark.parametrize(("s", "n"), [(-0.02, 2), (0.018, 2), (-0.015, 3)])
+def test_pads_and_the_pour_that_follows_them_keep_a_gcpw_under_the_fit2d_gate(tmp_path, s, n):
+    # R-P2-24 (recheck (i)): LINE pads 2s wider or narrower than the 0.6 mm track, with the F.Cu GND pour following
+    # them, put a same-side edge |s| beside each cut edge. Where the cut edge is the deepest, the round-3 served cell
+    # gave it d/4, though it faces the other conductor across the 2d (n = 2) or 3d (n = 3) gap, where the shallow line
+    # reads best (R-P2-20): fit2d +5.11, +3.38 and +4.00 % here under R-P2-24's cut rule (f80b776 +2.52, −0.51, +2.90 %)
+    geom, prot = gcpw_pads_following(tmp_path, s)
+    m = build_mesh(geom, prot, n)
+    assert max(map(abs, fit2d(geom, m))) < 3 and not lint(m.x, m.edges["x"], m.d) and not lint(m.y, m.edges["y"], m.d)
+
+
+def test_a_cell_off_the_cuts_keeps_its_d_over_4_line_beside_a_gap():
+    # round 4: the facing rule (FACE) is for cut edges, which fit2d measures. Off the cuts the round-3 served cell stays:
+    # a 2.1d strip with a pad step, 3.1d from its GND (a random GCPW axis of the round-3 stress), keeps every cell over
+    # d/3 with it, and f80b776's shallow line there left the fill a 0.324d cell
+    d = 0.05
+    edges = [(109.792344, -1), (109.936483, 1), (109.94739, 1), (109.976497, -1), (110.05261, -1), (110.071856, -1),
+             (110.207656, 1), (110.226902, 1)]
+    lines, _ = xy_lines(edges, (100.0, 120.0), (80.0, 140.0), [], d, 2.36)
+    assert np.diff(lines).min() >= d / 3 - GRID_TOL and not lint(lines, edges, d)
+
+
+@pytest.mark.parametrize(("w", "h", "n"), [(3.0, 0.71, 2), (1.35, 0.2, 2), (1.35, 0.2, 3)])
+def test_a_microstrip_wider_than_its_substrate_is_high_passes_the_fit2d_gate(tmp_path, w, h, n):
+    # R-P2-23: the fringing field at a strip's edge spreads over about h, which an edge cell of w/n > h cannot resolve:
+    # coupon_ms 3 mm wide on its 0.71 mm substrate read −5.37 % at n = 2, and 1.35 mm wide on 0.2 mm −7.71 % at n = 2
+    # and −3.45 % at n = 3, with d = w/n
+    geom, prot = variant(tmp_path, "coupon_ms", "(width 1.35)", f"(width {w})", more=[("(thickness 0.71)",
+                                                                                         f"(thickness {h})")])
+    m = build_mesh(geom, prot, n)
+    assert max(map(abs, fit2d(geom, m))) < 3 and not lint(m.x, m.edges["x"], m.d) and not lint(m.y, m.edges["y"], m.d)
+    assert m.d == pytest.approx(h / n)
 
 
 def test_lpf915_stays_under_the_fit2d_gate_at_n_2():

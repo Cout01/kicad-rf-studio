@@ -46,7 +46,8 @@ class Mesh:
 
 def build_mesh(geom: Geometry, prot: Protected, n: int,
                extra_edges: dict[str, list[tuple[float, int]]] | None = None) -> Mesh:
-    """The mesh of `geom` for the protected set `prot`, n cells across the narrowest width or gap (2 standard, 3 fine).
+    """The mesh of `geom` for the protected set `prot`, n cells across the narrowest width, gap or substrate height (2
+    standard, 3 fine).
     Each in-plane axis comes from xy_lines with the protected edges (_edges; those at a section's cut are preferred in
     collisions) and `extra_edges`, which the edge lint's re-mesh passes and which keep their own pattern, the extent
     of the protected area and port boxes, and the vertices of every copper piece, rod and lid as free coordinates; z
@@ -54,7 +55,7 @@ def build_mesh(geom: Geometry, prot: Protected, n: int,
     changed."""
     region, zs = geom.region, geom.zs
     h, coarse, walls = substrate_h(zs), region.coarse, region.walls
-    d = cell_size(geom.sections, geom.track_width, n, 20 * coarse, geom.track_gap)  # the coarse cell is λ_min/20
+    d = cell_size(geom.sections, geom.track_width, n, 20 * coarse, geom.track_gap, h)  # the coarse cell is λ_min/20
     t_m = geom.mask.t_m if geom.mask is not None else 0.0
     edges, prefer = _edges(geom.pieces, prot, geom.sections)
     force = {axis: sorted(set((extra_edges or {}).get(axis, ()))) for axis in "xy"}
