@@ -148,14 +148,18 @@ def test_check_fit2d_names_the_worst_section_over_3_percent():
     assert str(e.value) == "The mesh misses the 2D reference on net B (F.Cu) by 5.0 % (limit 3 %). Use --preset strict."
 
 
+def approx_s(t):
+    """`t`, a time step in s (about 1e-13), to 1e-9 of itself: pytest.approx's default abs of 1e-12 s would take 0."""
+    return pytest.approx(t, rel=1e-9, abs=0)
+
+
 def test_dt_floor_reference():
     x, y, z = np.array([0, .075, 1]), np.array([0, .05, 1]), np.array([0, .035, 1])
     m = Mesh(x, y, z, .075, .025, {"x": x, "y": y, "z": z}, {})
-    assert dt_floor_reference(m) == pytest.approx(1 / (299792458 * math.sqrt(.075e-3**-2 + .05e-3**-2 + .035e-3**-2)))
+    assert dt_floor_reference(m) == approx_s(1 / (299792458 * math.sqrt(.075e-3**-2 + .05e-3**-2 + .035e-3**-2)))
     # T10 carry: the smallest cell of the final lines counts though no pinned line bounds it (the grading placed it)
     graded = replace(m, x=np.array([0, .03, .075, 1]))
-    assert dt_floor_reference(graded) == pytest.approx(1 / (299792458 * math.sqrt(.03e-3**-2 + .05e-3**-2
-                                                                                   + .035e-3**-2)))
+    assert dt_floor_reference(graded) == approx_s(1 / (299792458 * math.sqrt(.03e-3**-2 + .05e-3**-2 + .035e-3**-2)))
 
 
 def openems_dt(m):
@@ -184,21 +188,20 @@ def openems_dt(m):
 def test_openems_dt_is_the_courant_step_on_a_uniform_grid():  # the model's own check
     v = np.arange(0, 2.0001, 0.1)
     m = Mesh(v, v, v, 0.1, 0.1, {}, {})
-    assert openems_dt(m) == pytest.approx(0.1e-3 / (C0 * math.sqrt(3))) == pytest.approx(dt_floor_reference(m))
+    courant = 0.1e-3 / (C0 * math.sqrt(3))
+    assert openems_dt(m) == approx_s(courant) and dt_floor_reference(m) == approx_s(courant)
 
 
 @pytest.mark.parametrize("n", [2, 3])
 @pytest.mark.parametrize(("name", "start", "end"), FIXTURES)
 def test_rule_meshes_pass_the_lint_and_never_trip_the_timestep_floor(name, start, end, n):
-    # T10 carry: the reference never exceeds the Courant step of the smallest cells of the final lines (lpf915 at n = 2
-    # once had a 30.3 µm x cell between pinned lines 35.2 µm apart), so openEMS's dt on our own mesh never falls under
-    # plan 3's 0.8 × the reference; the copper's z faces carry lines and are exempt from the lint
+    # T10 carry: openEMS's dt on our own mesh never falls under plan 3's 0.8 × the reference, which counts the smallest
+    # cells of the final lines (test_dt_floor_reference; lpf915 at n = 2 once had a 30.3 µm x cell between pinned lines
+    # 35.2 µm apart); the copper's z faces carry lines and are exempt from the lint
     g, prot = geom_of(name, start, end)
     m = mesh_with_lint(g, prot, n)
     assert edge_lint(m) == [] and any(s.z1 in m.z for s in g.zs if s.kind == "copper")
-    ref = dt_floor_reference(m)
-    assert ref <= 1 / (C0 * math.sqrt(sum((np.diff(v).min() * 1e-3) ** -2 for v in (m.x, m.y, m.z))))
-    assert openems_dt(m) >= 0.8 * ref
+    assert openems_dt(m) >= 0.8 * dt_floor_reference(m)
 
 
 @pytest.mark.parametrize("name", [name for name, start, _ in FIXTURES if not start])
