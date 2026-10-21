@@ -4,7 +4,7 @@ import math
 import pytest
 from shapely.geometry import LineString, Point
 
-from kicad_rf_studio.core.kicad.shapes import arc_points, circle
+from kicad_rf_studio.core.kicad.shapes import arc_points, bezier_points, circle
 
 MAX_ERR = 0.001
 
@@ -69,3 +69,11 @@ def test_circle_without_radius_is_empty_and_a_dot_is_still_a_polygon():
     assert circle((0, 0), 0).is_empty
     dot = circle((0, 0), 0.0001)
     assert dot.is_valid and not dot.is_empty
+
+
+def test_bezier_points_follow_the_cubic_from_end_to_end():
+    p = ((0.0, 0.0), (0.0, 1.0), (1.0, 1.0), (1.0, 0.0))
+    # at s = 1/4 the weights are 27, 27, 9 and 1 over 64, so swapped control points would show; every value
+    # here is a short binary fraction, so the floats are exact, and the ends must be the given points
+    assert bezier_points(*p, n=4) == [(0, 0), (0.15625, 0.5625), (0.5, 0.75), (0.84375, 0.5625), (1, 0)]
+    assert len(bezier_points(*p)) == 33

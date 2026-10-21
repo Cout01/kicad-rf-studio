@@ -20,10 +20,14 @@ _VALUE = re.compile(rf"({_NUMBER})((?i:meg)|[pnu{_MU}mkKMG])?((?i:[FHR]|ohm)|{_O
 # prefix and unit, or the text is None. A word that starts with a digit or sign ("100 50V") is left
 # alone and ignored, like any text after the value.
 _SPACED = re.compile(rf"^({_NUMBER})\s+(?=[^\W\d_])")
-# RKM notation, where the letter stands for the point: 4n7 is 4.7n, 4R7 is 4.7R, 2k2 is 2.2k
-_RKM = re.compile(rf"^(\d+)([pnu{_MU}mkKMGRr])(\d+)")
+# A decimal comma, 4,7uF, is a point when 1 to 3 digits and then a prefix or unit letter follow it
+_COMMA = re.compile(rf"^(\d+),(\d{{1,3}})(?=(?i:meg|ohm|[fhr])|[pnu{_MU}mkKMG{_OMEGA}])")
+# RKM notation, where the letter stands for the point: 4n7 is 4.7n, 4R7 is 4.7R, 2k2 is 2.2k. At most 3
+# digits follow the letter, and no more, so 1n4148 (a diode) is no value.
+_RKM = re.compile(rf"^(\d+)([pnu{_MU}mkKMGRr])(\d{{1,3}})(?!\d)")
 _EXP = {"": 0, "p": -12, "n": -9, "u": -6, _MU: -6, "m": -3, "k": 3, "K": 3, "M": 6, "G": 9,
         "meg": 6}
+_UNIT = {"C": "F", "L": "H", "R": "R"}  # a part kind and the unit its value may name
 # at most 3 exponent digits, so that int() never meets the 4300 it refuses
 _FREQUENCY = re.compile(rf"({_NUMBER})(?:e([+-]?\d{{1,3}}))?\s*([kmg])?(?:hz)?", re.IGNORECASE)
 _FREQUENCY_EXP = {"": 0, "k": 3, "m": 6, "g": 9}
@@ -38,8 +42,14 @@ def parse_value(text: str) -> tuple[float, str] | None:
     anything else stuck to it makes the text None, so that no value is invented. The kind is
     "F", "H" or "R" when the value names a unit (F, H and R in any case, Ω, ohm in any case, and
     the R of `4R7`), else "". Prefixes keep their case, so m is milli and M is mega, except that
-    k and K are both kilo and meg is mega in any case."""
+    k and K are both kilo and meg is mega in any case. A decimal comma followed by a prefix or unit
+    is a point (`4,7uF`, `0,047uF`), but not after a whole number other than 0 when 3 digits follow,
+    where it may be a thousands separator: `1,000pF` is None."""
     s = unicodedata.normalize("NFKC", text).lstrip()
+    m = _COMMA.match(s)
+    if m and len(m[2]) == 3 and m[1] != "0":
+        return None
+    s = _COMMA.sub(r"\1.\2", s)
     # the RKM letter goes first: "4 k7" must not become 4.7k
     m = _VALUE.match(_SPACED.sub(r"\1", _RKM.sub(r"\1.\3\2", s)))
     if not m:
@@ -50,6 +60,20 @@ def parse_value(text: str) -> tuple[float, str] | None:
     # the exponent goes into the text, so "100n" is exactly 100e-9, where 100 * 1e-9 would be
     # 1.0000000000000001e-07 and show up in project.json
     return float(f"{num}e{exp}"), unit if unit in ("", "F", "H") else "R"
+
+
+def part_kind(ref: str) -> str | None:
+    """The kind of part a reference names, when its leading letters are exactly "C", "L" or "R": C12 is
+    "C", while CN1 (a connector) and RF1 are None."""
+    letters = re.match(r"[A-Za-z]*", ref)[0]
+    return letters if letters in _UNIT else None
+
+
+def part_value(ref: str, text: str) -> float | None:
+    """The SI value of a capacitor, inductor or resistor (`part_kind`) whose text reads with that part's
+    unit, F, H or R, or with none: 100n on C1 is 1e-07, while 15nH on C1 and any text on D1 are None."""
+    kind, value = part_kind(ref), parse_value(text)
+    return value[0] if kind and value and value[1] in ("", _UNIT[kind]) else None
 
 
 def parse_frequency(text: str) -> float:

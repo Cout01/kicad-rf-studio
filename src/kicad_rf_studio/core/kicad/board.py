@@ -13,8 +13,8 @@ from shapely.ops import polygonize
 
 from kicad_rf_studio.core.kicad.sexpr import Quoted, atom, child, children, num, parse, repair
 from kicad_rf_studio.core.kicad.shapes import (
-    GRAPHICS, XY, arc_points, covered, graphic_shape, is_filled, pad_shape, place, points, stroke_path, turn,
-    valid_polygons, xy)
+    GRAPHICS, XY, arc_points, bezier_points, covered, graphic_shape, is_filled, pad_shape, place, points, stroke_path,
+    turn, valid_polygons, xy)
 from kicad_rf_studio.core.kicad.stackup import Stackup, from_board as read_stackup
 from kicad_rf_studio.core.messages import KrsError, reason
 
@@ -223,6 +223,13 @@ def _graphic(b: Board, node: list, table: dict[str, str], edge: list[LineString]
         b.mask_graphics[_MASK[layer]] += covered(node, shape, filled)
 
 
+def _dropped(b: Board, node: list) -> None:
+    """Text and Bezier curves are not read, so on a copper layer they are a warning."""
+    layer = _text(node, "layer")
+    if layer in b.copper_layers:
+        b.warnings.append(("W_COPPER_DROPPED", {"kind": node[0], "layer": layer, "uuid": _text(node, "uuid")}))
+
+
 def _drill(pad: list) -> list[float]:
     """A pad's hole: its width, then any height (an oval hole); nothing for a pad with no hole."""
     return [float(a) for a in (child(pad, "drill") or [])[1:] if isinstance(a, str) and a != "oval"]
@@ -257,9 +264,10 @@ def _pad_layers(pad: list, copper: tuple[str, ...]) -> tuple[tuple[str, ...], tu
 
 
 def _footprint(b: Board, node: list, table: dict[str, str], edge: list[LineString], copies: set[str]) -> None:
-    """A footprint with its pads. Its graphics go where a board graphic's would, with no net, and its zones
-    follow the board-zone rules. A reference already taken (an unannotated REF**, a repeated logo) is kept
-    as REF#2, REF#3, ... in file order, and the original goes into `copies`."""
+    """A footprint with its pads. Its graphics go where a board graphic's would, with no net, its zones
+    follow the board-zone rules, and its text and Bezier curves on copper are a warning. A reference
+    already taken (an unannotated REF**, a repeated logo) is kept as REF#2, REF#3, ... in file order,
+    and the original goes into `copies`."""
     at, angle = xy(node, "at"), num(node, "at", 3, 0.0)
     props = {str(p[1]): str(p[2]) for p in children(node, "property") if len(p) > 2}
     ref = props.get("Reference", "")
@@ -285,6 +293,8 @@ def _footprint(b: Board, node: list, table: dict[str, str], edge: list[LineStrin
             # zone's, so only (x, -y) applies, not the footprint's placement. If a KiCad version stores them in the
             # footprint's frame, place them like the graphics above.
             _zone(b, g, table)
+        elif isinstance(g, list) and g and g[0] in ("fp_text", "fp_text_box", "fp_curve"):
+            _dropped(b, g)
     mpn = next((v for k, v in props.items() if k.lower() in _MPN), None)
     dnp = "dnp" in (child(node, "attr") or [])[1:] or atom(node, "dnp") == "yes"
     b.footprints[ref] = Footprint(ref, props.get("Value", ""), mpn, str(node[1]), _text(node, "uuid"),
@@ -367,8 +377,10 @@ def load_board(path: str | Path) -> Board:
             _zone(b, node, table)
         elif node[0] in GRAPHICS:
             _graphic(b, node, table, edge)
-        elif node[0] in ("gr_text", "gr_curve") and _text(node, "layer") in b.copper_layers:
-            b.warnings.append(("W_COPPER_DROPPED", {"kind": node[0], "layer": _text(node, "layer"), "uuid": _text(node, "uuid")}))
+        elif node[0] == "gr_curve" and _text(node, "layer") == "Edge.Cuts":
+            edge.append(LineString(bezier_points(*points(child(node, "pts")))))
+        elif node[0] in ("gr_text", "gr_text_box", "gr_curve"):
+            _dropped(b, node)
         elif node[0] == "footprint":
             _footprint(b, node, table, edge, copies)
     if copies:

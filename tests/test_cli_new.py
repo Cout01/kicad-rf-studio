@@ -327,21 +327,21 @@ def with_values(tmp_path, **values):
 
 
 def test_a_part_value_that_cannot_be_read_is_warned(tmp_path, capsys):
-    board = with_values(tmp_path, C2="3,3pF")  # C3 has the same value, and comes first in the file
+    board = with_values(tmp_path, C2="3.3.3pF")  # C3 has the same value, and comes first in the file
     out = tmp_path / "p"
     code = main(["new", str(board), "--start", "U1.1", "--end", "J1.1", "--f0", "915MHz", "-o", str(out)])
     warned = [line for line in capsys.readouterr().out.splitlines() if line.startswith("Cannot read the value")]
     assert code == 0 and warned == ["Cannot read the value of C2. Write values like 4.7pF, 4p7 or 15nH."]
     shunt = load_project(out / "project.json")["chain"]["shunt"]
-    assert [p["value"] for p in shunt] == ["3,3pF", "3.3pF", "0R"]  # kept as written
+    assert [p["value"] for p in shunt] == ["3.3.3pF", "3.3pF", "0R"]  # kept as written
 
 
 def test_unreadable_values_are_one_warning_for_series_shunt_and_dnp_parts(tmp_path, capsys):
     # L1 is a series part, R2 a DNP shunt part; C4, a decoupling capacitor on VDD, is no part of the chain
-    board = with_values(tmp_path, R2="TBD", L1="", C2="3,3pF", C4="??")
+    board = with_values(tmp_path, R2="TBD", L1="", C2="3,3pF", C4="??")  # C2's decimal comma reads
     code = main(["new", str(board), "--start", "U1.1", "--end", "J1.1", "--f0", "915MHz", "-o", str(tmp_path / "p")])
     warned = [line for line in capsys.readouterr().out.splitlines() if line.startswith("Cannot read the value")]
-    assert code == 0 and warned == ["Cannot read the value of C2, L1, R2. Write values like 4.7pF, 4p7 or 15nH."]
+    assert code == 0 and warned == ["Cannot read the value of L1, R2. Write values like 4.7pF, 4p7 or 15nH."]
 
 
 def pad(number, net, x=0.0):

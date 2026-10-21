@@ -3,7 +3,7 @@ import time
 
 import pytest
 
-from kicad_rf_studio.core.kicad.values import parse_frequency, parse_value
+from kicad_rf_studio.core.kicad.values import parse_frequency, parse_value, part_kind, part_value
 from kicad_rf_studio.core.messages import KrsError
 
 
@@ -113,7 +113,7 @@ def test_a_comma_ends_the_value_like_a_slash(text, value, kind):
     "4n7n", "1.5k2", "4R7F", "1kk", "1.2.3",     # a prefix, unit or point in the wrong place
     "10UF", "100NF",                             # prefixes keep their case
     "100 mA", "100 NF", "5 V", "100 ohms", "100 X7R", "4 k7",  # a spaced word that is no unit
-    "4,7uF", "0,1uF", "2,2k", "100,50V"])        # a decimal comma does not end a value
+    "100,50V"])                                  # a decimal comma does not end a value
 def test_text_that_is_not_a_value_gives_none(text):
     assert parse_value(text) is None
 
@@ -160,3 +160,29 @@ def test_bad_frequency_reports_the_text(text):
 def test_a_giant_exponent_is_a_bad_frequency_and_not_a_crash():
     with pytest.raises(KrsError):  # int() refuses more than 4300 digits, so the pattern must
         parse_frequency("1e" + "9" * 5000)
+
+
+# --- plan 3, task 2: decimal commas, RKM and part kinds ------------------------------------------
+
+
+@pytest.mark.parametrize(("text", "value"), [
+    ("4,7uF", 4.7e-6), ("4,7µF", 4.7e-6), ("2,2k", 2200.0), ("1,5nH", 1.5e-9), ("0,047uF", 4.7e-8),
+    ("4n7", 4.7e-9), ("2k21", 2210.0), ("4R7", 4.7), ("1u0", 1e-6)])  # µ: the micro sign NFKC folds
+def test_a_decimal_comma_and_rkm_read(text, value):  # C-2
+    assert parse_value(text)[0] == pytest.approx(value, rel=1e-12)
+
+
+@pytest.mark.parametrize("text", ["1,000", "1,000pF", "4,700pF", "4,7", "100,50V", "1n4148", "3.3.3pF"])
+def test_ambiguous_values_stay_unreadable(text):
+    assert parse_value(text) is None
+
+
+@pytest.mark.parametrize(("ref", "text", "value"), [
+    ("C1", "100n", 1e-7), ("L1", "15n", 1.5e-8), ("R1", "0R", 0.0), ("R2", "4k7", 4700.0), ("C12", "4,7uF", 4.7e-6),
+    ("C1", "15nH", None), ("D1", "1N4148", None), ("FB1", "BLM18", None), ("CN1", "100n", None)])
+def test_a_part_value_takes_its_kind_from_the_designator(ref, text, value):  # C-2, M-5
+    assert part_value(ref, text) == (None if value is None else pytest.approx(value, rel=1e-12))
+
+
+def test_part_kind():
+    assert [part_kind(r) for r in ("C1", "L2", "R10", "D1", "CN1", "RF1")] == ["C", "L", "R", None, None, None]

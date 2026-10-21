@@ -514,3 +514,28 @@ def test_an_unfilled_hatched_zone_warns_as_a_solid_one_does(mini_board):
     # warning at all; plan 1 gave it W_ZONE_NOT_FILLED, as any unfilled zone gets
     hatched = mini_board(zone(extra="(fill yes (mode hatch))")).warnings
     assert ("W_ZONE_NOT_FILLED", {"uuid": "z", "layer": "F.Cu"}) in hatched and hatched == mini_board(zone()).warnings
+
+
+# --- plan 3, task 2: dropped footprint copper, Bezier outline ------------------------------------
+
+
+def test_dropped_footprint_copper_warns(mini_board):  # L-5
+    b = mini_board('(footprint "L:X" (layer "F.Cu") (uuid "f1") (at 0 0) (property "Reference" "X1") '
+                   '(fp_text user "RF" (at 1 1) (layer "F.Cu") (uuid "t1")) '
+                   '(fp_curve (pts (xy 0 0) (xy 1 1) (xy 2 1) (xy 3 0)) (layer "F.Cu") (uuid "c1"))) '
+                   '(gr_text_box "RF" (start 0 0) (end 2 1) (layer "F.Cu") (uuid "b1"))')
+    assert {(p["kind"], p["uuid"]) for c, p in b.warnings if c == "W_COPPER_DROPPED"} == {
+        ("fp_text", "t1"), ("fp_curve", "c1"), ("gr_text_box", "b1")}
+
+
+def test_a_footprint_text_box_on_copper_warns_with_its_layer(mini_board):  # L-5, the kind the test above leaves out
+    b = mini_board('(footprint "L:X" (layer "B.Cu") (at 0 0) (property "Reference" "X1") '
+                   '(fp_text_box "RF" (start 0 0) (end 2 1) (layer "B.Cu") (uuid "x1")))')
+    assert ("W_COPPER_DROPPED", {"kind": "fp_text_box", "layer": "B.Cu", "uuid": "x1"}) in b.warnings
+
+
+def test_a_bezier_on_edge_cuts_closes_the_outline(mini_board):  # L-6
+    sides = "".join(f'(gr_line (start {a}) (end {b}) (layer "Edge.Cuts"))'
+                    for a, b in (("0 0", "10 0"), ("0 0", "0 10"), ("0 10", "10 10")))
+    b = mini_board(sides + '(gr_curve (pts (xy 10 0) (xy 10 3) (xy 10 7) (xy 10 10)) (layer "Edge.Cuts"))')
+    assert b.outline is not None and b.outline.area == pytest.approx(100, abs=1e-3)

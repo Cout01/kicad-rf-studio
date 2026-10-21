@@ -41,6 +41,16 @@ def arc_points(start: XY, mid: XY, end: XY, max_err: float = 0.001) -> list[XY]:
     return [start, *((x0 + r * math.cos(a), y0 + r * math.sin(a)) for a in angles), end]
 
 
+def bezier_points(p0: XY, p1: XY, p2: XY, p3: XY, n: int = 32) -> list[XY]:
+    """The cubic Bezier curve from p0 to p3 with control points p1 and p2, as its n + 1 points at s = k/n.
+    The ends are p0 and p3 exactly."""
+    out = []
+    for s in (k / n for k in range(n + 1)):
+        a, b, c, d = (1 - s) ** 3, 3 * (1 - s) ** 2 * s, 3 * (1 - s) * s ** 2, s ** 3
+        out.append((a * p0[0] + b * p1[0] + c * p2[0] + d * p3[0], a * p0[1] + b * p1[1] + c * p2[1] + d * p3[1]))
+    return out
+
+
 def circle(center: XY, radius: float, max_err: float = 0.001) -> Polygon:
     """A polygon inscribed in the circle, with the middle of every edge within `max_err` of it.
     No radius gives an empty polygon."""
