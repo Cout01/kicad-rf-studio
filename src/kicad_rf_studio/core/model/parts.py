@@ -70,15 +70,16 @@ def role(kind: str | None, value: float | None, model: dict | None, dnp: bool, a
 def project_parts(board: Board, chain: Chain, classes: Classes, roi: Polygon | MultiPolygon, f1: float, f2: float
                   ) -> tuple[list[dict], list[dict], list[dict], list[tuple[str, dict]]]:
     """The chain's series and shunt parts, the other parts and their notes, as project.json keeps them: a part is
-    {"ref", "pads", "nets", "value", "dnp", "role", "model"}, its value the footprint's text as written. The others
-    are the two-pad parts (two netted copper pads on two nets, no connector or shield) with a pad in `roi` and neither
-    pad on a chain net, in reference order. W_VALUE_UNREADABLE names the C, L and R parts whose value does not read,
-    DNP ones too; W_PART_OPEN the other parts left open that are not DNP."""
+    {"ref", "pads", "nets", "value", "dnp", "role", "model"}, its value the footprint's text as written and its model
+    the package preset of a C, L or R, else None. The others are the two-pad parts (two netted copper pads on two
+    nets, no connector or shield) with a pad in `roi` and neither pad on a chain net, in reference order.
+    W_VALUE_UNREADABLE names the C, L and R parts whose value does not read, DNP ones too; W_PART_OPEN the other parts
+    left open that are not DNP."""
     def part(ref: str, pads, nets, place: str) -> dict:
-        fp = board.footprints[ref]
-        model = model_of(fp.lib_id)
+        fp, kind = board.footprints[ref], part_kind(ref)
+        model = model_of(fp.lib_id) if kind else None  # spec 5.7: the ideal value plus the preset; a diode has none
         return {"ref": ref, "pads": list(pads), "nets": list(nets), "value": fp.value, "dnp": fp.dnp,
-                "role": role(part_kind(ref), part_value(ref, fp.value), model, fp.dnp, fp.angle, place, f1, f2),
+                "role": role(kind, part_value(ref, fp.value), model, fp.dnp, fp.angle, place, f1, f2),
                 "model": model}
 
     series = [part(p.ref, p.pads, p.nets, "series") for p in chain.series]

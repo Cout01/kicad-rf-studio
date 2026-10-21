@@ -79,3 +79,12 @@ def test_an_other_part_has_two_nets_a_pad_in_the_roi_and_is_no_connector_or_shie
     assert others() == ["C4"] and others(roi=Point(1e3, 1e3).buffer(1.0)) == []
     assert others(connectors=["C4"]) == [] and others(shields=["C4"]) == []
     assert others(fp=replace(c4, pads=tuple(replace(q, net="GND") for q in c4.pads))) == []
+
+
+def test_a_part_that_is_not_a_c_l_or_r_has_no_model():  # spec 5.7: a model is the ideal value plus the preset
+    board, p = project_of("lpf915", "U1.1", "J1.1")
+    fps = dict(board.footprints)
+    fps["D4"] = replace(fps.pop("C4"), ref="D4", lib_id="Diode_SMD:D_0603_1608Metric")  # C4's place, a diode
+    b = replace(board, footprints=fps)
+    others = project_parts(b, chain_of(p), classify(b, p["classes"]), fps["D4"].pads[0].polygon, *band(p))[2]
+    assert [(q["ref"], q["model"]) for q in others] == [("D4", None)]
