@@ -92,6 +92,8 @@ CATALOG: dict[str, str] = {
     "E_WORKER_FAILED": "The {job} worker ended with code {exit_code}; see {log}. Report it if the log shows no cause.",
     "I_CALIBRATING": "Measuring this machine's simulation speed, once (20–30 s)…",
     "I_CALIBRATED": "Calibrated: {pool} jobs at once with {threads} threads each, {speed} MC/s in all; `kicad-rf-studio calibrate` measures again.",
+    "W_BOARD_CHANGED": "The board {path} changed since `new` wrote project.json; its chain, ports and parts may be stale. Re-create the project with `new` if you moved copper.",
+    "W_OFF_TOP_LAYER": "Net {net} runs on {layer}, not on the top copper; the region, the cell size and dz0 use the top layer's substrate height (a Stage 1 limit). Check its fit2d result.",
     "E_INTERNAL": "Internal error: {detail}. Please report it.",
 }
 
