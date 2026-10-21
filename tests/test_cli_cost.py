@@ -141,6 +141,21 @@ def test_copper_with_no_net_on_the_line_gets_a_note_in_place_of_its_row(tmp_path
         HEADER, SHORT, render("W_NETLESS_COPPER", uuid="r1", layer="F.Cu"), render("W_NO_OUTLINE")])
 
 
+@pytest.mark.parametrize("pitch", [4.0, 8.0])
+def test_each_arm_of_a_hairpin_reads_as_the_line_it_is(tmp_path, capsys, mini_board_file, pitch):
+    # verifier: a 1.35 mm U of SIG over a B.Cu plane, its arms 2.65 or 6.65 mm apart. Both arms were the signal, so
+    # they read the pair's 24.73 Ω; at 6.65 mm the far arm, clipped at the box's side, touched its 0 V face: 4.43 Ω.
+    # Each arm reads the leg's Z0 now, the other arm a grounded neighbour as any other conductor is
+    y0, y1 = 10 - pitch / 2, 10 + pitch / 2
+    u = [(5, y0, 35, y0), (35, y0, 35, y1), (35, y1, 5, y1)]
+    board = mini_board_file(EDGE + "".join(SEG.format(*p, 1.35, "F.Cu", "SIG", i) for i, p in enumerate(u)) +
+                            zone("B.Cu", "GND", 0, 0, 40, 20))
+    code, out = cost_on(tmp_path, capsys, board)
+    arm, other, leg = (parse_z0s(row) for row in out[1:4])  # by place: the arms start at x = 5, the leg at 35
+    assert code == 0 and out[3].startswith(f"SIG on F.Cu: width 1.350 mm, gap none, length {pitch:.3f} mm")
+    assert arm == pytest.approx(leg, rel=0.005) and other == pytest.approx(leg, rel=0.005)
+
+
 def test_any_other_fault_in_the_2d_solve_is_an_internal_error(tmp_path, capsys, monkeypatch):
     # verifier: the guard took every ValueError for a short, so a fault in the solve printed an empty table, exit 0
     def broken(*args):

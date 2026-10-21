@@ -180,8 +180,9 @@ def staircase_gap(board: Board, nets: Iterable[str], pieces: list[Piece]) -> flo
 def cross_section(sec: Section, pieces: list[Piece], zs: tuple[Slab, ...], mask: MaskModel | None, mode: str,
                   dz0: float | None = None) -> CrossSection:
     """The cut perpendicular to `sec` at `sec.cut`, BOX_H substrate heights past its edges either side, through every
-    piece it meets there: copper of `sec`'s net is the signal, any other conductor ground, each as thick as its layer.
-    The dielectric layers span the cut. The mask (Decisions): `mode` "none", or no `mask`, leaves it out; "exact" fills
+    piece it meets there, each as thick as its layer: the strip of `sec`'s net under its centre line is the signal,
+    and any other conductor ground, its net's other copper too (as signal, a hairpin's two arms read as one line of
+    half the Z0, and an arm cut at the box's side touched its 0 V face). The dielectric layers span the cut. The mask (Decisions): `mode` "none", or no `mask`, leaves it out; "exact" fills
     the gaps between the outer conductors over their z-cell and lays a coat t_m thick on the copper and the gaps;
     "smeared" fills the same gaps and smears the coat over the first z-cell, `dz0` thick, as the FDTD model does. The
     box runs BOX_H substrate heights past the stack too, in air."""
@@ -190,7 +191,8 @@ def cross_section(sec: Section, pieces: list[Piece], zs: tuple[Slab, ...], mask:
     m = BOX_H * substrate_h(zs)
     line, k, c = _cut(sec, sec.width / 2 + m)
     lo, hi = round(c - sec.width / 2 - m, 6), round(c + sec.width / 2 + m, 6)
-    conductors = [Rect(a, b, s.z0, s.z1, role="signal" if net == sec.net else "ground")
+    own = (sec.net, sec.layer)
+    conductors = [Rect(a, b, s.z0, s.z1, role="signal" if (net, s.copper) == own and a <= c <= b else "ground")
                   for s in zs if s.kind == "copper" for net, a, b in _strips(pieces, s.copper, line, k)]
     dielectrics = [Rect(lo, hi, s.z0, s.z1, s.eps_r) for s in zs if s.kind == "dielectric"]
     if mask is not None and mode != "none":
