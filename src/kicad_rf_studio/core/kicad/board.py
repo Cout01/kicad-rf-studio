@@ -179,11 +179,15 @@ def _via(node: list, table: dict[str, str]) -> Via:
 
 def _zone(b: Board, node: list, table: dict[str, str]) -> None:
     """A zone's fills are copper areas, or mask openings on a mask layer. A rule area (keepout) is no copper,
-    and a copper zone with no fill at all is only a warning."""
+    and a copper zone with no fill at all is only a warning, hatched or not; a hatched one's fills are dropped."""
     if child(node, "keepout") is not None:
         return
     net, uuid = _net(node, table), _text(node, "uuid")
     fills = children(node, "filled_polygon")
+    if not fills:
+        for layer in (child(node, "layers") or child(node, "layer") or [])[1:]:  # one layer, or several
+            if layer in b.copper_layers:
+                b.warnings.append(("W_ZONE_NOT_FILLED", {"uuid": uuid, "layer": str(layer)}))
     if atom(child(node, "fill") or [], "mode") == "hatch":
         for fill in fills:
             if _text(fill, "layer") in b.copper_layers:
@@ -196,10 +200,6 @@ def _zone(b: Board, node: list, table: dict[str, str]) -> None:
             b.areas += [CopperArea(layer, net, p, "zone", uuid) for p in polygons]
         elif layer in _MASK:
             b.mask_graphics[_MASK[layer]] += polygons
-    if not fills:
-        for layer in (child(node, "layers") or child(node, "layer") or [])[1:]:  # one layer, or several
-            if layer in b.copper_layers:
-                b.warnings.append(("W_ZONE_NOT_FILLED", {"uuid": uuid, "layer": str(layer)}))
 
 
 def _graphic(b: Board, node: list, table: dict[str, str], edge: list[LineString],

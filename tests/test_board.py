@@ -507,3 +507,10 @@ HATCHED_ZONE = ('(zone (net 0) (net_name "") (layer "F.Cu") (uuid "h1") (fill ye
 
 def test_hatched_fill_warns(mini_board):
     assert any(c == "W_COPPER_DROPPED" and p["kind"] == "hatched zone" for c, p in mini_board(HATCHED_ZONE).warnings)
+
+
+def test_an_unfilled_hatched_zone_warns_as_a_solid_one_does(mini_board):
+    # final review: the hatch branch returned before the no-fill check, so a hatched zone saved unfilled had no
+    # warning at all; plan 1 gave it W_ZONE_NOT_FILLED, as any unfilled zone gets
+    hatched = mini_board(zone(extra="(fill yes (mode hatch))")).warnings
+    assert ("W_ZONE_NOT_FILLED", {"uuid": "z", "layer": "F.Cu"}) in hatched and hatched == mini_board(zone()).warnings
