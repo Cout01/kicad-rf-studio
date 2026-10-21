@@ -2,8 +2,12 @@
 """The simulation geometry of a board (spec 5.1-5.3), in mm."""
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
+
+from kicad_rf_studio.core.kicad.stackup import Stackup
+from kicad_rf_studio.core.kicad.tracer import Chain, ChainPart, classify
 
 if TYPE_CHECKING:  # the types only: importing a submodule must not pull in the others
     from kicad_rf_studio.core.geometry.copper import Piece
@@ -13,6 +17,7 @@ if TYPE_CHECKING:  # the types only: importing a submodule must not pull in the 
     from kicad_rf_studio.core.geometry.sections import Section
     from kicad_rf_studio.core.geometry.vias import Rod
     from kicad_rf_studio.core.geometry.zstack import Slab
+    from kicad_rf_studio.core.kicad.board import Board
 
 
 @dataclass
@@ -32,3 +37,42 @@ class Geometry:
     notes: list[tuple[str, dict]]
     track_width: float
     track_gap: float | None
+
+
+def chain_of(project: dict) -> Chain:
+    """The chain project.json holds, as `new` writes it."""
+    c = project["chain"]
+    series, shunt = (tuple(ChainPart(p["ref"], tuple(p["pads"]), tuple(p["nets"])) for p in c[key])
+                     for key in ("series", "shunt"))
+    return Chain(c["start"], c["end"], tuple(c["nets"]), series, shunt)
+
+
+def build_geometry(board: Board, project: dict) -> Geometry:
+    """The geometry of `board` for the chain of `project` (project.json), Tasks 2-6 and 11 in order: the z-stack of
+    its stackup and the region (its ports, its band, `region.expand_h`); the copper pieces; the rods, solid in the
+    protected set, and the connectivity check; the F mask; the measured sections; the shield lid. `notes` holds their
+    warnings and E_ gate entries in that order, which the caller reports and blocks on; `track_width` is inf when the
+    measured nets have no track. Raises KrsError: E_STACKUP_LAYERS, E_CHAIN_OFF_OUTLINE."""
+    # imported here, so that importing a submodule still pulls in none of the others, nor core.mesh, built on them
+    from kicad_rf_studio.core.geometry.copper import connectivity, copper_pieces
+    from kicad_rf_studio.core.geometry.lid import find_lid
+    from kicad_rf_studio.core.geometry.mask import mask_model
+    from kicad_rf_studio.core.geometry.region import build_region, f_max
+    from kicad_rf_studio.core.geometry.sections import sections, staircase_gap
+    from kicad_rf_studio.core.geometry.vias import via_rods
+    from kicad_rf_studio.core.geometry.zstack import substrate_h, zstack
+    from kicad_rf_studio.core.mesh.protect import protected_set
+
+    chain, classes = chain_of(project), classify(board, project.get("classes"))
+    zs = zstack(Stackup.from_json(project["stackup"]), board.copper_layers)
+    region = build_region(board, chain, project.get("ports", []), zs, f_max(project),
+                          project.get("region", {}).get("expand_h", 3.0))
+    thickness = {s.copper: round(s.z1 - s.z0, 6) for s in zs if s.kind == "copper"}
+    pieces, notes = copper_pieces(board, region.crop, thickness)
+    rods = via_rods(board, region.crop, zs, protected_set(board, chain, classes, pieces, substrate_h(zs)))
+    notes += connectivity(pieces, rods, region.roi, chain.nets, region.crop)
+    secs, staircased = sections(board, chain.nets, pieces)
+    lid, gate = find_lid(board, classes, region, zs, project)
+    width = min((t.width for t in board.tracks if t.net in chain.nets), default=math.inf)
+    return Geometry(region, zs, pieces, rods, mask_model(board, pieces, zs, region.crop, "F"), secs, lid,
+                    notes + staircased + gate, width, staircase_gap(board, chain.nets, pieces))

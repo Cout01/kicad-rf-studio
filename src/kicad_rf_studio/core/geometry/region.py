@@ -13,6 +13,7 @@ from kicad_rf_studio.core.geometry.zstack import Slab, substrate_h
 from kicad_rf_studio.core.kicad.board import OUTLINE_GRID, Board
 from kicad_rf_studio.core.kicad.shapes import pt
 from kicad_rf_studio.core.kicad.tracer import Chain
+from kicad_rf_studio.core.messages import KrsError
 
 C0 = 299_792_458.0  # m/s
 WALL_MM, WALL_CELLS = 4.0, 8  # the walls sit 4 mm and 8 coarse cells past the ROI, on all six faces
@@ -47,16 +48,22 @@ def build_region(board: Board, chain: Chain, ports: list[dict], zs: tuple[Slab, 
     """The region of `chain`. The ROI is the bounding box of the copper of the chain's nets (tracks, areas and pads),
     the chain parts' pads and the ports' pads and reference points (project.json's `ports`), grown by `expand_h`
     substrate heights. It is clipped to the board outline unless it lies inside it to within the outline's 1 µm grid.
-    Every coordinate is quantised to 1e-6 mm."""
+    Every coordinate is quantised to 1e-6 mm. Raises E_CHAIN_OFF_OUTLINE when the ROI would miss the copper of the
+    chain's nets, or they have none: of several Edge.Cuts loops (a panel, a frame, a coupon beside the board) the board
+    reader keeps the largest, and a chain on another one had an empty ROI (a raw GEOS error) or a sliver of the wrong
+    board (R-P2-14). A part pad or a port's reference cannot vouch for the chain: a microstrip coupon's port takes the
+    nearest ground copper on its layer, which in a panel can be the main board's."""
     nets = set(chain.nets)
     refs = [port["reference"] for port in ports if port["reference"]]
     names = {name for part in chain.series + chain.shunt for name in part.pads}
     names |= {port["signal"] for port in ports} | {ref["pad"] for ref in refs if "pad" in ref}
-    shapes = [t.polygon() for t in board.tracks if t.net in nets]
-    shapes += [a.polygon for a in board.areas if a.net in nets]
-    shapes += [p.polygon for fp in board.footprints.values() for p in fp.pads
-               if p.layers and (p.net in nets or p.name in names)]
+    copper = [t.polygon() for t in board.tracks if t.net in nets] + [a.polygon for a in board.areas if a.net in nets]
+    copper += [p.polygon for p in board.all_pads() if p.layers and p.net in nets]
+    shapes = copper + [p.polygon for p in board.all_pads() if p.layers and p.net not in nets and p.name in names]
     shapes += [Point(pt(*ref["point"])) for ref in refs if "point" in ref]  # project.json's frame has y down
+    # the box holds the copper, so the ROI, the box clipped to the outline, misses it exactly when the outline does
+    if not copper or board.outline is not None and not shapely.intersects(board.outline, copper).any():
+        raise KrsError("E_CHAIN_OFF_OUTLINE", nets=", ".join(chain.nets))
     x0, y0, x1, y1 = shapely.total_bounds(shapes)
     grow = expand_h * substrate_h(zs)
     roi = box(x0 - grow, y0 - grow, x1 + grow, y1 + grow)
