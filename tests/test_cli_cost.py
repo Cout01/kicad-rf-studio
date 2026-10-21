@@ -156,6 +156,20 @@ def test_each_arm_of_a_hairpin_reads_as_the_line_it_is(tmp_path, capsys, mini_bo
     assert arm == pytest.approx(leg, rel=0.005) and other == pytest.approx(leg, rel=0.005)
 
 
+def test_a_line_on_the_bottom_copper_reads_under_the_bottom_mask(tmp_path, capsys, mini_board_file):
+    # verifier: a 0.6 mm GCPW mirrored onto B.Cu printed its bare numbers as "with mask", since every row took the F
+    # mask; the mask over each line is the one on its own side
+    rows = []
+    for line, plane in (("F.Cu", "B.Cu"), ("B.Cu", "F.Cu")):
+        board = mini_board_file(EDGE + SEG.format(5, 10, 35, 10, 0.6, line, "SIG", "s") + zone(plane, "GND", 0, 0, 40, 20)
+                                + zone(line, "GND", 0, 0, 40, 9.55) + zone(line, "GND", 0, 10.45, 40, 20))
+        code, out = cost_on(tmp_path / line, capsys, board)
+        assert code == 0 and out[1].startswith(f"SIG on {line}: width 0.600 mm, gap 0.150")
+        rows.append(parse_z0s(out[1]))
+    (z_top, zm_top), (z_bottom, zm_bottom) = rows
+    assert zm_top < 0.95 * z_top and [z_bottom, zm_bottom] == pytest.approx([z_top, zm_top], rel=1e-3)
+
+
 def test_any_other_fault_in_the_2d_solve_is_an_internal_error(tmp_path, capsys, monkeypatch):
     # verifier: the guard took every ValueError for a short, so a fault in the solve printed an empty table, exit 0
     def broken(*args):
