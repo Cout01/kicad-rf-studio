@@ -8,6 +8,7 @@ from typing import TYPE_CHECKING
 
 from kicad_rf_studio.core.kicad.stackup import Stackup
 from kicad_rf_studio.core.kicad.tracer import Chain, ChainPart, classify
+from kicad_rf_studio.core.project import region_expand_h
 
 if TYPE_CHECKING:  # the types only: importing a submodule must not pull in the others
     from kicad_rf_studio.core.geometry.copper import Piece
@@ -65,8 +66,7 @@ def build_geometry(board: Board, project: dict) -> Geometry:
 
     chain, classes = chain_of(project), classify(board, project.get("classes"))
     zs = zstack(Stackup.from_json(project["stackup"]), board.copper_layers)
-    region = build_region(board, chain, project.get("ports", []), zs, f_max(project),
-                          project.get("region", {}).get("expand_h", 3.0))
+    region = build_region(board, chain, project.get("ports", []), zs, f_max(project), region_expand_h(project))
     thickness = {s.copper: round(s.z1 - s.z0, 6) for s in zs if s.kind == "copper"}
     pieces, notes = copper_pieces(board, region.crop, thickness)
     rods = via_rods(board, region.crop, zs, protected_set(board, chain, classes, pieces, substrate_h(zs)))

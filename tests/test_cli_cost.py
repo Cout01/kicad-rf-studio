@@ -1,0 +1,139 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+import re
+import subprocess
+import sys
+from pathlib import Path
+
+import pytest
+
+from kicad_rf_studio.cli import main
+from kicad_rf_studio.core.kicad import load_board
+from kicad_rf_studio.core.kicad.stackup import kicad_default
+from kicad_rf_studio.core.messages import render
+from kicad_rf_studio.core.project import SCHEMA, board_hash, load_project, mesh_n, region_expand_h, save_project
+
+FIX = Path(__file__).parent / "fixtures"
+PADS = {"coupon_gcpw_pads": ("TP1.1", "TP2.1"), "lpf915": ("U1.1", "J1.1")}
+HEADER = "2D estimate: bends, vias, pads and parts not included"
+
+
+def by_hand(pj, board, nets=("LINE",), stackup=None, preset="normal"):
+    """project.json written as `new` lays it out, for a board `new` cannot trace (R-P2-8: schema 1, no ports)."""
+    pj.parent.mkdir(parents=True, exist_ok=True)
+    save_project(pj, {
+        "schema": SCHEMA, "board": {"path": board.as_posix(), "sha256": board_hash(board)},
+        "f0_hz": 915e6, "harmonics": 3, "preset": preset, "band_factor": 1.1, "t_max_s": 40e-9,
+        "stackup": stackup or load_board(board).stackup.to_json(), "lid_height_mm": None,
+        "chain": {"start": "", "end": "", "nets": list(nets), "series": [], "shunt": []}, "ports": []})
+    return pj
+
+
+def new_project(tmp_path, name, preset=None):
+    """`name`'s project.json: through `new` for a board with two chain pads, by hand for a pad-less coupon."""
+    board, out = FIX / f"{name}.kicad_pcb", tmp_path / name
+    if name not in PADS:
+        return by_hand(out / "project.json", board, preset=preset or "normal")
+    start, end = PADS[name]
+    assert main(["new", str(board), "--start", start, "--end", end, "--f0", "915MHz", "-o", str(out),
+                 *(["--preset", preset] if preset else [])]) == 0
+    return out / "project.json"
+
+
+def parse_z0s(row):
+    return [float(z) for z in re.findall(r"Z0 (\d+\.\d\d) Ω", row)]
+
+
+def fail(*args, **kwargs):
+    raise AssertionError("cost started a process")
+
+
+def test_cost_prints_2d_readout(tmp_path, capsys):
+    proj = new_project(tmp_path, "coupon_gcpw_masked")
+    assert main(["cost", str(proj)]) == 0
+    out = capsys.readouterr().out.splitlines()
+    assert out[0] == "2D estimate: bends, vias, pads and parts not included"
+    row = out[1]
+    assert row.startswith("LINE on F.Cu: width 0.600 mm, gap 0.150, length 20.000 mm")
+    z, zm = parse_z0s(row)
+    assert zm < z
+
+
+def test_cost_on_45_degree_coupon(tmp_path, capsys):
+    # Review Focus 4: no straight, axis-aligned section prints the staircase warning and no row, and does not crash
+    assert main(["cost", str(new_project(tmp_path, "coupon_gcpw_45"))]) == 0
+    out = capsys.readouterr().out
+    assert "no straight, axis-aligned sections" in out and "staircased" in out
+    assert out.splitlines() == [render("W_NO_SECTIONS"), render("W_STAIRCASED", net="LINE")]
+
+
+def test_cost_starts_no_worker(tmp_path, monkeypatch):
+    monkeypatch.setattr(subprocess, "Popen", fail)
+    assert main(["cost", str(new_project(tmp_path, "coupon_ms"))]) == 0
+    assert "openEMS" not in sys.modules
+
+
+@pytest.mark.parametrize(("preset", "n"), [("strict", 3), ("draft", 2), (None, 2)])
+def test_new_writes_region_and_mesh_defaults(tmp_path, preset, n):
+    # R-P2-8: `new` needs two pads, so coupon_gcpw_pads (TP1.1 → TP2.1) stands in for the pad-less coupon_ms
+    d = load_project(new_project(tmp_path, "coupon_gcpw_pads", preset=preset))
+    assert d["region"] == {"expand_h": 3.0} and d["mesh"] == {"n": n}
+
+
+def test_a_project_without_region_or_mesh_reads_their_defaults():  # both optional: schema 1 is unchanged
+    assert region_expand_h({}) == 3.0 and region_expand_h({"region": {"expand_h": 2}}) == 2
+    assert mesh_n({"preset": "strict"}) == 3 and mesh_n({"preset": "draft"}) == 2 and mesh_n({"preset": "normal"}) == 2
+    assert mesh_n({"preset": "strict", "mesh": {"n": 2}}) == 2
+
+
+# --- beyond the brief's tests ---------------------------------------------------------------------------------
+
+
+def test_a_microstrip_has_no_gap_and_its_mask_lowers_z0(tmp_path, capsys):
+    assert main(["cost", str(new_project(tmp_path, "coupon_ms_masked"))]) == 0
+    assert capsys.readouterr().out.splitlines() == [
+        HEADER, "LINE on F.Cu: width 1.350 mm, gap none, length 20.000 mm — Z0 48.53 Ω, εeff 3.326 without mask; "
+                "Z0 47.85 Ω, εeff 3.420 with mask"]
+
+
+def test_rows_follow_the_chain_then_the_position_and_the_notes_come_last(tmp_path, capsys):
+    proj = new_project(tmp_path, "lpf915")
+    capsys.readouterr()  # `new`'s summary
+    assert main(["cost", str(proj)]) == 0
+    out = capsys.readouterr().out.splitlines()
+    assert out[0] == HEADER and [row.split(":")[0] for row in out[1:-1]] == [
+        "RF_A on F.Cu", "RF_A on F.Cu", "RF_B on F.Cu", "RF_C on F.Cu", "RF_OUT on F.Cu"]
+    assert out[1].startswith("RF_A on F.Cu: width 0.250 mm") and out[2].startswith("RF_A on F.Cu: width 0.600 mm")
+    assert out[-1] == render("E_LID_HEIGHT", refs="SH1")  # `run` refuses on this gate entry; `cost` reports it
+
+
+def test_a_short_at_the_cut_gets_no_row_and_the_notes_say_why(tmp_path, capsys, mini_board_file):
+    # the reference grid holds every strip, so a solve fails only where other copper touches the line at its cut
+    seg = '(segment (start 5 {y}) (end 35 {y}) (width 0.3) (layer "F.Cu") (net "{net}") (uuid "{net}")) '
+    board = mini_board_file(seg.format(y=15, net="SIG") + seg.format(y=15.2, net="GND"))  # 0.1 mm overlap
+    pj = by_hand(tmp_path / "p" / "project.json", board, nets=("SIG",), stackup=kicad_default(0.8).to_json())
+    assert main(["cost", str(pj)]) == 0
+    out = capsys.readouterr().out.splitlines()
+    assert out[:2] == [HEADER, render("W_NO_OUTLINE")]  # the board's warnings, then the geometry's notes
+    assert len(out) == 3 and out[2].startswith("Nets ") and "touch inside the simulated region" in out[2]
+
+
+def test_a_geometry_error_is_printed_as_new_prints_errors(tmp_path, capsys):
+    pj = new_project(tmp_path, "coupon_ms")
+    d = load_project(pj)
+    save_project(pj, {**d, "chain": {**d["chain"], "nets": ["LNIE"]}})  # a net name edited by hand
+    assert main(["cost", str(pj)]) == 2
+    assert capsys.readouterr() == ("", render("E_CHAIN_OFF_OUTLINE", nets="LNIE") + "\n")
+
+
+@pytest.mark.parametrize(("name", "text", "why"), [
+    ("nope.json", None, "file not found"), ("folder", "", "not a file"), ("bad.json", '{"schema": 1,', "not JSON"),
+    ("latin1.json", b'{"schema": 1, "x": "\xe9"}', "not UTF-8 text")])
+def test_a_project_that_cannot_be_read_is_a_user_error(tmp_path, capsys, name, text, why):
+    pj = tmp_path / name
+    if text == "":
+        pj.mkdir()
+    elif text is not None:
+        pj.write_bytes(text if isinstance(text, bytes) else text.encode("utf-8"))
+    assert main(["cost", str(pj)]) == 2
+    assert capsys.readouterr() == (
+        "", f"Cannot read the project {pj}: {why}. Check the path, or fix project.json in a text editor.\n")

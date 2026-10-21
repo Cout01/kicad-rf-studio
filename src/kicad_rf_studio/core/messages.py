@@ -2,6 +2,7 @@
 """Every string a user can see is a code in CATALOG plus parameters. The English template is the
 gettext msgid, so a translation is a catalog file under kicad_rf_studio/locale."""
 import gettext
+import json
 from pathlib import Path
 
 CATALOG: dict[str, str] = {
@@ -25,6 +26,9 @@ CATALOG: dict[str, str] = {
     "E_CHAIN_OFF_OUTLINE": "The measured nets ({nets}) have copper outside the board outline, or no copper at all. Of several Edge.Cuts outlines in one file (a panel, a frame, a coupon beside the board), only the one that encloses the most is read: save the board in a file of its own, or delete the other outlines.",
     "E_EDGE_LINT": "A mesh line sits badly at the copper edge {edge_mm} mm ({axis}, {reason}) even after one re-mesh. Use --preset strict, or widen the gap at that edge.",
     "E_FIT2D": "The mesh misses the 2D reference on net {net} ({layer}) by {err_pct} % (limit {limit_pct} %). Use --preset strict.",
+    "I_2D_HEADER": "2D estimate: bends, vias, pads and parts not included",
+    "I_2D_SECTION": "{net} on {layer}: width {width_mm} mm, gap {gap_mm}, length {length_mm} mm — Z0 {z0} Ω, εeff {eeff} without mask; Z0 {z0_mask} Ω, εeff {eeff_mask} with mask",
+    "W_NO_SECTIONS": "The measured nets have no straight, axis-aligned sections, so there is no 2D estimate.",
     "W_PADSTACK": "Pad {pad} uses a per-layer padstack; its front shape is used on every layer.",
     "W_DUPLICATE_REF": "Footprints share the references {refs}; the copies were renamed with #2, #3 and so on. Annotate the board in KiCad to name them.",
     "E_BAD_FREQUENCY": 'Cannot read the frequency "{text}". Write it like 915MHz.',
@@ -39,6 +43,7 @@ CATALOG: dict[str, str] = {
     "E_SAME_PADS": "The chain starts and ends at the same pad, {name}. Give two different pads.",
     "E_NO_CHAIN": "No chain from {start} to {end}: the walk stopped at nets {reached}. A DNP part, a connector, a shield, a GND or power net, or a part with three or more pads is in the way.",
     "E_PROJECT_SCHEMA": "{path} uses project schema {found}; this version reads schema {expected}.",
+    "E_PROJECT_UNREADABLE": "Cannot read the project {path}: {reason}. Check the path, or fix project.json in a text editor.",
     "E_OUTPUT_PATH": "Cannot write {path}: {reason}. Choose another -o folder.",
     "E_PROJECT_EXISTS": "{path} already exists. Delete it, or give another -o folder.",
     "I_STACKUP": "Stackup: {source}, dielectric {thickness_mm} mm, εr {epsilon_r}; mask {mask_mm} mm, εr {mask_epsilon_r}.",
@@ -46,7 +51,7 @@ CATALOG: dict[str, str] = {
     "I_CHAIN": "Chain {start} → {end}: series {series}; shunt {shunt}.",
     "I_PORT": "Port {name}: signal {signal}, reference {reference} ({rule}).",
     "I_F0": "f0 {f0_mhz} MHz, with {harmonics} harmonics.",
-    "I_DEFAULTS": "Preset {preset} (provisional default), band factor {band_factor}, T_max {t_max_ns} ns, harmonics {harmonics}.",
+    "I_DEFAULTS": "Preset {preset} (provisional default), band factor {band_factor}, T_max {t_max_ns} ns, harmonics {harmonics}, mesh n {mesh_n}, region {expand_h} substrate heights past the chain.",
     "W_FILLS_AS_SAVED": "Fills as saved — refill (B) in KiCad and save if you changed copper.",
     "W_LID_HEIGHT_MISSING": "Shield {refs} found but no --lid-height was given; `run` will refuse until project.json has lid_height_mm.",
     "W_VALUE_UNREADABLE": "Cannot read the value of {refs}. Write values like 4.7pF, 4p7 or 15nH.",
@@ -66,16 +71,16 @@ def render(code: str, **params) -> str:
     return _translation.gettext(CATALOG[code]).format(**params)
 
 
-# The `reason` of E_BOARD_UNREADABLE and E_OUTPUT_PATH, by the class of the error. Never the system's own message: it
-# is long, in the system's language, and a UnicodeDecodeError's repr holds every byte of the file. NotADirectoryError
-# is a file where a folder of the path should be.
+# The `reason` of E_BOARD_UNREADABLE, E_PROJECT_UNREADABLE and E_OUTPUT_PATH, by the class of the error. Never the
+# system's own message: it is long, in the system's language, and a UnicodeDecodeError's repr holds every byte of the
+# file. NotADirectoryError is a file where a folder of the path should be.
 _REASONS = ((FileNotFoundError, "file not found"), (IsADirectoryError, "not a file"),
             (PermissionError, "permission denied"), ((FileExistsError, NotADirectoryError), "already exists as a file"),
-            (UnicodeError, "not UTF-8 text"))
+            (UnicodeError, "not UTF-8 text"), (json.JSONDecodeError, "not JSON"))
 
 
 def reason(error: Exception) -> str:
-    """A short English phrase for an OSError or a UnicodeError met reading or writing a file."""
+    """A short English phrase for an OSError, a UnicodeError or a JSON error met reading or writing a file."""
     return next((text for kind, text in _REASONS if isinstance(error, kind)), "cannot be read")
 
 

@@ -16,6 +16,8 @@ from kicad_rf_studio.core.project import board_file, board_hash, load_project
 
 FIX = Path(__file__).parent / "fixtures"
 LPF = FIX / "lpf915.kicad_pcb"
+DEFAULTS = ("Preset normal (provisional default), band factor 1.1, T_max 40 ns, harmonics 3, mesh n 2, "
+            "region 3 substrate heights past the chain.")  # spec 3.2: `new` prints every value it assumed
 
 
 def run_new(tmp_path, *extra, board="lpf915.kicad_pcb", start="U1.1", end="J1.1", out=None):
@@ -83,8 +85,8 @@ def test_project_layout(tmp_path):
     code, pj = run_new(tmp_path, "--lid-height", "2.5")
     d, board = load_project(pj), load_board(LPF)
     assert code == 0
-    assert set(d) == {"schema", "board", "f0_hz", "harmonics", "preset", "band_factor", "t_max_s", "stackup",
-                      "lid_height_mm", "classes", "chain", "ports"}
+    assert set(d) == {"schema", "board", "f0_hz", "harmonics", "preset", "band_factor", "t_max_s", "region", "mesh",
+                      "stackup", "lid_height_mm", "classes", "chain", "ports"}
     assert set(d["board"]) == {"path", "sha256"} and d["board"]["sha256"] == board_hash(LPF)
     assert d["stackup"] == board.stackup.to_json()
     assert d["chain"] == {
@@ -117,7 +119,8 @@ def test_options_reach_the_project_and_the_summary(tmp_path, capsys):
     assert code == 0 and (d["f0_hz"], d["harmonics"], d["preset"]) == (2.4e9, 5, "strict")
     lines = capsys.readouterr().out.splitlines()
     assert "f0 2400 MHz, with 5 harmonics." in lines
-    assert "Preset strict (provisional default), band factor 1.1, T_max 40 ns, harmonics 5." in lines
+    assert ("Preset strict (provisional default), band factor 1.1, T_max 40 ns, harmonics 5, mesh n 3, "
+            "region 3 substrate heights past the chain.") in lines
 
 
 def test_classes_are_the_computed_sets(tmp_path):
@@ -252,7 +255,7 @@ def test_the_printed_summary(tmp_path, monkeypatch, capsys):
         "Port P1: signal U1.1, reference U1.2 (ic).",
         "Port P2: signal J1.1, reference J1.2 (connector).",
         "f0 915 MHz, with 3 harmonics.",
-        "Preset normal (provisional default), band factor 1.1, T_max 40 ns, harmonics 3.",
+        DEFAULTS,
         f"Wrote {pj}."]
 
 
@@ -372,7 +375,7 @@ def test_ports_without_a_reference(tmp_path, capsys, mini_board_file):
         "Port P1: signal TP1.1, reference none (none).",
         "Port P2: signal TP2.1, reference none (none).",
         "f0 915 MHz, with 3 harmonics.",
-        "Preset normal (provisional default), band factor 1.1, T_max 40 ns, harmonics 3.",
+        DEFAULTS,
         "No reference found for TP1.1; set it in project.json before `run`.",
         "No reference found for TP2.1; set it in project.json before `run`.",
         f"Wrote {out / 'project.json'}."]
