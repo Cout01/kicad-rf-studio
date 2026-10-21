@@ -29,6 +29,7 @@ CATALOG: dict[str, str] = {
     "I_2D_HEADER": "2D estimate: bends, vias, pads and parts not included",
     "I_2D_SECTION": "{net} on {layer}: width {width_mm} mm, gap {gap_mm}, length {length_mm} mm — Z0 {z0} Ω, εeff {eeff} without mask; Z0 {z0_mask} Ω, εeff {eeff_mask} with mask",
     "W_NO_SECTIONS": "The measured nets have no straight, axis-aligned sections, so there is no 2D estimate.",
+    "W_2D_SHORT": "{net} on {layer}: width {width_mm} mm, length {length_mm} mm — other copper touches this line, so there is no 2D estimate. Check the copper in KiCad and refill zones (B).",
     "W_PADSTACK": "Pad {pad} uses a per-layer padstack; its front shape is used on every layer.",
     "W_DUPLICATE_REF": "Footprints share the references {refs}; the copies were renamed with #2, #3 and so on. Annotate the board in KiCad to name them.",
     "E_BAD_FREQUENCY": 'Cannot read the frequency "{text}". Write it like 915MHz.',

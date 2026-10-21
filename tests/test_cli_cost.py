@@ -7,6 +7,7 @@ from pathlib import Path
 import pytest
 
 from kicad_rf_studio.cli import main
+from kicad_rf_studio.core import cs2d
 from kicad_rf_studio.core.kicad import load_board
 from kicad_rf_studio.core.kicad.stackup import kicad_default
 from kicad_rf_studio.core.messages import render
@@ -15,6 +16,14 @@ from kicad_rf_studio.core.project import SCHEMA, board_hash, load_project, mesh_
 FIX = Path(__file__).parent / "fixtures"
 PADS = {"coupon_gcpw_pads": ("TP1.1", "TP2.1"), "lpf915": ("U1.1", "J1.1")}
 HEADER = "2D estimate: bends, vias, pads and parts not included"
+SEG = '(segment (start {} {}) (end {} {}) (width {}) (layer "{}") (net "{}") (uuid "{}")) '
+EDGE = '(gr_rect (start 0 0) (end 40 20) (stroke (width 0.05) (type default)) (fill no) (layer "Edge.Cuts")) '
+
+
+def zone(layer, net, x0, y0, x1, y1):
+    """A filled rectangular zone."""
+    pts = "(pts " + " ".join(f"(xy {x} {y})" for x, y in ((x0, y0), (x1, y0), (x1, y1), (x0, y1))) + ")"
+    return f'(zone (net "{net}") (layer "{layer}") (polygon {pts}) (filled_polygon (layer "{layer}") {pts})) '
 
 
 def by_hand(pj, board, nets=("LINE",), stackup=None, preset="normal"):
@@ -106,15 +115,40 @@ def test_rows_follow_the_chain_then_the_position_and_the_notes_come_last(tmp_pat
     assert out[-1] == render("E_LID_HEIGHT", refs="SH1")  # `run` refuses on this gate entry; `cost` reports it
 
 
-def test_a_short_at_the_cut_gets_no_row_and_the_notes_say_why(tmp_path, capsys, mini_board_file):
-    # the reference grid holds every strip, so a solve fails only where other copper touches the line at its cut
-    seg = '(segment (start 5 {y}) (end 35 {y}) (width 0.3) (layer "F.Cu") (net "{net}") (uuid "{net}")) '
-    board = mini_board_file(seg.format(y=15, net="SIG") + seg.format(y=15.2, net="GND"))  # 0.1 mm overlap
-    pj = by_hand(tmp_path / "p" / "project.json", board, nets=("SIG",), stackup=kicad_default(0.8).to_json())
-    assert main(["cost", str(pj)]) == 0
-    out = capsys.readouterr().out.splitlines()
-    assert out[:2] == [HEADER, render("W_NO_OUTLINE")]  # the board's warnings, then the geometry's notes
-    assert len(out) == 3 and out[2].startswith("Nets ") and "touch inside the simulated region" in out[2]
+def cost_on(tmp_path, capsys, board, nets=("SIG",)):
+    """`cost`'s exit code and stdout lines on a mini board, with a 0.8 mm kicad-default stackup."""
+    pj = by_hand(tmp_path / board.stem / "project.json", board, nets=nets, stackup=kicad_default(0.8).to_json())
+    return main(["cost", str(pj)]), capsys.readouterr().out.splitlines()
+
+
+SHORT = render("W_2D_SHORT", net="SIG", layer="F.Cu", width_mm="0.300", length_mm="30.000")
+
+
+def test_a_short_at_the_cut_gets_a_note_in_place_of_its_row(tmp_path, capsys, mini_board_file):
+    # a 2D solve cannot hold apart copper that touches the line at its cut, so the row says why it has no numbers
+    board = mini_board_file(SEG.format(5, 15, 35, 15, 0.3, "F.Cu", "SIG", "s") +
+                            SEG.format(5, 15.2, 35, 15.2, 0.3, "F.Cu", "GND", "g"))  # 0.1 mm overlap
+    assert cost_on(tmp_path, capsys, board) == (0, [
+        HEADER, SHORT, render("W_NO_OUTLINE"), render("E_SHORT_IN_ROI", nets="GND, SIG")])  # board, then geometry
+
+
+def test_copper_with_no_net_on_the_line_gets_a_note_in_place_of_its_row(tmp_path, capsys, mini_board_file):
+    # verifier: copper with no net shorts nothing in the connectivity check, but at the cut it is a conductor that
+    # touches the line; its row vanished with no message
+    rect = '(gr_rect (start 4 14.95) (end 36 15.05) (stroke (width 0)) (fill yes) (layer "F.Cu") (uuid "r1")) '
+    board = mini_board_file(SEG.format(5, 15, 35, 15, 0.3, "F.Cu", "SIG", "s") + rect)
+    assert cost_on(tmp_path, capsys, board) == (0, [
+        HEADER, SHORT, render("W_NETLESS_COPPER", uuid="r1", layer="F.Cu"), render("W_NO_OUTLINE")])
+
+
+def test_any_other_fault_in_the_2d_solve_is_an_internal_error(tmp_path, capsys, monkeypatch):
+    # verifier: the guard took every ValueError for a short, so a fault in the solve printed an empty table, exit 0
+    def broken(*args):
+        raise ValueError("operands could not be broadcast together")
+    monkeypatch.setattr(cs2d, "_capacitance", broken)
+    assert main(["cost", str(new_project(tmp_path, "coupon_gcpw_masked"))]) == 1
+    assert capsys.readouterr().err == render("E_INTERNAL", detail="ValueError: operands could not be broadcast "
+                                                                  "together") + "\n"
 
 
 def test_a_geometry_error_is_printed_as_new_prints_errors(tmp_path, capsys):
