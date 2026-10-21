@@ -6,6 +6,7 @@ import numpy as np
 import pytest
 import shapely
 
+from kicad_rf_studio.core.cs2d import solve
 from kicad_rf_studio.core.geometry import Geometry
 from kicad_rf_studio.core.geometry.copper import copper_pieces
 from kicad_rf_studio.core.geometry.mask import mask_model
@@ -100,6 +101,17 @@ def lint(lines, edges, d):
         if (off == 0).any() or near_in < d / 8 or near_out <= near_in:
             hits.append((e, inside))
     return hits
+
+
+def fit2d(geom, m):
+    """fit2d as R-P2-16 defines it, ahead of Task 12's gate: each section's Z0 from cs2d on the mesh lines across it
+    (the mask smeared over dz0), in % against cs2d on its own grid (the mask exact), in the same box."""
+    masked, out = geom.mask is not None, []
+    for sec in geom.sections:
+        cs = cross_section(sec, geom.pieces, geom.zs, geom.mask, "smeared" if masked else "none", m.dz0)
+        ref = solve(cross_section(sec, geom.pieces, geom.zs, geom.mask, "exact" if masked else "none")).z0
+        out.append(100 * (solve(cs, m.y if sec.axis == "x" else m.x, m.z).z0 / ref - 1))
+    return out
 
 
 def shared_nodes(m, geom, layer, a, b):
@@ -421,6 +433,33 @@ def test_the_fill_beside_a_pad_step_stays_over_d_over_3():
                     if np.diff(lines).min() < d / 3 - GRID_TOL or lint(lines, sorted(edges), d):
                         fails.append((d, round(float(s), 2), w, g, both))
     assert not fails
+
+
+PAD = ('\t(footprint "TestPoint:Pad"\n\t\t(layer "F.Cu")\n\t\t(uuid "00000000-0000-4000-8000-0000000000{k}0")\n'
+       '\t\t(at {x} 100)\n\t\t(attr smd)\n\t\t(pad "1" smd rect\n\t\t\t(at 0 0)\n\t\t\t(size 1 {w})\n'
+       '\t\t\t(layers "F.Cu" "F.Mask")\n\t\t\t(net 1 "LINE")\n\t\t\t(uuid "00000000-0000-4000-8000-0000000000{k}1")\n'
+       '\t\t)\n\t\t(embedded_fonts no)\n\t)\n')
+
+
+@pytest.mark.parametrize("n", [2, 3])
+@pytest.mark.parametrize("s", [0.02, 0.1])
+def test_end_pads_a_step_wider_keep_a_microstrip_under_the_fit2d_gate(tmp_path, s, n):
+    # verifier: LINE pads 20 µm wider each side than coupon_ms's 1.35 mm strip (d = 0.675) shared one cell with the
+    # strip's edge, whose inside line then went d/8 deep instead of d/4: fit2d −6.85 % at n = 2 and −4.27 % at n = 3
+    # (100 µm: −8.59 and −6.02 %), against −1.58 and −0.49 % without the pads
+    net = '\t(net 2 "GND")\n'
+    pads = "".join(PAD.format(k=k, x=x, w=round(1.35 + 2 * s, 6)) for k, x in ((1, 100), (2, 120)))
+    geom, prot = variant(tmp_path, "coupon_ms", net, net + pads)
+    m = build_mesh(geom, prot, n)
+    assert max(map(abs, fit2d(geom, m))) < 3 and not lint(m.x, m.edges["x"], m.d) and not lint(m.y, m.edges["y"], m.d)
+
+
+def test_lpf915_stays_under_the_fit2d_gate_at_n_2():
+    # verifier: d/4 kept in every shared cell fixes the pads above but puts lpf915's RF_B at +3.10 % (spec 5.4's pattern
+    # alone reads +3.74 to +4.90 % there, R-P2-21), so the shared cells beside the other side's edges stay shallow
+    for name in ("lpf915", "lpf915-45"):
+        geom, _ = geometry(name, "U1.1", "J1.1")
+        assert max(fit2d(geom, mesh(name, "U1.1", "J1.1"))) < 3
 
 
 @pytest.mark.parametrize("n", [2, 3])

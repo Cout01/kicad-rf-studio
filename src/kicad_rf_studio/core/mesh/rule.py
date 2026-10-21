@@ -4,7 +4,7 @@ merge, and the grading that keeps neighbouring cells within RATIO of each other.
 from __future__ import annotations
 
 import math
-from bisect import bisect_left, insort
+from bisect import bisect_left, bisect_right, insort
 from collections import defaultdict
 from collections.abc import Callable, Collection, Iterable, Mapping
 from typing import TYPE_CHECKING
@@ -21,6 +21,8 @@ RATIO = 1.3  # the largest ratio of neighbouring cells
 GROW = 1.25  # the ratio the rule grades at itself, under RATIO, so the 1e-6 mm grid cannot push a pair over it
 GRID_TOL = 3e-6  # mm: rounding to the 1e-6 mm grid moves big − RATIO·small by up to 2.3e-6 mm
 LEAD = 1 / 16  # ×d: the least lead of an edge's outside line over its inside line (the edge lint fails a tie)
+SERVE = 7 / 16  # ×d: same-side edges within this of a cell's deepest edge keep its d/4 inside line (a pair joins here)
+ALONE = 11 / 6  # ×d: where no edge of the other side is this near; there the gap step and collisions need d/8
 MAX_ROUNDS = 10_000  # _grade's guard; 3000 random axes (both passes of each) converged within 16 rounds
 
 Edge = tuple[float, int]  # a protected copper edge: its position and the sign that points into its metal
@@ -129,9 +131,13 @@ def _patterns(edges: Iterable[Edge], d: float, prefer: Collection[Edge] = (), fo
     line, placed so that it passes the edge lint of spec 5.5 (no line on it, the inside line d/8 or more in, the
     outside line farther than the inside one, here by LEAD·d); alone, these are edge_lines, d/4 in and 3d/4 out.
     - Same-side edges, deepest first, share one cell while no line fits between them with these margins (two edges
-      under 7d/16 apart) and they span d at most. Its inside line is d/4 inside the deepest, or d/8 where another edge
-      joins it, and its outside line 3d/4 outside the farthest, or further out so that this edge's outside line leads
-      (verifier: a shared pair failed the lint once the edges spanned d/2 or more). Between two cells one line serves
+      under 7d/16 apart) and they span d at most. A cell within SERVE·d, and ALONE·d from the other side's edges, keeps
+      its deepest edge's d/4 inside line, and 3d/4 out of it, or further so that the farthest edge leads (verifier:
+      pads 20 µm wider than coupon_ms's strip put its inside line d/8 deep at d = 0.675: fit2d −6.85 %, −1.58 %
+      without them). In other shared cells the inside line is d/8 inside the deepest, as the gap step and collisions
+      with the other side's lines need (d/4 failed the lint on 59 of 6000 random axes), and the outside line 3d/4
+      outside the farthest, or further out so that this edge's outside line leads (verifier: a shared pair failed the
+      lint once the edges spanned d/2 or more). Between two cells one line serves
       both: the outer edge's own inside line, else the inner edge's own outside line, else the middle of where a line
       fits; or as shallow as allowed when the outer edge's cell will grow. Edges 4d/3 apart or more keep their own
       lines. Past the span cap no line may fit (a staircase of close steps over d): the outer edge then keeps its own
@@ -170,17 +176,20 @@ def _patterns(edges: Iterable[Edge], d: float, prefer: Collection[Edge] = (), fo
         opp = sorted(side * e for e, s in edges if s != side)
         top, k = None, 0
         while k < len(us):
-            cell = [us[k]]
-            if top is None:  # a cell of its own: d/4 in, or as shallow as the lint allows if the next edge joins anyway
-                top = us[k] + d / 4
-                if k + 1 < len(us) and near(opp, us[k], us[k + 1]) and joins(top, us[k], us[k + 1]):
-                    top = us[k] + deep
-            k += 1
+            j, served = k + 1, False
+            if top is None:  # a cell of its own: d/4 in, also for the same-side edges within SERVE·d where it is alone
+                top, served = us[k] + d / 4, True
+                while j < len(us) and us[k] - us[j] <= SERVE * d and near(opp, us[j - 1], us[j]):
+                    j += 1
+                if j < len(us) and near(opp, us[j - 1], us[j]) and joins(top, us[j - 1], us[j]) or j > k + 1 and \
+                        bisect_left(opp, us[k] - ALONE * d) < bisect_right(opp, us[k] + ALONE * d):
+                    top, served, j = us[k] + deep, False, k + 1  # else d/8 in, as shallow as the lint allows
+            cell, k = us[k:j], j
             while k < len(us) and cell[0] - us[k] <= d and near(opp, cell[-1], us[k]) and joins(top, cell[-1], us[k]):
                 cell.append(us[k])  # no line fits before us[k], and the cell spans d at most
                 k += 1
             low = cell[-1]
-            bottom, shared = min(low - 3 * d / 4, 2 * low - top - lead), None
+            bottom, shared = min(top - d if served else low - 3 * d / 4, 2 * low - top - lead), None
             if k < len(us) and near(opp, low, us[k]) and bottom - (us[k] + d / 4) < d / 3:  # share one line with the
                 lo_w, hi_w = window(top, low, us[k])  # next cell, whose own inside line is near; empty past the cap
                 shallow = k + 1 < len(us) and near(opp, us[k], us[k + 1]) and joins(us[k] + d / 4, us[k], us[k + 1])
