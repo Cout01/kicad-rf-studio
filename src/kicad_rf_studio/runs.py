@@ -77,9 +77,10 @@ def setup_openems(folder: Path) -> list[tuple[str, dict]]:
     has_wheels = all(any(wheels.glob(f"{name}-*-{tag}-*.whl")) for name in ("openems", "csxcad"))
     if not (has_wheels and (folder / "openEMS.exe").exists()):
         raise KrsError("E_SETUP_OPENEMS_DIR", dir=str(folder), tag=tag)
-    # --no-index: neither name is claimed on PyPI, so pip must never look there for them
-    pip = subprocess.run([sys.executable, "-m", "pip", "install", "--no-index", "--no-deps", "--find-links",
-                          str(wheels), "openEMS", "CSXCAD"])
+    # --no-index: neither name is claimed on PyPI, so pip must never look there for them. --force-reinstall: else pip
+    # keeps an installed openEMS of another version while settings.json names this folder
+    pip = subprocess.run([sys.executable, "-m", "pip", "install", "--no-index", "--no-deps", "--force-reinstall",
+                          "--find-links", str(wheels), "openEMS", "CSXCAD"])
     if pip.returncode:
         raise KrsError("E_SETUP_OPENEMS_PIP", exit_code=pip.returncode)
     settings = load_settings()

@@ -35,8 +35,8 @@ def calls(tmp_path, monkeypatch):
 def test_setup_openems_installs_both_wheels_offline_and_records_the_folder(tmp_path, calls, capsys):
     pkg = package(tmp_path)
     assert main(["setup-openems", str(pkg)]) == 0
-    assert calls[0] == [sys.executable, "-m", "pip", "install", "--no-index", "--no-deps", "--find-links",
-                        str(pkg / "python"), "openEMS", "CSXCAD"]
+    assert calls[0] == [sys.executable, "-m", "pip", "install", "--no-index", "--no-deps", "--force-reinstall",
+                        "--find-links", str(pkg / "python"), "openEMS", "CSXCAD"]
     assert runs.load_settings() == {"openems_dir": str(pkg.resolve())}
     assert capsys.readouterr().out.splitlines()[-1] == render(
         "I_OPENEMS_INSTALLED", openems="0.37.0", csxcad="0.7.0", dir=str(pkg.resolve()),
