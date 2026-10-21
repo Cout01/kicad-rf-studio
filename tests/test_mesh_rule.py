@@ -476,6 +476,20 @@ def test_narrower_end_pads_keep_a_microstrip_under_the_fit2d_gate(tmp_path, name
     assert max(map(abs, fit2d(geom, m))) < 3 and not lint(m.x, m.edges["x"], m.d) and not lint(m.y, m.edges["y"], m.d)
 
 
+@pytest.mark.parametrize(("w", "h", "pad", "length"), [(1.2, 0.6, 1.0, 1.6), (1.5, 0.9, 1.8, 1.0)])
+def test_end_pads_exactly_d_over_3_off_the_strip_pass_the_lint(tmp_path, w, h, pad, length):
+    # verifier: d = h/2 (R-P2-23) on a round stackup makes a pad step of 100 µm on 0.6 mm, or 150 µm on 0.9 mm, exactly
+    # d/3, where float noise decided whether two pinned lines collided: E_EDGE_LINT after the one re-mesh (the 1.2 mm
+    # strip's re-mesh read −13.73 % in fit2d), where f80b776 and 5b9b8fd meshed both boards cleanly
+    net = '\t(net 2 "GND")\n'
+    pads = "".join(PAD.format(k=k, x=x, L=length, w=pad) for k, x in ((1, 100), (2, 120)))
+    geom, prot = variant(tmp_path, "coupon_ms", net, net + pads, more=[("(width 1.35)", f"(width {w})"),
+                                                                       ("(thickness 0.71)", f"(thickness {h})")])
+    m = build_mesh(geom, prot, 2)
+    assert m.d == pytest.approx(h / 2) and abs(abs(pad - w) / 2 - m.d / 3) < 1e-9
+    assert max(map(abs, fit2d(geom, m))) < 3 and not lint(m.x, m.edges["x"], m.d) and not lint(m.y, m.edges["y"], m.d)
+
+
 @pytest.mark.parametrize("n", [2, 3])
 def test_a_wider_segment_of_the_strip_keeps_both_sections_under_the_fit2d_gate(tmp_path, n):
     # round 4 (R-P2-25's ratchet): a 1.45 mm segment of coupon_ms's 1.35 mm strip is a second section, whose cut edges
@@ -588,6 +602,17 @@ def test_a_shared_cell_spans_d_at_most():
     assert lint(lines, edges, 0.075) and np.diff(lines[(lines > 109.8) & (lines < 110.4)]).max() < 2 * 0.075
     lines, _ = xy_lines(edges, (100.0, 120.0), (80.0, 140.0), [], 0.05, 2.36)
     assert not lint(lines, edges, 0.05)
+
+
+def test_lines_exactly_d_over_3_apart_stay_apart():
+    # verifier: a strip edge and the GND edge facing it, each with a same-side step of exactly d/3 outside it (pads d/3
+    # wider, the pour following them). Two pinned lines on the 1e-6 mm grid d/3 apart came out 0.04999999999999716
+    # apart in floats, under d/3, so they merged at their mean, outside the strip's edge, and the lint failed even
+    # after its one re-mesh (E_EDGE_LINT); steps of 0.024997 and 0.025005 pass
+    d = 0.075
+    edges = [(109.825, -1), (109.85, -1), (109.975, 1), (110.0, 1)]
+    lines, _ = xy_lines(edges, (100.0, 120.0), (80.0, 140.0), [], d, 2.36, [(109.85, -1), (110.0, 1)])
+    assert not lint(lines, edges, d) and np.diff(lines).min() >= d / 3 - GRID_TOL
 
 
 @pytest.mark.parametrize("g", [0.1, 0.3, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0, 1.1, 1.3, 1.5, 1.7, 2.0])

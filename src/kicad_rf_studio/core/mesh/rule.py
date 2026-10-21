@@ -20,6 +20,7 @@ if TYPE_CHECKING:
 RATIO = 1.3  # the largest ratio of neighbouring cells
 GROW = 1.25  # the ratio the rule grades at itself, under RATIO, so the 1e-6 mm grid cannot push a pair over it
 GRID_TOL = 3e-6  # mm: rounding to the 1e-6 mm grid moves big − RATIO·small by up to 2.3e-6 mm
+EPS = 1e-9  # mm: float noise in the distance of two lines on the 1e-6 mm grid; exactly a merge distance apart is apart
 LEAD = 1 / 16  # ×d: the least lead of an edge's outside line over its inside line (the edge lint fails a tie)
 SERVE = 7 / 16  # ×d: same-side edges within this of a cell's deepest edge keep its d/4 inside line (a pair joins here)
 CUT_SERVE = 1 / 3  # ×d: SERVE for a cut edge's cell: from here the d/8 line splits the pair, which reads better
@@ -67,7 +68,7 @@ def merge(lines: Iterable[float], pinned: Mapping[float, float] | Collection[flo
         r, v = pins[k]
         run = [v]
         k += 1
-        while k < len(pins) and pins[k][0] == r and pins[k][1] - run[-1] < tol:
+        while k < len(pins) and pins[k][0] == r and pins[k][1] - run[-1] < tol - EPS:
             run.append(pins[k][1])
             k += 1
         _add(kept, [round(sum(run) / len(run), 6)], tol)
@@ -239,7 +240,7 @@ def _patterns(edges: Iterable[Edge], d: float, prefer: Collection[Edge] = (), fo
     while k < len(lines):
         run = [lines[k]]
         k += 1
-        while k < len(lines) and lines[k] - run[-1] < d / 3:
+        while k < len(lines) and lines[k] - run[-1] < d / 3 - EPS:
             run.append(lines[k])
             k += 1
         r = min(map(rank, run))
@@ -262,7 +263,7 @@ def _add(kept: list[float], lines: Iterable[float], tol: float) -> list[float]:
     """`kept`, sorted, with each of `lines` added where it lies at least `tol` from every kept line."""
     for v in lines:
         i = bisect_left(kept, v)
-        if (i == 0 or v - kept[i - 1] >= tol) and (i == len(kept) or kept[i] - v >= tol):
+        if (i == 0 or v - kept[i - 1] >= tol - EPS) and (i == len(kept) or kept[i] - v >= tol - EPS):
             insort(kept, v)
     return kept
 
