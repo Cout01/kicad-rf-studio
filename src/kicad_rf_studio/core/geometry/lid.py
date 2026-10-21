@@ -31,7 +31,7 @@ def find_lid(board: Board, classes: Classes, region: Region, zs: tuple[Slab, ...
     """The lid over the ROI and its gate entry. A shield on the top side covers the ROI when its plate, the convex hull
     of its pads on the top copper, overlaps it. The lid is on when harmonics are shown, unless project.json's `lid`
     says otherwise (plan Decisions); then it is lid_height_mm high, and E_LID_HEIGHT names the covering shields when
-    that is missing (plan 3's `run` refuses on it)."""
+    that is missing or not finite and above 0, as `new --lid-height` checks it (plan 3's `run` refuses on it)."""
     on = project.get("lid")
     if not (project["harmonics"] > 1 if on is None else on):
         return None, []
@@ -46,13 +46,14 @@ def find_lid(board: Board, classes: Classes, region: Region, zs: tuple[Slab, ...
             covering[ref] = (area, plate, frame)
     if not covering:
         return None, []
-    if project.get("lid_height_mm") is None:
+    height = project.get("lid_height_mm")  # hand-edited: 0 put the plate on the traces, NaN on the bottom wall
+    if height is None or not 0 < height < np.inf:
         return None, [("E_LID_HEIGHT", {"refs": ", ".join(covering)})]
     # ponytail: one lid, the shield over most of the ROI; a second one over it is left out (Geometry holds one Lid)
     ref = max(covering, key=lambda r: covering[r][0])
     _, plate, frame = covering[ref]
     return Lid(ref, clean(plate, region.crop).geoms[0], clean(frame, region.crop), top.z1,
-               round(top.z1 + project["lid_height_mm"], 6)), []
+               round(top.z1 + height, 6)), []
 
 
 def snap_lid(lid: Lid, z: np.ndarray) -> Lid:

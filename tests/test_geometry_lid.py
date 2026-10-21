@@ -46,6 +46,11 @@ def test_no_height_reports():
         "project with --lid-height.")
 
 
+@pytest.mark.parametrize("height", [0, -1.0, np.nan, np.inf])  # 0 put the plate on F.Cu's traces, NaN on the MUR
+def test_a_height_that_is_not_finite_and_above_0_is_missing(height):  # as `new --lid-height` refuses it (cli._positive)
+    assert find_lid(*setup(*LPF), {**P, "lid_height_mm": height}) == (None, [("E_LID_HEIGHT", {"refs": "SH1"})])
+
+
 def test_lid_off_for_fundamental_only():
     assert find_lid(*setup(*LPF), {**P, "lid_height_mm": 2.0, "harmonics": 1})[0] is None
     assert find_lid(*setup(*LPF), {**P, "lid_height_mm": None, "harmonics": 1}) == (None, [])  # off, it needs none
