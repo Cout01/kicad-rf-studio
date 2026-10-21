@@ -479,9 +479,9 @@ def test_narrower_end_pads_keep_a_microstrip_under_the_fit2d_gate(tmp_path, name
 @pytest.mark.parametrize("name", ["coupon_ms", "coupon_ms_masked"])
 def test_a_tilted_piece_of_a_cut_edge_is_a_cut_edge(tmp_path, name):
     # verifier: two LINE pads 0.9 x 2.2 mm mid-line break the strip's edge into pieces, and the piece that ends on the
-    # round cap is tilted by the 10 µm simplification, so it sits at its middle 1.6 µm deeper than the cut edge. Not cut,
-    # it was the cell's deepest edge and the cell fell back to the shared cell (R-P2-24): fit2d −4.21 % (masked −3.67 %)
-    # at n = 2, −1.49 % (−0.93 %) with the piece counted as the cut edge it is part of
+    # round cap is tilted by the 10 µm simplification, so it sits at its middle 1.6 µm deeper than the cut edge. Not
+    # cut, it was the cell's deepest edge and the cell fell back to the shared cell (R-P2-24): fit2d −4.21 % (masked
+    # −3.67 %) at n = 2, −1.49 % (−0.93 %) with the piece counted as the cut edge it is part of
     net = '\t(net 2 "GND")\n'
     pads = "".join(PAD.format(k=k, x=x, L=0.9, w=2.2) for k, x in ((3, 109.2), (4, 110.8)))
     geom, prot = variant(tmp_path, name, net, net + pads)
@@ -519,6 +519,15 @@ def test_a_wider_segment_of_the_strip_keeps_both_sections_under_the_fit2d_gate(t
     assert max(map(abs, fit2d(geom, m))) < 3 and not lint(m.x, m.edges["x"], m.d) and not lint(m.y, m.edges["y"], m.d)
 
 
+def fill_around(keep, g):
+    """The filled polygons, as KiCad writes them, of an F.Cu pour over the coupons' board that stays g off `keep`."""
+    pour = shapely.get_parts(shapely.box(99.5005, 95.5005, 120.4995, 104.4995).difference(keep.buffer(g, quad_segs=16)))
+    assert not any(p.interiors for p in pour)
+    return "".join('\t\t(filled_polygon\n\t\t\t(layer "F.Cu")\n\t\t\t(pts\n'
+                   + "".join(f"\t\t\t\t(xy {x:.6f} {y:.6f})\n" for x, y in p.exterior.coords[:-1]) + "\t\t\t)\n\t\t)\n"
+                   for p in pour)
+
+
 def gcpw_pads_following(tmp_path, s):
     """coupon_gcpw_pads with its LINE pads 0.6 + 2s wide (narrower when s < 0) and the F.Cu GND pour refilled to follow
     them at the fill's 0.1505 mm gap (the round-3 recheck's (i))."""
@@ -528,15 +537,32 @@ def gcpw_pads_following(tmp_path, s):
     w = round(0.6 + 2 * s, 6)
     keep = shapely.union_all([shapely.LineString([(100, 100), (120, 100)]).buffer(0.3, quad_segs=16),
                               shapely.box(99.5, 100 - w / 2, 100.5, 100 + w / 2),
-                              shapely.box(119.5, 100 - w / 2, 120.5, 100 + w / 2)]).buffer(0.1505, quad_segs=16)
-    fill = "".join('\t\t(filled_polygon\n\t\t\t(layer "F.Cu")\n\t\t\t(pts\n'
-                   + "".join(f"\t\t\t\t(xy {x:.6f} {y:.6f})\n" for x, y in p.exterior.coords[:-1]) + "\t\t\t)\n\t\t)\n"
-                   for p in shapely.get_parts(shapely.box(99.5005, 95.5005, 120.4995, 104.4995).difference(keep)))
+                              shapely.box(119.5, 100 - w / 2, 120.5, 100 + w / 2)])
     assert text.count(pad) == 2 and '(layer "F.Cu")' in text[z0:fp0]
     path = tmp_path / "coupon_gcpw_pads.kicad_pcb"
-    path.write_text((text[:fp0] + fill + "\t)\n" + text[z1:]).replace(pad, pad.replace("1 1", f"1 {w}")),
-                    encoding="utf-8")
+    text = text[:fp0] + fill_around(keep, 0.1505) + "\t)\n" + text[z1:]
+    path.write_text(text.replace(pad, pad.replace("1 1", f"1 {w}")), encoding="utf-8")
     return build(path)
+
+
+ZONE = ('\t(zone\n\t\t(net 2)\n\t\t(net_name "GND")\n\t\t(layer "F.Cu")\n'
+        '\t\t(uuid "00000000-0000-4000-8000-00000000f00d")\n\t\t(hatch edge 0.5)\n'
+        '\t\t(connect_pads yes\n\t\t\t(clearance 0.15)\n\t\t)\n\t\t(min_thickness 0.25)\n'
+        '\t\t(filled_areas_thickness no)\n\t\t(fill yes\n\t\t\t(thermal_gap 0.5)\n'
+        '\t\t\t(thermal_bridge_width 0.5)\n\t\t)\n\t\t(polygon\n\t\t\t(pts\n'
+        '\t\t\t\t(xy 99.5 95.5) (xy 120.5 95.5) (xy 120.5 104.5) (xy 99.5 104.5)\n\t\t\t)\n\t\t)\n')
+
+
+def ms_pour_following(tmp_path, name, w, pad, g):
+    """coupon_ms or coupon_ms_masked with its strip w wide, LINE pads (length, width) on both ends and an F.Cu GND pour
+    that follows the LINE copper, pads included, g away, as KiCad's fill does."""
+    keep = shapely.union_all([shapely.LineString([(100, 100), (120, 100)]).buffer(w / 2, quad_segs=16),
+                              *(shapely.box(x - pad[0] / 2, 100 - pad[1] / 2, x + pad[0] / 2, 100 + pad[1] / 2)
+                                for x in (100, 120))])
+    net, zone = '\t(net 2 "GND")\n', "\t(zone\n"
+    pads = "".join(PAD.format(k=k, x=x, L=pad[0], w=pad[1]) for k, x in ((1, 100), (2, 120)))
+    return variant(tmp_path, name, net, net + pads,
+                   more=[("(width 1.35)", f"(width {w})"), (zone, ZONE + fill_around(keep, g) + "\t)\n" + zone)])
 
 
 @pytest.mark.parametrize(("s", "n"), [(-0.02, 2), (0.018, 2), (-0.015, 3)])
@@ -548,6 +574,33 @@ def test_pads_and_the_pour_that_follows_them_keep_a_gcpw_under_the_fit2d_gate(tm
     geom, prot = gcpw_pads_following(tmp_path, s)
     m = build_mesh(geom, prot, n)
     assert max(map(abs, fit2d(geom, m))) < 3 and not lint(m.x, m.edges["x"], m.d) and not lint(m.y, m.edges["y"], m.d)
+
+
+@pytest.mark.parametrize(("name", "w", "pad", "g", "n"), [
+    ("coupon_ms", 1.35, (1.0, 1.55), 0.7, 2), ("coupon_ms_masked", 1.35, (1.0, 1.45), 0.5, 2),
+    ("coupon_ms", 0.6, (1.0, 0.7), 0.6, 2), ("coupon_ms", 0.6, (1.0, 0.7), 0.6, 3)])
+def test_a_pour_that_follows_the_pads_over_a_substrate_a_few_cells_deep_passes_the_fit2d_gate(tmp_path, name, w, pad,
+                                                                                            g, n):
+    # verifiers: round 4's facing rule gave every cut edge facing the other side's metal within 4d the shallow line,
+    # and as a section's gap is n·d whenever it sets d, it could not tell coupon_gcpw_pads' 0.15 mm gap from a pour
+    # 0.5-1.4 mm off a microstrip or a 0.6 mm CPW gap, where h is only 2-3 cells deep and the deep line reads best:
+    # fit2d −5.63 % (pour 0.7 mm off 1.55 mm pads), −3.01 % (masked, 0.5 mm off 1.45 mm pads), −7.57 / −3.34 % (a 0.6 mm
+    # strip, a 0.6 mm gap and 0.7 mm pads at n = 2 / 3), where 5b9b8fd's served cell read +0.20, +2.47, +1.70, +1.46 %
+    geom, prot = ms_pour_following(tmp_path, name, w, pad, g)
+    m = build_mesh(geom, prot, n)
+    assert max(map(abs, fit2d(geom, m))) < 3 and not lint(m.x, m.edges["x"], m.d) and not lint(m.y, m.edges["y"], m.d)
+
+
+@pytest.mark.parametrize(("h", "inside"), [(None, 1 / 8), (2.0, 1 / 4), (4.1, 1 / 4), (4.3, 1 / 8), (9.5, 1 / 8)])
+def test_a_facing_cut_edge_keeps_its_d_over_4_line_over_a_substrate_under_4_2_cells(h, inside):
+    # the facing rule (FACE) holds over a substrate 4.2 cells deep or more (THIN), as on coupon_gcpw_pads and lpf915
+    # (h/d = 9.5): a strip's cut edge with a pad step 0.2d outside it, facing its GND edge 2d away, with the pour
+    # following the pad, gets its inside line d/4 in under 4.2 cells, d/8 from there on and without h
+    d = 0.075
+    edges = [(110.0, -1), (110.015, -1), (110.15, 1), (110.165, 1)]
+    lines, _ = xy_lines(edges, (100.0, 120.0), (80.0, 140.0), [], d, 2.36, [(110.0, -1), (110.15, 1)],
+                        **({} if h is None else {"h": h * d}))
+    assert 110.0 - lines[lines < 110.0].max() == pytest.approx(inside * d, abs=5e-6) and not lint(lines, edges, d)
 
 
 def test_a_cell_off_the_cuts_keeps_its_d_over_4_line_beside_a_gap():

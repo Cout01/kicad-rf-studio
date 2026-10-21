@@ -68,7 +68,7 @@ def build_mesh(geom: Geometry, prot: Protected, n: int,
     for k, axis in enumerate("xy"):
         extent = (box[k], box[k + 2]) if not np.isnan(box[k]) else (np.inf, -np.inf)
         lines[axis], pinned[axis] = xy_lines(edges[axis], extent, walls[2 * k:2 * k + 2], free[:, k], d, coarse,
-                                             prefer[axis], force[axis])
+                                             prefer[axis], force[axis], h)
     dz = dz0(t_m, d, h)
     z = z_lines(zs, d, t_m, h, walls[4:], coarse=coarse)
     cu = [s for s in zs if s.kind == "copper"]

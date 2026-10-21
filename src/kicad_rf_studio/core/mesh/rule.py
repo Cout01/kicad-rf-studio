@@ -26,6 +26,7 @@ SERVE = 7 / 16  # ×d: same-side edges within this of a cell's deepest edge keep
 CUT_SERVE = 1 / 3  # ×d: SERVE for a cut edge's cell: from here the d/8 line splits the pair, which reads better
 ALONE = 11 / 6  # ×d: where no edge of the other side is this near; there the gap step and collisions need d/8
 FACE = 4  # ×d: a cut edge that faces the other side's metal across a gap this narrow (n·d at a section) wants d/8
+THIN = 4.2  # ×d: a substrate under this deep keeps such an edge's d/4 line: much of its field goes down, as a strip's
 MAX_ROUNDS = 10_000  # _grade's guard; 3000 random axes (both passes of each) converged within 16 rounds
 
 Edge = tuple[float, int]  # a protected copper edge: its position and the sign that points into its metal
@@ -92,11 +93,12 @@ def z_lines(zs: tuple[Slab, ...], d: float, t_m: float, h: float, z_walls: tuple
 
 
 def xy_lines(edges: list[Edge], extent: tuple[float, float], walls: tuple[float, float], free: Iterable[float],
-             d: float, coarse: float, prefer: Collection[Edge] = (), force: Collection[Edge] = ()
-             ) -> tuple[np.ndarray, np.ndarray]:
+             d: float, coarse: float, prefer: Collection[Edge] = (), force: Collection[Edge] = (),
+             h: float = math.inf) -> tuple[np.ndarray, np.ndarray]:
     """The lines of one in-plane axis from wall to wall, and the rule's own lines among them: the walls, the edge
     lines, the protected extent's ends and its fill.
-    - Every protected copper edge, (position, inside sign), gets its lines from _patterns (`prefer`, `force`: there).
+    - Every protected copper edge, (position, inside sign), gets its lines from _patterns (`prefer`, `force` and `h`,
+      the substrate under the measured nets: there).
     - The `extent` (lo, hi; empty when lo > hi) is filled at d or finer, graded from its smallest cells. Its ends are
       lines but in an edge's cell (between the pinned lines around it), where one would sit on the edge or nearer it
       than its inside line, and the lint's one re-mesh could not move it (verifier).
@@ -105,7 +107,7 @@ def xy_lines(edges: list[Edge], extent: tuple[float, float], walls: tuple[float,
       from every other line: a vertex line nearer than that would only make the grading refine back towards d.
     - smooth_mesh_lines grades the rest up to `coarse`, and _grade holds every pair of neighbouring cells within RATIO
       but where the larger holds an edge, which its pattern fixes. Only these lines (and the fill) are re-placed."""
-    pins = _patterns(edges, d, prefer, force) | dict.fromkeys(walls, 0.0)
+    pins = _patterns(edges, d, prefer, force, h) | dict.fromkeys(walls, 0.0)
     lo, hi = (round(v, 6) for v in extent)
     at = np.array(sorted(pins))
     cells = set(np.searchsorted(at, [e for e, _ in edges]).tolist())
@@ -129,8 +131,8 @@ def xy_lines(edges: list[Edge], extent: tuple[float, float], walls: tuple[float,
     return lines, np.union1d(base, lines[(lines >= lo) & (lines <= hi)])
 
 
-def _patterns(edges: Iterable[Edge], d: float, prefer: Collection[Edge] = (), force: Collection[Edge] = ()
-              ) -> dict[float, float]:
+def _patterns(edges: Iterable[Edge], d: float, prefer: Collection[Edge] = (), force: Collection[Edge] = (),
+              h: float = math.inf) -> dict[float, float]:
     """The pinned lines of protected copper `edges`, each with its rank (merge's: the distance from its nearest own
     edge), none closer than d/3 to another. Each edge gets an inside line, the nearest into its metal, and an outside
     line, placed so that it passes the edge lint of spec 5.5 (no line on it, the inside line d/8 or more in, the
@@ -141,9 +143,11 @@ def _patterns(edges: Iterable[Edge], d: float, prefer: Collection[Edge] = (), fo
       pads 20 µm wider than coupon_ms's strip put its inside line d/8 deep at d = 0.675: fit2d −6.85 %, −1.58 %
       without them). Where it holds an edge of `prefer` (a cut edge, which fit2d measures), the cut edge's pattern
       wins (R-P2-24): the cell is served only when its deepest edge is a cut edge, within CUT_SERVE·d (from d/3 on
-      the d/8 line splits the pair: 150 µm end pads at d = h/2 read −0.36 %, served −3.16 %), and no edge of the
-      other side faces it across a gap within FACE·d: a coplanar edge reads best with the shallow line, a microstrip
-      edge, facing open space, with d/4 (recheck (i): pads with the pour following them read +5.11 % served); several
+      the d/8 line splits the pair: 150 µm end pads at d = h/2 read −0.36 %, served −3.16 %), and, where the substrate
+      `h` is THIN·d deep or more, no edge of the other side faces it across a gap within FACE·d: a coplanar edge reads
+      best with the shallow line, a microstrip edge, facing open space, with d/4 (recheck (i): pads with the pour
+      following them read +5.11 % served at h/d = 9.5), and so does one that faces metal over a substrate a few cells
+      deep, whose field goes down too (verifiers: a pour 0.7 mm off coupon_ms's strip read −5.63 % at h/d = 2); several
       cut edges get the pattern centred between the deepest and the farthest (a wider segment of the strip: +4.49 %
       with the deepest's). In other shared cells the inside line is d/8 inside the deepest, as the gap step and
       collisions with the other side's lines need (d/4 failed the lint on 59 of 6000 random axes), and the outside
@@ -194,9 +198,10 @@ def _patterns(edges: Iterable[Edge], d: float, prefer: Collection[Edge] = (), fo
                 while j < len(us) and us[k] - us[j] <= reach and near(opp, us[j - 1], us[j]):
                     j += 1
                 cut = [(side * u, side) in prefer for u in us[k:j]]
+                faces = h >= THIN * d and bisect_left(opp, us[k] - FACE * d) < bisect_left(opp, us[k])
                 if j < len(us) and near(opp, us[j - 1], us[j]) and joins(top, us[j - 1], us[j]) or j > k + 1 and (
                         bisect_left(opp, us[k] - ALONE * d) < bisect_right(opp, us[k] + ALONE * d)
-                        or any(cut) and not (cut[0] and bisect_left(opp, us[k] - FACE * d) == bisect_left(opp, us[k]))):
+                        or any(cut) and (not cut[0] or faces)):
                     top, served, j = us[k] + deep, False, k + 1  # else d/8 in, as shallow as the lint allows
                 elif sum(cut) > 1:  # several cut edges: their pattern, centred between the deepest and the farthest
                     top = max(top - (us[k] - us[k + max(i for i, c in enumerate(cut) if c)]) / 2, us[k] + deep)
