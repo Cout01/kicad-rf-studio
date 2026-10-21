@@ -22,7 +22,7 @@ CATALOG: dict[str, str] = {
     "W_SHORT_IN_MARGIN": "Nets {nets} touch in the margin of the simulated region, which may affect the result. Check the copper in KiCad and refill zones (B).",
     "W_STAIRCASED": "Net {net} has copper that is not axis-aligned (45° segments or arcs); it is staircased and its accuracy is not validated. For a validated result, route it with horizontal and vertical tracks.",
     "E_LID_HEIGHT": "Shield {refs} covers the simulated region but project.json has no lid_height_mm. Set it, or re-create the project with --lid-height.",
-    "E_CHAIN_OFF_OUTLINE": "The measured nets ({nets}) have no copper inside the board outline. Of several Edge.Cuts outlines in one file (a panel, a frame, a coupon beside the board), only the one that encloses the most is read: save the board in a file of its own, or delete the other outlines.",
+    "E_CHAIN_OFF_OUTLINE": "The measured nets ({nets}) have copper outside the board outline, or no copper at all. Of several Edge.Cuts outlines in one file (a panel, a frame, a coupon beside the board), only the one that encloses the most is read: save the board in a file of its own, or delete the other outlines.",
     "E_EDGE_LINT": "A mesh line sits badly at the copper edge {edge_mm} mm ({axis}, {reason}) even after one re-mesh. Use --preset strict, or widen the gap at that edge.",
     "E_FIT2D": "The mesh misses the 2D reference on net {net} ({layer}) by {err_pct} % (limit {limit_pct} %). Use --preset strict.",
     "W_PADSTACK": "Pad {pad} uses a per-layer padstack; its front shape is used on every layer.",

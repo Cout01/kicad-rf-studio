@@ -253,6 +253,25 @@ def test_a_chain_off_the_outline_is_an_error(mini_board, x0, ports):
     assert e.value.code == "E_CHAIN_OFF_OUTLINE" and e.value.params == {"nets": "SIG"}
 
 
+@pytest.mark.parametrize("other", [
+    (100, 0, 110, 10),  # a coupon past the crop: its run was a section, and fit2d's reference solve a raw ValueError
+    (50, 0, 60, 10),  # a coupon in the crop: its run was measured and gated, and the ROI ran out to the board's edge
+    (42, 0, 82, 30),  # a panel, a second board of the same size and nets: its run was measured
+])
+def test_chain_copper_on_another_outline_is_an_error(mini_board, other):
+    # R-P2-14: copy and paste keeps a track's net, so the chain's nets also have copper on the other loop
+    body = edge_cuts((0, 0, 40, 30), other) + track(5, 35, 15) + track(other[0] + 1, other[2] - 1, 5, "t2")
+    with pytest.raises(KrsError) as e:
+        build_geometry(mini_board(body), mini())
+    assert e.value.code == "E_CHAIN_OFF_OUTLINE" and e.value.params == {"nets": "SIG"}
+    assert str(e.value).startswith("The measured nets (SIG) have copper outside the board outline, or no copper")
+
+
+def test_chain_copper_partly_off_the_outline_builds(mini_board):  # as an edge-launch pad, a track run past the edge
+    body = edge_cuts((0, 0, 40, 30)) + track(10, 41, 15)
+    assert [s.net for s in build_geometry(mini_board(body), mini()).sections] == ["SIG"]
+
+
 @pytest.mark.parametrize("outline", [True, False])
 def test_a_chain_with_no_copper_is_an_error(mini_board, outline):  # a net name edited by hand in project.json
     body = edge_cuts((0, 0, 40, 30)) * outline + track(10, 30, 15)
