@@ -104,13 +104,18 @@ class Chain:
     shunt: tuple[ChainPart, ...]
 
 
+def unknown_pad(board: Board, name: str) -> KrsError:
+    """E_UNKNOWN_PAD for `name`, which no pad with copper is called, with up to five pad names close to it."""
+    known = {p.name for fp in board.footprints.values() for p in _copper(fp)}
+    return KrsError("E_UNKNOWN_PAD", name=name,
+                    candidates=", ".join(difflib.get_close_matches(name, known, n=5)) or "none")
+
+
 def _resolve(board: Board, classes: Classes, name: str) -> list[Pad]:
     """The pads with copper called `name` ("REF.NUM"). They sit on one net, which a chain may touch."""
     pads = [p for p in board.pads(name) if p.layers]
     if not pads:
-        known = {p.name for fp in board.footprints.values() for p in _copper(fp)}
-        raise KrsError("E_UNKNOWN_PAD", name=name,
-                       candidates=", ".join(difflib.get_close_matches(name, known, n=5)) or "none")
+        raise unknown_pad(board, name)
     nets = {p.net for p in pads}
     if len(nets) > 1:
         raise KrsError("E_AMBIGUOUS_PAD", name=name, nets=", ".join(sorted(nets)))

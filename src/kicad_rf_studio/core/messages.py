@@ -76,6 +76,13 @@ CATALOG: dict[str, str] = {
     "E_SETUP_OPENEMS_DIR": "{dir} is not an openEMS package for this Python: it needs openEMS.exe and the openems and csxcad wheels for {tag} in its python folder. Give the folder of the official Windows package of openEMS 0.37.",
     "E_SETUP_OPENEMS_PIP": "pip could not install the openEMS wheels (exit code {exit_code}). Read pip's output above, then run setup-openems again.",
     "I_OPENEMS_INSTALLED": "Installed openEMS {openems} and CSXCAD {csxcad} from {dir}; the folder is recorded in {settings}.",
+    "E_NO_PORTS": "project.json has no ports, so there is nothing to excite. Create the project with `new` between two pads.",
+    "E_NO_REFERENCE": "Port {signal} has no reference. Set its \"reference\" in project.json to a pad or a point before running.",
+    "E_REFERENCE_POINT": "Port {name}: no copper on {layer} lies at its reference point {point} mm. Set its \"reference\" in project.json to a point on the ground copper, or to a pad.",
+    "E_REFERENCE_LAYER": "Port {name}: its reference is on {reference_layer} and its signal pad on {signal_layer}; Stage 1 builds horizontal ports only. Choose a reference on {signal_layer} in project.json.",
+    "E_ROTATED_PART": "Part {ref} is not at a multiple of 90°, so its port would be a CurvePort, which P0-B has not validated. Rotate it in KiCad, or set \"allow_curve_port\": true in project.json at your own risk.",
+    "E_PORT_SPANS": "Port {name}: its two pads face each other neither along x nor along y, so no box joins them. Choose a reference straight across from the signal pad in project.json.",
+    "E_PORT_BOX": "Port {name}: no mesh line lies inside its pads, so its box cannot sit on them. Set mesh.n to 3 in project.json, or use larger pads.",
     "E_INTERNAL": "Internal error: {detail}. Please report it.",
 }
 
