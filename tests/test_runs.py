@@ -1,4 +1,7 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
+import json
+import os
+import re
 import subprocess
 import sys
 from pathlib import Path
@@ -127,3 +130,62 @@ def test_a_failed_pip_records_nothing(tmp_path, calls, monkeypatch):
     with pytest.raises(KrsError) as e:
         runs.setup_openems(package(tmp_path))
     assert (e.value.code, e.value.params, runs.load_settings()) == ("E_SETUP_OPENEMS_PIP", {"exit_code": 1}, {})
+
+
+# --- run folders, the lock and events ------------------------------------------------------------------------------
+
+
+def test_run_and_job_folder_names_are_ascii(tmp_path, monkeypatch):  # Review Focus 2, C-23
+    monkeypatch.setattr(runs, "data_dir", lambda: tmp_path / "data")
+    d = runs.run_dir_for("projeto ação")
+    assert d.parent == tmp_path / "data" / "runs" and re.fullmatch(r"projeto_a__o-\d{8}-\d{6}-[0-9a-f]{4}", d.name)
+    assert runs.job_dir(d, 3, "C1·Ω").name == "job-3-C1__"
+    assert runs.write_job(d / "job-1-P1", 1, "run", 2, 1e-9) == d / "job-1-P1"
+
+
+def test_a_live_lock_refuses_and_a_stale_one_is_reclaimed(tmp_path, capsys):  # C-24
+    pj, lock = tmp_path / "project.json", tmp_path / "project.json.lock"
+    lock.write_text(json.dumps({"pid": os.getpid(), "run_dir": "R", "started": "S"}), encoding="utf-8")
+    with pytest.raises(KrsError) as e:
+        with runs.project_lock(pj, tmp_path / "new"):
+            pass
+    assert (e.value.code, e.value.params) == ("E_LOCKED", {"lock": str(lock), "run": "R", "started": "S"})
+    assert json.loads(lock.read_text(encoding="utf-8"))["run_dir"] == "R"  # the holder's lock is intact
+    dead = subprocess.Popen([sys.executable, "-c", "pass"])
+    dead.wait()
+    lock.write_text(json.dumps({"pid": dead.pid, "run_dir": "R", "started": "S"}), encoding="utf-8")
+    with runs.project_lock(pj, tmp_path / "new"):
+        assert json.loads(lock.read_text(encoding="utf-8"))["pid"] == os.getpid()
+    assert not lock.exists() and capsys.readouterr().out == render("W_STALE_LOCK", lock=str(lock), run="R") + "\n"
+
+
+def test_events_are_json_lines_mirrored_on_stdout(tmp_path, capsys):  # spec 3.3, 6.1
+    params = {"kind": "gr_text", "uuid": "u", "layer": "F.Cu"}  # W_COPPER_DROPPED has a field named kind
+    runs.emit(tmp_path, "message", "W_COPPER_DROPPED", params, job=2)
+    e = json.loads((tmp_path / "events.jsonl").read_text(encoding="utf-8"))
+    assert set(e) == {"t", "kind", "job", "code", "params"}
+    assert (e["kind"], e["job"], e["code"], e["params"]) == ("message", 2, "W_COPPER_DROPPED", params)
+    assert capsys.readouterr().out == render("W_COPPER_DROPPED", **params) + "\n"
+
+
+def test_pool_size_follows_cores_and_ram():  # C-25, spec 6.4
+    assert runs.pool_size(2_000_000, 4, 32_000, 16) == 4
+    assert runs.pool_size(2_000_000, 4, 1_000, 16) == 2  # 1000 // (340 + 50)
+    assert runs.pool_size(20_000_000, 4, 1_000, 16) == 1  # never 0
+
+
+# beyond the brief's tests: a failed run's lock, and free_ram_mb, which no other test reaches
+
+
+def test_a_failed_run_releases_its_lock(tmp_path):  # C-24: removed on exit, exceptions included
+    lock = tmp_path / "project.json.lock"
+    with pytest.raises(ZeroDivisionError):
+        with runs.project_lock(tmp_path / "project.json", tmp_path / "run"):
+            held = json.loads(lock.read_text(encoding="utf-8"))
+            1 / 0
+    assert not lock.exists() and held["run_dir"] == str(tmp_path / "run")
+    assert re.fullmatch(r"\d{4}-\d\d-\d\dT\d\d(:\d\d){2}", held["started"])  # ISO time
+
+
+def test_free_ram_is_read_from_the_system():  # a wrong MEMORYSTATUSEX size reads 0, and every pool would be 1
+    assert 0 < runs.free_ram_mb() < 2**24  # MB: under 16 TB

@@ -1,19 +1,26 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
-"""What a run needs besides the project: the per-user data folder with its settings.json, and openEMS in this Python.
-`setup-openems` installs the wheels of the official Windows package; `check_openems` reads the installed versions."""
+"""What a run needs besides the project: the per-user data folder with its settings.json, openEMS in this Python, the
+run and job folders, the project lock, events.jsonl and the worker pool's size. `setup-openems` installs the wheels of
+the official Windows package; `check_openems` reads the installed versions."""
+import contextlib
+import ctypes
 import json
 import os
 import re
+import secrets
 import subprocess
 import sys
+import time
+from collections.abc import Iterator
 from pathlib import Path
 
-from kicad_rf_studio.core.messages import KrsError, reason
+from kicad_rf_studio.core.messages import KrsError, reason, render
 from kicad_rf_studio.core.project import save_project
 
-WINDOWS = sys.platform == "win32"  # tests patch it
+WINDOWS = sys.platform == "win32"  # tests patch it, so the Windows API calls below test sys.platform itself
 # metadata only, so no openEMS DLL loads; run with -I, which sees what a worker sees
 PROBE = "import importlib.metadata as m; print(m.version('openEMS'), m.version('CSXCAD'))"
+MB_PER_MCELL, MB_PER_WORKER = 170, 50  # ponytail: provisional (spec 6.4); P0-C measures RAM
 
 
 def data_dir() -> Path:
@@ -89,3 +96,106 @@ def setup_openems(folder: Path) -> list[tuple[str, dict]]:
     openems, csxcad = openems_versions()
     return [("I_OPENEMS_INSTALLED", {"openems": openems, "csxcad": csxcad, "dir": settings["openems_dir"],
                                      "settings": str(data_dir() / "settings.json")})]
+
+
+def ascii_name(text: str) -> str:
+    """`text` as a folder name: every character but A-Z, a-z, 0-9, _ and - becomes _, and an empty text _."""
+    return re.sub(r"[^A-Za-z0-9_-]", "_", text) or "_"
+
+
+def run_dir_for(stem: str) -> Path:
+    """A new run folder, not created (C-23): runs/<stem>-<YYYYMMDD-HHMMSS>-<4 hex digits> in data_dir(), where `stem`
+    is the project folder's name, or "calibrate"."""
+    # ponytail: run folders are never deleted (C-23)
+    return data_dir() / "runs" / f"{ascii_name(stem)}-{time.strftime('%Y%m%d-%H%M%S')}-{secrets.token_hex(2)}"
+
+
+def job_dir(run_dir: Path, k: int, name: str) -> Path:
+    """The folder of job `k`, named `name`: k is 1-based for the run's jobs and 0 for job-0-setup and job-0-xml."""
+    return run_dir / f"job-{k}-{ascii_name(name)}"
+
+
+def write_spec(run_dir: Path, spec: dict) -> None:
+    """Writes the run's model.json, making `run_dir` if `run` has not yet (runs/ may not exist either)."""
+    run_dir.mkdir(parents=True, exist_ok=True)
+    (run_dir / "model.json").write_text(json.dumps(spec), encoding="utf-8")
+
+
+def write_job(job: Path, port: int, mode: str, threads: int, t_max: float) -> Path:
+    """Makes the job folder `job` and its job.json, as worker.py reads it, and returns `job`."""
+    job.mkdir(parents=True)
+    (job / "job.json").write_text(json.dumps({"spec": "../model.json", "port": port, "mode": mode,
+                                              "threads": threads, "t_max": t_max}), encoding="utf-8")
+    return job
+
+
+def _alive(pid: int) -> bool:
+    """Whether process `pid` is running. Never os.kill on Windows: there it terminates the process."""
+    if sys.platform != "win32":
+        try:
+            os.kill(pid, 0)
+        except OSError as e:
+            return isinstance(e, PermissionError)  # alive, but another user's
+        return True
+    kernel32, code = ctypes.WinDLL("kernel32"), ctypes.c_ulong()
+    kernel32.OpenProcess.restype = ctypes.c_void_p  # a HANDLE, which the default int would cut to 32 bits
+    handle = ctypes.c_void_p(kernel32.OpenProcess(0x1000, False, pid))  # PROCESS_QUERY_LIMITED_INFORMATION
+    if not handle.value:
+        return False
+    try:
+        kernel32.GetExitCodeProcess(handle, ctypes.byref(code))  # a failure leaves code 0
+        return code.value == 259  # STILL_ACTIVE
+    finally:
+        kernel32.CloseHandle(handle)
+
+
+@contextlib.contextmanager
+def project_lock(project_path: Path, run_dir: Path) -> Iterator[None]:
+    """Holds <project>.lock, {"pid", "run_dir", "started"}, while a run of `project_path` into `run_dir` goes on (C-24).
+    Raises E_LOCKED while a live run holds it; reclaims a dead run's with W_STALE_LOCK. Removed on exit, exceptions
+    included, but only when this call made it: a refused second run leaves the holder's lock alone (spec 3.3)."""
+    # ponytail: one lock per project, so two projects share the CPU; a reused pid keeps a stale lock alive, and E_LOCKED
+    # says to delete it
+    lock = project_path.with_name(project_path.name + ".lock")
+    while True:
+        try:
+            fd = os.open(lock, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+            break
+        except FileExistsError:
+            holder = json.loads(lock.read_text(encoding="utf-8"))
+        if _alive(holder["pid"]):
+            raise KrsError("E_LOCKED", lock=str(lock), run=holder["run_dir"], started=holder["started"])
+        print(render("W_STALE_LOCK", lock=str(lock), run=holder["run_dir"]))
+        lock.unlink(missing_ok=True)  # missing: another run reclaimed it first
+    try:  # the write too: a lock left empty by a full disk would block every later run
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            json.dump({"pid": os.getpid(), "run_dir": str(run_dir), "started": time.strftime("%Y-%m-%dT%H:%M:%S")}, f)
+        yield
+    finally:
+        lock.unlink(missing_ok=True)  # missing: the user deleted it, as E_LOCKED invites
+
+
+def emit(run_dir: Path, kind: str, code: str, params: dict, job: int | None = None) -> None:
+    """Appends an event to events.jsonl in `run_dir` (C-21) and prints its message. `kind` is progress, verdict, cost,
+    result or message; `job` is the job's k, 0 for job-0-*, None for the whole run. The params travel as one dict, so a
+    field named kind or job cannot collide."""
+    event = {"t": round(time.time(), 3), "kind": kind, "job": job, "code": code, "params": params}
+    with open(run_dir / "events.jsonl", "a", encoding="utf-8") as f:
+        f.write(json.dumps(event) + "\n")
+    print(render(code, **params))
+
+
+def free_ram_mb() -> float:
+    """The free RAM in MB: GlobalMemoryStatusEx's ullAvailPhys on Windows, MemAvailable of /proc/meminfo elsewhere."""
+    if sys.platform == "win32":
+        status = (ctypes.c_ulonglong * 8)(64)  # MEMORYSTATUSEX as 8 uint64s: dwLength (its size) is the first's low half
+        ctypes.WinDLL("kernel32").GlobalMemoryStatusEx(status)
+        return status[2] / 2**20  # ullAvailPhys, after dwLength with dwMemoryLoad, and ullTotalPhys
+    meminfo = Path("/proc/meminfo").read_text(encoding="ascii")
+    return int(re.search(r"^MemAvailable:\s+(\d+) kB", meminfo, re.M)[1]) / 1024
+
+
+def pool_size(cells: int, threads: int, free_mb: float, cpus: int) -> int:
+    """How many workers of `threads` threads run at once on a model of `cells` cells (spec 6.4): as many as the cores
+    and the free RAM allow, and never fewer than one."""
+    return max(1, min(cpus // threads, int(free_mb // (MB_PER_MCELL * cells / 1e6 + MB_PER_WORKER))))
