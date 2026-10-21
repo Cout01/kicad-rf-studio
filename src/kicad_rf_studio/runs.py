@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """What a run needs besides the project: the per-user data folder with its settings.json, openEMS in this Python, the
-run and job folders, the project lock, events.jsonl and the worker pool's size. `setup-openems` installs the wheels of
-the official Windows package; `check_openems` reads the installed versions."""
+run and job folders, the project lock, events.jsonl, and the pool of worker processes with its size. `setup-openems`
+installs the wheels of the official Windows package; `check_openems` reads the installed versions."""
 import contextlib
 import ctypes
 import json
@@ -11,16 +11,20 @@ import secrets
 import subprocess
 import sys
 import time
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from pathlib import Path
 
 from kicad_rf_studio.core.messages import KrsError, reason, render
 from kicad_rf_studio.core.project import save_project
+from kicad_rf_studio.worker import ERR, LOG, SETUP_FAILED
 
 WINDOWS = sys.platform == "win32"  # tests patch it, so the Windows API calls below test sys.platform itself
 # metadata only, so no openEMS DLL loads; run with -I, which sees what a worker sees
 PROBE = "import importlib.metadata as m; print(m.version('openEMS'), m.version('CSXCAD'))"
 MB_PER_MCELL, MB_PER_WORKER = 170, 50  # ponytail: provisional (spec 6.4); P0-C measures RAM
+WORKER = ("-I", "-u", "-m", "kicad_rf_studio.worker")  # after sys.executable; -u: log.txt follows the run
+POLL_S = 1.0  # how often the pool looks at its jobs
+ABORT_WAIT_S = 60.0  # how long a stopped job may take to write its data before it is killed
 
 
 def data_dir() -> Path:
@@ -199,3 +203,74 @@ def pool_size(cells: int, threads: int, free_mb: float, cpus: int) -> int:
     """How many workers of `threads` threads run at once on a model of `cells` cells (spec 6.4): as many as the cores
     and the free RAM allow, and never fewer than one."""
     return max(1, min(cpus // threads, int(free_mb // (MB_PER_MCELL * cells / 1e6 + MB_PER_WORKER))))
+
+
+def worker_env(settings: dict) -> dict:
+    """A worker's environment: this one with OpenBLAS on one thread, as openEMS has the cores, and CSXCAD_INSTALL_PATH
+    (where CSXCAD looks for openEMS's DLLs) set to settings.json's openems_dir when it has one."""
+    env = {**os.environ, "OPENBLAS_NUM_THREADS": "1"}
+    if settings.get("openems_dir"):
+        env["CSXCAD_INSTALL_PATH"] = settings["openems_dir"]
+    return env
+
+
+def run_jobs(jobs: list[Path], pool: int, run_dir: Path, settings: dict,
+             watch: Callable[[Path], bool] | None = None) -> dict[Path, dict]:
+    """Runs a worker in each job folder of `jobs`, up to `pool` at once in list order (spec 6.1, C-25), and returns
+    each job's {"code": its exit code, None if it never started, "stopped": whether the run was stopped}. A STOP file
+    in `run_dir`, or Ctrl+C, stops the run (C-26): ABORT goes into every running job's folder and no other job starts;
+    a job with no port_ut_1 yet is still in setup, where openEMS never looks for ABORT, and is killed at once, any
+    other one if it still runs ABORT_WAIT_S later. Otherwise a running job for which `watch(job)` is true gets ABORT
+    once. No worker outlives the call."""
+    out = {job: {"code": None, "stopped": False} for job in jobs}
+    todo, running, env = list(jobs), {}, worker_env(settings)
+    spawn = ({"creationflags": subprocess.CREATE_NEW_PROCESS_GROUP | subprocess.CREATE_NO_WINDOW}
+             if sys.platform == "win32" else {"start_new_session": True})  # so Ctrl+C reaches only this process
+    try:
+        try:
+            while todo or running:
+                if (run_dir / "STOP").exists():
+                    raise KeyboardInterrupt  # a STOP file stops the run as Ctrl+C does
+                while todo and len(running) < pool:
+                    job = todo.pop(0)
+                    with open(job / LOG, "wb") as log, open(job / ERR, "wb") as err:
+                        running[job] = subprocess.Popen([sys.executable, *WORKER, "job.json"], cwd=job, env=env,
+                                                        stdout=log, stderr=err, **spawn)
+                time.sleep(POLL_S)
+                for job, proc in list(running.items()):
+                    if proc.poll() is not None:
+                        out[job]["code"] = running.pop(job).returncode
+                    elif watch and not (job / "ABORT").exists() and watch(job):
+                        (job / "ABORT").write_text("")
+        except KeyboardInterrupt:
+            for job, proc in running.items():
+                (job / "ABORT").write_text("")
+                if not (job / "port_ut_1").exists():
+                    proc.kill()
+                    proc.wait()
+            deadline = time.monotonic() + ABORT_WAIT_S
+            while time.monotonic() < deadline and any(proc.poll() is None for proc in running.values()):
+                time.sleep(POLL_S)
+            for result in out.values():
+                result["stopped"] = True
+    finally:  # kills what still runs, whatever ended the loop
+        for job, proc in running.items():
+            if proc.poll() is None:
+                proc.kill()
+            out[job]["code"] = proc.wait()
+    return out
+
+
+def check_job(job: Path, result: dict, name: str, settings: dict) -> None:
+    """The one map from a job's exit to its outcome, `result` being the job's entry in what run_jobs returns:
+    KeyboardInterrupt when the run was stopped, E_OPENEMS_DLL for exit code 2 (openEMS did not import, C-31),
+    E_SETUP_FAILED for SETUP_FAILED and E_WORKER_FAILED, naming the job `name`, for any other non-zero code."""
+    if result["stopped"]:
+        raise KeyboardInterrupt
+    code, log = result["code"], str(job / LOG)
+    if code == 2:
+        raise KrsError("E_OPENEMS_DLL", value=worker_env(settings).get("CSXCAD_INSTALL_PATH") or "unset")
+    if code == SETUP_FAILED:
+        raise KrsError("E_SETUP_FAILED", log=log)
+    if code:
+        raise KrsError("E_WORKER_FAILED", job=name, exit_code=code, log=log)

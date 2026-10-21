@@ -87,6 +87,9 @@ CATALOG: dict[str, str] = {
     "E_GRID_KIND": "Part {ref} cannot sit in the grid: only a C or an R can. Set its role to \"port\" or \"open\" in project.json.",
     "E_LOCKED": "Another run of this project has been running since {started} in {run}. Wait for it, or create a file named STOP in that folder to stop it; if no run is going on, delete {lock}.",
     "W_STALE_LOCK": "Reclaimed {lock}: the run in {run} ended without releasing it.",
+    "E_OPENEMS_DLL": "openEMS could not load its libraries (CSXCAD_INSTALL_PATH is {value}). Run setup-openems again, or set CSXCAD_INSTALL_PATH to the openEMS folder.",
+    "E_SETUP_FAILED": "openEMS could not set up the model; see {log}. Look at the model with `preview`.",
+    "E_WORKER_FAILED": "The {job} worker ended with code {exit_code}; see {log}. Report it if the log shows no cause.",
     "E_INTERNAL": "Internal error: {detail}. Please report it.",
 }
 
