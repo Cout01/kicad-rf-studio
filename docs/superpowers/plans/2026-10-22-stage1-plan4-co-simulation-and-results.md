@@ -34,7 +34,7 @@
 - **Exit codes:** only 0, 1, 2, 3, 4 and 130. `retune`: 0, 2 for a refusal, 1 internal; `run`: plan 3's, plus 2 when the output step refuses after the results are saved (C-26); `verify`: as `run`. The validity indicators (σ_max 1.02, reciprocity 0.02, loss budget 0.02; C-35) are flags, never gates: they change no exit code.
 - **Messages:** every user-visible string, the PNG's words too, is a code in the one CATALOG of `core.messages`, with plain `{fields}` and pre-formatted numbers, and says what to do next; an advice that holds only for some parts says for which ("or, for a C, L or R, …"); math notation stays literal; CSV column names and Touchstone comments are English data, not codes; tests check `KrsError.code` and `.params` (or the rendered line), never `match=`; no field is named `code`; the existing `E_OUTPUT_PATH` is not reused for `results/`.
 - **Units and frames:** mm, Hz, s, F, H, Ω; `project.json` in KiCad's frame (y down); the model spec in the internal frame.
-- **Owner to confirm** (this plan follows each; the handoff asks for them as spec amendments, as plan 3 did for §5.4):
+- **Spec amendments the owner confirmed on 2026-10-22** (committed to the spec beside this plan; the spec's §7.2, §7.6, §7.8, §9.1, §11.9 and §12 now read so):
   - the termination oracle agrees to 1e-12, not §7.2's "2e-16" (measured 1e-15 to 6e-15; C-6);
   - a run replaces `results` and `results/` only when every job kept S; a run whose jobs do not all keep S leaves both as they were (C-24);
   - verify puts a capacitor in the grid as C_part + C_box, not C_part: a grid C replaces the box's own capacitance (C-36);
@@ -93,7 +93,7 @@ test_model_csx.py, test_worker.py)
 | `project.json`'s `verify` key, verify's exit codes | 12 |
 | The real-data fixture | 13 |
 
-**For the owner to confirm:** the six "Owner to confirm" lines of Global Constraints.
+**Confirmed by the owner (2026-10-22):** the six spec amendments of Global Constraints.
 
 ---
 
@@ -563,7 +563,7 @@ def test_a_part_port_needs_a_usable_c_box(c, shown):  # C-16
     assert (e.value.code, e.value.params) == ("E_CBOX", {"ref": "C1", "value": shown})
 
 
-def test_the_termination_is_scikit_rf_circuit_and_agrees_with_numpy():  # spec 7.2, C-6 (owner to confirm: 1e-12)
+def test_the_termination_is_scikit_rf_circuit_and_agrees_with_numpy():  # spec 7.2, C-6 (owner-confirmed: 1e-12)
     zk = loads({r: z_part(k, v, M0402, F) for r, k, v in LPF}, [r for r, _, _ in LPF],
                dict.fromkeys([r for r, _, _ in LPF], C_BOX), F)
     assert np.abs(zk[:, 1] - 1 / (1 / z_part("L", 15e-9, M0402, F) + 2j * np.pi * F * C_BOX)).max() <= 1e-9
@@ -721,7 +721,7 @@ def test_compare_reports_delta_s_and_the_null_shift():  # spec 7.5, 7.6, C-38, C
 - Produces:
   - `pipeline.expected_loss(geom: Geometry, f0: float) -> float` (C-25): `checks.loss_expected` over `geom.sections`, each with its with-mask εeff (`solve(cross_section(s, geom.pieces, geom.zs, geom.masks.get(s.layer), "exact")).eps_eff`, the solve `cost`'s readout prints), the εr and tanδ (None → 0) of the dielectric slab next to its copper slab in `geom.zs` (the one below, else the one above), and `s.length`; a section that raises `ShortError` adds nothing. `# ponytail: straight, axis-aligned sections only, a lower bound; bends, pads and vias add nothing`.
   - `_run` computes it right after `build_model` passes its gates, before `prepare`, so that an error there costs no job; `results` gains `"preset"` (the project's stop preset) and `"loss_expected"` (that float) between `gates` and `dt`.
-  - `run` writes `results` only when every job's verdict is in KEPT (C-24, owner to confirm); otherwise it emits `W_RUN_NOT_KEPT {kept, runs, wall, folder}` as a `result` event instead of `I_RESULTS` and returns 4, leaving `results` (and, from Task 9, `results/`) untouched. `run`'s docstring says so.
+  - `run` writes `results` only when every job's verdict is in KEPT (C-24, owner-confirmed); otherwise it emits `W_RUN_NOT_KEPT {kept, runs, wall, folder}` as a `result` event instead of `I_RESULTS` and returns 4, leaving `results` (and, from Task 9, `results/`) untouched. `run`'s docstring says so.
 
 - [ ] **Step 1: Write the failing tests.** In `tests/test_run.py`:
 
@@ -1280,7 +1280,7 @@ def test_retune_refuses_while_a_run_holds_the_lock(tmp_path, calibrated, monkeyp
 **Interfaces:**
 - Consumes: `readers.c_box` (imported into spec.py as `c_box` and looked up at call time, so a test can patch `spec.c_box`); `part_kind`, `port_value` (Task 3).
 - Produces:
-  - `spec.K_MAX = 0.45` with `# ponytail: stable up to k 0.48 at openEMS's own dt on a uniform grid with equal edges (r3 3.6); plan 5 confirms it` (C-37, owner to confirm).
+  - `spec.K_MAX = 0.45` with `# ponytail: stable up to k 0.48 at openEMS's own dt on a uniform grid with equal edges (r3 3.6); plan 5 confirms it` (C-37, owner-confirmed).
   - `spec.verify_spec(spec: dict, parts: dict[str, dict], boxes: dict, dump: Path, dt: float) -> dict` (spec 7.6, C-36): a deep copy of the run's (rebuilt) `spec` whose part ports leave `ports` for `grid`, appended after the run's own grid parts, on the same mesh lines; `boxes` is the run's C_box by ref. Each entry is the port's dict plus "R", "C" and, for an L, "L":
     - a C: the port's box, `C = value + boxes[ref]`, R None (a grid C replaces the box's own capacitance);
     - an R: the port's box, `R = value`, C None (it keeps the natural C);
@@ -1308,7 +1308,7 @@ STRIPS = [{"x": [-1.0, 0.0, 0.0, -1.0], "y": [1.0, 1.0, 1.25, 1.25], "z": [0.5, 
           {"x": [0.25, 1.0, 1.0, 0.25], "y": [1.0, 1.0, 1.25, 1.25], "z": [0.5, 0.535]}]
 
 
-def test_verify_moves_every_part_port_into_the_grid():  # spec 7.6, C-36 (owner to confirm: C_part + C_box)
+def test_verify_moves_every_part_port_into_the_grid():  # spec 7.6, C-36 (owner-confirmed: C_part + C_box)
     v = verify_spec(VSPEC, VPARTS, CBOX, DUMPS / "operator_dump.vtr", DT)
     c1, l1, r3 = v["grid"]
     cell = c_box(DUMPS / "operator_dump.vtr", LINES, [0.0, 1.0, 0.5], [0.25, 1.25, 0.535], 0, DT)
@@ -1327,7 +1327,7 @@ def test_verify_moves_every_part_port_into_the_grid():  # spec 7.6, C-36 (owner 
         [0.0, 1.0, 0.5], [0.25, 1.25, 0.535], STRIPS)
 
 
-def test_verify_refuses_what_it_cannot_put_in_the_grid(tmp_path):  # C-36, C-37 (owner to confirm: K_MAX 0.45)
+def test_verify_refuses_what_it_cannot_put_in_the_grid(tmp_path):  # C-36, C-37 (owner-confirmed: K_MAX 0.45)
     dump = DUMPS / "operator_dump.vtr"
     cases = [((VSPEC, {**VPARTS, "L1": {"ref": "L1", "value": "1pH"}}, CBOX, dump),
               ("E_VERIFY_K", {"ref": "L1", "k": "1.13", "limit": "0.45"})),

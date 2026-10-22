@@ -430,7 +430,7 @@ All P + M excitations always run, because the matrix A must be square: S = B·A�
 ### 7.2 Retune
 
 - Each part is re-attached as Z_part ∥ C_box with scikit-rf's `Circuit`. That takes 3.7 ms per retune for a 6-port at 400 points.
-- A plain numpy termination is the test oracle; the two agree to 2e-16.
+- A plain numpy termination is the test oracle. The two agree to 1e-15–6e-15 (measured), and the tests assert 1e-12.
 - Values are ideal or, per part, an S2P file, converted to Z_part with the series-thru or shunt-thru formula that the user named. Stage 2 adds E12/E24 snapping.
 
 ### 7.3 Outputs
@@ -464,9 +464,9 @@ Accuracy is reported as |ΔS| or as a null shift, never in dB at a null.
 ### 7.6 Verification run and fallback
 
 - **`verify`** runs once with every part in the grid as an ideal element at its current value. S2P and ESL/ESR models are replaced by that value. Each part sits in the box of the port it replaces:
-  - capacitors are classic C;
-  - inductors use LEtype=0 in a one-cell box, joined to both pads by PEC strips, with an explicit C equal to the cell's own capacitance. Without it, openEMS 0.37 may enlarge that capacitance based on the excitation's cut-off frequency, which the custom pulse never sets;
-  - the k ≤ 1 check, k = dt/(2·√(L·C)), makes sure the time step resolves each inductor cell's resonance. If a part fails it, `verify` refuses and names the part;
+  - capacitors are classic C of C_part + C_box. A classic C replaces the box's own capacitance instead of adding to it (measured), so the box's C_box is added back to match the retune's Z_part ∥ C_box;
+  - inductors use LEtype=0 in a one-cell box, joined to both pads by PEC strips, with an explicit C equal to the cell's own capacitance. Without it, openEMS 0.37's Z_FACT rule lowers that capacitance, using the excitation's cut-off frequency, which the custom pulse never sets (it reads uninitialised memory: the cell's C fell to zero in 4 of 22 runs), and the run can diverge;
+  - the k check, k = dt/(2·√(L·C)) ≤ 0.45, makes sure the time step resolves each inductor cell's resonance. An isolated cell is stable up to k = 1, but in the grid, at openEMS's own dt, runs diverged from k ≥ 0.49. Real parts read k ≈ 0.003–0.03. If a part fails it, `verify` refuses and names the part;
   - LEtype=1 is never used, because it is unstable in 0.37.
 - Its result is compared with a retune at the same ideal values: |ΔS| at f0 and up to f2. It checks the layout reduction, not the vendor part data, and the output says so.
 - It is the consistency reference for P0-B and P0-C.
@@ -480,6 +480,7 @@ Deferred until the TX side is in; the output chain is 50 Ω at both ends. When t
 
 - Reopening a project allows retuning with no new runs.
 - Results are reused while the model-spec hash (§3.3) is unchanged. Any change to the model spec, from a re-import or from an edit of `project.json`, asks for a new run.
+- A run replaces the stored results, and the files in `results/`, only when every job kept S. A run that does not, because a job diverged or was stopped, leaves the previous results as they were.
 
 ---
 
@@ -527,7 +528,7 @@ Deferred until the TX side is in; the output chain is 50 Ω at both ends. When t
   - `lpf915` and its twin `lpf915-45`;
   - the pad polygons that pcbnew exports for each fixture board, so that CI checks pad placement without KiCad;
   - probe traces for replaying the stop rule: synthetic ones first, then traces from the coupon and `lpf915` runs. Traces from a private board are never committed;
-  - synthetic S2P files built from ideal RLC.
+  - synthetic S2P files built from ideal RLC, generated inside the tests and never committed.
 - **`lpf915`,** a public synthetic board that also serves as the tutorial. It has:
   - a 0.8 mm 2-layer stackup and a 50 Ω GCPW;
   - 0402 footprints for a series DC block and a C-L-C pi, with values in the Value fields, including `0R` and `10uF/16V`;
@@ -652,7 +653,7 @@ These are not in Stage 1 or v1:
 9. **openEMS 0.37.0 quirks:**
    - a keyword passed as `False` drops the options after it;
    - NaN exits as converged;
-   - the custom pulse leaves the cut-off frequency unset, which in-grid inductors read unless they get an explicit C;
+   - the custom pulse leaves the cut-off frequency unset. In-grid inductors read it unless they get an explicit C, and it then lowers their cell's capacitance;
    - runs with a custom pulse end silently;
    - the NF2FF cache (`read_cached=False`);
    - stale ABORT files and abort latency;
@@ -667,7 +668,7 @@ These are not in Stage 1 or v1:
 |---|---|
 | Band factor default (1.1× or 1.25×) and the stop presets | P0-C |
 | Timestep-floor factor (0.8), fit2d threshold (3 %) and the mask-shift tolerances | P0-A confirms them |
-| Protected-set reach (3 h), growth threshold (+20 dB) and the k ≤ 1 check | P0-B confirms them |
+| Protected-set reach (3 h), growth threshold (+20 dB) and the k ≤ 0.45 check | P0-B confirms them |
 | TX side in v1 | P0-B's rotated-port case |
 | v1 time policy | The owner, after P0-C |
 | Commit author identity for the public repository | The owner, before the first push. Every existing commit is then rewritten to that identity, so neither the old identity nor earlier text is published. Until then, commits stay local, and Linux CI (P0-D) waits |
