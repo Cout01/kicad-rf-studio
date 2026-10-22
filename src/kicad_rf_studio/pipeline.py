@@ -457,11 +457,17 @@ def run(path: Path) -> int:
     so."""
     if not read_project(path)["ports"]:
         raise KrsError("E_NO_PORTS")
+    return _locked(path, _run)
+
+
+def _locked(path: Path, body: Callable[[Path, Path], int]) -> int:
+    """The exit code of `body(path, run_dir)` under the project lock, in a fresh run folder `run_dir` whose
+    events.jsonl gets any KrsError as a message event, then exit 2: the lock contract that run and verify share."""
     run_dir = runs.run_dir_for(path.absolute().parent.name)  # absolute: as in cost
     with runs.project_lock(path, run_dir):
         run_dir.mkdir(parents=True)
         try:
-            return _run(path, run_dir)
+            return body(path, run_dir)
         except KrsError as err:
             runs.emit(run_dir, "message", err.code, err.params)
             return 2
@@ -470,19 +476,10 @@ def run(path: Path) -> int:
 def _run(path: Path, run_dir: Path) -> int:
     """run() under the lock, with `run_dir` made."""
     emit = partial(runs.emit, run_dir)  # (kind, code, params, job=None)
-    project, board, geom, notes = load(path)
+    if isinstance(built := _model_phase(path, emit), int):
+        return built
+    project, geom, model = built
     gates, preset = project["gates"], project["preset"]
-    for code, params in [("W_FILLS_AS_SAVED", {}), *notes]:
-        emit("message", code, params)
-    if stop := stops(notes):
-        return stop
-    model = build_model(project, board, geom)
-    if model.blocked:
-        for code, params in model.blocked:
-            emit("verdict", code, params)
-        for code, params in gate_lines(gates):  # C-10
-            emit("message", code, params)
-        return 3
     loss = expected_loss(geom, project["f0_hz"])  # before prepare: an error here costs no job
     if (out := simulate(model, project, run_dir)) is None:
         return 3
@@ -502,6 +499,26 @@ def _run(path: Path, run_dir: Path) -> int:
     for code, params in lines:
         emit("message" if code.startswith("E_") else "result", code, params)
     return 2 if any(code.startswith("E_") for code, _ in lines) else 0
+
+
+def _model_phase(path: Path, emit: Callable[..., None]) -> tuple[dict, Geometry, Model] | int:
+    """The model phase that run and verify share under the lock (spec 6.1, C-42): the project at `path`, its geometry
+    and its model, with W_FILLS_AS_SAVED and load()'s notes as message events through `emit` (runs.emit bound to the
+    run folder). Instead the exit code where it stops: stops()'s, or 3 when a mesh gate blocks, its gates as verdict
+    events followed by gate_lines (C-10)."""
+    project, board, geom, notes = load(path)
+    for code, params in [("W_FILLS_AS_SAVED", {}), *notes]:
+        emit("message", code, params)
+    if stop := stops(notes):
+        return stop
+    model = build_model(project, board, geom)
+    if model.blocked:
+        for code, params in model.blocked:
+            emit("verdict", code, params)
+        for code, params in gate_lines(project["gates"]):  # C-10
+            emit("message", code, params)
+        return 3
+    return project, geom, model
 
 
 def simulate(model: Model, project: dict, run_dir: Path) -> tuple[list[dict], dict, float] | None:
@@ -674,31 +691,15 @@ def verify(path: Path) -> int:
         raise KrsError("E_VERIFY_CURVE", ref=curve)
     if "results" not in project:
         raise KrsError("E_NO_RESULTS")
-    run_dir = runs.run_dir_for(path.absolute().parent.name)  # absolute: as in cost
-    with runs.project_lock(path, run_dir):
-        run_dir.mkdir(parents=True)
-        try:
-            return _verify(path, run_dir)
-        except KrsError as err:
-            runs.emit(run_dir, "message", err.code, err.params)
-            return 2
+    return _locked(path, _verify)
 
 
 def _verify(path: Path, run_dir: Path) -> int:
     """verify() under the lock, with `run_dir` made."""
     emit = partial(runs.emit, run_dir)  # (kind, code, params, job=None)
-    project, board, geom, notes = load(path)
-    for code, params in [("W_FILLS_AS_SAVED", {}), *notes]:
-        emit("message", code, params)
-    if stop := stops(notes):
-        return stop
-    model = build_model(project, board, geom)
-    if model.blocked:
-        for code, params in model.blocked:
-            emit("verdict", code, params)
-        for code, params in gate_lines(project["gates"]):  # C-10
-            emit("message", code, params)
-        return 3
+    if isinstance(built := _model_phase(path, emit), int):
+        return built
+    project, _, model = built
     results = results_of(project, model)
     lay = layout(project, results)
     by_ref, (ext, refs) = parts(project), _split(lay)
