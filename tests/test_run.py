@@ -21,7 +21,7 @@ from kicad_rf_studio.core.post.chain import with_box, z_part
 from kicad_rf_studio.core.post.outputs import COLUMNS, LIMITS
 from kicad_rf_studio.core.post.waves import grid, layout
 from kicad_rf_studio.core.project import GATES, load_project, parts, save_project
-from kicad_rf_studio.pipeline import expected_loss, load, write_outputs
+from kicad_rf_studio.pipeline import command_line, expected_loss, load, write_outputs
 from networks import C_BOX, read_s, star, synth_records, terminate_np, write_s2p
 from test_cli_cost import FIX, SEG, by_hand, fail, gcpw, new_project
 from test_post_chain import LPF, M0402
@@ -336,6 +336,31 @@ def test_a_narrow_band_s2p_leaves_the_layout_n_port(tmp_path, calibrated, monkey
     assert render("E_S2P_BAND", ref="C1", path=str(pj.parent / "c1.s2p"), f_lo="1000.0", f_hi="3000.0", f1="457.5",
                   f2="3015.6") in out
     assert out[-len(LIMITS):] == [render(code) for code in LIMITS]  # spec 7.5: printed with every result
+
+
+def test_a_held_output_file_still_prints_the_results_and_the_limits(tmp_path, calibrated, monkeypatch,
+                                                                     capsys):  # final review F7, spec 7.5
+    monkeypatch.setenv("KRS_FAKE", "network")
+    pj = lpf_project(tmp_path)
+    real = os.replace
+
+    def replace(src, dst):  # a spreadsheet holds summary.csv
+        if Path(dst).name == "summary.csv":
+            raise PermissionError(13, "in use")
+        real(src, dst)
+
+    monkeypatch.setattr(os, "replace", replace)
+    capsys.readouterr()
+    assert main(["run", str(pj)]) == 2
+    run_dir = Path(load_project(pj)["results"]["run_dir"])  # the results are recorded
+    codes = [json.loads(line)["code"] for line in (run_dir / "events.jsonl").read_text(encoding="utf-8").splitlines()]
+    assert codes[codes.index("I_RESULTS"):] == [
+        "I_RESULTS", "I_BASIS", "I_MARKER", "I_MARKER", "I_HR", "I_MARKER", "I_HR", "I_PASSIVITY", "I_RECIPROCITY",
+        "W_LOSS_BUDGET", "E_RESULTS_WRITE", *LIMITS]  # no I_OUTPUTS
+    out = capsys.readouterr().out.splitlines()
+    assert render("E_RESULTS_WRITE", path=str(pj.parent / "results" / "summary.csv"), reason="permission denied",
+                  command=command_line("kicad-rf-studio", "retune", str(pj))) in out
+    assert out[-len(LIMITS):] == [render(code) for code in LIMITS]
 
 
 # --- beyond the brief's tests ------------------------------------------------------------------------------------

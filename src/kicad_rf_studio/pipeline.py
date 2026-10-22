@@ -402,14 +402,15 @@ def _save(path: Path, data: dict, command: str) -> None:
 
 
 def write_outputs(path: Path, project: dict, command: str, *,
-                  layout_on_part_error: bool = False) -> list[tuple[str, dict]]:
+                  errors_as_lines: bool = False) -> list[tuple[str, dict]]:
     """The outputs of the run in `project`'s results (spec 3.2, 7.3, C-26..C-32), the step `run` and `retune` share:
     layout.s{N}p; chain.s{P}p when part ports are closed; with P = 2 summary.csv and summary.png, else W_NOT_TWO_PORT
     (C-31); all written to results/ beside `path` (write, with `command` as E_RESULTS_WRITE's advice). Returns the
     lines to report: I_BASIS with each flagged job, gate_lines, the part notes, the marker and indicator lines, then
-    I_OUTPUTS and LIMITS. A part's refusal (E_PART_NO_VALUE, E_S2P_*, E_CBOX) is raised, or, with
-    `layout_on_part_error`, takes the place of the chain's lines and files, so that the layout N-port is still written
-    (C-26). Raises layout's refusals and E_S_SINGULAR."""
+    I_OUTPUTS and LIMITS. A part's refusal (E_PART_NO_VALUE, E_S2P_*, E_CBOX) and write's E_RESULTS_WRITE are raised,
+    or, with `errors_as_lines`, each becomes a line: a part's refusal in the place of the chain's lines and files, so
+    that the layout N-port is still written (C-26); E_RESULTS_WRITE in the place of I_OUTPUTS, so that the lines
+    already computed and LIMITS are still reported (spec 7.5). Raises layout's refusals and E_S_SINGULAR."""
     results = project["results"]
     lay = layout(project, results)
     ext, refs = _split(lay)
@@ -429,7 +430,7 @@ def write_outputs(path: Path, project: dict, command: str, *,
         lines += notes
         zk = loads(zparts, refs, results["c_box"], lay.f)
     except KrsError as err:
-        if not layout_on_part_error:
+        if not errors_as_lines:
             raise
         lines.append((err.code, err.params))
     else:
@@ -447,9 +448,15 @@ def write_outputs(path: Path, project: dict, command: str, *,
         else:
             lines += [*indicator_lines(lay.f, lay.a_db, lay.s, None, results["loss_expected"]),
                       ("W_NOT_TWO_PORT", {"ports": p})]
-    write(folder, files, OUTPUTS, command)
-    return [*lines, ("I_OUTPUTS", {"files": ", ".join(sorted(files)), "folder": str(folder)}),
-            *((code, {}) for code in LIMITS)]
+    try:
+        write(folder, files, OUTPUTS, command)
+    except KrsError as err:  # E_RESULTS_WRITE: a file held open, say
+        if not errors_as_lines:
+            raise
+        lines.append((err.code, err.params))
+    else:
+        lines.append(("I_OUTPUTS", {"files": ", ".join(sorted(files)), "folder": str(folder)}))
+    return [*lines, *((code, {}) for code in LIMITS)]
 
 
 def run(path: Path) -> int:
@@ -461,10 +468,11 @@ def run(path: Path) -> int:
     each job's verdict (classify_job) and the calibration's speed refreshed. When every job kept S, the results in
     project.json, with the preset and the expected loss (E_RESULTS_WRITE advising `run` when project.json cannot be
     replaced), I_RESULTS, then write_outputs' lines as result events, an E_ line (a part's refusal, the layout N-port
-    still written) as a message event, and 0, or 2 after an E_ line (C-26); else W_RUN_NOT_KEPT and 4, the previous
-    results and results/ left as they were (C-24, C-29). W_GATE_LIMITS follows the gate lines and each verdict when
-    the gate limits are not GATES (C-10). STOP or Ctrl+C before the jobs start propagates as KeyboardInterrupt (exit
-    130, results untouched); once they run, it stops them, and their verdicts say so."""
+    still written; E_RESULTS_WRITE for a file held open, the lines and LIMITS still printed) as a message event, and
+    0, or 2 after an E_ line (C-26); else W_RUN_NOT_KEPT and 4, the previous results and results/ left as they were
+    (C-24, C-29). W_GATE_LIMITS follows the gate lines and each verdict when the gate limits are not GATES (C-10). STOP
+    or Ctrl+C before the jobs start propagates as KeyboardInterrupt (exit 130, results untouched); once they run, it
+    stops them, and their verdicts say so."""
     if not read_project(path)["ports"]:
         raise KrsError("E_NO_PORTS")
     return _locked(path, _run)
@@ -505,7 +513,7 @@ def _run(path: Path, run_dir: Path) -> int:
                        "jobs": done}
     _save(path, data, command_line("kicad-rf-studio", "run", str(path)))
     emit("result", "I_RESULTS", {"kept": kept, "runs": len(done), "wall": duration(wall_s), "path": str(path)})
-    lines = write_outputs(path, data, command_line("kicad-rf-studio", "retune", str(path)), layout_on_part_error=True)
+    lines = write_outputs(path, data, command_line("kicad-rf-studio", "retune", str(path)), errors_as_lines=True)
     for code, params in lines:
         emit("message" if code.startswith("E_") else "result", code, params)
     return 2 if any(code.startswith("E_") for code, _ in lines) else 0
