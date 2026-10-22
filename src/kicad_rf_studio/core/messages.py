@@ -175,6 +175,7 @@ CATALOG: dict[str, str] = {
     "E_VERIFY_K": "Part {ref}: its inductor in the grid resonates too fast for the time step (k {k}, limit {limit}), and the run would diverge. Check its value in project.json; a real inductor reads k near 0.01.",
     "E_VERIFY_NO_PARTS": "This project has no part ports (a single trace), so verify has nothing to put in the grid: `run` is already its full simulation.",
     "E_VERIFY_CURVE": "Part {ref} is rotated (a CurvePort), and verify cannot put a rotated part in the grid. Rotate it in KiCad to a multiple of 90° to verify this chain.",
+    "E_VERIFY_PORTS": "verify compares S21 and S11, so it needs at least 2 external ports; this project has {ports}. Keep two ports in project.json.",
     "W_VERIFY_NOT_KEPT": "{kept} of {runs} verify jobs kept S, in {wall}, so nothing was compared or stored. The verdicts above, also in {folder}, say why; fix that and run `verify` again.",
     "I_VERIFY_RESULTS": "{runs} verify jobs kept S, in {wall}; the comparison is stored in {path}.",
     "I_VERIFY_COMPARE": "verify against the retune at the same ideal values: |ΔS21| {ds21_db} dB and |ΔS11| {ds11} at f0 = {f0_mhz} MHz (|a| {a_db} dB); max |ΔS| {ds_max} up to f2.",

@@ -672,7 +672,7 @@ def retune(path: Path, assignments: list[str], emit: Callable[[str, dict], None]
 def verify(path: Path) -> int:
     """`verify` on the project at `path` (spec 3.2, 7.6, C-36..C-38), returning its exit code as run does (C-22).
     Before the lock: E_VERIFY_NO_PARTS when no part is a port or a curve_port (a single trace), E_VERIFY_CURVE for the
-    first curve_port, E_NO_RESULTS. Then as in run, under the lock in a fresh run folder whose events.jsonl gets every
+    first curve_port, E_NO_RESULTS, E_VERIFY_PORTS for fewer than 2 external ports. Then as in run, under the lock in a fresh run folder whose events.jsonl gets every
     line, with any KrsError a message event and exit 2: W_FILLS_AS_SAVED and load()'s notes, stopping with stops();
     the model, 3 when a mesh gate blocks; results_of and the run's layout N-port; verify's model (verify_spec) and the
     part ports' loads at their ideal values, the part models and S2P files ignored (C-38), every refusal before any
@@ -691,6 +691,8 @@ def verify(path: Path) -> int:
         raise KrsError("E_VERIFY_CURVE", ref=curve)
     if "results" not in project:
         raise KrsError("E_NO_RESULTS")
+    if len(project["ports"]) < 2:  # the external ports, as _split counts them; compare() reads S21 and S11
+        raise KrsError("E_VERIFY_PORTS", ports=len(project["ports"]))
     return _locked(path, _verify)
 
 

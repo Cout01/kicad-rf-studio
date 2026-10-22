@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 import json
+import subprocess
 from pathlib import Path
 
 import numpy as np
@@ -13,7 +14,7 @@ from kicad_rf_studio.core.post.outputs import LIMITS, grid_lines
 from kicad_rf_studio.core.post.waves import grid, layout
 from kicad_rf_studio.core.project import load_project, parts, save_project
 from networks import C_BOX, read_s, star, terminate_np
-from test_cli_cost import FIX
+from test_cli_cost import FIX, fail
 from test_run import coupon, lpf_loads, lpf_project, lpf_run, result_codes
 
 F, _ = grid(915e6, 3, 1.1)
@@ -92,6 +93,16 @@ def test_verify_refuses_stale_results_and_unreadable_values(tmp_path, calibrated
     capsys.readouterr()
     assert main(["verify", str(pj)]) == 2 and line in capsys.readouterr().out.splitlines()
     assert "verify" not in load_project(pj)
+
+
+def test_verify_needs_two_external_ports(tmp_path, calibrated, monkeypatch, capsys):  # final review F3
+    pj = lpf_project(tmp_path)
+    d = load_project(pj)
+    del d["ports"][1]  # a hand edit; run accepts it with W_NOT_TWO_PORT, but compare() reads S21 and S11
+    save_project(pj, {**d, "results": {"jobs": []}})  # the refusal comes before the results are read
+    monkeypatch.setattr(subprocess, "Popen", fail)  # tests/test_cli_cost.py: no worker starts
+    capsys.readouterr()
+    assert main(["verify", str(pj)]) == 2 and capsys.readouterr().err == render("E_VERIFY_PORTS", ports="1") + "\n"
 
 
 # --- beyond the brief's tests ------------------------------------------------------------------------------------
