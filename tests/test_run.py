@@ -15,9 +15,13 @@ from kicad_rf_studio.cli import main
 from kicad_rf_studio.core.kicad.stackup import kicad_default
 from kicad_rf_studio.core.messages import render
 from kicad_rf_studio.core.model.spec import spec_hash
+from kicad_rf_studio.core.post.waves import grid, layout
 from kicad_rf_studio.core.project import load_project, save_project
 from kicad_rf_studio.pipeline import expected_loss, load
+from networks import star
 from test_cli_cost import SEG, by_hand, fail, gcpw, new_project
+
+F, _ = grid(915e6, 3, 1.1)
 
 
 def coupon(tmp_path, preset="draft"):
@@ -74,6 +78,17 @@ def test_each_verdict_through_run(tmp_path, calibrated, monkeypatch, kind, code,
     pj = coupon(tmp_path, "normal")  # the replays pin these at Normal
     assert main(["run", str(pj)]) == code
     assert verdict_codes(only_run(calibrated))[1] == verdict
+
+
+def test_the_network_fake_records_the_waves_of_a_known_network(tmp_path, calibrated, monkeypatch):  # C-41, X-12
+    monkeypatch.setenv("KRS_FAKE", "network")
+    pj = coupon(tmp_path, "normal")
+    assert main(["run", str(pj)]) == 0
+    p = load_project(pj)
+    jobs = p["results"]["jobs"]
+    assert [j["verdict"] for j in jobs] == ["converged"] * 2
+    assert jobs[0]["t_cut"] == pytest.approx(4.5e-9, abs=0.1e-9)  # measured: 4.502 ns at Normal
+    assert np.abs(layout(p, p["results"]).s - star(F, 2)).max() <= 1e-5
 
 
 def test_a_crashed_job_is_unclassified_and_the_others_finish(tmp_path, capsys, calibrated, monkeypatch):  # RF 4

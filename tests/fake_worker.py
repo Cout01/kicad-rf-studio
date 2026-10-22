@@ -1,8 +1,9 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """Stands in for kicad_rf_studio.worker, run as `python -I -u tests/fake_worker.py job.json` in a job folder: it writes
-what openEMS and the worker would, from tests/traces.py, in milliseconds and without openEMS. $KRS_FAKE_EXIT is an
-exit code and $KRS_FAKE "hang" a worker that never ends, in any mode; otherwise $KRS_FAKE is the run's kind:
-"converge" (the default), "slow", "crash" (only on port $KRS_FAKE_JOB when it is set) or a kind of traces.trace.
+what openEMS and the worker would, from tests/traces.py or tests/networks.py, in milliseconds and without openEMS.
+$KRS_FAKE_EXIT is an exit code and $KRS_FAKE "hang" a worker that never ends, in any mode; otherwise $KRS_FAKE is the
+run's kind: "converge" (the default), "slow", "crash" (only on port $KRS_FAKE_JOB when it is set), "network" (the
+waves of the known N-port networks.star, from networks.network_trace) or a kind of traces.trace.
 $KRS_FAKE_SETUP is JSON that setup.json takes, and $KRS_FAKE_LOG a file that gets a line as each fake starts and
 ends."""
 import json
@@ -15,6 +16,7 @@ from pathlib import Path
 import numpy as np
 
 sys.path.insert(0, str(Path(__file__).parent))  # -I leaves the script's folder off sys.path
+from networks import network_trace  # noqa: E402
 from traces import trace  # noqa: E402
 
 DT = 1e-13  # s, the fake's FDTD timestep
@@ -35,7 +37,10 @@ def run(job: dict, spec: dict) -> int:
     kind, ports, ex = os.environ.get("KRS_FAKE", "converge"), range(1, len(spec["ports"]) + 1), spec["excitation"]
     if kind == "crash" and os.environ.get("KRS_FAKE_JOB", str(job["port"])) != str(job["port"]):
         kind = "converge"
-    rec = trace(kind, len(ports), job["port"] - 1, ex["f1"], ex["f2"], t_end=job["t_max"])  # "slow", "crash" converge
+    if kind == "network":
+        rec = network_trace(len(ports), job["port"] - 1, ex["f1"], ex["f2"], DT, job["t_max"])
+    else:  # "slow", "crash" converge
+        rec = trace(kind, len(ports), job["port"] - 1, ex["f1"], ex["f2"], t_end=job["t_max"])
     steps, end = round(job["t_max"] / DT), 12e-9 if kind == "crash" else math.inf
     print(f"Max. number of timesteps: {steps}")
     probes = [(open(f"port_{q}t_{k}", "w", encoding="utf-8"), t, v[k - 1])

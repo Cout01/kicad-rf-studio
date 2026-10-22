@@ -4,6 +4,8 @@ KRS_FAKE=network fake: S = B·A⁻¹ must give back the network the waves came f
 inside, since the fake worker imports this module and a worker never imports skrf."""
 import numpy as np
 
+from kicad_rf_studio.stoprule import Records
+
 Z0, C_BOX = 50.0, 2e-14  # Ω at every port; F, the fake worker's C_box of a part port
 
 
@@ -41,6 +43,13 @@ def synth_records(s_of, n, f1, f2, dt, t_rec, smooth=False):
     u, i = (np.fft.irfft(X * E[:, None, None], m, axis=0)[:k] for X in (V, I * shift))
     t_u = np.arange(k) * step
     return [(t_u, u[:, :, j].T.copy(), t_u + dt / 2, i[:, :, j].T.copy()) for j in range(n)]
+
+
+def network_trace(ports: int, k: int, f1: float, f2: float, dt: float, t_end: float) -> Records:
+    """Job k's (0-based) records of star(f, ports) from synth_records, for the KRS_FAKE=network fake: the energy
+    Σ u² + (Z0·i)² at te = t_u."""
+    t_u, u, t_i, i = synth_records(lambda f: star(f, ports), ports, f1, f2, dt, t_end)[k]
+    return Records(t_u, u, t_i, i, t_u, (u ** 2 + (Z0 * i) ** 2).sum(0))
 
 
 def terminate_np(s, ext, zk):
