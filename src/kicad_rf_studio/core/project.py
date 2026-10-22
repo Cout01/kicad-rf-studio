@@ -48,6 +48,17 @@ def parts(data: dict) -> dict[str, dict]:
     return {q["ref"]: q for q in (*data["chain"]["series"], *data["chain"]["shunt"], *data["others"])}
 
 
+def shown_reference(ref: dict | None) -> str:
+    """A port's stored reference as I_PORT and the port map show it: the pad's name, the point on its layer (KiCad's
+    frame, as stored), or "none"."""
+    if ref is None:
+        return "none"
+    if "pad" in ref:
+        return ref["pad"]
+    x, y = ref["point"]
+    return f"({x:.3f}, {y:.3f}) on {ref['layer']}"
+
+
 def board_hash(path: str | Path) -> str:
     """The SHA-256 of the file's bytes, in hex."""
     return hashlib.sha256(Path(path).read_bytes()).hexdigest()

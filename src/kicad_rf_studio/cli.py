@@ -19,7 +19,7 @@ from kicad_rf_studio.core.kicad.tracer import signal_layer
 from kicad_rf_studio.core.kicad.values import parse_frequency
 from kicad_rf_studio.core.messages import KrsError, reason, render
 from kicad_rf_studio.core.project import (BAND_FACTOR, DEFAULT_PRESET, EXPAND_H, HARMONICS, MESH_N, T_MAX_S,
-                                          board_hash, make_project, save_project)
+                                          board_hash, make_project, save_project, shown_reference)
 
 PRESETS = ("draft", "normal", "strict")  # the run presets; `--stackup` names a stackup preset, which is another thing
 
@@ -57,16 +57,6 @@ def _reference(ref) -> dict | None:
         x, y = ref.point
         return {"point": [x, 0.0 - y], "layer": ref.layer}  # 0.0 - y keeps a zero from becoming -0.0
     return {"pad": ref.pad, "uuid": ref.uuid}
-
-
-def _shown(ref: dict | None) -> str:
-    """A stored reference as I_PORT prints it."""
-    if ref is None:
-        return "none"
-    if "pad" in ref:
-        return ref["pad"]
-    x, y = ref["point"]
-    return f"({x:.3f}, {y:.3f}) on {ref['layer']}"
 
 
 def _new(a: argparse.Namespace) -> None:
@@ -128,7 +118,7 @@ def _new(a: argparse.Namespace) -> None:
              ("I_CHAIN", {"start": chain.start, "end": chain.end, "series": _list(p.ref for p in chain.series),
                           "shunt": _list(p.ref for p in chain.shunt)}),
              *map(_part_note, series + shunt + others),
-             *(("I_PORT", {"name": p["name"], "signal": p["signal"], "reference": _shown(p["reference"]),
+             *(("I_PORT", {"name": p["name"], "signal": p["signal"], "reference": shown_reference(p["reference"]),
                            "rule": p["rule"] or "none"}) for p in ports),
              ("I_F0", {"f0_mhz": f"{a.f0 / 1e6:g}", "harmonics": a.harmonics}),
              ("I_DEFAULTS", {"preset": a.preset, "band_factor": BAND_FACTOR, "t_max_ns": f"{T_MAX_S * 1e9:g}",

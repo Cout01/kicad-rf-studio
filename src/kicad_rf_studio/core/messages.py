@@ -141,6 +141,24 @@ CATALOG: dict[str, str] = {
     "W_RECIPROCITY": "Reciprocity flagged: |Sij − Sji| {err} at {f_mhz} MHz (|a| {a_db} dB) is above {limit}. Check the verdicts above: a flat or T_max job is the usual cause, and a stricter preset the fix.",
     "I_LOSS_BUDGET": "Loss budget: {layout_pct} % unaccounted with the part losses removed, against {expected_pct} % expected dielectric loss, at worst at {f_mhz} MHz (|a| {a_db} dB); flagged {limit_pct} points above.",
     "W_LOSS_BUDGET": "Loss budget flagged: {layout_pct} % unaccounted at {f_mhz} MHz (|a| {a_db} dB) is more than {limit_pct} points above the {expected_pct} % expected dielectric loss. Radiation or power coupled into cut nets is the usual cause; look at the model with `preview`.",
+    "E_RESULTS_WRITE": "Cannot write {path}: {reason}. Close the program that holds it open (a spreadsheet, say), then run `{command}` to write it again.",
+    "I_MARKER": "{marker} = {f_mhz} MHz (|a| {a_db} dB): IL {il_db} dB and RL {rl_db} dB with layout; IL {il_ideal_db} dB and RL {rl_ideal_db} dB ideal schematic.",
+    "I_MARKER_TRACE": "{marker} = {f_mhz} MHz (|a| {a_db} dB): IL {il_db} dB and RL {rl_db} dB.",
+    "I_HR": "Harmonic rejection at {marker}: {hr_db} dB with layout, {hr_ideal_db} dB ideal schematic.",
+    "I_HR_TRACE": "Harmonic rejection at {marker}: {hr_db} dB.",
+    "I_PLOT_TITLE": "{name}: relative to a 50 Ω source and load",
+    "I_PLOT_LAYOUT": "with layout",
+    "I_PLOT_IDEAL": "ideal schematic",
+    "I_PLOT_FREQUENCY": "Frequency (GHz)",
+    "I_LIMIT_MAGNETIC": "Limit: no magnetic coupling between part bodies.",
+    "I_LIMIT_LID": "Limit: no interaction between part bodies and the lid.",
+    "I_LIMIT_S2P_PLANE": "Limit: vendor S2P reference planes differ from the pad-gap box.",
+    "I_LIMIT_PEC": "Limit: copper is PEC, so there is no conductor loss.",
+    "I_LIMIT_WALLS": "Limit: the through-crop walls absorb most of the power coupled into cut nets, and reflect the rest.",
+    "I_LIMIT_ACCURACY": "Limit: accuracy is reported as |ΔS| or as a null shift, never in dB at a null.",
+    "I_LIMIT_50_OHM": "Limit: insertion loss, return loss and harmonic rejection are relative to a 50 Ω source and load.",
+    "I_LIMIT_IDEAL": "Limit: the ideal schematic is the same part models (preset or S2P) joined ideally: no layout, no C_box, no traces.",
+    "I_LIMIT_LOSS": "Limit: the expected dielectric loss is a lower bound from the measured straight sections.",
     "E_INTERNAL": "Internal error: {detail}. Please report it.",
 }
 
@@ -153,17 +171,18 @@ def render(code: str, **params) -> str:
     return _translation.gettext(CATALOG[code]).format(**params)
 
 
-# The `reason` of E_BOARD_UNREADABLE, E_PROJECT_UNREADABLE, E_SETTINGS_UNREADABLE and E_OUTPUT_PATH, by the class of
-# the error. Never the system's own message: it is long, in the system's language, and a UnicodeDecodeError's repr
+# The `reason` of E_BOARD_UNREADABLE, E_PROJECT_UNREADABLE, E_SETTINGS_UNREADABLE, E_OUTPUT_PATH and E_RESULTS_WRITE,
+# by the class of the error. Never the system's own message: it is long, in the system's language, and a UnicodeDecodeError's repr
 # holds every byte of the file. NotADirectoryError is a file where a folder of the path should be.
 _REASONS = ((FileNotFoundError, "file not found"), (IsADirectoryError, "not a file"),
             (PermissionError, "permission denied"), ((FileExistsError, NotADirectoryError), "already exists as a file"),
             (UnicodeError, "not UTF-8 text"), (json.JSONDecodeError, "not JSON"))
 
 
-def reason(error: Exception) -> str:
-    """A short English phrase for an OSError, a UnicodeError or a JSON error met reading or writing a file."""
-    return next((text for kind, text in _REASONS if isinstance(error, kind)), "cannot be read")
+def reason(error: Exception, fallback: str = "cannot be read") -> str:
+    """A short English phrase for an OSError, a UnicodeError or a JSON error met reading or writing a file; `fallback`
+    for any other error."""
+    return next((text for kind, text in _REASONS if isinstance(error, kind)), fallback)
 
 
 class KrsError(Exception):
