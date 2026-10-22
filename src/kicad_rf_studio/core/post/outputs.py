@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
-"""The files of results/ (spec 7.5, C-27..C-32): the Touchstone files with their port map, summary.csv and
-summary.png; the marker lines and the stated limits; and the writer that replaces only its own files."""
+"""The files of results/ (spec 7.5, C-27..C-32): the Touchstone files with their port map and verify's grid lines,
+summary.csv and summary.png; the marker lines and the stated limits; and the writer that replaces only its own
+files."""
 import contextlib
 import csv
 import io
@@ -72,6 +73,18 @@ def port_map(project: dict, results: dict, lay: Layout, idx: list[int]) -> list[
         lines.append(f"port {n} {name}: {what}, {'row and column negated' if lay.flipped[k] else 'as built'}")
     return lines + [f"terminated {port['name']}: {part(port['name'])}, C_box {c_box[port['name']]:.6g} F"
                     for k, port in enumerate(lay.ports) if port["part"] and k not in idx]
+
+
+def grid_lines(grid: list[dict], values: dict[str, str]) -> list[str]:
+    """The port-map lines of verify's parts (C-36, C-37): one per entry of a model spec's `grid` that `values` names
+    (each part's value text by ref), in grid order, with what it sat in the grid as: a C as its value plus its C_box,
+    an R as its value, an L with its cell's own C."""
+    def element(g: dict) -> str:
+        if "L" in g:
+            return f"L {g['L']:.6g} H with the cell's C {g['C']:.6g} F"
+        return f"R {g['R']:g} ohm" if g["R"] is not None else f"C {g['C']:.6g} F (value + C_box)"
+
+    return [f"in grid: {g['name']} {values[g['name']]} as {element(g)}" for g in grid if g["name"] in values]
 
 
 def marker_lines(lay: Layout, chain: np.ndarray, ideal: np.ndarray | None) -> list[tuple[str, dict]]:

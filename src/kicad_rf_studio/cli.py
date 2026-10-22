@@ -4,7 +4,9 @@ replaces. `cost` prints the 2D Z0 and εeff of the measured nets' straight secti
 gate and prints the cost (pipeline.cost). `run` runs the gates and one job per port under the stop rule; only when
 every job kept S does it replace the results in project.json and write the outputs to results/ (pipeline.run).
 `retune` stores new part values or S2P files and writes results/ again from the last run's waves, with no new run
-(pipeline.retune). `preview` has a worker write the model's model.xml and opens it in AppCSXCAD (pipeline.preview).
+(pipeline.retune). `verify` runs once more with every part port in the grid at its ideal value, and compares that with
+a retune at the same values (pipeline.verify). `preview` has a worker write the model's model.xml and opens it in
+AppCSXCAD (pipeline.preview).
 `setup-openems` installs openEMS from the official Windows package into this Python, and `calibrate` measures this
 machine's simulation speed. A command returns its exit code, None for 0. There is no help= text: every string a user
 sees is a code in core.messages, and argparse itself writes the usage line."""
@@ -155,6 +157,12 @@ def _retune(a: argparse.Namespace) -> int:
     return pipeline.retune(pipeline.project_path(a.project), a.assignments)
 
 
+def _verify(a: argparse.Namespace) -> int:
+    from kicad_rf_studio import pipeline
+
+    return pipeline.verify(pipeline.project_path(a.project))
+
+
 def _preview(a: argparse.Namespace) -> int:
     from kicad_rf_studio import pipeline
 
@@ -197,6 +205,9 @@ def _parser() -> argparse.ArgumentParser:
     retune.add_argument("project")
     retune.add_argument("assignments", nargs="*")
     retune.set_defaults(func=_retune)
+    verify = commands.add_parser("verify")
+    verify.add_argument("project")
+    verify.set_defaults(func=_verify)
     preview = commands.add_parser("preview")
     preview.add_argument("project")
     preview.set_defaults(func=_preview)

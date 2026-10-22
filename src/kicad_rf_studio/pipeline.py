@@ -1,8 +1,9 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
-"""What `cost`, `run`, `retune` and `preview` share (spec 6.1): a project read with its board and geometry, its model
-built through the mesh gates, the calibration that sizes its jobs, the setup gate on openEMS's setup-only run (timestep
-floor, port connectivity, unused primitives), the cost model (spec 6.4) and the outputs of a run's results (spec 7.3);
-and `cost` (spec 3.2), `run` (spec 6.1), `retune` (spec 3.2, 7.2, 7.8) and `preview` (C-34) themselves."""
+"""What `cost`, `run`, `retune`, `verify` and `preview` share (spec 6.1): a project read with its board and geometry,
+its model built through the mesh gates, the calibration that sizes its jobs, the setup gate on openEMS's setup-only run
+(timestep floor, port connectivity, unused primitives), the cost model (spec 6.4), the job phase and the outputs of a
+run's results (spec 7.3); and `cost` (spec 3.2), `run` (spec 6.1), `retune` (spec 3.2, 7.2, 7.8), `verify` (spec 7.6)
+and `preview` (C-34) themselves."""
 from __future__ import annotations
 
 import copy
@@ -27,21 +28,21 @@ from kicad_rf_studio.core.cs2d import ShortError, solve
 from kicad_rf_studio.core.geometry import build_geometry
 from kicad_rf_studio.core.geometry.sections import cross_section
 from kicad_rf_studio.core.kicad import load_board
-from kicad_rf_studio.core.kicad.values import port_value
+from kicad_rf_studio.core.kicad.values import part_kind, port_value
 from kicad_rf_studio.core.mesh.gates import check_fit2d, dt_floor_reference, fit2d, mesh_with_lint
 from kicad_rf_studio.core.messages import KrsError, render
 from kicad_rf_studio.core.model.parts import CURVE_PORT, GRID, PORT
 from kicad_rf_studio.core.model.ports import ends, nominal_boxes, place
 from kicad_rf_studio.core.model.readers import read_log, read_probe, read_run_stats, read_stats
-from kicad_rf_studio.core.model.spec import grid_entry, model_spec, spec_hash
-from kicad_rf_studio.core.post.chain import ideal_schematic, loads, part_impedances, terminate
-from kicad_rf_studio.core.post.checks import indicator_lines, loss_budget, loss_expected
-from kicad_rf_studio.core.post.outputs import (LIMITS, OUTPUTS, marker_lines, port_map, summary_csv, summary_png,
-                                               touchstone, write)
+from kicad_rf_studio.core.model.spec import grid_entry, model_spec, spec_hash, verify_spec
+from kicad_rf_studio.core.post.chain import ideal_schematic, loads, part_impedances, terminate, z_part
+from kicad_rf_studio.core.post.checks import compare, indicator_lines, loss_budget, loss_expected
+from kicad_rf_studio.core.post.outputs import (LIMITS, OUTPUTS, VERIFY_OUTPUT, grid_lines, marker_lines, port_map,
+                                               summary_csv, summary_png, touchstone, write)
 from kicad_rf_studio.core.post.waves import layout
 from kicad_rf_studio.core.project import (GATES, board_file, board_hash, load_project, mesh_n, parts, read_project,
                                           relative_path, save_project)
-from kicad_rf_studio.stoprule import KEPT, Records, Verdict, residual_db, stop_rule
+from kicad_rf_studio.stoprule import KEPT, PRESETS, Records, Verdict, residual_db, stop_rule
 from kicad_rf_studio.worker import LOG
 
 if TYPE_CHECKING:
@@ -648,6 +649,105 @@ def retune(path: Path, assignments: list[str], emit: Callable[[str, dict], None]
     emit = emit or (lambda code, params: print(render(code, **params)))
     for code, params in lines:
         emit(code, params)
+    return 0
+
+
+def verify(path: Path) -> int:
+    """`verify` on the project at `path` (spec 3.2, 7.6, C-36..C-38), returning its exit code as run does (C-22).
+    Before the lock: E_VERIFY_NO_PARTS when no part is a port or a curve_port (a single trace), E_VERIFY_CURVE for the
+    first curve_port, E_NO_RESULTS. Then as in run, under the lock in a fresh run folder whose events.jsonl gets every
+    line, with any KrsError a message event and exit 2: W_FILLS_AS_SAVED and load()'s notes, stopping with stops();
+    the model, 3 when a mesh gate blocks; results_of and the run's layout N-port; verify's model (verify_spec) and the
+    part ports' loads at their ideal values, the part models and S2P files ignored (C-38), every refusal before any
+    job. Then simulate on verify's model, its external ports the only jobs: 3 when its setup gate blocks, and unless
+    every job kept S, W_VERIFY_NOT_KEPT and 4 with nothing stored. Else verify's own N-port is compared with the run's
+    closed by those loads, the noisier of the run's and the project's presets setting the null floor; verify.s{P}p
+    goes to results/ with its port map and grid lines, the comparison to project.json's verify (its results kept), and
+    the result lines follow: I_VERIFY_RESULTS, I_VERIFY_COMPARE, I_VERIFY_NULL or W_VERIFY_NULL_UNMATCHED for each
+    null (I_VERIFY_NO_NULLS for none), the indicator lines with the loss budget of a 2-port and no part loss,
+    I_OUTPUTS, I_VERIFY_SCOPE and LIMITS; then 0."""
+    project = read_project(path)  # before the lock, as in run
+    by_ref = parts(project)
+    if not any(q["role"] in (PORT, CURVE_PORT) for q in by_ref.values()):
+        raise KrsError("E_VERIFY_NO_PARTS")
+    if curve := next((ref for ref, q in by_ref.items() if q["role"] == CURVE_PORT), None):
+        raise KrsError("E_VERIFY_CURVE", ref=curve)
+    if "results" not in project:
+        raise KrsError("E_NO_RESULTS")
+    run_dir = runs.run_dir_for(path.absolute().parent.name)  # absolute: as in cost
+    with runs.project_lock(path, run_dir):
+        run_dir.mkdir(parents=True)
+        try:
+            return _verify(path, run_dir)
+        except KrsError as err:
+            runs.emit(run_dir, "message", err.code, err.params)
+            return 2
+
+
+def _verify(path: Path, run_dir: Path) -> int:
+    """verify() under the lock, with `run_dir` made."""
+    emit = partial(runs.emit, run_dir)  # (kind, code, params, job=None)
+    project, board, geom, notes = load(path)
+    for code, params in [("W_FILLS_AS_SAVED", {}), *notes]:
+        emit("message", code, params)
+    if stop := stops(notes):
+        return stop
+    model = build_model(project, board, geom)
+    if model.blocked:
+        for code, params in model.blocked:
+            emit("verdict", code, params)
+        for code, params in gate_lines(project["gates"]):  # C-10
+            emit("message", code, params)
+        return 3
+    results = results_of(project, model)
+    lay = layout(project, results)
+    by_ref, (ext, refs) = parts(project), _split(lay)
+    values = {ref: by_ref[ref]["value"] for ref in refs}
+    dump = runs.job_dir(Path(results["run_dir"]), 0, "setup") / "operator_dump.vtr"
+    vspec = verify_spec(model.spec, by_ref, results["c_box"], dump, results["dt"])
+    zk = loads({ref: z_part(part_kind(ref), port_value(ref, values[ref]), None, lay.f) for ref in refs}, refs,
+               results["c_box"], lay.f)  # the ideal values, the part models and S2P files ignored (C-38)
+    if (out := simulate(replace(model, spec=vspec), project, run_dir)) is None:
+        return 3
+    done, _, wall_s = out
+    kept = sum(j["verdict"] in KEPT for j in done)
+    if kept < len(done):  # nothing compared or stored
+        emit("result", "W_VERIFY_NOT_KEPT", {"kept": kept, "runs": len(done), "wall": duration(wall_s),
+                                             "folder": str(run_dir)})
+        return 4
+    own = layout(project, {"run_dir": str(run_dir), "jobs": done})
+    k0, p = lay.markers[0], len(own.ports)
+    # 10 × the S tolerance of the noisier preset, the run's or verify's own
+    floor = 10 * max(PRESETS[results["preset"]][1], PRESETS[project["preset"]][1])
+    cmp = compare(own.s, terminate(lay.s, ext, zk, lay.f), lay.f, k0, floor)
+    folder, name = path.parent / "results", f"verify.s{p}p"
+    basis = {**results, "run_dir": str(run_dir), "jobs": done, "preset": project["preset"]}
+    comments = port_map(project, basis, own, list(range(p))) + grid_lines(vspec["grid"], values)
+    write(folder, {name: touchstone(own.s, own.f, [q["name"] for q in own.ports], comments)}, VERIFY_OUTPUT,
+          command_line("kicad-rf-studio", "verify", str(path)))
+    data = load_project(path)  # as it is now: only verify is replaced
+    data["verify"] = {"model_hash": spec_hash(vspec), "base_hash": results["model_hash"], "values": values,
+                      "run_dir": str(run_dir), "jobs": done, "compare": cmp}
+    save_project(path, data)
+    lines = [("I_VERIFY_RESULTS", {"runs": len(done), "wall": duration(wall_s), "path": str(path)}),
+             ("I_VERIFY_COMPARE", {"f0_mhz": f"{own.f[k0] / 1e6:g}", "a_db": f"{own.a_db[k0]:.1f}",
+                                   "ds21_db": f"{cmp['ds21_db_f0']:.3f}", "ds11": f"{cmp['ds11_f0']:.4f}",
+                                   "ds_max": f"{cmp['ds_max']:.4f}"})]
+    for null in cmp["nulls"]:
+        k = np.abs(own.f - null["f_hz"]).argmin()  # the grid point nearest the null
+        at = {"f_mhz": f"{null['f_hz'] / 1e6:.1f}", "a_db": f"{own.a_db[k]:.1f}"}
+        if null["shift"] is None:
+            lines.append(("W_VERIFY_NULL_UNMATCHED", at))
+        else:
+            lines.append(("I_VERIFY_NULL", {**at, "shift_pct": f"{100 * null['shift']:+.2f}"}))
+    if not cmp["nulls"]:
+        lines.append(("I_VERIFY_NO_NULLS", {}))
+    p_layout = loss_budget(own.s, list(range(p)), np.zeros((len(own.f), 0))) if p == 2 else None  # P_parts = 0
+    lines += [*indicator_lines(own.f, own.a_db, own.s, p_layout, results["loss_expected"]),
+              ("I_OUTPUTS", {"files": name, "folder": str(folder)}), ("I_VERIFY_SCOPE", {}),
+              *((code, {}) for code in LIMITS)]
+    for code, params in lines:
+        emit("result", code, params)
     return 0
 
 

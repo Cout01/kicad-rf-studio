@@ -173,6 +173,15 @@ CATALOG: dict[str, str] = {
     "E_VERIFY_VALUE": "verify puts each part in the grid at its value, but {ref} has \"{value}\": verify can place only a C, L or R whose value reads (a C above 0). For a C, L or R, set one with `retune PROJECT {ref}=VALUE`, then run verify again.",
     "E_VERIFY_DUMP": "verify sizes each inductor's cell from the last run's operator dump {path}, which is missing. Run `run` again.",
     "E_VERIFY_K": "Part {ref}: its inductor in the grid resonates too fast for the time step (k {k}, limit {limit}), and the run would diverge. Check its value in project.json; a real inductor reads k near 0.01.",
+    "E_VERIFY_NO_PARTS": "This project has no part ports (a single trace), so verify has nothing to put in the grid: `run` is already its full simulation.",
+    "E_VERIFY_CURVE": "Part {ref} is rotated (a CurvePort), and verify cannot put a rotated part in the grid. Rotate it in KiCad to a multiple of 90° to verify this chain.",
+    "W_VERIFY_NOT_KEPT": "{kept} of {runs} verify jobs kept S, in {wall}, so nothing was compared or stored. The verdicts above, also in {folder}, say why; fix that and run `verify` again.",
+    "I_VERIFY_RESULTS": "{runs} verify jobs kept S, in {wall}; the comparison is stored in {path}.",
+    "I_VERIFY_COMPARE": "verify against the retune at the same ideal values: |ΔS21| {ds21_db} dB and |ΔS11| {ds11} at f0 = {f0_mhz} MHz (|a| {a_db} dB); max |ΔS| {ds_max} up to f2.",
+    "I_VERIFY_NULL": "Null of |S21| at {f_mhz} MHz in verify (|a| {a_db} dB): null shift {shift_pct} % against the retune's.",
+    "W_VERIFY_NULL_UNMATCHED": "Null of |S21| at {f_mhz} MHz in verify (|a| {a_db} dB) has no match within ±5 % in the retune. Compare the verify and chain Touchstone files in results/.",
+    "I_VERIFY_NO_NULLS": "No null of |S21| stands 20 dB out of the response, so there is no null shift to report.",
+    "I_VERIFY_SCOPE": "verify checks the layout reduction, not the vendor part data: each part sat in the grid at its ideal value, against a retune at the same values. Its loss budget counts a resistor's loss in the grid as layout loss.",
     "E_INTERNAL":"Internal error: {detail}. Please report it.",
 }
 
