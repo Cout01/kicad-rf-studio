@@ -134,6 +134,12 @@ CATALOG: dict[str, str] = {
     "E_S2P_BAND": "Part {ref}: {path} covers {f_lo}–{f_hi} MHz, not the simulated band {f1}–{f2} MHz, and it is never extrapolated. Give a file that covers the band, or, for a C, L or R, a value with `retune PROJECT {ref}=VALUE`.",
     "W_S2P_FIXTURE": "Part {ref}: {path} fits a {fits}-thru measurement better than the :{named} it was given. The suffix names the fixture the vendor measured the part in, not its place on the board; if the vendor used {fits}-thru, give it again as `retune PROJECT {ref}=file.s2p:{fits}`.",
     "E_CBOX": "The last run recorded no usable C_box for part {ref} ({value}), so its port cannot be closed. Run `run` again, and look at the part's port with `preview` if this repeats.",
+    "I_PASSIVITY": "Passivity: σ_max {sigma} at worst, at {f_mhz} MHz (|a| {a_db} dB); flagged above {limit}.",
+    "W_PASSIVITY": "Passivity flagged: σ_max {sigma} at {f_mhz} MHz (|a| {a_db} dB) is above {limit}, so this S makes power. Check the verdicts above: a flat or T_max job is the usual cause, and a stricter preset the fix.",
+    "I_RECIPROCITY": "Reciprocity: |Sij − Sji| {err} at worst, at {f_mhz} MHz (|a| {a_db} dB); flagged above {limit}.",
+    "W_RECIPROCITY": "Reciprocity flagged: |Sij − Sji| {err} at {f_mhz} MHz (|a| {a_db} dB) is above {limit}. Check the verdicts above: a flat or T_max job is the usual cause, and a stricter preset the fix.",
+    "I_LOSS_BUDGET": "Loss budget: {layout_pct} % unaccounted with the part losses removed, against {expected_pct} % expected dielectric loss, at worst at {f_mhz} MHz (|a| {a_db} dB); flagged {limit_pct} points above.",
+    "W_LOSS_BUDGET": "Loss budget flagged: {layout_pct} % unaccounted at {f_mhz} MHz (|a| {a_db} dB) is more than {limit_pct} points above the {expected_pct} % expected dielectric loss. Radiation or power coupled into cut nets is the usual cause; look at the model with `preview`.",
     "E_INTERNAL": "Internal error: {detail}. Please report it.",
 }
 

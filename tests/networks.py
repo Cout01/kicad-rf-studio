@@ -52,16 +52,21 @@ def terminate_np(s, ext, zk):
     return see + (sei * g[:, None, :]) @ np.linalg.solve(np.eye(len(i)) - sii * g[:, None, :], sie)
 
 
+def thru(z, connection, z0=50.0):
+    """The S (F, 2, 2) of the impedance z (F,) in a series (`connection` "series") or shunt (any other) thru fixture of
+    z0 Ω."""
+    s21 = 2 * z0 / (2 * z0 + z) if connection == "series" else 2 * z / (2 * z + z0)
+    s11 = z / (2 * z0 + z) if connection == "series" else -z0 / (2 * z + z0)
+    return np.stack([np.stack([s11, s21], -1), np.stack([s21, s11], -1)], -2)
+
+
 def write_s2p(path, z, connection, f, z0=50.0):
     """A Touchstone 2-port at `path` (a .s2p name) of the impedance z (one per f, Hz) measured in a series or shunt
     fixture of z0 Ω (spec 9.1's synthetic S2P files from ideal RLC)."""
     import skrf as rf
 
-    s21 = 2 * z0 / (2 * z0 + z) if connection == "series" else 2 * z / (2 * z + z0)
-    s11 = z / (2 * z0 + z) if connection == "series" else -z0 / (2 * z + z0)
-    s = np.stack([np.stack([s11, s21], -1), np.stack([s21, s11], -1)], -2)
-    rf.Network(frequency=rf.Frequency.from_f(f, unit="Hz"), s=s, z0=z0, name="part").write_touchstone(
-        str(path.with_suffix("")))
+    rf.Network(frequency=rf.Frequency.from_f(f, unit="Hz"), s=thru(z, connection, z0), z0=z0,
+               name="part").write_touchstone(str(path.with_suffix("")))
     return path
 
 
