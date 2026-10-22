@@ -181,6 +181,8 @@ CATALOG: dict[str, str] = {
     "I_VERIFY_NULL": "Null of |S21| at {f_mhz} MHz in verify (|a| {a_db} dB): null shift {shift_pct} % against the retune's.",
     "W_VERIFY_NULL_UNMATCHED": "Null of |S21| at {f_mhz} MHz in verify (|a| {a_db} dB) has no match within ±5 % in the retune at the same ideal values; the stated limits below say what that reduction leaves out.",
     "I_VERIFY_NO_NULLS": "No null of |S21| stands 20 dB out of the response, so there is no null shift to report.",
+    "I_VERIFY_LOSS_BUDGET": "Loss budget: {layout_pct} % unaccounted with the parts in the grid (a resistor's loss counts here), against {expected_pct} % expected dielectric loss, at worst at {f_mhz} MHz (|a| {a_db} dB); flagged {limit_pct} points above.",
+    "W_VERIFY_LOSS_BUDGET": "Loss budget flagged: {layout_pct} % unaccounted at {f_mhz} MHz (|a| {a_db} dB) is more than {limit_pct} points above the {expected_pct} % expected dielectric loss, with the parts in the grid. A resistor in the chain adds its own loss here; otherwise radiation or power coupled into cut nets is the usual cause; look at the model with `preview`.",
     "I_VERIFY_SCOPE": "verify checks the layout reduction, not the vendor part data: each part sat in the grid at its ideal value, against a retune at the same values. Its loss budget counts a resistor's loss in the grid as layout loss.",
     "E_INTERNAL": "Internal error: {detail}. Please report it.",
 }

@@ -55,6 +55,9 @@ def test_the_indicators_name_their_worst_frequency_and_flag_above_their_limits()
     assert lines[2] == ("W_LOSS_BUDGET", {"layout_pct": "5.00", "expected_pct": "2.00", "limit_pct": "2",
                                           "f_mhz": "457.5", "a_db": "-3.0"})
     assert [code for code, _ in indicator_lines(F, a_db, star(F, 3), None, 0.0)] == ["I_PASSIVITY", "I_RECIPROCITY"]
+    verify = [indicator_lines(F, a_db, x, np.full(len(F), p), e, in_grid=True)[2]  # the parts in the grid: verify's
+              for x, p, e in ((star(F, 3), 0.01, 0.005), (s, 0.05, 0.02))]
+    assert verify == [("I_VERIFY_LOSS_BUDGET", calm[2][1]), ("W_VERIFY_LOSS_BUDGET", lines[2][1])]
 
 
 def test_compare_reports_delta_s_and_the_null_shift():  # spec 7.5, 7.6, C-38, C-39; r6 §8: −1.9419 % within 1e-5

@@ -681,8 +681,8 @@ def verify(path: Path) -> int:
     closed by those loads, the noisier of the run's and the project's presets setting the null floor; verify.s{P}p
     goes to results/ with its port map and grid lines, the comparison to project.json's verify (its results kept), and
     the result lines follow: I_VERIFY_RESULTS, I_VERIFY_COMPARE, I_VERIFY_NULL or W_VERIFY_NULL_UNMATCHED for each
-    null (I_VERIFY_NO_NULLS for none), the indicator lines with the loss budget of a 2-port and no part loss,
-    I_OUTPUTS, I_VERIFY_SCOPE and LIMITS; then 0."""
+    null (I_VERIFY_NO_NULLS for none), the indicator lines with a 2-port's loss budget in its verify form (the parts
+    in the grid, no part loss removed), I_OUTPUTS, I_VERIFY_SCOPE and LIMITS; then 0."""
     project = read_project(path)  # before the lock, as in run
     by_ref = parts(project)
     if not any(q["role"] in (PORT, CURVE_PORT) for q in by_ref.values()):
@@ -744,7 +744,7 @@ def _verify(path: Path, run_dir: Path) -> int:
     if not cmp["nulls"]:
         lines.append(("I_VERIFY_NO_NULLS", {}))
     p_layout = loss_budget(own.s, list(range(p)), np.zeros((len(own.f), 0))) if p == 2 else None  # P_parts = 0
-    lines += [*indicator_lines(own.f, own.a_db, own.s, p_layout, results["loss_expected"]),
+    lines += [*indicator_lines(own.f, own.a_db, own.s, p_layout, results["loss_expected"], in_grid=True),
               ("I_OUTPUTS", {"files": name, "folder": str(folder)}), ("I_VERIFY_SCOPE", {}),
               *((code, {}) for code in LIMITS)]
     for code, params in lines:

@@ -49,7 +49,8 @@ def test_verify_runs_the_parts_in_the_grid_and_compares(tmp_path, calibrated, mo
     assert np.abs(read_s(file) - star(F, 2)).max() <= 1e-5
     assert b"in grid: L1 15nH as L 1.5e-08 H with the cell's C 6e-16 F" in file.read_bytes()
     assert result_codes(v["run_dir"]) == ["I_VERIFY_RESULTS", "I_VERIFY_COMPARE", "I_VERIFY_NO_NULLS", "I_PASSIVITY",
-                                          "I_RECIPROCITY", "W_LOSS_BUDGET", "I_OUTPUTS", "I_VERIFY_SCOPE", *LIMITS]
+                                          "I_RECIPROCITY", "W_VERIFY_LOSS_BUDGET", "I_OUTPUTS", "I_VERIFY_SCOPE",
+                                          *LIMITS]
     assert (pj.parent / "results" / "chain.s2p").is_file()  # retune's files stay
 
 

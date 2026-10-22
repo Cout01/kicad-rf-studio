@@ -50,10 +50,11 @@ def loss_expected(sections: list[tuple[float, float, float, float]], f0: float) 
 
 
 def indicator_lines(f: np.ndarray, a_db: np.ndarray, s: np.ndarray, p_layout: np.ndarray | None,
-                    expected: float) -> list[tuple[str, dict]]:
+                    expected: float, *, in_grid: bool = False) -> list[tuple[str, dict]]:
     """The indicator lines of S (F, N, N) on f (spec 7.4, C-33..C-35), each at its worst f with the excitation level
     a_db there (C-12): passivity, reciprocity and, given loss_budget's `p_layout`, the loss budget against
-    loss_expected's `expected`. Each takes its W_ form above its limit."""
+    loss_expected's `expected`, as I_VERIFY_LOSS_BUDGET or W_VERIFY_LOSS_BUDGET when the parts sat `in_grid` (verify's
+    S: no part loss is removed). Each takes its W_ form above its limit."""
     def at(k: int) -> dict:
         return {"f_mhz": f"{f[k] / 1e6:.1f}", "a_db": f"{a_db[k]:.1f}"}
 
@@ -65,7 +66,8 @@ def indicator_lines(f: np.ndarray, a_db: np.ndarray, s: np.ndarray, p_layout: np
               {"err": f"{err[j]:.2e}", "limit": f"{RECIP_LIMIT:g}", **at(j)})]
     if p_layout is not None:
         k = p_layout.argmax()  # the worst excess, as `expected` is the same at every f
-        lines.append(("W_LOSS_BUDGET" if p_layout[k] - expected > LOSS_LIMIT else "I_LOSS_BUDGET",
+        warn, info = ("W_VERIFY_LOSS_BUDGET", "I_VERIFY_LOSS_BUDGET") if in_grid else ("W_LOSS_BUDGET", "I_LOSS_BUDGET")
+        lines.append((warn if p_layout[k] - expected > LOSS_LIMIT else info,
                       {"layout_pct": f"{100 * p_layout[k]:.2f}", "expected_pct": f"{100 * expected:.2f}",
                        "limit_pct": f"{100 * LOSS_LIMIT:g}", **at(k)}))
     return lines
