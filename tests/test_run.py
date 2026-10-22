@@ -12,10 +12,12 @@ import pytest
 
 from kicad_rf_studio import runs
 from kicad_rf_studio.cli import main
+from kicad_rf_studio.core.kicad.stackup import kicad_default
 from kicad_rf_studio.core.messages import render
 from kicad_rf_studio.core.model.spec import spec_hash
 from kicad_rf_studio.core.project import load_project, save_project
-from test_cli_cost import fail, new_project
+from kicad_rf_studio.pipeline import expected_loss, load
+from test_cli_cost import SEG, by_hand, fail, gcpw, new_project
 
 
 def coupon(tmp_path, preset="draft"):
@@ -25,6 +27,11 @@ def coupon(tmp_path, preset="draft"):
 def verdict_codes(run_dir):
     events = [json.loads(line) for line in (run_dir / "events.jsonl").read_text(encoding="utf-8").splitlines()]
     return {e["job"]: e["code"] for e in events if e["kind"] == "verdict"}
+
+
+def only_run(data):
+    """The one run folder a test's run made under the data folder `data`."""
+    return next((data / "runs").iterdir())
 
 
 def test_run_converges_and_records_its_results(tmp_path, calibrated):  # spec 6.1, 3.3, C-29
@@ -44,13 +51,29 @@ def test_run_converges_and_records_its_results(tmp_path, calibrated):  # spec 6.
     assert runs.load_settings()["machines"][runs.machine_key()]["aggregate_mcs"] == pytest.approx(200.0)
 
 
+def test_results_record_the_preset_and_the_expected_loss(tmp_path, calibrated):  # C-25
+    pj = coupon(tmp_path)
+    assert main(["run", str(pj)]) == 0
+    r = load_project(pj)["results"]
+    assert (r["preset"], r["loss_expected"]) == ("draft", pytest.approx(0.00995, abs=3e-5))  # 20 mm, εeff 2.650
+
+
+def test_a_run_that_keeps_no_s_leaves_the_previous_results(tmp_path, calibrated, monkeypatch, capsys):  # C-24
+    monkeypatch.setenv("KRS_FAKE", "nan")
+    pj = coupon(tmp_path, "normal")
+    save_project(pj, {**load_project(pj), "results": {"jobs": []}})
+    assert main(["run", str(pj)]) == 4
+    assert load_project(pj)["results"] == {"jobs": []}
+    assert any(line.startswith("0 of 2 jobs kept S, in ") for line in capsys.readouterr().out.splitlines())
+
+
 @pytest.mark.parametrize(("kind", "code", "verdict"), [
     ("nan", 4, "E_JOB_DIVERGED"), ("tmax", 0, "W_JOB_T_MAX"), ("flat", 0, "W_JOB_FLAT"), ("growth", 4, "E_JOB_GROWTH")])
 def test_each_verdict_through_run(tmp_path, calibrated, monkeypatch, kind, code, verdict):  # spec 6.3, R3-107
     monkeypatch.setenv("KRS_FAKE", kind)
     pj = coupon(tmp_path, "normal")  # the replays pin these at Normal
     assert main(["run", str(pj)]) == code
-    assert verdict_codes(Path(load_project(pj)["results"]["run_dir"]))[1] == verdict
+    assert verdict_codes(only_run(calibrated))[1] == verdict
 
 
 def test_a_crashed_job_is_unclassified_and_the_others_finish(tmp_path, capsys, calibrated, monkeypatch):  # RF 4
@@ -58,9 +81,9 @@ def test_a_crashed_job_is_unclassified_and_the_others_finish(tmp_path, capsys, c
     monkeypatch.setenv("KRS_FAKE_JOB", "2")
     pj = coupon(tmp_path)
     assert main(["run", str(pj)]) == 4
-    r = load_project(pj)["results"]
-    assert [j["verdict"] for j in r["jobs"]] == ["converged", "unclassified"] and r["jobs"][1]["waves"] is None
-    log = Path(r["run_dir"]) / "job-2-P2" / "log.txt"
+    run = only_run(calibrated)
+    assert verdict_codes(run) == {1: "I_JOB_CONVERGED", 2: "W_JOB_UNCLASSIFIED"} and "results" not in load_project(pj)
+    log = run / "job-2-P2" / "log.txt"
     assert any(line.startswith("P2: the worker ended") and str(log) in line for line in capsys.readouterr().out.splitlines())
 
 
@@ -81,7 +104,7 @@ def test_a_stop_file_stops_the_run_found_from_the_lock(tmp_path, calibrated, mon
 
     threading.Thread(target=stopper, daemon=True).start()
     assert main(["run", str(pj)]) == 4
-    assert {j["verdict"] for j in load_project(pj)["results"]["jobs"]} == {"stopped"}
+    assert set(verdict_codes(only_run(calibrated)).values()) == {"W_JOB_STOPPED"} and "results" not in load_project(pj)
     assert not (pj.parent / "project.json.lock").exists()
 
 
@@ -98,7 +121,7 @@ def test_ctrl_c_in_the_job_phase_stops_the_run_and_frees_the_lock(tmp_path, cali
     monkeypatch.setattr(time, "sleep", sleep)
     pj = coupon(tmp_path)
     assert main(["run", str(pj)]) == 4 and not (pj.parent / "project.json.lock").exists()
-    assert {j["verdict"] for j in load_project(pj)["results"]["jobs"]} == {"stopped"}
+    assert set(verdict_codes(only_run(calibrated)).values()) == {"W_JOB_STOPPED"} and "results" not in load_project(pj)
 
 
 def test_a_second_ctrl_c_kills_at_once_and_the_jobs_are_recorded(tmp_path, calibrated, monkeypatch):  # final review M2
@@ -117,7 +140,7 @@ def test_a_second_ctrl_c_kills_at_once_and_the_jobs_are_recorded(tmp_path, calib
     monkeypatch.setattr(time, "sleep", sleep)
     pj = coupon(tmp_path)
     assert main(["run", str(pj)]) == 4 and len(fired) == 2
-    assert {j["verdict"] for j in load_project(pj)["results"]["jobs"]} == {"stopped"}
+    assert set(verdict_codes(only_run(calibrated)).values()) == {"W_JOB_STOPPED"} and "results" not in load_project(pj)
 
 
 @pytest.mark.parametrize(("edits", "code", "first"), [
@@ -178,6 +201,7 @@ def test_lpf915_runs_one_job_per_port_and_records_c_box(tmp_path, calibrated, mo
     assert sorted(d.name for d in Path(r["run_dir"]).glob("job-[1-9]*")) == [
         "job-1-P1", "job-2-P2", "job-3-C1", "job-4-L1", "job-5-C2", "job-6-C3"]
     assert set(r["c_box"]) == {"C1", "L1", "C2", "C3"}
+    assert (r["preset"], r["loss_expected"]) == ("normal", pytest.approx(0.00451, abs=3e-5))  # 7.99 mm of sections
 
 
 @pytest.mark.openems
@@ -228,9 +252,19 @@ def test_a_job_stopped_before_it_started_has_no_time_or_residual(tmp_path, calib
     monkeypatch.setattr(time, "sleep", sleep)
     pj = coupon(tmp_path)
     assert main(["run", str(pj)]) == 4
-    r = load_project(pj)["results"]
-    assert r["jobs"][1] == {"port": "P2", "verdict": "stopped", "t_cut": None, "t_stop": None, "residual_db": None,
-                            "waves": None}
-    events = [json.loads(line) for line in (Path(r["run_dir"]) / "events.jsonl").read_text(encoding="utf-8").splitlines()]
+    run = only_run(calibrated)
+    events = [json.loads(line) for line in (run / "events.jsonl").read_text(encoding="utf-8").splitlines()]
     assert [e["params"] for e in events if e["kind"] == "verdict" and e["job"] == 2] == [
-        {"port": "P2", "t_ns": None, "residual_db": None, "log": str(Path(r["run_dir"]) / "job-2-P2" / "log.txt")}]
+        {"port": "P2", "t_ns": None, "residual_db": None, "log": str(run / "job-2-P2" / "log.txt")}]
+    assert "results" not in load_project(pj)
+
+
+def test_the_expected_loss_takes_the_core_by_the_copper_and_skips_a_short(tmp_path, mini_board_file):  # C-25
+    def loss(body):
+        pj = by_hand(tmp_path / "p" / "project.json", mini_board_file(body), nets=("SIG",), stackup=kicad_default(0.8))
+        return expected_loss(load(pj)[2], 915e6)
+
+    top = loss(gcpw("F.Cu"))
+    assert top > 0 and loss(gcpw("B.Cu")) == pytest.approx(top, rel=1e-3)  # B.Cu: the mask below, the core above
+    short = SEG.format(5, 15, 35, 15, 0.3, "F.Cu", "SIG", "s") + SEG.format(5, 15.2, 35, 15.2, 0.3, "F.Cu", "GND", "g")
+    assert loss(short) == 0.0  # GND overlaps SIG at its cut, so its one section has no εeff (ShortError)

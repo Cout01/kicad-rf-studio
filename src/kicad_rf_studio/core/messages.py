@@ -122,6 +122,7 @@ CATALOG: dict[str, str] = {
     "W_JOB_UNCLASSIFIED": "{port}: the worker ended before T_max without a verdict, so its S is not kept. See {log}.",
     "W_JOB_STOPPED": "{port}: stopped, so its S is not kept. Run `run` again for results.",
     "I_RESULTS": "{kept} of {runs} jobs kept S, in {wall}; results recorded in {path}.",
+    "W_RUN_NOT_KEPT": "{kept} of {runs} jobs kept S, in {wall}, so project.json keeps its previous results and results/ is unchanged. The verdicts above, also in {folder}, say why; fix that and run `run` again.",
     "I_PREVIEW": "Opened {path} in AppCSXCAD.",
     "E_APPCSXCAD_MISSING": "AppCSXCAD was not found; open {path} in it by hand, or install openEMS with it: {command}",
     "E_S_SINGULAR": "The run's excitations are not independent at {f_mhz} MHz (condition number {kappa}, limit 10), so S cannot be computed: a job's waves are dead or duplicated. Run `run` again.",

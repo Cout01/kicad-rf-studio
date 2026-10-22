@@ -30,6 +30,7 @@ from kicad_rf_studio.core.model.parts import GRID
 from kicad_rf_studio.core.model.ports import ends, nominal_boxes, place
 from kicad_rf_studio.core.model.readers import read_log, read_probe, read_run_stats, read_stats
 from kicad_rf_studio.core.model.spec import grid_entry, model_spec, spec_hash
+from kicad_rf_studio.core.post.checks import loss_expected
 from kicad_rf_studio.core.project import (GATES, board_file, board_hash, load_project, mesh_n, parts, read_project,
                                           save_project)
 from kicad_rf_studio.stoprule import KEPT, Records, Verdict, residual_db, stop_rule
@@ -266,6 +267,24 @@ def readout_2d(geom: Geometry) -> None:
                      eeff=f"{bare.eps_eff:.3f}", z0_mask=f"{coated.z0:.2f}", eeff_mask=f"{coated.eps_eff:.3f}"))
 
 
+def expected_loss(geom: Geometry, f0: float) -> float:
+    """loss_expected at `f0` (C-25) of the measured sections of `geom`: each with its εeff with mask (the exact one),
+    as the 2D readout prints it, the εr and tanδ (None for 0) of the dielectric next to its copper in geom.zs, the one
+    below, else the one above, and its length. A section that other copper touches at its cut (ShortError) adds
+    nothing."""
+    # ponytail: straight, axis-aligned sections only, a lower bound; bends, pads and vias add nothing
+    terms = []
+    for s in geom.sections:
+        try:
+            eeff = solve(cross_section(s, geom.pieces, geom.zs, geom.masks.get(s.layer), "exact")).eps_eff
+        except ShortError:
+            continue
+        i = next(k for k, slab in enumerate(geom.zs) if slab.copper == s.layer)
+        d = geom.zs[i - 1] if i and geom.zs[i - 1].kind == "dielectric" else geom.zs[i + 1]
+        terms.append((d.eps_r, eeff, d.tan_d or 0.0, s.length))
+    return loss_expected(terms, f0)
+
+
 def cost(path: Path) -> int:
     """`cost` on the project at `path` (spec 3.2), returning its exit code (C-22): W_FILLS_AS_SAVED, the 2D readout and
     load()'s notes, then 2 on a refusal among them; a project without ports stops there with W_NO_PORTS. Then the
@@ -350,12 +369,13 @@ def run(path: Path) -> int:
     """`run` on the project at `path` (spec 6.1, C-42), returning its exit code (C-22). Raises E_NO_PORTS for a project
     without ports, and E_LOCKED while another run holds the project lock. Then, under the lock, in a fresh run folder
     whose events.jsonl gets every line, with any KrsError a message event and exit 2: W_FILLS_AS_SAVED and load()'s
-    notes, stopping with stops(); the model, 3 when a mesh gate blocks; prepare and the setup gate, 3 when it blocks,
-    else I_GATES_PASSED and the cost lines; then one job per port under the stop rule, each job's verdict
-    (classify_job), the results in project.json, the calibration's speed refreshed and I_RESULTS: 0 when every job kept
-    S, else 4 (C-29). W_GATE_LIMITS follows the gate lines and each verdict when the gate limits are not GATES (C-10).
-    STOP or Ctrl+C before the jobs start propagates as KeyboardInterrupt (exit 130, results untouched); once they run,
-    it stops them, and their results say so."""
+    notes, stopping with stops(); the model, 3 when a mesh gate blocks; the expected loss (expected_loss); prepare and
+    the setup gate, 3 when it blocks, else I_GATES_PASSED and the cost lines; then one job per port under the stop rule,
+    each job's verdict (classify_job) and the calibration's speed refreshed. When every job kept S, the results in
+    project.json, with the preset and the expected loss, I_RESULTS and 0; else W_RUN_NOT_KEPT and 4, the previous
+    results left as they were (C-24, C-29). W_GATE_LIMITS follows the gate lines and each verdict when the gate limits
+    are not GATES (C-10). STOP or Ctrl+C before the jobs start propagates as KeyboardInterrupt (exit 130, results
+    untouched); once they run, it stops them, and their verdicts say so."""
     if not read_project(path)["ports"]:
         raise KrsError("E_NO_PORTS")
     run_dir = runs.run_dir_for(path.absolute().parent.name)  # absolute: as in cost
@@ -389,6 +409,7 @@ def _run(path: Path, run_dir: Path) -> int:
             emit("verdict", code, params)
         limits()
         return 3
+    loss = expected_loss(geom, project["f0_hz"])  # before prepare: an error here costs no job
     threads, pool, per_job_mcs = prepare(model, partial(emit, "message"))
     settings = runs.load_settings()
     setup, blocked, warnings = setup_gate(model, project, run_dir, settings, threads)
@@ -443,18 +464,22 @@ def _run(path: Path, run_dir: Path) -> int:
         if (stats := job / "openEMS_stats.txt").is_file():  # a killed or crashed job has none
             speeds.append(read_stats(stats.read_text(encoding="utf-8"))["speed"])
 
-    data = load_project(path)  # as it is now: only results is replaced
-    data["results"] = {"model_hash": spec_hash(model.spec), "run_dir": str(run_dir), "gates": gates, "dt": dt,
-                       "c_box": setup["c_box"], "wall_s": wall_s, "jobs": done}
-    save_project(path, data)
     if speeds:  # spec 6.4: refreshed from the run's Speed lines; a run whose every job died measured nothing
         settings = runs.load_settings()
         entry = settings["machines"][runs.machine_key()]
         entry["aggregate_mcs"] = sum(speeds) / len(speeds) * entry["pool"] / 1e6  # prepare's / pool: the per-job speed
         runs.save_settings(settings)
     kept = sum(j["verdict"] in KEPT for j in done)
+    if kept < len(jobs):  # C-24: the previous results stay
+        emit("result", "W_RUN_NOT_KEPT", {"kept": kept, "runs": len(jobs), "wall": duration(wall_s),
+                                          "folder": str(run_dir)})
+        return 4
+    data = load_project(path)  # as it is now: only results is replaced
+    data["results"] = {"model_hash": spec_hash(model.spec), "run_dir": str(run_dir), "gates": gates, "preset": preset,
+                       "loss_expected": loss, "dt": dt, "c_box": setup["c_box"], "wall_s": wall_s, "jobs": done}
+    save_project(path, data)
     emit("result", "I_RESULTS", {"kept": kept, "runs": len(jobs), "wall": duration(wall_s), "path": str(path)})
-    return 0 if kept == len(jobs) else 4
+    return 0
 
 
 def appcsxcad(settings: dict) -> str | None:
