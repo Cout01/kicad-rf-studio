@@ -177,8 +177,8 @@ def cost_notes(model: Model, project: dict, setup: dict, threads: int, pool: int
     """The cost lines (spec 6.4) of a built `model`, from openEMS's setup (setup.json: its dt and the node [n, i, j, k]
     of the smallest timestep) and `pool` jobs at once with `threads` threads each at `per_job_mcs` MC/s a job: the
     cells; the smallest cell; dt against its floor, with the edge that sets it in KiCad's frame; the worst case, every
-    run to T_max, in ceil(runs / pool) rounds; the time predicted from the longest stop time of the last run, when it
-    has one; the RAM; the main cost (driver)."""
+    run to T_max, in ceil(runs / pool) rounds; the time predicted from the longest stop time of the last run's jobs
+    that kept S, when that run was of this model; the RAM; the main cost (driver)."""
     mesh, ports, dt = model.mesh, model.spec["ports"], setup["dt"]
     nx, ny, nz = len(mesh.x), len(mesh.y), len(mesh.z)
     cells, n_runs = nx * ny * nz, len(ports)
@@ -195,8 +195,9 @@ def cost_notes(model: Model, project: dict, setup: dict, threads: int, pool: int
         ("I_COST_DT", dt_params(model, project["gates"]["dt_floor"], setup)),
         ("I_COST_TIME", {"time": time(t_max), "runs": n_runs, "t_max_ns": f"{t_max * 1e9:g}", "pool": pool,
                          "threads": threads})]
-    t_stops = [j["t_stop"] for j in project.get("results", {}).get("jobs", ()) if j["t_stop"] is not None]
-    if t_stops:  # a job with no samples has no stop time
+    results = project.get("results", {})  # a job with no samples has no stop time, and a stopped one a wrong one
+    t_stops = [j["t_stop"] for j in results.get("jobs", ()) if j["verdict"] in KEPT and j["t_stop"] is not None]
+    if t_stops and results.get("model_hash") == spec_hash(model.spec):  # another model stops elsewhere
         notes.append(("I_COST_PREDICTED", {"time": time(max(t_stops))}))
     gb = pool * (runs.MB_PER_MCELL * cells / 1e6 + runs.MB_PER_WORKER) / 1024
     return [*notes, ("I_COST_RAM", {"gb": f"{gb:.1f}", "pool": pool}),

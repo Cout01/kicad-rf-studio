@@ -3,6 +3,7 @@ import numpy as np
 import pytest
 
 from kicad_rf_studio.core.mesh import Mesh
+from kicad_rf_studio.core.model.spec import spec_hash
 from kicad_rf_studio.core.project import GATES
 from kicad_rf_studio.pipeline import Model, cost_notes, driver, duration, port_gates, smallest_cell
 
@@ -21,12 +22,16 @@ def test_cost_notes_follow_the_cost_model():  # spec 6.4
         ("I_COST_TIME", {"time": "2 s", "runs": 3, "t_max_ns": "1", "pool": 2, "threads": 4}),
         ("I_COST_RAM", {"gb": "0.1", "pool": 2}),
         ("I_COST_DRIVER_RUNS", {"runs": 3, "parts": 1})]
-    later = cost_notes(m, {**p, "results": {"jobs": [{"t_stop": 5e-10}, {"t_stop": None}, {"t_stop": 2e-10}]}},
-                       {"dt": 1e-12, "node": [0, 1, 2, 3]}, 4, 2, 1.0)
-    assert ("I_COST_PREDICTED", {"time": "1 s"}) in later
-    none = cost_notes(m, {**p, "results": {"jobs": [{"t_stop": None}, {"t_stop": None}]}}, {"dt": 1e-12,
-                      "node": [0, 1, 2, 3]}, 4, 2, 1.0)
-    assert "I_COST_PREDICTED" not in [c for c, _ in none]
+    def predicted(model_hash, *jobs):
+        results = {"model_hash": model_hash, "jobs": [{"verdict": v, "t_stop": t} for v, t in jobs]}
+        notes = cost_notes(m, {**p, "results": results}, {"dt": 1e-12, "node": [0, 1, 2, 3]}, 4, 2, 1.0)
+        return [q for c, q in notes if c == "I_COST_PREDICTED"]
+
+    kept = (("converged", 5e-10), ("t_max", None), ("flat", 2e-10))
+    assert predicted(spec_hash(m.spec), *kept) == [{"time": "1 s"}]
+    # final review M3: a stopped job's stop time (5 ns, 10 s) and another model's run predict nothing
+    assert predicted(spec_hash(m.spec), *kept, ("stopped", 5e-9), ("unclassified", 5e-9)) == [{"time": "1 s"}]
+    assert predicted("another model", *kept) == predicted(spec_hash(m.spec), ("t_max", None)) == []
     assert (duration(5307.2), duration(840), duration(45.4)) == ("1 h 28 min", "14 min", "45 s")
 
 
