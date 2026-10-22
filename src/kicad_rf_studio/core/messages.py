@@ -87,7 +87,7 @@ CATALOG: dict[str, str] = {
     "E_GRID_KIND": "Part {ref} cannot sit in the grid: only a C or an R can. Set its role to \"port\" or \"open\" in project.json.",
     "E_LOCKED": "Another run of this project has been running since {started} in {run}. Wait for it, or create a file named STOP in that folder to stop it; if no run is going on, delete {lock}.",
     "W_STALE_LOCK": "Reclaimed {lock}: the run in {run} ended without releasing it.",
-    "E_OPENEMS_DLL": "openEMS could not load its libraries (CSXCAD_INSTALL_PATH is {value}). Run setup-openems again, or set CSXCAD_INSTALL_PATH to the openEMS folder.",
+    "E_OPENEMS_DLL": "openEMS could not load its libraries (CSXCAD_INSTALL_PATH is {value}). Install it again: {command}",
     "E_SETUP_FAILED": "openEMS could not set up the model; see {log}. Look at the model with `preview`.",
     "E_WORKER_FAILED": "The {job} worker ended with code {exit_code}; see {log}. Report it if the log shows no cause.",
     "I_CALIBRATING": "Measuring this machine's simulation speed, once (20–30 s)…",
@@ -123,7 +123,7 @@ CATALOG: dict[str, str] = {
     "W_JOB_STOPPED": "{port}: stopped, so its S is not kept. Run `run` again for results.",
     "I_RESULTS": "{kept} of {runs} jobs kept S, in {wall}; results recorded in {path}.",
     "I_PREVIEW": "Opened {path} in AppCSXCAD.",
-    "E_APPCSXCAD_MISSING": "AppCSXCAD was not found; open {path} in it by hand, or run setup-openems to record the openEMS folder.",
+    "E_APPCSXCAD_MISSING": "AppCSXCAD was not found; open {path} in it by hand, or install openEMS with it: {command}",
     "E_INTERNAL": "Internal error: {detail}. Please report it.",
 }
 

@@ -275,7 +275,8 @@ def test_a_failed_fit2d_still_prints_the_cost_and_exits_3(tmp_path, capsys, cali
 
 
 @pytest.mark.parametrize(("exit_code", "err"), [
-    ("2", render("E_OPENEMS_DLL", value="unset") + "\n"), ("7", "The calibration worker ended with code 7")])
+    ("2", render("E_OPENEMS_DLL", value="unset", command=runs.install_command()) + "\n"),
+    ("7", "The calibration worker ended with code 7")])
 def test_a_fresh_machine_that_cannot_load_openems_gets_a_coded_refusal(tmp_path, capsys, fake, monkeypatch,
                                                                        exit_code, err):  # Review Focus 1
     monkeypatch.setenv("KRS_FAKE_EXIT", exit_code)  # no calibration yet: calibrate starts the first worker

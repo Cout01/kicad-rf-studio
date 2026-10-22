@@ -8,7 +8,7 @@ import pytest
 
 from kicad_rf_studio import pipeline, runs
 from kicad_rf_studio.cli import main
-from kicad_rf_studio.core.messages import render
+from kicad_rf_studio.core.messages import KrsError, render
 from kicad_rf_studio.core.project import load_project, save_project
 from test_cli_cost import fail, new_project
 
@@ -30,10 +30,12 @@ def test_the_viewer_opens_a_relative_file_from_the_job_folder(tmp_path, monkeypa
     assert seen == [(["AppCSXCAD", "model.xml"], tmp_path)]
 
 
-def test_a_missing_appcsxcad_names_the_file(tmp_path, capsys, fake, monkeypatch):
+def test_a_missing_appcsxcad_names_the_file_and_the_install(tmp_path, fake, monkeypatch):  # final review M4
     monkeypatch.setattr(pipeline, "appcsxcad", lambda settings: None)
-    assert main(["preview", str(new_project(tmp_path, "coupon_gcpw_pads", preset="draft"))]) == 2
-    assert capsys.readouterr().err.startswith("AppCSXCAD was not found")
+    with pytest.raises(KrsError) as e:  # setup-openems is for Windows only: the install command of this OS
+        pipeline.preview(new_project(tmp_path, "coupon_gcpw_pads", preset="draft"))
+    xml = str(next(fake.glob("runs/*/job-0-xml")) / "model.xml")
+    assert (e.value.code, e.value.params) == ("E_APPCSXCAD_MISSING", {"path": xml, "command": runs.install_command()})
 
 
 @pytest.mark.openems

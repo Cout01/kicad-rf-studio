@@ -296,7 +296,8 @@ def check_job(job: Path, result: dict, name: str, settings: dict) -> None:
         raise KeyboardInterrupt
     code, log = result["code"], str(job / LOG)
     if code == 2:
-        raise KrsError("E_OPENEMS_DLL", value=worker_env(settings).get("CSXCAD_INSTALL_PATH") or "unset")
+        raise KrsError("E_OPENEMS_DLL", value=worker_env(settings).get("CSXCAD_INSTALL_PATH") or "unset",
+                       command=install_command())
     if code == SETUP_FAILED:
         raise KrsError("E_SETUP_FAILED", log=log)
     if code:

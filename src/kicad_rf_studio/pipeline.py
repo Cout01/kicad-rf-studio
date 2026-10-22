@@ -477,7 +477,8 @@ def preview(path: Path) -> int:
     on a refusal among them; the model and its mesh gates, then 3 when the edge lint left no spec. A blocking gate,
     geometry or mesh, does not stop it: preview is how one looks at a failing model. Then check_openems(), model.json
     in a run folder of its own and one xml worker in job-0-xml (port 1, one thread; preview does not calibrate);
-    E_APPCSXCAD_MISSING, naming its model.xml, when no AppCSXCAD is found, else AppCSXCAD opens it, I_PREVIEW and 0."""
+    E_APPCSXCAD_MISSING, naming its model.xml and this OS's install command, when no AppCSXCAD is found, else AppCSXCAD
+    opens it, I_PREVIEW and 0."""
     project, board, geom, notes = load(path)
     for code, params in [("W_FILLS_AS_SAVED", {}), *notes]:
         print(render(code, **params))
@@ -496,7 +497,7 @@ def preview(path: Path) -> int:
     runs.check_job(job, runs.run_jobs([job], 1, run_dir, settings)[job], "xml", settings)
     xml = str(job / "model.xml")
     if (exe := appcsxcad(settings)) is None:
-        raise KrsError("E_APPCSXCAD_MISSING", path=xml)
+        raise KrsError("E_APPCSXCAD_MISSING", path=xml, command=runs.install_command())
     open_viewer(exe, job)
     print(render("I_PREVIEW", path=xml))
     return 0
