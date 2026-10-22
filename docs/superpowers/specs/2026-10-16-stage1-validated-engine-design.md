@@ -448,7 +448,7 @@ All P + M excitations always run, because the matrix A must be square: S = B·A�
 
 - **Passivity:** σ_max ≤ 1.02. P0 may tighten it.
 - **Reciprocity:** error ≤ 0.02.
-- **Loss budget:** the unaccounted power 1 − |S11|² − |S21|² of the combined chain, against the expected dielectric loss: the quasi-TEM loss from εeff, εr and tanδ over each section's length. An excess above 2 % is flagged.
+- **Loss budget:** the unaccounted power 1 − |S11|² − |S21|² of the combined chain, less the power the part models absorb themselves (ESR and S2P data, from the waves into each part port), against the expected dielectric loss: the quasi-TEM loss from εeff, εr and tanδ over each section's length. An excess above 2 % is flagged. `verify` keeps its parts in the grid, so its loss budget counts an in-grid resistor's loss as layout loss.
 
 ### 7.5 Stated limits
 
@@ -584,7 +584,7 @@ This runs locally only. The board copy, project files, results and the P0-C repo
      - |ΔS21| ≤ 0.1 dB and |ΔS11| ≤ 0.02 at f0;
      - |ΔS| ≤ 0.03 up to f2;
      - null or notch shift ≤ 2 %.
-  2. **Validity.** σ_max ≤ 1.02, reciprocity error ≤ 0.02, and unaccounted power at f0 no more than the FR-4 loss estimate + 2 %.
+  2. **Validity.** σ_max ≤ 1.02, reciprocity error ≤ 0.02, and unaccounted power at f0, less the part models' own losses (§7.4), no more than the FR-4 loss estimate + 2 %.
   3. **Sensitivity.** S21 at f0 moves ≤ 0.2 dB between the automatic reference and the next-best one. Otherwise, Stage 2 makes that choice prominent.
   4. **Convergence.** n = 2 against n = 3, and the margin doubled: ≤ 0.1 dB at f0.
 - **Also:**
