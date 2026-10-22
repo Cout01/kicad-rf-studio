@@ -124,6 +124,7 @@ CATALOG: dict[str, str] = {
     "I_RESULTS": "{kept} of {runs} jobs kept S, in {wall}; results recorded in {path}.",
     "I_PREVIEW": "Opened {path} in AppCSXCAD.",
     "E_APPCSXCAD_MISSING": "AppCSXCAD was not found; open {path} in it by hand, or install openEMS with it: {command}",
+    "E_S_SINGULAR": "The run's excitations are not independent at {f_mhz} MHz (condition number {kappa}, limit 10), so S cannot be computed: a job's waves are dead or duplicated. Run `run` again.",
     "E_INTERNAL": "Internal error: {detail}. Please report it.",
 }
 

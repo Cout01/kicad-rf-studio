@@ -119,9 +119,10 @@ def test_openems_that_will_not_import_is_exit_2(tmp_path, monkeypatch):  # C-31:
     assert worker.main(["job.json"]) == 2
 
 
-def test_the_worker_imports_no_geometry_stack():  # spec 3.1, R21
+def test_the_worker_imports_no_geometry_stack():  # spec 3.1, R21, C-5
     out = subprocess.run([sys.executable, "-I", "-c", "import sys, kicad_rf_studio.worker; print(sorted(m for m in "
-                          "('shapely', 'scipy', 'matplotlib', 'skrf', 'openEMS', 'CSXCAD') if m in sys.modules))"],
+                          "('shapely', 'scipy', 'matplotlib', 'skrf', 'pandas', 'openEMS', 'CSXCAD', "
+                          "'kicad_rf_studio.core.post') if m in sys.modules))"],
                          capture_output=True, text=True).stdout
     assert out.strip() == "[]"
 
