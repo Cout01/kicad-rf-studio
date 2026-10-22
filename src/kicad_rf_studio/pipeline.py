@@ -1,17 +1,19 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """What `cost`, `run` and `preview` share (spec 6.1): a project read with its board and geometry, its model built
 through the mesh gates, the calibration that sizes its jobs, the setup gate on openEMS's setup-only run (timestep
-floor, port connectivity, unused primitives) and the cost model (spec 6.4); and `cost` (spec 3.2), `run` (spec 6.1)
-and `preview` (C-34) themselves."""
+floor, port connectivity, unused primitives), the cost model (spec 6.4) and the outputs of a run's results (spec 7.3);
+and `cost` (spec 3.2), `run` (spec 6.1) and `preview` (C-34) themselves."""
 from __future__ import annotations
 
 import json
 import math
 import os
+import shlex
 import shutil
 import subprocess
 import sys
 import time
+from collections import Counter
 from dataclasses import dataclass, replace
 from functools import partial
 from pathlib import Path
@@ -30,7 +32,11 @@ from kicad_rf_studio.core.model.parts import GRID
 from kicad_rf_studio.core.model.ports import ends, nominal_boxes, place
 from kicad_rf_studio.core.model.readers import read_log, read_probe, read_run_stats, read_stats
 from kicad_rf_studio.core.model.spec import grid_entry, model_spec, spec_hash
-from kicad_rf_studio.core.post.checks import loss_expected
+from kicad_rf_studio.core.post.chain import ideal_schematic, loads, part_impedances, terminate
+from kicad_rf_studio.core.post.checks import indicator_lines, loss_budget, loss_expected
+from kicad_rf_studio.core.post.outputs import (LIMITS, OUTPUTS, marker_lines, port_map, summary_csv, summary_png,
+                                               touchstone, write)
+from kicad_rf_studio.core.post.waves import layout
 from kicad_rf_studio.core.project import (GATES, board_file, board_hash, load_project, mesh_n, parts, read_project,
                                           save_project)
 from kicad_rf_studio.stoprule import KEPT, Records, Verdict, residual_db, stop_rule
@@ -42,6 +48,7 @@ if TYPE_CHECKING:
     from kicad_rf_studio.core.geometry import Geometry
     from kicad_rf_studio.core.kicad.board import Board
     from kicad_rf_studio.core.mesh import Mesh
+    from kicad_rf_studio.core.post.waves import Layout
 
 GEOMETRY_GATES = ("E_OPEN_IN_ROI", "E_SHORT_IN_ROI")  # the geometry's notes that block a run
 VERDICTS = {"converged": "I_JOB_CONVERGED", "flat": "W_JOB_FLAT", "t_max": "W_JOB_T_MAX", "diverged": "E_JOB_DIVERGED",
@@ -285,6 +292,13 @@ def expected_loss(geom: Geometry, f0: float) -> float:
     return loss_expected(terms, f0)
 
 
+def gate_lines(gates: dict) -> list[tuple[str, dict]]:
+    """W_GATE_LIMITS when the gate limits `gates` are not GATES (C-10), else none."""
+    if gates == GATES:
+        return []
+    return [("W_GATE_LIMITS", {"fit2d_limit": f"{gates['fit2d_limit']:g}", "dt_floor": f"{gates['dt_floor']:g}"})]
+
+
 def cost(path: Path) -> int:
     """`cost` on the project at `path` (spec 3.2), returning its exit code (C-22): W_FILLS_AS_SAVED, the 2D readout and
     load()'s notes, then 2 on a refusal among them; a project without ports stops there with W_NO_PORTS. Then the
@@ -314,9 +328,8 @@ def cost(path: Path) -> int:
         runs.emit(run_dir, "verdict", code, params, job=0)
     for code, params in warnings:
         runs.emit(run_dir, "message", code, params, job=0)
-    if (gates := project["gates"]) != GATES:  # C-10
-        runs.emit(run_dir, "message", "W_GATE_LIMITS",
-                  {"fit2d_limit": f"{gates['fit2d_limit']:g}", "dt_floor": f"{gates['dt_floor']:g}"})
+    for code, params in gate_lines(project["gates"]):
+        runs.emit(run_dir, "message", code, params)
     for code, params in cost_notes(model, project, setup, threads, pool, per_job_mcs):
         runs.emit(run_dir, "cost", code, params)
     return 3 if stops(notes) or model.blocked or blocked else 0
@@ -365,6 +378,67 @@ def classify_job(job: Path, result: dict, live: Verdict | None, rec: Records, k:
     return ("t_max" if log["nrts"] is not None and log["iterations"] == log["nrts"] else "unclassified"), None
 
 
+def command_line(*args: str) -> str:
+    """The command `args` as a user types it again in this OS's shell, a path with spaces still one argument."""
+    return subprocess.list2cmdline(args) if runs.WINDOWS else shlex.join(args)
+
+
+def _split(lay: Layout) -> tuple[list[int], list[str]]:
+    """The external ports of `lay`, by index, and its part ports, by name."""
+    return [k for k, q in enumerate(lay.ports) if not q["part"]], [q["name"] for q in lay.ports if q["part"]]
+
+
+def write_outputs(path: Path, project: dict, command: str, *,
+                  layout_on_part_error: bool = False) -> list[tuple[str, dict]]:
+    """The outputs of the run in `project`'s results (spec 3.2, 7.3, C-26..C-32), the step `run` and `retune` share:
+    layout.s{N}p; chain.s{P}p when part ports are closed; with P = 2 summary.csv and summary.png, else W_NOT_TWO_PORT
+    (C-31); all written to results/ beside `path` (write, with `command` as E_RESULTS_WRITE's advice). Returns the
+    lines to report: I_BASIS with each flagged job, gate_lines, the part notes, the marker and indicator lines, then
+    I_OUTPUTS and LIMITS. A part's refusal (E_PART_NO_VALUE, E_S2P_*, E_CBOX) is raised, or, with
+    `layout_on_part_error`, takes the place of the chain's lines and files, so that the layout N-port is still written
+    (C-26). Raises layout's refusals and E_S_SINGULAR."""
+    results = project["results"]
+    lay = layout(project, results)
+    ext, refs = _split(lay)
+    folder, n, p = path.parent / "results", len(lay.ports), len(ext)
+    files = {f"layout.s{n}p": touchstone(lay.s, lay.f, [q["name"] for q in lay.ports],
+                                         port_map(project, results, lay, range(n)))}
+    count = Counter(job["verdict"] for job in results["jobs"])
+    end = {"flat": "t_cut", "t_max": "t_stop"}  # where a flagged job's S ends: its cut, or its last sample
+    lines = [("I_BASIS", {"run_dir": results["run_dir"], "preset": results["preset"], "converged": count["converged"],
+                          "flat": count["flat"], "t_max": count["t_max"]})]
+    lines += [(VERDICTS[job["verdict"]], {"port": job["port"], "t_ns": f"{job[end[job['verdict']]] * 1e9:.2f}",
+                                          "residual_db": f"{job['residual_db']:.1f}"})
+              for job in results["jobs"] if job["verdict"] in end]
+    lines += gate_lines(results["gates"])
+    try:
+        zparts, notes = part_impedances(project, path.parent, refs, lay.f)
+        lines += notes
+        zk = loads(zparts, refs, results["c_box"], lay.f)
+    except KrsError as err:
+        if not layout_on_part_error:
+            raise
+        lines.append((err.code, err.params))
+    else:
+        chain = terminate(lay.s, ext, zk, lay.f)
+        if refs:
+            files[f"chain.s{p}p"] = touchstone(chain, lay.f, [lay.ports[k]["name"] for k in ext],
+                                               port_map(project, results, lay, ext))
+        if p == 2:
+            ideal = ideal_schematic(project, zparts, lay.f) if refs else None
+            p_layout = loss_budget(lay.s, ext, zk)
+            lines += [*marker_lines(lay, chain, ideal),
+                      *indicator_lines(lay.f, lay.a_db, lay.s, p_layout, results["loss_expected"])]
+            files["summary.csv"] = summary_csv(lay, chain, ideal, p_layout, results["loss_expected"])
+            files["summary.png"] = summary_png(lay, chain, ideal, path.absolute().parent.name)  # `run .` too
+        else:
+            lines += [*indicator_lines(lay.f, lay.a_db, lay.s, None, results["loss_expected"]),
+                      ("W_NOT_TWO_PORT", {"ports": p})]
+    write(folder, files, OUTPUTS, command)
+    return [*lines, ("I_OUTPUTS", {"files": ", ".join(sorted(files)), "folder": str(folder)}),
+            *((code, {}) for code in LIMITS)]
+
+
 def run(path: Path) -> int:
     """`run` on the project at `path` (spec 6.1, C-42), returning its exit code (C-22). Raises E_NO_PORTS for a project
     without ports, and E_LOCKED while another run holds the project lock. Then, under the lock, in a fresh run folder
@@ -372,10 +446,12 @@ def run(path: Path) -> int:
     notes, stopping with stops(); the model, 3 when a mesh gate blocks; the expected loss (expected_loss); prepare and
     the setup gate, 3 when it blocks, else I_GATES_PASSED and the cost lines; then one job per port under the stop rule,
     each job's verdict (classify_job) and the calibration's speed refreshed. When every job kept S, the results in
-    project.json, with the preset and the expected loss, I_RESULTS and 0; else W_RUN_NOT_KEPT and 4, the previous
-    results left as they were (C-24, C-29). W_GATE_LIMITS follows the gate lines and each verdict when the gate limits
-    are not GATES (C-10). STOP or Ctrl+C before the jobs start propagates as KeyboardInterrupt (exit 130, results
-    untouched); once they run, it stops them, and their verdicts say so."""
+    project.json, with the preset and the expected loss, I_RESULTS, then write_outputs' lines as result events, an E_
+    line (a part's refusal, the layout N-port still written) as a message event, and 0, or 2 after an E_ line (C-26);
+    else W_RUN_NOT_KEPT and 4, the previous results and results/ left as they were (C-24, C-29). W_GATE_LIMITS follows
+    the gate lines and each verdict when the gate limits are not GATES (C-10). STOP or Ctrl+C before the jobs start
+    propagates as KeyboardInterrupt (exit 130, results untouched); once they run, it stops them, and their verdicts say
+    so."""
     if not read_project(path)["ports"]:
         raise KrsError("E_NO_PORTS")
     run_dir = runs.run_dir_for(path.absolute().parent.name)  # absolute: as in cost
@@ -395,9 +471,8 @@ def _run(path: Path, run_dir: Path) -> int:
     gates, preset = project["gates"], project["preset"]
 
     def limits() -> None:  # C-10
-        if gates != GATES:
-            emit("message", "W_GATE_LIMITS",
-                 {"fit2d_limit": f"{gates['fit2d_limit']:g}", "dt_floor": f"{gates['dt_floor']:g}"})
+        for code, params in gate_lines(gates):
+            emit("message", code, params)
 
     for code, params in [("W_FILLS_AS_SAVED", {}), *notes]:
         emit("message", code, params)
@@ -479,7 +554,10 @@ def _run(path: Path, run_dir: Path) -> int:
                        "loss_expected": loss, "dt": dt, "c_box": setup["c_box"], "wall_s": wall_s, "jobs": done}
     save_project(path, data)
     emit("result", "I_RESULTS", {"kept": kept, "runs": len(jobs), "wall": duration(wall_s), "path": str(path)})
-    return 0
+    lines = write_outputs(path, data, command_line("kicad-rf-studio", "retune", str(path)), layout_on_part_error=True)
+    for code, params in lines:
+        emit("message" if code.startswith("E_") else "result", code, params)
+    return 2 if any(code.startswith("E_") for code, _ in lines) else 0
 
 
 def appcsxcad(settings: dict) -> str | None:

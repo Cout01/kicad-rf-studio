@@ -1,4 +1,6 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
+import csv
+import io
 import json
 import os
 import subprocess
@@ -15,11 +17,15 @@ from kicad_rf_studio.cli import main
 from kicad_rf_studio.core.kicad.stackup import kicad_default
 from kicad_rf_studio.core.messages import render
 from kicad_rf_studio.core.model.spec import spec_hash
+from kicad_rf_studio.core.post.chain import with_box, z_part
+from kicad_rf_studio.core.post.outputs import COLUMNS, LIMITS
 from kicad_rf_studio.core.post.waves import grid, layout
-from kicad_rf_studio.core.project import load_project, save_project
-from kicad_rf_studio.pipeline import expected_loss, load
-from networks import star
-from test_cli_cost import SEG, by_hand, fail, gcpw, new_project
+from kicad_rf_studio.core.project import GATES, load_project, parts, save_project
+from kicad_rf_studio.pipeline import expected_loss, load, write_outputs
+from networks import C_BOX, read_s, star, synth_records, terminate_np, write_s2p
+from test_cli_cost import FIX, SEG, by_hand, fail, gcpw, new_project
+from test_post_chain import LPF, M0402
+from test_post_waves import fake_run, port
 
 F, _ = grid(915e6, 3, 1.1)
 
@@ -36,6 +42,34 @@ def verdict_codes(run_dir):
 def only_run(data):
     """The one run folder a test's run made under the data folder `data`."""
     return next((data / "runs").iterdir())
+
+
+def lpf_project(tmp_path):
+    """lpf915's project.json, from a copy of the board (a test may re-save it), with a 2.5 mm lid."""
+    board = tmp_path / "lpf915.kicad_pcb"
+    board.write_bytes((FIX / "lpf915.kicad_pcb").read_bytes())
+    assert main(["new", str(board), "--start", "U1.1", "--end", "J1.1", "--f0", "915MHz", "--lid-height", "2.5",
+                 "-o", str(tmp_path / "lpf915")]) == 0
+    return tmp_path / "lpf915" / "project.json"
+
+
+def lpf_run(tmp_path, monkeypatch):
+    """lpf915 run on the network fake: its project.json."""
+    monkeypatch.setenv("KRS_FAKE", "network")
+    pj = lpf_project(tmp_path)
+    assert main(["run", str(pj)]) == 0
+    return pj
+
+
+def lpf_loads(model, **values):
+    """Z_part ∥ C_BOX of lpf915's part ports in job order, at `values` (F or H) or the board's."""
+    v = {**{ref: value for ref, _, value in LPF}, **values}
+    return np.stack([with_box(z_part(ref[0], v[ref], model, F), F, C_BOX) for ref in v], -1)
+
+
+def result_codes(run_dir):
+    events = [json.loads(line) for line in (Path(run_dir) / "events.jsonl").read_text(encoding="utf-8").splitlines()]
+    return [e["code"] for e in events if e["kind"] == "result"]
 
 
 def test_run_converges_and_records_its_results(tmp_path, calibrated):  # spec 6.1, 3.3, C-29
@@ -228,9 +262,80 @@ def test_new_cost_run_on_the_pad_coupon(tmp_path, monkeypatch):  # spec 9.2: P =
     r = load_project(pj)["results"]
     assert [j["verdict"] for j in r["jobs"]] == ["t_max", "t_max"] and len(r["model_hash"]) == 64
     for j in r["jobs"]:
-        w = np.load(Path(r["run_dir"]) / j["waves"])
-        assert w["u"].shape[0] == 2 and np.isfinite(w["u"]).all()
+        with np.load(Path(r["run_dir"]) / j["waves"]) as w:
+            assert w["u"].shape[0] == 2 and np.isfinite(w["u"]).all()
     assert "openEMS" not in sys.modules and "CSXCAD" not in sys.modules
+
+
+def test_run_writes_the_outputs_of_a_known_network(tmp_path, calibrated, monkeypatch):  # spec 3.2, 7.3, C-26..C-30
+    pj = lpf_run(tmp_path, monkeypatch)
+    out = pj.parent / "results"
+    assert sorted(p.name for p in out.iterdir()) == ["chain.s2p", "layout.s6p", "summary.csv", "summary.png"]
+    assert np.abs(read_s(out / "layout.s6p") - star(F, 6)).max() <= 1e-5
+    assert np.abs(read_s(out / "chain.s2p") - terminate_np(star(F, 6), [0, 1], lpf_loads(M0402))).max() <= 1e-5
+    assert result_codes(load_project(pj)["results"]["run_dir"]) == [
+        "I_RESULTS", "I_BASIS", "I_MARKER", "I_MARKER", "I_HR", "I_MARKER", "I_HR", "I_PASSIVITY", "I_RECIPROCITY",
+        "W_LOSS_BUDGET", "I_OUTPUTS", *LIMITS]  # the star's lines lose 19 % or more
+
+
+def test_a_single_trace_writes_its_two_port_and_summary(tmp_path, calibrated, monkeypatch):  # spec 7.3, C-31, C-24
+    monkeypatch.setenv("KRS_FAKE", "network")
+    pj = coupon(tmp_path)
+    assert main(["run", str(pj)]) == 0
+    out = pj.parent / "results"
+    assert sorted(p.name for p in out.iterdir()) == ["layout.s2p", "summary.csv", "summary.png"]
+    assert np.abs(read_s(out / "layout.s2p") - star(F, 2)).max() <= 1e-5
+    rows = list(csv.reader(io.StringIO((out / "summary.csv").read_text(encoding="utf-8"))))
+    assert rows[0] == list(COLUMNS) and rows[72][1] == "f0" and rows[72][7:11] == ["", "", "", ""]
+    assert result_codes(load_project(pj)["results"]["run_dir"]) == [
+        "I_RESULTS", "I_BASIS", "I_MARKER_TRACE", "I_MARKER_TRACE", "I_HR_TRACE", "I_MARKER_TRACE", "I_HR_TRACE",
+        "I_PASSIVITY", "I_RECIPROCITY", "W_LOSS_BUDGET", "I_OUTPUTS", *LIMITS]
+    before = {p.name: p.read_bytes() for p in out.iterdir()}
+    monkeypatch.setenv("KRS_FAKE", "nan")
+    assert main(["run", str(pj)]) == 4  # a run that keeps no S leaves results/ as it was
+    assert {p.name: p.read_bytes() for p in out.iterdir()} == before
+
+
+def test_t_max_jobs_are_reduced_whole_and_flagged(tmp_path, calibrated, monkeypatch):  # R-4, X-2
+    monkeypatch.setenv("KRS_FAKE", "network")
+    pj = coupon(tmp_path)
+    save_project(pj, {**load_project(pj), "t_max_s": 3e-9})  # T_max before 2·t0 + 1 ns: the rule cannot converge
+    assert main(["run", str(pj)]) == 0
+    r = load_project(pj)["results"]
+    assert [(j["verdict"], j["t_cut"]) for j in r["jobs"]] == [("t_max", None)] * 2
+    assert result_codes(r["run_dir"])[:4] == ["I_RESULTS", "I_BASIS", "W_JOB_T_MAX", "W_JOB_T_MAX"]
+    head = (pj.parent / "results" / "layout.s2p").read_text(encoding="ascii").split("#")[0]
+    assert ", preset draft: P1 t_max at " in head and ", P2 t_max at " in head
+
+
+def test_three_external_ports_get_their_touchstone_and_no_two_port_summary(tmp_path):  # C-31
+    rec = synth_records(lambda f: star(f, 3), 3, 457.5e6, 3.0195e9, 1.73972e-13, 10e-9)
+    results = {**fake_run(tmp_path, rec, [port("P1"), port("P2"), port("P3")]), "preset": "normal", "gates": GATES,
+               "c_box": {}, "loss_expected": 0.0}
+    ports = [{"name": f"P{k}", "signal": f"J{k}.1", "reference": {"pad": f"J{k}.2", "uuid": ""}} for k in (1, 2, 3)]
+    project = {"f0_hz": 915e6, "harmonics": 3, "band_factor": 1.1, "ports": ports, "others": [],
+               "chain": {"nets": ["A"], "series": [], "shunt": []}, "results": results}
+    lines = write_outputs(tmp_path / "p" / "project.json", project, "c")
+    assert sorted(p.name for p in (tmp_path / "p" / "results").iterdir()) == ["layout.s3p"]
+    assert [c for c, _ in lines] == ["I_BASIS", "I_PASSIVITY", "I_RECIPROCITY", "W_NOT_TWO_PORT", "I_OUTPUTS", *LIMITS]
+    assert lines[3] == ("W_NOT_TWO_PORT", {"ports": 3})
+
+
+def test_a_narrow_band_s2p_leaves_the_layout_n_port(tmp_path, calibrated, monkeypatch, capsys):  # Review Focus 3
+    monkeypatch.setenv("KRS_FAKE", "network")
+    pj = lpf_project(tmp_path)
+    f = np.linspace(1e9, 3e9, 41)
+    write_s2p(pj.parent / "c1.s2p", z_part("C", 100e-12, None, f), "series", f)
+    d = load_project(pj)
+    parts(d)["C1"]["s2p"] = {"file": "c1.s2p", "connection": "series"}
+    save_project(pj, d)
+    assert main(["run", str(pj)]) == 2
+    assert "results" in load_project(pj)
+    assert sorted(p.name for p in (pj.parent / "results").iterdir()) == ["layout.s6p"]
+    out = capsys.readouterr().out.splitlines()
+    assert render("E_S2P_BAND", ref="C1", path=str(pj.parent / "c1.s2p"), f_lo="1000.0", f_hi="3000.0", f1="457.5",
+                  f2="3015.6") in out
+    assert out[-len(LIMITS):] == [render(code) for code in LIMITS]  # spec 7.5: printed with every result
 
 
 # --- beyond the brief's tests ------------------------------------------------------------------------------------
