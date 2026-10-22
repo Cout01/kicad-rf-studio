@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 import json
+import os
 import subprocess
 from pathlib import Path
 
@@ -103,6 +104,41 @@ def test_verify_needs_two_external_ports(tmp_path, calibrated, monkeypatch, caps
     monkeypatch.setattr(subprocess, "Popen", fail)  # tests/test_cli_cost.py: no worker starts
     capsys.readouterr()
     assert main(["verify", str(pj)]) == 2 and capsys.readouterr().err == render("E_VERIFY_PORTS", ports="1") + "\n"
+
+
+HELD = ["I_VERIFY_COMPARE", "I_VERIFY_NO_NULLS", "I_PASSIVITY", "I_RECIPROCITY", "W_VERIFY_LOSS_BUDGET",
+        "E_RESULTS_WRITE"]
+
+
+@pytest.mark.parametrize(("held", "codes"), [
+    ("verify.s2p", ["I_VERIFY_RESULTS", *HELD, "I_VERIFY_SCOPE", *LIMITS]),  # stored, and no I_OUTPUTS
+    ("project.json", [*HELD, "I_OUTPUTS", "I_VERIFY_SCOPE", *LIMITS])])  # written, and no I_VERIFY_RESULTS
+def test_a_held_file_costs_verify_only_that_file(tmp_path, calibrated, monkeypatch, capsys, held,
+                                                 codes):  # final review F1
+    pj = verified(tmp_path, monkeypatch)
+    run_dir, real = load_project(pj)["results"]["run_dir"], os.replace
+
+    def replace(src, dst):  # another program holds the file: an RF tool, an indexer
+        if Path(dst).name == held:
+            raise PermissionError(13, "in use")
+        real(src, dst)
+
+    monkeypatch.setattr(os, "replace", replace)
+    capsys.readouterr()
+    assert main(["verify", str(pj)]) == 2
+    out = capsys.readouterr().out.splitlines()
+    path = pj if held == "project.json" else pj.parent / "results" / held
+    assert render("E_RESULTS_WRITE", path=str(path), reason="permission denied",
+                  command=pipeline.command_line("kicad-rf-studio", "verify", str(pj))) in out
+    assert out[-len(LIMITS):] == [render(code) for code in LIMITS]
+    stored = held == "verify.s2p"
+    assert ("verify" in load_project(pj)) is stored and (pj.parent / "results" / "verify.s2p").is_file() is not stored
+    assert not pj.with_name("project.json.tmp").exists()
+    (own,) = [d for d in (calibrated / "runs").iterdir() if str(d) != run_dir]  # verify's run folder
+    events = [json.loads(line) for line in (own / "events.jsonl").read_text(encoding="utf-8").splitlines()]
+    after = events[max(k for k, e in enumerate(events) if e["kind"] == "verdict") + 1:]  # after the last job
+    assert [e["code"] for e in after] == codes
+    assert [e["kind"] for e in after if e["code"].startswith("E_")] == ["message"]
 
 
 # --- beyond the brief's tests ------------------------------------------------------------------------------------

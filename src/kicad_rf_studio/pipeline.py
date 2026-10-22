@@ -692,17 +692,20 @@ def retune(path: Path, assignments: list[str], emit: Callable[[str, dict], None]
 def verify(path: Path) -> int:
     """`verify` on the project at `path` (spec 3.2, 7.6, C-36..C-38), returning its exit code as run does (C-22).
     Before the lock: E_VERIFY_NO_PARTS when no part is a port or a curve_port (a single trace), E_VERIFY_CURVE for the
-    first curve_port, E_NO_RESULTS, E_VERIFY_PORTS for fewer than 2 external ports. Then as in run, under the lock in a fresh run folder whose events.jsonl gets every
-    line, with any KrsError a message event and exit 2: W_FILLS_AS_SAVED and load()'s notes, stopping with stops();
-    the model, 3 when a mesh gate blocks; results_of and the run's layout N-port; verify's model (verify_spec) and the
-    part ports' loads at their ideal values, the part models and S2P files ignored (C-38), every refusal before any
-    job. Then simulate on verify's model, its external ports the only jobs: 3 when its setup gate blocks, and unless
-    every job kept S, W_VERIFY_NOT_KEPT and 4 with nothing stored. Else verify's own N-port is compared with the run's
-    closed by those loads, the noisier of the run's and the project's presets setting the null floor; verify.s{P}p
-    goes to results/ with its port map and grid lines, the comparison to project.json's verify (its results kept), and
-    the result lines follow: I_VERIFY_RESULTS, I_VERIFY_COMPARE, I_VERIFY_NULL or W_VERIFY_NULL_UNMATCHED for each
-    null (I_VERIFY_NO_NULLS for none), the indicator lines with a 2-port's loss budget in its verify form (the parts
-    in the grid, no part loss removed), I_OUTPUTS, I_VERIFY_SCOPE and LIMITS; then 0."""
+    first curve_port, E_NO_RESULTS, E_VERIFY_PORTS for fewer than 2 external ports. Then as in run, under the lock in
+    a fresh run folder whose events.jsonl gets every line, with any KrsError a message event and exit 2:
+    W_FILLS_AS_SAVED and load()'s notes, stopping with stops(); the model, 3 when a mesh gate blocks; results_of and
+    the run's layout N-port; verify's model (verify_spec) and the part ports' loads at their ideal values, the part
+    models and S2P files ignored (C-38), every refusal before any job. Then simulate on verify's model, its external
+    ports the only jobs: 3 when its setup gate blocks, and unless every job kept S, W_VERIFY_NOT_KEPT and 4 with
+    nothing stored. Else verify's own N-port is compared with the run's closed by those loads, the noisier of the
+    run's and the project's presets setting the null floor; the comparison goes to project.json's verify (its results
+    kept), then verify.s{P}p to results/ with its port map and grid lines, a refusal of either an E_ line, so that a
+    held file costs only that file. The lines follow: I_VERIFY_RESULTS when the comparison was stored,
+    I_VERIFY_COMPARE, I_VERIFY_NULL or W_VERIFY_NULL_UNMATCHED for each null (I_VERIFY_NO_NULLS for none), the
+    indicator lines with a 2-port's loss budget in its verify form (the parts in the grid, no part loss removed), the
+    E_ lines as message events, I_OUTPUTS when verify.s{P}p was written, I_VERIFY_SCOPE and LIMITS; then 0, or 2
+    after an E_ line."""
     project = read_project(path)  # before the lock, as in run
     by_ref = parts(project)
     if not any(q["role"] in (PORT, CURVE_PORT) for q in by_ref.values()):
@@ -743,20 +746,32 @@ def _verify(path: Path, run_dir: Path) -> int:
     # 10 × the S tolerance of the noisier preset, the run's or verify's own
     floor = 10 * max(PRESETS[results["preset"]][1], PRESETS[project["preset"]][1])
     cmp = compare(own.s, terminate(lay.s, ext, zk, lay.f), lay.f, k0, floor)
+    command = command_line("kicad-rf-studio", "verify", str(path))
+    # the comparison is stored first, then verify.s{P}p written; a refusal of either is a line, so the comparison is
+    # still printed and a held file costs only that file
+    lines, errors, outputs = [], [], []
+    try:
+        data = load_project(path)  # as it is now: only verify is replaced
+        data["verify"] = {"model_hash": spec_hash(vspec), "base_hash": results["model_hash"], "values": values,
+                          "run_dir": str(run_dir), "jobs": done, "compare": cmp}
+        _save(path, data, command)
+    except KrsError as err:  # E_RESULTS_WRITE for project.json, or E_PROJECT_UNREADABLE after a hand edit meanwhile
+        errors.append((err.code, err.params))
+    else:
+        lines.append(("I_VERIFY_RESULTS", {"runs": len(done), "wall": duration(wall_s), "path": str(path)}))
     folder, name = path.parent / "results", f"verify.s{p}p"
     basis = {**results, "run_dir": str(run_dir), "jobs": done, "preset": project["preset"]}
     comments = port_map(project, basis, own, list(range(p))) + grid_lines(vspec["grid"], values)
-    command = command_line("kicad-rf-studio", "verify", str(path))
-    write(folder, {name: touchstone(own.s, own.f, [q["name"] for q in own.ports], comments)}, VERIFY_OUTPUT,
-          command)
-    data = load_project(path)  # as it is now: only verify is replaced
-    data["verify"] = {"model_hash": spec_hash(vspec), "base_hash": results["model_hash"], "values": values,
-                      "run_dir": str(run_dir), "jobs": done, "compare": cmp}
-    _save(path, data, command)
-    lines = [("I_VERIFY_RESULTS", {"runs": len(done), "wall": duration(wall_s), "path": str(path)}),
-             ("I_VERIFY_COMPARE", {"f0_mhz": f"{own.f[k0] / 1e6:g}", "a_db": f"{own.a_db[k0]:.1f}",
-                                   "ds21_db": f"{cmp['ds21_db_f0']:.3f}", "ds11": f"{cmp['ds11_f0']:.4f}",
-                                   "ds_max": f"{cmp['ds_max']:.4f}"})]
+    try:
+        write(folder, {name: touchstone(own.s, own.f, [q["name"] for q in own.ports], comments)}, VERIFY_OUTPUT,
+              command)
+    except KrsError as err:  # E_RESULTS_WRITE for verify.s{P}p
+        errors.append((err.code, err.params))
+    else:
+        outputs.append(("I_OUTPUTS", {"files": name, "folder": str(folder)}))
+    lines.append(("I_VERIFY_COMPARE", {"f0_mhz": f"{own.f[k0] / 1e6:g}", "a_db": f"{own.a_db[k0]:.1f}",
+                                       "ds21_db": f"{cmp['ds21_db_f0']:.3f}", "ds11": f"{cmp['ds11_f0']:.4f}",
+                                       "ds_max": f"{cmp['ds_max']:.4f}"}))
     for null in cmp["nulls"]:
         k = np.abs(own.f - null["f_hz"]).argmin()  # the grid point nearest the null
         at = {"f_mhz": f"{null['f_hz'] / 1e6:.1f}", "a_db": f"{own.a_db[k]:.1f}"}
@@ -767,12 +782,11 @@ def _verify(path: Path, run_dir: Path) -> int:
     if not cmp["nulls"]:
         lines.append(("I_VERIFY_NO_NULLS", {}))
     p_layout = loss_budget(own.s, list(range(p)), np.zeros((len(own.f), 0))) if p == 2 else None  # P_parts = 0
-    lines += [*indicator_lines(own.f, own.a_db, own.s, p_layout, results["loss_expected"], in_grid=True),
-              ("I_OUTPUTS", {"files": name, "folder": str(folder)}), ("I_VERIFY_SCOPE", {}),
-              *((code, {}) for code in LIMITS)]
+    lines += [*indicator_lines(own.f, own.a_db, own.s, p_layout, results["loss_expected"], in_grid=True), *errors,
+              *outputs, ("I_VERIFY_SCOPE", {}), *((code, {}) for code in LIMITS)]
     for code, params in lines:
-        emit("result", code, params)
-    return 0
+        emit("message" if code.startswith("E_") else "result", code, params)
+    return 2 if errors else 0
 
 
 def appcsxcad(settings: dict) -> str | None:
