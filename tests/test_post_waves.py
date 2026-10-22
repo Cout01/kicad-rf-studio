@@ -55,7 +55,7 @@ def test_a_dead_or_duplicated_job_is_a_coded_refusal_without_a_warning(bad):  # 
     with warnings.catch_warnings(), pytest.raises(KrsError) as e:
         warnings.simplefilter("error")
         s_matrix(rec, F)
-    assert (e.value.code, e.value.params["f_mhz"]) == ("E_S_SINGULAR", "457.5")
+    assert (e.value.code, e.value.params["f_mhz"], e.value.params["limit"]) == ("E_S_SINGULAR", "457.5", "10")
 
 
 P915 = {"f0_hz": 915e6, "harmonics": 3, "band_factor": 1.1}

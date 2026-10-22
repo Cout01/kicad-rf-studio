@@ -125,7 +125,7 @@ CATALOG: dict[str, str] = {
     "W_RUN_NOT_KEPT": "{kept} of {runs} jobs kept S, in {wall}, so project.json keeps its previous results and results/ is unchanged. The verdicts above, also in {folder}, say why; fix that and run `run` again.",
     "I_PREVIEW": "Opened {path} in AppCSXCAD.",
     "E_APPCSXCAD_MISSING": "AppCSXCAD was not found; open {path} in it by hand, or install openEMS with it: {command}",
-    "E_S_SINGULAR": "The run's excitations are not independent at {f_mhz} MHz (condition number {kappa}, limit 10), so S cannot be computed: a job's waves are dead or duplicated. Run `run` again.",
+    "E_S_SINGULAR": "The run's excitations are not independent at {f_mhz} MHz (condition number {kappa}, limit {limit}), so S cannot be computed: a job's waves are dead or duplicated. Run `run` again.",
     "E_RESULTS_JOB": "The last run's job {port} ended {verdict}, so its S was not kept and the layout cannot be reduced. Run `run` again.",
     "E_RESULTS_WAVES": "{path} is missing: the last run's folder was moved or deleted. Run `run` again.",
     "E_PART_NO_VALUE": "Part {ref} has no value that reads (\"{value}\") and no S2P file, so its port cannot be closed. Give its S2P file with `retune PROJECT {ref}=file.s2p:series` (or :shunt), or, for a C, L or R, a value with `retune PROJECT {ref}=VALUE`.",
@@ -170,7 +170,7 @@ CATALOG: dict[str, str] = {
     "E_RETUNE_VALUE": "Cannot read \"{value}\" as the value of {ref}: a C, L or R takes a value in its own unit (4.7pF, 4p7, 15nH, 50R; a C above 0), and any part takes an S2P file as {ref}=file.s2p:series (or :shunt).",
     "E_NO_RESULTS": "project.json has no results yet. Run `run` first.",
     "E_RESULTS_STALE": "The model changed since the last run (a board re-saved in KiCad can change it too), or that run is older than this version, so its results no longer apply. Run `run` again.",
-    "E_VERIFY_VALUE": "verify puts each part in the grid at its value, but {ref} has \"{value}\": verify can place only a C, L or R whose value reads (a C above 0). For a C, L or R, set one with `retune PROJECT {ref}=VALUE`, then run verify again.",
+    "E_VERIFY_VALUE": "verify puts each part in the grid at its value, but {ref} has \"{value}\": verify can place only a C, L or R whose value reads (a C above 0). Set {ref}'s \"value\" in project.json, which keeps its S2P file, then run verify again; `retune PROJECT {ref}=VALUE` sets it too but drops the S2P file.",
     "E_VERIFY_DUMP": "verify sizes each inductor's cell from the last run's operator dump {path}, which is missing. Run `run` again.",
     "E_VERIFY_K": "Part {ref}: its inductor in the grid resonates too fast for the time step (k {k}, limit {limit}), and the run would diverge. Check its value in project.json; a real inductor reads k near 0.01.",
     "E_VERIFY_NO_PARTS": "This project has no part ports (a single trace), so verify has nothing to put in the grid: `run` is already its full simulation.",
@@ -179,10 +179,10 @@ CATALOG: dict[str, str] = {
     "I_VERIFY_RESULTS": "{runs} verify jobs kept S, in {wall}; the comparison is stored in {path}.",
     "I_VERIFY_COMPARE": "verify against the retune at the same ideal values: |ΔS21| {ds21_db} dB and |ΔS11| {ds11} at f0 = {f0_mhz} MHz (|a| {a_db} dB); max |ΔS| {ds_max} up to f2.",
     "I_VERIFY_NULL": "Null of |S21| at {f_mhz} MHz in verify (|a| {a_db} dB): null shift {shift_pct} % against the retune's.",
-    "W_VERIFY_NULL_UNMATCHED": "Null of |S21| at {f_mhz} MHz in verify (|a| {a_db} dB) has no match within ±5 % in the retune. Compare the verify and chain Touchstone files in results/.",
+    "W_VERIFY_NULL_UNMATCHED": "Null of |S21| at {f_mhz} MHz in verify (|a| {a_db} dB) has no match within ±5 % in the retune at the same ideal values; the stated limits below say what that reduction leaves out.",
     "I_VERIFY_NO_NULLS": "No null of |S21| stands 20 dB out of the response, so there is no null shift to report.",
     "I_VERIFY_SCOPE": "verify checks the layout reduction, not the vendor part data: each part sat in the grid at its ideal value, against a retune at the same values. Its loss budget counts a resistor's loss in the grid as layout loss.",
-    "E_INTERNAL":"Internal error: {detail}. Please report it.",
+    "E_INTERNAL": "Internal error: {detail}. Please report it.",
 }
 
 _translation = gettext.translation(
@@ -195,8 +195,9 @@ def render(code: str, **params) -> str:
 
 
 # The `reason` of E_BOARD_UNREADABLE, E_PROJECT_UNREADABLE, E_SETTINGS_UNREADABLE, E_OUTPUT_PATH and E_RESULTS_WRITE,
-# by the class of the error. Never the system's own message: it is long, in the system's language, and a UnicodeDecodeError's repr
-# holds every byte of the file. NotADirectoryError is a file where a folder of the path should be.
+# by the class of the error. Never the system's own message: it is long, in the system's language, and a
+# UnicodeDecodeError's repr holds every byte of the file. NotADirectoryError is a file where a folder of the path
+# should be.
 _REASONS = ((FileNotFoundError, "file not found"), (IsADirectoryError, "not a file"),
             (PermissionError, "permission denied"), ((FileExistsError, NotADirectoryError), "already exists as a file"),
             (UnicodeError, "not UTF-8 text"), (json.JSONDecodeError, "not JSON"))

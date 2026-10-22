@@ -37,7 +37,8 @@ def s_matrix(records: list[tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]
     kappa = kappa_eq(A)
     bad = np.flatnonzero(~(kappa <= KAPPA_LIMIT))  # NaN too
     if bad.size:
-        raise KrsError("E_S_SINGULAR", kappa=f"{kappa[bad[0]]:.3g}", f_mhz=f"{f[bad[0]] / 1e6:.1f}")
+        raise KrsError("E_S_SINGULAR", kappa=f"{kappa[bad[0]]:.3g}", f_mhz=f"{f[bad[0]] / 1e6:.1f}",
+                       limit=f"{KAPPA_LIMIT:g}")
     return np.linalg.solve(A.mT, B.mT).mT, A
 
 
