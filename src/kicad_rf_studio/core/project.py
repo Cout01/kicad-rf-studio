@@ -42,6 +42,12 @@ def mesh_n(data: dict) -> int:
     return data.get("mesh", {}).get("n") or MESH_N[data["preset"]]
 
 
+def parts(data: dict) -> dict[str, dict]:
+    """project.json's parts by ref: chain.series, chain.shunt, then others. The dicts are the ones `data` holds, not
+    copies, so an edit through them is an edit of `data`."""
+    return {q["ref"]: q for q in (*data["chain"]["series"], *data["chain"]["shunt"], *data["others"])}
+
+
 def board_hash(path: str | Path) -> str:
     """The SHA-256 of the file's bytes, in hex."""
     return hashlib.sha256(Path(path).read_bytes()).hexdigest()
@@ -128,7 +134,10 @@ _TWO_NAMES = (lambda v: _names(v) and len(v) == 2, "two names")
 _CLASS = (lambda v: v is None or _names(v), "a list of names, or null (computed from the board)")
 _PARTS = ({"ref": _TEXT, "pads": _TWO_NAMES, "nets": _TWO_NAMES, "value": _TEXT, "dnp": _FLAG,
            "role": (lambda v: v in ROLES, "port, copper, open, grid or curve_port"),
-           "model": (_model, "null, or package (text) with esl_h, esr_ohm and cp_f (numbers of 0 or more)")},
+           "model": (_model, "null, or package (text) with esl_h, esr_ohm and cp_f (numbers of 0 or more)"),
+           "s2p": (lambda v: v is None or (isinstance(v, dict) and isinstance(v.get("file"), str)
+                                           and v.get("connection") in ("series", "shunt")),
+                   "null, or file (text) and connection (series or shunt)")},
           "a list of parts")
 _FIELDS = {
     "board": {"path": _TEXT, "sha256": _TEXT},

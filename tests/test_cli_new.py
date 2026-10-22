@@ -98,21 +98,22 @@ def test_project_layout(tmp_path):
         "start": "U1.1", "end": "J1.1", "nets": ["RF_A", "RF_B", "RF_C", "RF_OUT"],
         "series": [
             {"ref": "C1", "pads": ["C1.1", "C1.2"], "nets": ["RF_A", "RF_B"], "value": "100pF", "dnp": False,
-             "role": "port", "model": m0402},
+             "role": "port", "model": m0402, "s2p": None},
             {"ref": "L1", "pads": ["L1.1", "L1.2"], "nets": ["RF_B", "RF_C"], "value": "15nH", "dnp": False,
-             "role": "port", "model": m0402},
+             "role": "port", "model": m0402, "s2p": None},
             {"ref": "R1", "pads": ["R1.1", "R1.2"], "nets": ["RF_C", "RF_OUT"], "value": "0R", "dnp": False,
-             "role": "copper", "model": m0402}],
+             "role": "copper", "model": m0402, "s2p": None}],
         "shunt": [
             {"ref": "C2", "pads": ["C2.1", "C2.2"], "nets": ["RF_B", "GND"], "value": "3.3pF", "dnp": False,
-             "role": "port", "model": m0402},
+             "role": "port", "model": m0402, "s2p": None},
             {"ref": "C3", "pads": ["C3.1", "C3.2"], "nets": ["RF_C", "GND"], "value": "3.3pF", "dnp": False,
-             "role": "port", "model": m0402},
+             "role": "port", "model": m0402, "s2p": None},
             {"ref": "R2", "pads": ["R2.1", "R2.2"], "nets": ["RF_OUT", "RF_SMA"], "value": "0R", "dnp": True,
-             "role": "open", "model": m0402}]}
+             "role": "open", "model": m0402, "s2p": None}]}
     assert d["others"] == [  # VDD's decoupling capacitor, in the region but on no chain net
         {"ref": "C4", "pads": ["C4.1", "C4.2"], "nets": ["VDD", "GND"], "value": "10uF/16V", "dnp": False,
-         "role": "open", "model": {"package": "0603", "esl_h": 7e-10, "esr_ohm": 0.1, "cp_f": 5e-14}}]
+         "role": "open", "model": {"package": "0603", "esl_h": 7e-10, "esr_ohm": 0.1, "cp_f": 5e-14},
+         "s2p": None}]
     assert d["ports"] == [  # a port records the pad it resolved: a number can repeat in a footprint
         {"name": "P1", "signal": "U1.1", "signal_uuid": board.pads("U1.1")[0].uuid, "layer": "F.Cu", "rule": "ic",
          "reference": {"pad": "U1.2", "uuid": board.pads("U1.2")[0].uuid}},
@@ -610,7 +611,8 @@ def test_new_writes_every_key_and_reads_it_back(tmp_path):  # C-3, C-10, C-13, C
     assert (d["lid"], d["gates"], d["allow_curve_port"]) == (None, {"fit2d_limit": 0.03, "dt_floor": 0.8}, False)
     assert d["chain"]["series"][0] == {"ref": "C1", "pads": ["C1.1", "C1.2"], "nets": ["RF_A", "RF_B"],
                                        "value": "100pF", "dnp": False, "role": "port",
-                                       "model": {"package": "0402", "esl_h": 5e-10, "esr_ohm": 0.1, "cp_f": 3e-14}}
+                                       "model": {"package": "0402", "esl_h": 5e-10, "esr_ohm": 0.1, "cp_f": 3e-14},
+                                       "s2p": None}
     assert [(p["ref"], p["dnp"], p["role"]) for p in d["chain"]["shunt"]][-1] == ("R2", True, "open")
     assert [(p["ref"], p["role"]) for p in d["others"]] == [("C4", "open")]
 
@@ -649,7 +651,7 @@ def test_a_through_hole_port_takes_the_layer_its_track_reaches(tmp_path, mini_bo
 
 
 def test_a_part_that_is_no_c_l_or_r_has_no_package_preset(tmp_path, capsys, mini_board_file):
-    # FB1, a ferrite bead in series: no preset, so `retune` takes it at its ideal value
+    # FB1, a ferrite bead in series: no kind, so only an S2P file closes its port (M-5)
     board = mini_board_file(footprint("TP1", pad(1, "A")) + footprint("FB1", pad(1, "A", x=2), pad(2, "B", x=4))
                             + footprint("TP2", pad(1, "B", x=6)))
     code = main(["new", str(board), "--start", "TP1.1", "--end", "TP2.1", "--f0", "915MHz", "--stackup", "jlcpcb-2l",

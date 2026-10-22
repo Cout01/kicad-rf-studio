@@ -55,7 +55,7 @@ CATALOG: dict[str, str] = {
     "I_CLASSES": "GND nets: {gnd}. Power nets: {power}. Connectors: {connectors}. Shields: {shields}.",
     "I_CHAIN": "Chain {start} → {end}: series {series}; shunt {shunt}.",
     "I_PART": "Part {ref} {value}: {role}; package {package}, ESL {esl_nh} nH, ESR {esr_ohm} Ω.",
-    "I_PART_NO_MODEL": "Part {ref} {value}: {role}; no package preset, so `retune` uses its ideal value.",
+    "I_PART_NO_MODEL": "Part {ref} {value}: {role}; no package preset, so as a port a C, L or R takes its ideal value and any other part needs its S2P file (`retune PROJECT {ref}=file.s2p:series`, or :shunt).",
     "I_PORT": "Port {name}: signal {signal}, reference {reference} ({rule}).",
     "I_F0": "f0 {f0_mhz} MHz, with {harmonics} harmonics.",
     "I_DEFAULTS": "Preset {preset} (provisional default), band factor {band_factor}, T_max {t_max_ns} ns, harmonics {harmonics}, mesh n {mesh_n}, region {expand_h} substrate heights past the chain.",
@@ -127,6 +127,12 @@ CATALOG: dict[str, str] = {
     "E_S_SINGULAR": "The run's excitations are not independent at {f_mhz} MHz (condition number {kappa}, limit 10), so S cannot be computed: a job's waves are dead or duplicated. Run `run` again.",
     "E_RESULTS_JOB": "The last run's job {port} ended {verdict}, so its S was not kept and the layout cannot be reduced. Run `run` again.",
     "E_RESULTS_WAVES": "{path} is missing: the last run's folder was moved or deleted. Run `run` again.",
+    "E_PART_NO_VALUE": "Part {ref} has no value that reads (\"{value}\") and no S2P file, so its port cannot be closed. Give its S2P file with `retune PROJECT {ref}=file.s2p:series` (or :shunt), or, for a C, L or R, a value with `retune PROJECT {ref}=VALUE`.",
+    "E_S2P_MISSING": "Part {ref}: its S2P file {path} does not exist. Name an existing file with `retune PROJECT {ref}=file.s2p:series` (or :shunt), or, for a C, L or R, give a value with `retune PROJECT {ref}=VALUE`.",
+    "E_S2P_UNREADABLE": "Part {ref}: {path} is not a Touchstone file that can be read. Check the file, or, for a C, L or R, give a value with `retune PROJECT {ref}=VALUE`.",
+    "E_S2P_PORTS": "Part {ref}: {path} has {ports} ports, and a part needs a 2-port measured in a series or a shunt fixture. Give its .s2p file.",
+    "E_S2P_BAND": "Part {ref}: {path} covers {f_lo}–{f_hi} MHz, not the simulated band {f1}–{f2} MHz, and it is never extrapolated. Give a file that covers the band, or, for a C, L or R, a value with `retune PROJECT {ref}=VALUE`.",
+    "W_S2P_FIXTURE": "Part {ref}: {path} fits a {fits}-thru measurement better than the :{named} it was given. The suffix names the fixture the vendor measured the part in, not its place on the board; if the vendor used {fits}-thru, give it again as `retune PROJECT {ref}=file.s2p:{fits}`.",
     "E_INTERNAL": "Internal error: {detail}. Please report it.",
 }
 

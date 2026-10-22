@@ -76,6 +76,12 @@ def part_value(ref: str, text: str) -> float | None:
     return value[0] if kind and value and value[1] in ("", _UNIT[kind]) else None
 
 
+def port_value(ref: str, text: str) -> float | None:
+    """`part_value`, but None for a C of 0: an open, whose infinite impedance would make every output NaN."""
+    value = part_value(ref, text)
+    return None if value == 0 and part_kind(ref) == "C" else value
+
+
 def parse_frequency(text: str) -> float:
     """A frequency such as `915MHz`, `0.915 GHz` or `915e6` in Hz. Text that is not one, or whose
     value is not finite and above zero, raises E_BAD_FREQUENCY. The k, M and G prefixes and the Hz

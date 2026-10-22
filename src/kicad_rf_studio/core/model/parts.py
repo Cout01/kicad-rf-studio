@@ -12,7 +12,7 @@ from kicad_rf_studio.core.kicad.values import part_kind, part_value
 from kicad_rf_studio.core.project import ROLES
 
 PORT, COPPER, OPEN, GRID, CURVE_PORT = ROLES
-# ponytail: typical published magnitudes, provisional; plan 4 and P0 refine them
+# ponytail: typical published magnitudes, provisional; plan 5 (P0) confirms them
 PRESETS: dict[str, tuple[float, float, float]] = {  # by package: ESL (H), ESR (Ω) and the parallel Cp (F)
     "0201": (3e-10, 0.1, 2e-14), "0402": (5e-10, 0.1, 3e-14), "0603": (7e-10, 0.1, 5e-14),
     "0805": (9e-10, 0.1, 7e-14), "1206": (1.2e-9, 0.1, 1e-13)}
@@ -70,17 +70,17 @@ def role(kind: str | None, value: float | None, model: dict | None, dnp: bool, a
 def project_parts(board: Board, chain: Chain, classes: Classes, roi: Polygon | MultiPolygon, f1: float, f2: float
                   ) -> tuple[list[dict], list[dict], list[dict], list[tuple[str, dict]]]:
     """The chain's series and shunt parts, the other parts and their notes, as project.json keeps them: a part is
-    {"ref", "pads", "nets", "value", "dnp", "role", "model"}, its value the footprint's text as written and its model
-    the package preset of a C, L or R, else None. The others are the two-pad parts (two netted copper pads on two
-    nets, no connector or shield) with a pad in `roi` and neither pad on a chain net, in reference order.
-    W_VALUE_UNREADABLE names the C, L and R parts whose value does not read, DNP ones too; W_PART_OPEN the other parts
-    left open that are not DNP."""
+    {"ref", "pads", "nets", "value", "dnp", "role", "model", "s2p"}, its value the footprint's text as written, its
+    model the package preset of a C, L or R, else None, and its s2p None (no S2P file; C-18). The others are the
+    two-pad parts (two netted copper pads on two nets, no connector or shield) with a pad in `roi` and neither pad on
+    a chain net, in reference order. W_VALUE_UNREADABLE names the C, L and R parts whose value does not read, DNP ones
+    too; W_PART_OPEN the other parts left open that are not DNP."""
     def part(ref: str, pads, nets, place: str) -> dict:
         fp, kind = board.footprints[ref], part_kind(ref)
         model = model_of(fp.lib_id) if kind else None  # spec 5.7: the ideal value plus the preset; a diode has none
         return {"ref": ref, "pads": list(pads), "nets": list(nets), "value": fp.value, "dnp": fp.dnp,
                 "role": role(kind, part_value(ref, fp.value), model, fp.dnp, fp.angle, place, f1, f2),
-                "model": model}
+                "model": model, "s2p": None}
 
     series = [part(p.ref, p.pads, p.nets, "series") for p in chain.series]
     shunt = [part(p.ref, p.pads, p.nets, "shunt") for p in chain.shunt]

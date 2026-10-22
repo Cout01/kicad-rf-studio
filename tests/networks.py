@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """Known networks and the waves openEMS would record from them (r6-math), for the co-simulation tests and the
-KRS_FAKE=network fake: S = B·A⁻¹ must give back the network the waves came from."""
+KRS_FAKE=network fake: S = B·A⁻¹ must give back the network the waves came from. The Touchstone helpers import skrf
+inside, since the fake worker imports this module and a worker never imports skrf."""
 import numpy as np
 
 Z0, C_BOX = 50.0, 2e-14  # Ω at every port; F, the fake worker's C_box of a part port
@@ -49,3 +50,25 @@ def terminate_np(s, ext, zk):
     g = (zk - Z0) / (zk + Z0)
     see, sei, sie, sii = (s[:, r][:, :, c] for r, c in ((ext, ext), (ext, i), (i, ext), (i, i)))
     return see + (sei * g[:, None, :]) @ np.linalg.solve(np.eye(len(i)) - sii * g[:, None, :], sie)
+
+
+def write_s2p(path, z, connection, f, z0=50.0):
+    """A Touchstone 2-port at `path` (a .s2p name) of the impedance z (one per f, Hz) measured in a series or shunt
+    fixture of z0 Ω (spec 9.1's synthetic S2P files from ideal RLC)."""
+    import skrf as rf
+
+    s21 = 2 * z0 / (2 * z0 + z) if connection == "series" else 2 * z / (2 * z + z0)
+    s11 = z / (2 * z0 + z) if connection == "series" else -z0 / (2 * z + z0)
+    s = np.stack([np.stack([s11, s21], -1), np.stack([s21, s11], -1)], -2)
+    rf.Network(frequency=rf.Frequency.from_f(f, unit="Hz"), s=s, z0=z0, name="part").write_touchstone(
+        str(path.with_suffix("")))
+    return path
+
+
+def read_s(path):
+    """The S of a Touchstone file, read the safe way."""
+    import skrf as rf
+
+    n = rf.Network()
+    n.read_touchstone(str(path))
+    return n.s

@@ -167,3 +167,24 @@ def test_a_save_that_fails_leaves_the_file_as_it_was_and_makes_no_folder(tmp_pat
     with pytest.raises(FileNotFoundError):
         save_project(tmp_path / "missing" / "project.json", {"schema": SCHEMA})
     assert not (tmp_path / "missing").exists()
+
+
+# --- plan 4, task 3: a part's S2P file ------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(("value", "ok"), [
+    (None, True), ({"file": "../parts/l1.s2p", "connection": "series"}, True),
+    ({"file": "l1.s2p", "connection": "Series"}, False), ({"file": 3, "connection": "shunt"}, False), (DELETE, False)])
+def test_a_parts_s2p_is_null_or_a_file_and_its_fixture(tmp_path, value, ok):  # C-18
+    _, pj = run_new(tmp_path, "--lid-height", "2.5")  # tests/test_cli_new.py
+    d = load_project(pj)
+    edit(d, ["chain", "series", 0, "s2p"], value)
+    save_project(pj, d)
+    if ok:
+        assert read_project(pj)["chain"]["series"][0]["s2p"] == value
+        return
+    with pytest.raises(KrsError) as e:
+        read_project(pj)
+    assert (e.value.code, e.value.params) == ("E_PROJECT_FIELD", {
+        "path": str(pj), "field": "chain.series[0].s2p",
+        "expected": "null, or file (text) and connection (series or shunt)"})

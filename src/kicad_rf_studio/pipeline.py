@@ -30,7 +30,7 @@ from kicad_rf_studio.core.model.parts import GRID
 from kicad_rf_studio.core.model.ports import ends, nominal_boxes, place
 from kicad_rf_studio.core.model.readers import read_log, read_probe, read_run_stats, read_stats
 from kicad_rf_studio.core.model.spec import grid_entry, model_spec, spec_hash
-from kicad_rf_studio.core.project import (GATES, board_file, board_hash, load_project, mesh_n, read_project,
+from kicad_rf_studio.core.project import (GATES, board_file, board_hash, load_project, mesh_n, parts, read_project,
                                           save_project)
 from kicad_rf_studio.stoprule import KEPT, Records, Verdict, residual_db, stop_rule
 from kicad_rf_studio.worker import LOG
@@ -106,12 +106,12 @@ def build_model(project: dict, board: Board, geom: Geometry) -> Model:
     except KrsError as err:  # E_FIT2D_SHORT from fit2d, E_FIT2D or E_FIT2D_FINE from check_fit2d
         blocked.append((err.code, err.params))
     dt_ref = dt_floor_reference(mesh)
-    parts = {q["ref"]: q for q in (*project["chain"]["series"], *project["chain"]["shunt"], *project["others"])}
+    by_ref = parts(project)
     ports, grid = [], []
     for end in e:
         placed = place(end, mesh, geom.zs)
         if end.role == GRID:
-            grid.append(grid_entry(placed, parts[end.name]))
+            grid.append(grid_entry(placed, by_ref[end.name]))
         else:
             ports.append(placed)
     return Model(mesh, model_spec(project, board, geom, mesh, ports, grid), blocked, dt_ref)
