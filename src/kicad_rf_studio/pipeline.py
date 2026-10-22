@@ -205,9 +205,10 @@ def cost_notes(model: Model, project: dict, setup: dict, threads: int, pool: int
 
 def prepare(model: Model, emit: Callable[[str, dict], None]) -> tuple[int, int, float]:
     """What the jobs of a built `model` (one with a mesh) run with: (threads, pool, per-job MC/s), from this machine's
-    calibration, measured first on a machine that has none (spec 6.4). Calls `emit(code, params)` with
-    check_openems()'s warnings, before any worker (C-31), and with W_RAM when one job needs more RAM than is free.
-    Raises check_openems()'s refusals and what calibrate raises."""
+    calibration, measured first on a machine that has none (spec 6.4), the pool no larger than the number of runs, so
+    that the cost lines count only jobs that run at once. Calls `emit(code, params)` with check_openems()'s warnings,
+    before any worker (C-31), and with W_RAM when one job needs more RAM than is free. Raises check_openems()'s
+    refusals and what calibrate raises."""
     for code, params in runs.check_openems():
         emit(code, params)
     entry = runs.ensure_calibrated(runs.load_settings())
@@ -217,7 +218,7 @@ def prepare(model: Model, emit: Callable[[str, dict], None]) -> tuple[int, int, 
     free = runs.free_ram_mb()
     if need > free:
         emit("W_RAM", {"need_gb": f"{need / 1024:.1f}", "free_gb": f"{free / 1024:.1f}"})
-    return threads, pool, entry["aggregate_mcs"] / entry["pool"]
+    return threads, min(pool, len(model.spec["ports"])), entry["aggregate_mcs"] / entry["pool"]
 
 
 def setup_gate(model: Model, project: dict, run_dir: Path, settings: dict, threads: int) -> tuple[dict, list, list]:
@@ -420,7 +421,7 @@ def _run(path: Path, run_dir: Path) -> int:
                                             "speed_mcs": f"{speed / 1e6:.1f}"}, k)
         return live[job] is not None
 
-    emit("message", "I_RUN_START", {"runs": len(jobs), "pool": min(pool, len(jobs)), "folder": str(run_dir)})
+    emit("message", "I_RUN_START", {"runs": len(jobs), "pool": pool, "folder": str(run_dir)})
     start = time.monotonic()
     out = runs.run_jobs(jobs, pool, run_dir, settings, watch)
     wall_s = time.monotonic() - start

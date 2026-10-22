@@ -316,6 +316,15 @@ def test_cost_warns_when_one_job_needs_more_ram_than_is_free(tmp_path, capsys, c
     assert render("W_RAM", need_gb="0.5", free_gb="0.1") in out and render("I_COST_RAM", gb="0.5", pool=1) in out
 
 
+def test_the_cost_lines_count_no_more_jobs_at_once_than_runs(tmp_path, capsys, calibrated, monkeypatch):  # review M1
+    # a pool of 4 printed "4 at once" and four jobs' RAM for the coupon's two runs
+    monkeypatch.setattr(runs, "sizing", lambda entry, cells: (2, 4))
+    assert main(["cost", str(new_project(tmp_path, "coupon_gcpw_pads", preset="draft"))]) == 0
+    out = capsys.readouterr().out.splitlines()
+    assert [line.split(", ")[-1] for line in out if line.startswith("Worst case:")] == ["2 at once with 2 threads each."]
+    assert [line.split("(")[-1] for line in out if line.startswith("RAM:")] == ["2 jobs at once)."]
+
+
 @pytest.mark.openems
 def test_cost_on_the_pad_coupon_with_openems(tmp_path, capsys, monkeypatch):  # tier b: setup-only at n = 2
     monkeypatch.setattr(runs, "data_dir", lambda: tmp_path / "data")
