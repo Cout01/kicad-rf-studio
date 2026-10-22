@@ -17,9 +17,9 @@ def build_csx(spec: dict, excite: int, t_max: float) -> tuple[object, object]:
     """The ContinuousStructure and the openEMS object of `spec` (model_spec()), in mm, run up to `t_max` s with port
     `excite` (1-based) excited: EndCriteria 1e-15, Mur on all six sides, the spec's pulse and openEMS's own time step
     (W-1); each port a 50 Ω lumped port, or for kind "curve" a 50 Ω CurvePort (openEMS's one-edge lumped port joined
-    to both ends by PEC curves, r3); each grid part a lumped R or C, whichever it sets. Points go to CSXCAD as
-    [xs, ys]: it misreads an (N, 2) array silently. CSXCAD and openEMS are imported here only, so that only a worker
-    loads them."""
+    to both ends by PEC curves, r3); each grid part a lumped element of whichever of R, C and L it sets, in parallel:
+    LEtype is never set, so it is 0 (1 is unstable in 0.37). Points go to CSXCAD as [xs, ys]: it misreads an (N, 2)
+    array silently. CSXCAD and openEMS are imported here only, so that only a worker loads them."""
     from CSXCAD import ContinuousStructure
     from openEMS import openEMS
 
@@ -59,7 +59,7 @@ def build_csx(spec: dict, excite: int, t_max: float) -> tuple[object, object]:
         else:
             fdtd.AddLumpedPort(k, 50, port["start"], port["stop"], port["dir"], excite=on)
     for i, part in enumerate(spec["grid"]):
-        value = {key: part[key] for key in ("R", "C") if part[key] is not None}
+        value = {key: part[key] for key in ("R", "C", "L") if part.get(key) is not None}
         element = csx.AddLumpedElement(f"lumped_{i}", ny="xyz".index(part["dir"]), caps=True, **value)
         element.AddBox(part["start"], part["stop"])
     return csx, fdtd

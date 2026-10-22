@@ -170,6 +170,9 @@ CATALOG: dict[str, str] = {
     "E_RETUNE_VALUE": "Cannot read \"{value}\" as the value of {ref}: a C, L or R takes a value in its own unit (4.7pF, 4p7, 15nH, 50R; a C above 0), and any part takes an S2P file as {ref}=file.s2p:series (or :shunt).",
     "E_NO_RESULTS": "project.json has no results yet. Run `run` first.",
     "E_RESULTS_STALE": "The model changed since the last run (a board re-saved in KiCad can change it too), or that run is older than this version, so its results no longer apply. Run `run` again.",
+    "E_VERIFY_VALUE": "verify puts each part in the grid at its value, but {ref} has \"{value}\": verify can place only a C, L or R whose value reads (a C above 0). For a C, L or R, set one with `retune PROJECT {ref}=VALUE`, then run verify again.",
+    "E_VERIFY_DUMP": "verify sizes each inductor's cell from the last run's operator dump {path}, which is missing. Run `run` again.",
+    "E_VERIFY_K": "Part {ref}: its inductor in the grid resonates too fast for the time step (k {k}, limit {limit}), and the run would diverge. Check its value in project.json; a real inductor reads k near 0.01.",
     "E_INTERNAL":"Internal error: {detail}. Please report it.",
 }
 

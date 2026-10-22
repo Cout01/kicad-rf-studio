@@ -1,11 +1,13 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
-"""The model spec (spec 3.3, C-19): the plain JSON from which a worker builds the openEMS model without shapely, and
-its hash. Lengths are in mm, frequencies in Hz, times in s and conductivities in S/m."""
+"""The model spec (spec 3.3, C-19): the plain JSON from which a worker builds the openEMS model without shapely, its
+hash, and verify's model (spec 7.6). Lengths are in mm, frequencies in Hz, times in s and conductivities in S/m."""
 from __future__ import annotations
 
+import copy
 import hashlib
 import json
 import math
+from bisect import bisect_left, bisect_right
 from typing import TYPE_CHECKING
 
 import scipy.constants
@@ -17,12 +19,15 @@ from kicad_rf_studio.core.geometry.lid import snap_lid
 from kicad_rf_studio.core.geometry.mask import smeared_epsilon
 from kicad_rf_studio.core.geometry.region import band
 from kicad_rf_studio.core.kicad.tracer import signal_layer
-from kicad_rf_studio.core.kicad.values import part_kind, part_value
+from kicad_rf_studio.core.kicad.values import part_kind, part_value, port_value
 from kicad_rf_studio.core.messages import KrsError
-from kicad_rf_studio.core.model.parts import COPPER
+from kicad_rf_studio.core.model.parts import COPPER, c_box_of
 from kicad_rf_studio.core.model.ports import _pad
+from kicad_rf_studio.core.model.readers import c_box
 
 if TYPE_CHECKING:
+    from pathlib import Path
+
     from shapely.geometry import Polygon
     from shapely.geometry.base import BaseGeometry
 
@@ -32,6 +37,8 @@ if TYPE_CHECKING:
     from kicad_rf_studio.core.mesh import Mesh
 
 EPS0 = scipy.constants.epsilon_0  # F/m
+# ponytail: stable up to k 0.48 at openEMS's own dt on a uniform grid with equal edges (r3 3.6); plan 5 confirms it
+K_MAX = 0.45  # verify's limit on k = dt/(2·√(L·C)) of an inductor's cell (C-37)
 
 
 def excitation(project: dict) -> dict:
@@ -136,3 +143,54 @@ def spec_hash(spec: dict) -> str:
     neither the excited port, nor the threads, nor any path, nor a port part's value, so a retune keeps the results;
     the grid's values are in it."""
     return hashlib.sha256(json.dumps(spec, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
+
+
+def _cell(lines: list[float], lo: float, hi: float) -> tuple[float, float]:
+    """The cell (lines[i], lines[i + 1]) of `lines` (ascending) whose lines[i] is the last line at or below the middle
+    of `lo`–`hi`, moved inside `lo`–`hi`."""
+    i = bisect_right(lines, (lo + hi) / 2) - 1
+    i = min(max(i, bisect_left(lines, lo)), bisect_right(lines, hi) - 2)
+    return lines[i], lines[i + 1]
+
+
+def verify_spec(spec: dict, parts: dict[str, dict], boxes: dict, dump: Path, dt: float) -> dict:
+    """verify's model (spec 7.6, C-36, C-37): a copy of the run's `spec` whose part ports, all lumped, leave `ports`
+    for `grid`, after the run's own grid parts, each at its value in `parts` (project.json's parts by ref), on the same
+    lines. A C sits in its port's box as C_part + its C_box in `boxes` (the run's, by ref): a grid C replaces the box's
+    own capacitance. An R sits in its box and keeps that capacitance. An L sits in one cell of its box, at the box's
+    centre and in its copper slab, joined to the box's two ends by PEC strips in `metal.copper`, with the cell's own
+    capacitance, from the operator dump `dump` at the time step `dt` (s), as an explicit C: without one, openEMS 0.37
+    lowers it. Raises, part by part in port order, E_VERIFY_VALUE for a part that is not a C, L or R whose value
+    reads, E_CBOX for a C whose C_box cannot close the port, and for an L, E_VERIFY_DUMP when `dump` is missing, then
+    E_VERIFY_K when k = dt/(2·√(L·C)) is above K_MAX."""
+    out = copy.deepcopy(spec)
+    lines, copper = [out["mesh"][a] for a in "xyz"], out["metal"]["copper"]
+    moved, out["ports"] = [q for q in out["ports"] if q["part"]], [q for q in out["ports"] if not q["part"]]
+    for port in moved:
+        ref = port["name"]
+        kind, text = part_kind(ref), parts[ref]["value"]
+        if (value := port_value(ref, text)) is None:
+            raise KrsError("E_VERIFY_VALUE", ref=ref, value=text)
+        if kind == "C":
+            out["grid"].append({**port, "R": None, "C": value + c_box_of(boxes, ref)})
+            continue
+        if kind == "R":
+            out["grid"].append({**port, "R": value, "C": None})
+            continue
+        if not dump.is_file():
+            raise KrsError("E_VERIFY_DUMP", path=str(dump))
+        # per axis, the smaller and the larger end: a box can start at its higher end
+        lo, hi = ([f(a, b) for a, b in zip(port["start"], port["stop"])] for f in (min, max))
+        cell = [_cell(lines[0], lo[0], hi[0]), _cell(lines[1], lo[1], hi[1]), (lo[2], hi[2])]
+        start, stop = [e[0] for e in cell], [e[1] for e in cell]
+        p = "xyz".index(port["dir"])
+        c = c_box(dump, lines, start, stop, p, dt)
+        k = dt / (2 * math.sqrt(value * c)) if value * c > 0 else math.inf  # a C (or an L) of 0 reads as k inf
+        if k > K_MAX:
+            raise KrsError("E_VERIFY_K", ref=ref, k=f"{k:.3g}", limit=f"{K_MAX:g}")
+        out["grid"].append({**port, "start": start, "stop": stop, "R": None, "C": c, "L": value})
+        for span in ((lo[p], start[p]), (stop[p], hi[p])):  # along dir: from lo to the cell, from the cell to hi
+            if span[0] < span[1]:
+                (x0, x1), (y0, y1), z = (span if n == p else cell[n] for n in range(3))
+                copper.append({"x": [x0, x1, x1, x0], "y": [y0, y0, y1, y1], "z": list(z)})
+    return out

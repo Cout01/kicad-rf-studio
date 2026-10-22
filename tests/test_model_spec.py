@@ -14,11 +14,14 @@ from kicad_rf_studio.core.kicad import load_board
 from kicad_rf_studio.core.mesh.gates import mesh_with_lint
 from kicad_rf_studio.core.messages import KrsError
 from kicad_rf_studio.core.model.ports import place
-from kicad_rf_studio.core.model.spec import excitation, grid_entry, kappa, model_spec, spec_hash
+from kicad_rf_studio.core.model.readers import c_box
+from kicad_rf_studio.core.model.spec import K_MAX, excitation, grid_entry, kappa, model_spec, spec_hash, verify_spec
 from test_cli_cost import SEG
 from test_gates import mini, project_of
 from test_geometry_sections import four_layer, plane
+from test_model_csx import TINY
 from test_model_ports import lpf_model
+from test_readers import DUMPS, LINES
 
 P915 = {"f0_hz": 915e6, "harmonics": 3, "band_factor": 1.1, "t_max_s": 40e-9}
 
@@ -121,3 +124,57 @@ def test_a_grid_part_must_be_a_c_or_r_with_a_readable_value(ref, value, code):  
     with pytest.raises(KrsError) as e:
         grid_entry(lpf_spec()[2]["ports"][2], {"ref": ref, "value": value})
     assert (e.value.code, e.value.params["ref"]) == (code, ref)
+
+
+DT = 1.73972e-13  # the dumps model's dt
+VPORTS = [  # on the dumps model's lines: P1 its own port; three part ports in the strip's copper slab, off the strip
+    {"name": "P1", "kind": "lumped", "dir": "z", "start": [-5.0, -0.5, 0.0], "stop": [-5.0, 0.5, 0.5], "nodes": [],
+     "part": False},
+    {"name": "C1", "kind": "lumped", "dir": "y", "start": [2.0, 2.0, 0.5], "stop": [3.0, 1.0, 0.535], "nodes": [],
+     "part": True},
+    {"name": "L1", "kind": "lumped", "dir": "x", "start": [-1.0, 0.5, 0.5], "stop": [1.0, 1.5, 0.535], "nodes": [],
+     "part": True},
+    {"name": "R3", "kind": "lumped", "dir": "x", "start": [-3.0, 1.0, 0.5], "stop": [-2.0, 2.0, 0.535], "nodes": [],
+     "part": True}]
+VSPEC = {**TINY, "mesh": {a: LINES[k].tolist() for k, a in enumerate("xyz")}, "ports": VPORTS, "grid": []}
+VPARTS = {"C1": {"ref": "C1", "value": "100pF"}, "L1": {"ref": "L1", "value": "15nH"}, "R3": {"ref": "R3", "value": "50R"}}
+CBOX = {"C1": 2.4e-15, "L1": 2.7e-15, "R3": 1.4e-15}
+STRIPS = [{"x": [-1.0, 0.0, 0.0, -1.0], "y": [1.0, 1.0, 1.25, 1.25], "z": [0.5, 0.535]},
+          {"x": [0.25, 1.0, 1.0, 0.25], "y": [1.0, 1.0, 1.25, 1.25], "z": [0.5, 0.535]}]
+
+
+def test_verify_moves_every_part_port_into_the_grid():  # spec 7.6, C-36 (owner-confirmed: C_part + C_box)
+    v = verify_spec(VSPEC, VPARTS, CBOX, DUMPS / "operator_dump.vtr", DT)
+    c1, l1, r3 = v["grid"]
+    cell = c_box(DUMPS / "operator_dump.vtr", LINES, [0.0, 1.0, 0.5], [0.25, 1.25, 0.535], 0, DT)
+    assert [q["name"] for q in v["ports"]] == ["P1"] and VSPEC["grid"] == [] and len(VSPEC["ports"]) == 4
+    assert (c1["start"], c1["stop"], c1["R"], c1["C"]) == ([2.0, 2.0, 0.5], [3.0, 1.0, 0.535], None,
+                                                           pytest.approx(100e-12 + 2.4e-15))
+    assert (r3["R"], r3["C"]) == (50.0, None) and "L" not in c1 and "L" not in r3
+    assert (l1["dir"], l1["start"], l1["stop"], l1["R"], l1["L"]) == ("x", [0.0, 1.0, 0.5], [0.25, 1.25, 0.535], None,
+                                                                      15e-9)
+    assert l1["C"] == pytest.approx(cell, rel=1e-12) and cell == pytest.approx(5.954e-15, rel=1e-3)
+    assert v["metal"]["copper"][-2:] == STRIPS
+    turned = {**VSPEC, "ports": [*VPORTS[:2], {**VPORTS[2], "start": [1.0, 0.5, 0.5], "stop": [-1.0, 1.5, 0.535]},
+                                 VPORTS[3]]}  # the box starts at its higher end, as lpf915's L1 does
+    t = verify_spec(turned, VPARTS, CBOX, DUMPS / "operator_dump.vtr", DT)
+    assert (t["grid"][1]["start"], t["grid"][1]["stop"], t["metal"]["copper"][-2:]) == (
+        [0.0, 1.0, 0.5], [0.25, 1.25, 0.535], STRIPS)
+
+
+def test_verify_refuses_what_it_cannot_put_in_the_grid(tmp_path):  # C-36, C-37 (owner-confirmed: K_MAX 0.45)
+    dump = DUMPS / "operator_dump.vtr"
+    cases = [((VSPEC, {**VPARTS, "L1": {"ref": "L1", "value": "1pH"}}, CBOX, dump),
+              ("E_VERIFY_K", {"ref": "L1", "k": "1.13", "limit": "0.45"})),
+             ((VSPEC, {**VPARTS, "R3": {"ref": "R3", "value": "x"}}, CBOX, dump),
+              ("E_VERIFY_VALUE", {"ref": "R3", "value": "x"})),
+             ((VSPEC, {**VPARTS, "C1": {"ref": "C1", "value": "0pF"}}, CBOX, dump),
+              ("E_VERIFY_VALUE", {"ref": "C1", "value": "0pF"})),
+             ((VSPEC, VPARTS, {"L1": 2.7e-15, "R3": 1.4e-15}, dump), ("E_CBOX", {"ref": "C1", "value": "missing"})),
+             ((VSPEC, VPARTS, CBOX, tmp_path / "none.vtr"), ("E_VERIFY_DUMP", {"path": str(tmp_path / "none.vtr")}))]
+    for args, expected in cases:
+        with pytest.raises(KrsError) as e:
+            verify_spec(*args, DT)
+        assert (e.value.code, e.value.params) == expected
+    no_l = {**VSPEC, "ports": [q for q in VPORTS if q["name"] != "L1"]}
+    assert K_MAX == 0.45 and len(verify_spec(no_l, VPARTS, CBOX, tmp_path / "none.vtr", DT)["grid"]) == 2
