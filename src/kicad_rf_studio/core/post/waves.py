@@ -1,9 +1,15 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
-"""S from a run's waves (spec 7.1): the co-simulation grid, the waves a and b of every job, and S = B·A⁻¹."""
+"""S from a run's waves (spec 7.1): the co-simulation grid, the waves a and b of every job, S = B·A⁻¹, and the layout
+N-port of a run's folder."""
+import json
+from dataclasses import dataclass
+from pathlib import Path
+
 import numpy as np
 
 from kicad_rf_studio.core.messages import KrsError
 from kicad_rf_studio.core.model.parts import Z0
+from kicad_rf_studio.stoprule import KEPT
 
 N_GRID = 400  # about this many points from f0/2 to band_factor·harmonics·f0
 KAPPA_LIMIT = 10.0  # the largest κ_eq of A that S is computed from (C-9)
@@ -47,3 +53,55 @@ def level_db(a: np.ndarray) -> np.ndarray:
     |A_jj|)."""
     d = np.abs(np.diagonal(a, axis1=1, axis2=2))
     return (20 * np.log10(d / d.max(axis=0))).min(axis=1)
+
+
+@dataclass(frozen=True)
+class Layout:
+    """The layout N-port of a run (spec 7.1): S (F, N, N) on the grid f, ports in job order and every port
+    V_signal − V_reference; `markers`, the grid indices of f0, 2f0, … up to the project's harmonics, those on the grid;
+    the excitation level `a_db` (F,); model.json's port entries and which of them openEMS measured reversed."""
+    f: np.ndarray
+    markers: list[int]
+    s: np.ndarray
+    a_db: np.ndarray
+    ports: list[dict]
+    flipped: list[bool]
+
+
+def flipped(port: dict) -> bool:
+    """Whether openEMS measured the model.json `port` as V_reference − V_signal: a CurvePort whose start, its reference
+    end, lies higher than its stop along the axis of the largest |stop − start| component, as openEMS orders a
+    CurvePort's ends along that axis (ports.py v0.37.0). A lumped port keeps its box's given order."""
+    if port["kind"] != "curve":
+        return False
+    axis = np.argmax(np.abs(np.subtract(port["stop"], port["start"])))  # as openEMS picks it: the first on a tie
+    return port["start"][axis] > port["stop"][axis]
+
+
+def layout(project: dict, results: dict) -> Layout:
+    """The layout N-port of the run `results` holds, its `run_dir` and `jobs` (project.json's results, or verify's
+    own), on the grid of `project` (spec 7.1, C-10). Each job's waves are cut at its t_cut, both u and i, or taken whole
+    when t_cut is None (t_max); S is then normalised to V_signal − V_reference at every flipped port. Raises
+    E_RESULTS_JOB for a job whose S was not kept, then E_RESULTS_WAVES for a missing model.json, then for a job's
+    missing waves file (run_dir itself when the job has none)."""
+    jobs, run_dir = results["jobs"], Path(results["run_dir"])
+    for job in jobs:
+        if job["verdict"] not in KEPT:
+            raise KrsError("E_RESULTS_JOB", port=job["port"], verdict=job["verdict"])
+    paths = [run_dir / "model.json", *(run_dir / job["waves"] if job["waves"] else run_dir for job in jobs)]
+    for path in paths:
+        if not path.is_file():
+            raise KrsError("E_RESULTS_WAVES", path=str(path))
+    records = []
+    for job, path in zip(jobs, paths[1:]):
+        with np.load(path) as waves:
+            t_u, u, t_i, i = (waves[key] for key in ("t_u", "u", "t_i", "i"))
+        n = len(t_u) if job["t_cut"] is None else np.searchsorted(t_u, job["t_cut"], "right")
+        records.append((t_u[:n], u[:, :n], t_i[:n], i[:, :n]))
+    f, q = grid(project["f0_hz"], project["harmonics"], project["band_factor"])
+    s, a = s_matrix(records, f)
+    ports = json.loads(paths[0].read_text(encoding="utf-8"))["ports"]
+    flips = [flipped(port) for port in ports]
+    d = np.where(flips, -1.0, 1.0)  # D·S·D, D = −1 at each flipped port (C-10)
+    markers = list(range(q // 2, min(project["harmonics"] * q, len(f)), q))  # n·f0 at n·q − q//2 (grid)
+    return Layout(f, markers, s * np.outer(d, d), level_db(a), ports, flips)

@@ -40,3 +40,12 @@ def synth_records(s_of, n, f1, f2, dt, t_rec, smooth=False):
     u, i = (np.fft.irfft(X * E[:, None, None], m, axis=0)[:k] for X in (V, I * shift))
     t_u = np.arange(k) * step
     return [(t_u, u[:, :, j].T.copy(), t_u + dt / 2, i[:, :, j].T.copy()) for j in range(n)]
+
+
+def terminate_np(s, ext, zk):
+    """S' = S_ee + S_ei·Γ·(I − S_ii·Γ)⁻¹·S_ie, Γ_k = (Z_k − Z0)/(Z_k + Z0) for the ports not in ext (index order),
+    zk (F, M): the numpy oracle of the termination."""
+    i = [k for k in range(s.shape[-1]) if k not in ext]
+    g = (zk - Z0) / (zk + Z0)
+    see, sei, sie, sii = (s[:, r][:, :, c] for r, c in ((ext, ext), (ext, i), (i, ext), (i, i)))
+    return see + (sei * g[:, None, :]) @ np.linalg.solve(np.eye(len(i)) - sii * g[:, None, :], sie)
