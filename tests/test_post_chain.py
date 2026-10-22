@@ -7,7 +7,7 @@ import pytest
 
 from kicad_rf_studio.core.messages import KrsError
 from kicad_rf_studio.core.model.parts import model_of, srf
-from kicad_rf_studio.core.post.chain import part_impedances, s2p_impedance, z_part
+from kicad_rf_studio.core.post.chain import ideal_schematic, loads, part_impedances, s2p_impedance, terminate, z_part
 from kicad_rf_studio.core.post.waves import grid
 from kicad_rf_studio.core.project import parts
 from networks import C_BOX, star, terminate_np, write_s2p
@@ -111,6 +111,67 @@ def test_each_part_port_gets_its_model_or_its_file(tmp_path):  # C-13..C-15, spe
         assert (e.value.code, e.value.params) == ("E_PART_NO_VALUE", {"ref": ref, "value": value})
 
 
+CLASSES = {"gnd_nets": ["GND"], "power_nets": []}
+
+
+def part(ref, a, b, role="port"):
+    return {"ref": ref, "nets": [a, b], "role": role}
+
+
+def schematic(series=(), shunt=(), nets=("A", "B")):
+    return {"chain": {"nets": list(nets), "series": list(series), "shunt": list(shunt)}, "others": [],
+            "classes": CLASSES}
+
+
+BW_C, BW_L = 1 / (2 * np.pi * F0 * 50), 2 * 50 / (2 * np.pi * F0)  # Butterworth n = 3 pi at f0: 3.4788 pF, 17.394 nH
+PI = schematic([part("L1", "A", "B")], [part("C1", "A", "GND"), part("C2", "B", "GND")])
+W = 2 * np.pi * F
+PI_Z = {"L1": 1j * W * BW_L, "C1": 1 / (1j * W * BW_C), "C2": 1 / (1j * W * BW_C)}
+
+
+@pytest.mark.parametrize(("c", "shown"), [(None, "missing"), (0.0, "0"), (math.inf, "inf")])
+def test_a_part_port_needs_a_usable_c_box(c, shown):  # C-16
+    with pytest.raises(KrsError) as e:
+        loads({"C1": z_part("C", 1e-12, None, F)}, ["C1"], {} if c is None else {"C1": c}, F)
+    assert (e.value.code, e.value.params) == ("E_CBOX", {"ref": "C1", "value": shown})
+
+
+def test_the_termination_is_scikit_rf_circuit_and_agrees_with_numpy():  # spec 7.2, C-6 (owner-confirmed: 1e-12)
+    zk = loads({r: z_part(k, v, M0402, F) for r, k, v in LPF}, [r for r, _, _ in LPF],
+               dict.fromkeys([r for r, _, _ in LPF], C_BOX), F)
+    assert np.abs(zk[:, 1] - 1 / (1 / z_part("L", 15e-9, M0402, F) + 2j * np.pi * F * C_BOX)).max() <= 1e-9
+    assert np.abs(terminate(star(F, 6), [0, 1], zk, F) - terminate_np(star(F, 6), [0, 1], zk)).max() <= 1e-12
+    assert np.abs(terminate(star(F, 2), [0, 1], np.zeros((len(F), 0)), F) - star(F, 2)).max() <= 1e-15  # M = 0
+
+
+def test_the_ideal_schematic_of_a_butterworth_pi():  # C-30: the ABCD oracle in closed form; r6 §6
+    s = ideal_schematic(PI, PI_Z, F)
+    assert np.abs(np.abs(s[:, 1, 0]) ** 2 - 1 / (1 + (F / F0) ** 6)).max() <= 1e-13
+    assert 20 * np.log10(abs(s[71, 1, 0])) == pytest.approx(-3.0103, abs=1e-4)
+    assert np.abs((np.abs(s) ** 2).sum(1) - 1).max() <= 1e-13  # lossless
+
+
+@pytest.mark.parametrize(("model", "s21_db"), [(None, [-1.735, -15.80, -26.36]),
+                                               (M0402, [-1.958, -19.971, -39.063])])
+def test_lpf915s_ideal_schematic(model, s21_db):  # C-30: R1 (0R) a short, R2 (DNP) left out, C4 (others) excluded
+    s = ideal_schematic(lpf(), {r: z_part(k, v, model, F) for r, k, v in LPF}, F)
+    assert 20 * np.log10(np.abs(s[[71, 213, 355], 1, 0])) == pytest.approx(s21_db, abs=5e-3)
+
+
+def test_one_net_a_bridging_shunt_and_the_nets_off_the_chain():  # C-30
+    assert np.abs(ideal_schematic(schematic(nets=["LINE"]), {}, F) - np.array([[0, 1], [1, 0]])).max() <= 1e-15
+    zl, zx = 1j * W * 15e-9, 1 / (1j * W * 1e-12)
+    zs = zl * zx / (zl + zx)
+    bridge = ideal_schematic(schematic([part("L1", "A", "B")], [part("X1", "A", "B")]), {"L1": zl, "X1": zx}, F)
+    assert np.abs(bridge[:, 1, 0] - 100 / (100 + zs)).max() <= 1e-13
+    s = ideal_schematic(schematic([part("L1", "A", "B")], [part("R9", "B", "GND", "copper")]), {"L1": zl}, F)
+    assert np.abs(s[:, 1, 0]).max() <= 1e-15 and np.abs(s[:, 1, 1] + 1).max() <= 1e-15  # a grounded port reads −1
+    stub = schematic([part("L1", "A", "B")], [part("R2", "B", "SMA", "copper"), part("C9", "B", "SMA")])
+    assert np.abs(ideal_schematic(stub, {"L1": zl, "C9": zx}, F)[:, 1, 0] - 100 / (100 + zl)).max() <= 1e-13  # floats
+    short = ideal_schematic(schematic([part("R5", "A", "B")]), {"R5": np.zeros(len(F), complex)}, F)  # 0R port, no preset
+    assert np.abs(short - np.array([[0, 1], [1, 0]])).max() <= 1e-15
+
+
 # --- beyond the brief's tests ---------------------------------------------------------------------------------
 
 
@@ -119,3 +180,20 @@ def test_a_coarse_s2p_with_no_point_in_the_band_still_serves(tmp_path):  # C-14:
     file = write_s2p(tmp_path / "coarse.s2p", z_part("C", 3.3e-12, None, f), "series", f)
     z, fits = s2p_impedance(file, "shunt", "C1", F)
     assert fits is None and z.shape == F.shape and np.isfinite(z).all()
+
+
+def test_the_termination_keeps_ext_in_order_and_closes_the_others_in_index_order():  # spec 7.2
+    s = star(F, 4) * np.arange(1, 17).reshape(4, 4) / 16  # no two ports alike: star alone hides a swap
+    zk = np.stack([z_part("L", 15e-9, None, F), z_part("C", 3.3e-12, None, F)], -1)  # ports 0 and 2
+    assert np.abs(terminate(s, [3, 1], zk, F) - terminate_np(s, [3, 1], zk)).max() <= 1e-12
+
+
+@pytest.mark.parametrize(("gnd_nets", "power_nets", "far", "grounded"), [
+    (None, [], "AGND", True), ([], None, "+3V3", True), ([], ["VBIAS"], "VBIAS", True), ([], [], "AGND", False)])
+def test_a_far_net_is_ground_by_its_list_or_by_its_name_where_the_list_is_null(gnd_nets, power_nets, far,
+                                                                                 grounded):  # C-30
+    p = schematic(shunt=[part("C1", "LINE", far)], nets=["LINE"])
+    p["classes"] = {"gnd_nets": gnd_nets, "power_nets": power_nets}
+    zc = 1 / (1j * W * 1e-12)
+    s21 = ideal_schematic(p, {"C1": zc}, F)[:, 1, 0]
+    assert np.abs(s21 - (2 * zc / (2 * zc + 50) if grounded else 1)).max() <= 1e-13  # a shunt C, or one that floats

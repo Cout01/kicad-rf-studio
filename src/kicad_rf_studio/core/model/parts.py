@@ -9,6 +9,7 @@ from shapely.geometry import MultiPolygon, Polygon
 from kicad_rf_studio.core.kicad.board import Board
 from kicad_rf_studio.core.kicad.tracer import Chain, Classes, _netted
 from kicad_rf_studio.core.kicad.values import part_kind, part_value
+from kicad_rf_studio.core.messages import KrsError
 from kicad_rf_studio.core.project import ROLES
 
 PORT, COPPER, OPEN, GRID, CURVE_PORT = ROLES
@@ -42,6 +43,16 @@ def is_choke(value: float, model: dict, f1: float, f2: float) -> bool:
     w = 2 * np.pi * np.linspace(f1, f2, 101)
     z = 1 / (1 / (model["esr_ohm"] + 1j * w * value) + 1j * w * model["cp_f"])
     return bool(np.all(np.abs(z) >= 200 * Z0))
+
+
+def c_box_of(boxes: dict, ref: str) -> float:
+    """The C_box (F) of the part port `ref` in `boxes`, a run's c_box by ref (C-16). E_CBOX when it is missing, not
+    finite or not above 0: such a box cannot close the port."""
+    if ref not in boxes:
+        raise KrsError("E_CBOX", ref=ref, value="missing")
+    if not (math.isfinite(c := boxes[ref]) and c > 0):
+        raise KrsError("E_CBOX", ref=ref, value=f"{c:g}")
+    return c
 
 
 def role(kind: str | None, value: float | None, model: dict | None, dnp: bool, angle: float, place: str,

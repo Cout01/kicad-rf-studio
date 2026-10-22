@@ -133,6 +133,7 @@ CATALOG: dict[str, str] = {
     "E_S2P_PORTS": "Part {ref}: {path} has {ports} ports, and a part needs a 2-port measured in a series or a shunt fixture. Give its .s2p file.",
     "E_S2P_BAND": "Part {ref}: {path} covers {f_lo}–{f_hi} MHz, not the simulated band {f1}–{f2} MHz, and it is never extrapolated. Give a file that covers the band, or, for a C, L or R, a value with `retune PROJECT {ref}=VALUE`.",
     "W_S2P_FIXTURE": "Part {ref}: {path} fits a {fits}-thru measurement better than the :{named} it was given. The suffix names the fixture the vendor measured the part in, not its place on the board; if the vendor used {fits}-thru, give it again as `retune PROJECT {ref}=file.s2p:{fits}`.",
+    "E_CBOX": "The last run recorded no usable C_box for part {ref} ({value}), so its port cannot be closed. Run `run` again, and look at the part's port with `preview` if this repeats.",
     "E_INTERNAL": "Internal error: {detail}. Please report it.",
 }
 
