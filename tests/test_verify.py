@@ -5,11 +5,12 @@ from pathlib import Path
 import numpy as np
 import pytest
 
+from kicad_rf_studio import pipeline
 from kicad_rf_studio.cli import main
 from kicad_rf_studio.core.messages import render
 from kicad_rf_studio.core.model import spec as spec_module
-from kicad_rf_studio.core.post.outputs import LIMITS
-from kicad_rf_studio.core.post.waves import grid
+from kicad_rf_studio.core.post.outputs import LIMITS, grid_lines
+from kicad_rf_studio.core.post.waves import grid, layout
 from kicad_rf_studio.core.project import load_project, parts, save_project
 from networks import C_BOX, read_s, star, terminate_np
 from test_cli_cost import FIX
@@ -90,3 +91,30 @@ def test_verify_refuses_stale_results_and_unreadable_values(tmp_path, calibrated
     capsys.readouterr()
     assert main(["verify", str(pj)]) == 2 and line in capsys.readouterr().out.splitlines()
     assert "verify" not in load_project(pj)
+
+
+# --- beyond the brief's tests ------------------------------------------------------------------------------------
+
+
+def test_grid_lines_say_what_each_part_sat_in_the_grid_as():  # C-36, C-37: lpf915 has no R part port
+    grid = [{"name": "R9", "R": 47.0, "C": None},  # a grid part of the run itself: not verify's, so no line
+            {"name": "C1", "R": None, "C": 1.0002e-10}, {"name": "R1", "R": 0.0, "C": None},
+            {"name": "L1", "R": None, "C": 6e-16, "L": 1.5e-08}]
+    assert grid_lines(grid, {"C1": "100pF", "R1": "0R", "L1": "15nH"}) == [
+        "in grid: C1 100pF as C 1.0002e-10 F (value + C_box)", "in grid: R1 0R as R 0 ohm",
+        "in grid: L1 15nH as L 1.5e-08 H with the cell's C 6e-16 F"]
+
+
+def test_verify_reports_each_null_and_its_shift(tmp_path, calibrated, monkeypatch):  # C-39: the star has no null
+    pj = verified(tmp_path, monkeypatch)
+    nulls = [{"f_hz": 1.83e9, "shift": 0.0123}, {"f_hz": 2.5e9, "shift": None}]
+    monkeypatch.setattr(pipeline, "compare", lambda *a: {"ds21_db_f0": 0.0, "ds11_f0": 0.0, "ds_max": 0.0,
+                                                          "nulls": nulls})
+    assert main(["verify", str(pj)]) == 0
+    v = load_project(pj)["verify"]
+    a_db = layout(load_project(pj), v).a_db  # verify's own excitation level, at the grid point nearest each null
+    at = [f"{a_db[np.abs(F - n['f_hz']).argmin()]:.1f}" for n in nulls]
+    events = (Path(v["run_dir"]) / "events.jsonl").read_text(encoding="utf-8").splitlines()
+    assert [(e["code"], e["params"]) for e in map(json.loads, events) if e["kind"] == "result"][2:4] == [
+        ("I_VERIFY_NULL", {"f_mhz": "1830.0", "a_db": at[0], "shift_pct": "+1.23"}),
+        ("W_VERIFY_NULL_UNMATCHED", {"f_mhz": "2500.0", "a_db": at[1]})]
