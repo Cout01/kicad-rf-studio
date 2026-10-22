@@ -10,7 +10,7 @@ from typing import TYPE_CHECKING
 
 import scipy.constants
 import shapely
-from shapely.geometry import GeometryCollection
+from shapely.geometry import GeometryCollection, MultiPolygon
 
 from kicad_rf_studio.core.geometry.copper import clean, split_holes
 from kicad_rf_studio.core.geometry.lid import snap_lid
@@ -83,9 +83,10 @@ def model_spec(project: dict, board: Board, geom: Geometry, mesh: Mesh, ports: l
     smeared over the first z-cell dz0 outside it (C-6). The stackup's mask slabs are never materials (X-3). A material
     with no solids is left out, and each is at priority 10 + its place in the list: openEMS breaks ties arbitrarily.
     The metal: every copper piece, solid (C-5), and the convex hull of the two pads of each part whose role is copper
-    (spec 5.7), each over its layer's slab; the solid rods as cylinders, the others as curves on the mesh lines
-    (C-40); the lid's plate on the z line nearest its top, and its walls up to it (C-39, X-5). Every solid is cut by
-    split_holes. Raises E_UNKNOWN_PAD for a copper part's pad that does not exist."""
+    (spec 5.7), cut back from other nets' copper on its layer to the pads' own clearance, each over its layer's slab;
+    the solid rods as cylinders, the others as curves on the mesh lines (C-40); the lid's plate on the z line nearest
+    its top, and its walls up to it (C-39, X-5). Every solid is cut by split_holes. Raises E_UNKNOWN_PAD for a copper
+    part's pad that does not exist."""
     f0, zs, crop, dz = project["f0_hz"], geom.zs, geom.region.crop, mesh.dz0
 
     def k(s: Slab) -> float:
@@ -110,8 +111,12 @@ def model_spec(project: dict, board: Board, geom: Geometry, mesh: Mesh, ports: l
     for part in (*project["chain"]["series"], *project["chain"]["shunt"], *project["others"]):
         if part["role"] == COPPER:
             pads = [_pad(board, name) for name in part["pads"]]
-            hull = GeometryCollection([p.polygon for p in pads]).convex_hull
-            copper += _solids(clean(hull, crop), *cu[signal_layer(board, pads[0])])
+            layer, both = signal_layer(board, pads[0]), GeometryCollection([p.polygon for p in pads])
+            # a pour can reach between the pads, under the part's body, where a copper hull would short it to them
+            # ponytail: copper that runs right across between the pads cuts the hull in two, leaving the part open
+            near = [pc.polygon for pc in geom.pieces if pc.layer == layer and pc.net not in {p.net for p in pads}]
+            gap = min((q.distance(both) for q in near), default=0.0)
+            copper += _solids(clean(both.convex_hull.difference(MultiPolygon(near).buffer(gap)), crop), *cu[layer])
     lid = {"plate": None, "walls": []}
     if geom.lid is not None:
         top = snap_lid(geom.lid, mesh.z)

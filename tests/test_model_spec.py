@@ -67,6 +67,14 @@ def test_the_lpf915_spec():
     assert s["metal"]["lid"]["plate"]["z"] == snap_lid(g.lid, m.z).z1 and s["metal"]["lid"]["plate"]["z"] in m.z  # C-39
 
 
+def test_a_0r_rectangle_joins_its_two_nets_and_meets_no_other():  # final review I1
+    # R1's hull of its two pads overlapped the GND pour that reaches into the gap between them, so the setup gate read
+    # P2 and C3 as shorts (E_PORT_SHORT) and lpf915 could not run
+    g, _, s = lpf_spec()
+    (r1,) = (Polygon(zip(q["x"], q["y"])) for q in s["metal"]["copper"][len(g.pieces):])  # after the pieces
+    assert {pc.net for pc in g.pieces if pc.layer == "F.Cu" and pc.polygon.intersects(r1)} == {"RF_C", "RF_OUT"}
+
+
 def test_lid_walls_drawn_as_one_closed_ring_are_split():  # X-4
     board, p, g, _, m = lpf_model()
     frame = box(100, -105, 110, -95).difference(box(101, -104, 109, -96))
