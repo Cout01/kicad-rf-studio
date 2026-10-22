@@ -239,8 +239,9 @@ def run_jobs(jobs: list[Path], pool: int, run_dir: Path, settings: dict,
     each job's {"code": its exit code, None if it never started, "stopped": whether the run was stopped}. A STOP file
     in `run_dir`, or Ctrl+C, stops the run (C-26): ABORT goes into every running job's folder and no other job starts;
     a job with no port_ut_1 yet is still in setup, where openEMS never looks for ABORT, and is killed at once, any
-    other one if it still runs ABORT_WAIT_S later. Otherwise a running job for which `watch(job)` is true gets ABORT
-    once. No worker outlives the call, nor this process, however it ends: Windows (a job object) or Linux kills it."""
+    other one if it still runs ABORT_WAIT_S later, or at a second Ctrl+C. Otherwise a running job for which
+    `watch(job)` is true gets ABORT once. No worker outlives the call, nor this process, however it ends: Windows (a
+    job object) or Linux kills it."""
     out = {job: {"code": None, "stopped": False} for job in jobs}
     todo, running, env = list(jobs), {}, worker_env(settings)
     spawn = ({"creationflags": subprocess.CREATE_NEW_PROCESS_GROUP | subprocess.CREATE_NO_WINDOW}
@@ -268,16 +269,17 @@ def run_jobs(jobs: list[Path], pool: int, run_dir: Path, settings: dict,
                     elif watch and not (job / "ABORT").exists() and watch(job):
                         (job / "ABORT").write_text("")
         except KeyboardInterrupt:
-            for job, proc in running.items():
-                (job / "ABORT").write_text("")
-                if not (job / "port_ut_1").exists():
-                    proc.kill()
-                    proc.wait()
-            deadline = time.monotonic() + ABORT_WAIT_S
-            while time.monotonic() < deadline and any(proc.poll() is None for proc in running.values()):
-                time.sleep(POLL_S)
             for result in out.values():
                 result["stopped"] = True
+            with contextlib.suppress(KeyboardInterrupt):  # a second Ctrl+C kills what still runs at once (finally)
+                for job, proc in running.items():
+                    (job / "ABORT").write_text("")
+                    if not (job / "port_ut_1").exists():
+                        proc.kill()
+                        proc.wait()
+                deadline = time.monotonic() + ABORT_WAIT_S
+                while time.monotonic() < deadline and any(proc.poll() is None for proc in running.values()):
+                    time.sleep(POLL_S)
     finally:  # kills what still runs, whatever ended the loop
         for job, proc in running.items():
             if proc.poll() is None:

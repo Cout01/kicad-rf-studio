@@ -101,6 +101,25 @@ def test_ctrl_c_in_the_job_phase_stops_the_run_and_frees_the_lock(tmp_path, cali
     assert {j["verdict"] for j in load_project(pj)["results"]["jobs"]} == {"stopped"}
 
 
+def test_a_second_ctrl_c_kills_at_once_and_the_jobs_are_recorded(tmp_path, calibrated, monkeypatch):  # final review M2
+    # the second press, while run_jobs waited for the stopped jobs to write their data, escaped it: no verdicts, no
+    # results, exit 130
+    monkeypatch.setenv("KRS_FAKE", "slow")
+    monkeypatch.setattr(runs, "free_ram_mb", lambda: 100.0)  # one job at a time: job 1 still runs at the second press
+    real_sleep, fired = time.sleep, []
+
+    def sleep(s):
+        if len(fired) < 2 and any(calibrated.glob("runs/*/job-1-*/port_ut_1")):
+            fired.append(1)
+            raise KeyboardInterrupt
+        real_sleep(s)
+
+    monkeypatch.setattr(time, "sleep", sleep)
+    pj = coupon(tmp_path)
+    assert main(["run", str(pj)]) == 4 and len(fired) == 2
+    assert {j["verdict"] for j in load_project(pj)["results"]["jobs"]} == {"stopped"}
+
+
 @pytest.mark.parametrize(("edits", "code", "first"), [
     ({"lid_height_mm": None}, 2, render("E_LID_HEIGHT", refs="SH1")),
     ({"lid_height_mm": 2.5, "mesh": {"n": 3}}, 3, "The fine mesh (mesh.n 3) still misses the 2D reference on net RF_B")])
