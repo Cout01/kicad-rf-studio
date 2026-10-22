@@ -30,7 +30,7 @@ from kicad_rf_studio.core.geometry.sections import cross_section
 from kicad_rf_studio.core.kicad import load_board
 from kicad_rf_studio.core.kicad.values import part_kind, port_value
 from kicad_rf_studio.core.mesh.gates import check_fit2d, dt_floor_reference, fit2d, mesh_with_lint
-from kicad_rf_studio.core.messages import KrsError, render
+from kicad_rf_studio.core.messages import KrsError, reason, render
 from kicad_rf_studio.core.model.parts import CURVE_PORT, GRID, PORT
 from kicad_rf_studio.core.model.ports import ends, nominal_boxes, place
 from kicad_rf_studio.core.model.readers import read_log, read_probe, read_run_stats, read_stats
@@ -391,6 +391,16 @@ def _split(lay: Layout) -> tuple[list[int], list[str]]:
     return [k for k, q in enumerate(lay.ports) if not q["part"]], [q["name"] for q in lay.ports if q["part"]]
 
 
+def _save(path: Path, data: dict, command: str) -> None:
+    """save_project(path, data) as run, retune and verify store their results: an OSError (project.json held or
+    read-only) raises E_RESULTS_WRITE for `path`, with `command` to run again."""
+    try:
+        save_project(path, data)
+    except OSError as err:
+        raise KrsError("E_RESULTS_WRITE", path=str(path), reason=reason(err, "cannot be written"),
+                       command=command) from None
+
+
 def write_outputs(path: Path, project: dict, command: str, *,
                   layout_on_part_error: bool = False) -> list[tuple[str, dict]]:
     """The outputs of the run in `project`'s results (spec 3.2, 7.3, C-26..C-32), the step `run` and `retune` share:
@@ -449,12 +459,12 @@ def run(path: Path) -> int:
     notes, stopping with stops(); the model, 3 when a mesh gate blocks; the expected loss (expected_loss); prepare and
     the setup gate, 3 when it blocks, else I_GATES_PASSED and the cost lines; then one job per port under the stop rule,
     each job's verdict (classify_job) and the calibration's speed refreshed. When every job kept S, the results in
-    project.json, with the preset and the expected loss, I_RESULTS, then write_outputs' lines as result events, an E_
-    line (a part's refusal, the layout N-port still written) as a message event, and 0, or 2 after an E_ line (C-26);
-    else W_RUN_NOT_KEPT and 4, the previous results and results/ left as they were (C-24, C-29). W_GATE_LIMITS follows
-    the gate lines and each verdict when the gate limits are not GATES (C-10). STOP or Ctrl+C before the jobs start
-    propagates as KeyboardInterrupt (exit 130, results untouched); once they run, it stops them, and their verdicts say
-    so."""
+    project.json, with the preset and the expected loss (E_RESULTS_WRITE advising `run` when project.json cannot be
+    replaced), I_RESULTS, then write_outputs' lines as result events, an E_ line (a part's refusal, the layout N-port
+    still written) as a message event, and 0, or 2 after an E_ line (C-26); else W_RUN_NOT_KEPT and 4, the previous
+    results and results/ left as they were (C-24, C-29). W_GATE_LIMITS follows the gate lines and each verdict when
+    the gate limits are not GATES (C-10). STOP or Ctrl+C before the jobs start propagates as KeyboardInterrupt (exit
+    130, results untouched); once they run, it stops them, and their verdicts say so."""
     if not read_project(path)["ports"]:
         raise KrsError("E_NO_PORTS")
     return _locked(path, _run)
@@ -493,7 +503,7 @@ def _run(path: Path, run_dir: Path) -> int:
     data["results"] = {"model_hash": spec_hash(model.spec), "run_dir": str(run_dir), "gates": gates, "preset": preset,
                        "loss_expected": loss, "dt": setup["dt"], "c_box": setup["c_box"], "wall_s": wall_s,
                        "jobs": done}
-    save_project(path, data)
+    _save(path, data, command_line("kicad-rf-studio", "run", str(path)))
     emit("result", "I_RESULTS", {"kept": kept, "runs": len(done), "wall": duration(wall_s), "path": str(path)})
     lines = write_outputs(path, data, command_line("kicad-rf-studio", "retune", str(path)), layout_on_part_error=True)
     for code, params in lines:
@@ -647,9 +657,10 @@ def retune(path: Path, assignments: list[str], emit: Callable[[str, dict], None]
     be read refuses first, as in run. Then, under the project lock: the project read; E_RETUNE_NO_PARTS for
     assignments to a project without part ports (a single trace, C-21); the `assignments` stored in a copy (assign);
     its model built and results_of; write_outputs, whose E_RESULTS_WRITE advises this command with its assignments;
-    then project.json saved, only when there were assignments (none: the outputs alone, C-19). Then `emit(code,
-    params)` for each line, which prints it by default (Stage 2's GUI passes its own, C-4), and 0. It starts no worker
-    and needs no openEMS; any refusal raises before anything is stored (C-20)."""
+    then project.json saved, only when there were assignments (none: the outputs alone, C-19), with the same
+    E_RESULTS_WRITE when it cannot be replaced. Then `emit(code, params)` for each line, which prints it by default
+    (Stage 2's GUI passes its own, C-4), and 0. It starts no worker and needs no openEMS; any refusal but that last
+    one raises before anything is stored (C-20)."""
     read_project(path)  # before the lock, as in run: its file needs the project's folder, which a typo lacks
     # ponytail: results/ stands in for the lock's run folder, so E_LOCKED names results/ while a retune holds the lock
     with runs.project_lock(path, path.parent / "results"):
@@ -660,9 +671,10 @@ def retune(path: Path, assignments: list[str], emit: Callable[[str, dict], None]
         # ponytail: load()'s notes (W_BOARD_CHANGED too) go unreported: results_of's hash check is retune's one gate
         _, board, geom, _ = load(path)
         results_of(new, build_model(new, board, geom))
-        lines = write_outputs(path, new, command_line("kicad-rf-studio", "retune", str(path), *assignments))
+        command = command_line("kicad-rf-studio", "retune", str(path), *assignments)
+        lines = write_outputs(path, new, command)
         if assignments:
-            save_project(path, new)
+            _save(path, new, command)
     emit = emit or (lambda code, params: print(render(code, **params)))
     for code, params in lines:
         emit(code, params)
@@ -726,12 +738,13 @@ def _verify(path: Path, run_dir: Path) -> int:
     folder, name = path.parent / "results", f"verify.s{p}p"
     basis = {**results, "run_dir": str(run_dir), "jobs": done, "preset": project["preset"]}
     comments = port_map(project, basis, own, list(range(p))) + grid_lines(vspec["grid"], values)
+    command = command_line("kicad-rf-studio", "verify", str(path))
     write(folder, {name: touchstone(own.s, own.f, [q["name"] for q in own.ports], comments)}, VERIFY_OUTPUT,
-          command_line("kicad-rf-studio", "verify", str(path)))
+          command)
     data = load_project(path)  # as it is now: only verify is replaced
     data["verify"] = {"model_hash": spec_hash(vspec), "base_hash": results["model_hash"], "values": values,
                       "run_dir": str(run_dir), "jobs": done, "compare": cmp}
-    save_project(path, data)
+    _save(path, data, command)
     lines = [("I_VERIFY_RESULTS", {"runs": len(done), "wall": duration(wall_s), "path": str(path)}),
              ("I_VERIFY_COMPARE", {"f0_mhz": f"{own.f[k0] / 1e6:g}", "a_db": f"{own.a_db[k0]:.1f}",
                                    "ds21_db": f"{cmp['ds21_db_f0']:.3f}", "ds11": f"{cmp['ds11_f0']:.4f}",

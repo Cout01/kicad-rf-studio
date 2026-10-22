@@ -10,6 +10,7 @@ names the first field that is missing or of the wrong kind (E_PROJECT_FIELD), so
 re-created with `new`, never read with defaults."""
 from __future__ import annotations
 
+import contextlib
 import hashlib
 import json
 import math
@@ -84,12 +85,17 @@ def make_project(board_path: str, board_sha256: str, f0_hz: float, stackup: Stac
 def save_project(path: Path, data: dict) -> None:
     """Writes UTF-8 JSON, indented by 2 and with its non-ASCII text as it is. Lines end in "\\n" on every platform. The
     text goes to a temporary file next to `path`, which then replaces it, so a failed write never leaves half a
-    project. It creates no folder."""
+    project; an OSError on the way removes the temporary file and is raised again. It creates no folder."""
     # ponytail: one temporary name per target, so two writers of one project at once would clash; mkstemp if that
     # can happen
     temporary = path.with_name(path.name + ".tmp")
-    temporary.write_text(json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8", newline="\n")
-    os.replace(temporary, path)
+    try:
+        temporary.write_text(json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8", newline="\n")
+        os.replace(temporary, path)
+    except OSError:
+        with contextlib.suppress(OSError):  # never made, or held as well
+            os.remove(temporary)
+        raise
 
 
 def load_project(path: Path) -> dict:

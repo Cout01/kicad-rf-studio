@@ -132,6 +132,25 @@ def test_a_csv_held_open_refuses_and_stores_nothing(tmp_path, calibrated, monkey
     assert "C2=4.7pF" in command and pj.read_bytes() == before and csv_file.read_bytes() == held
 
 
+def test_a_project_json_that_cannot_be_replaced_is_a_coded_refusal(tmp_path, calibrated, monkeypatch,
+                                                                    capsys):  # final review F4
+    pj = lpf_run(tmp_path, monkeypatch)
+    real = os.replace
+
+    def replace(src, dst):  # an antivirus or a sync client holds project.json
+        if Path(dst).name == "project.json":
+            raise PermissionError(13, "in use")
+        real(src, dst)
+
+    monkeypatch.setattr(os, "replace", replace)
+    capsys.readouterr()
+    assert main(["retune", str(pj), "C2=4.7pF"]) == 2
+    command = command_line("kicad-rf-studio", "retune", str(pj), "C2=4.7pF")
+    assert capsys.readouterr().err == render("E_RESULTS_WRITE", path=str(pj), reason="permission denied",
+                                             command=command) + "\n"
+    assert not pj.with_name("project.json.tmp").exists()
+
+
 def test_a_windows_path_with_spaces_and_accents(tmp_path, calibrated, monkeypatch):  # Review Focus 4
     pj = lpf_run(tmp_path, monkeypatch)
     (tmp_path / "peça 1").mkdir()
