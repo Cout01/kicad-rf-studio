@@ -58,6 +58,21 @@ def test_setup_mode_reads_the_log_and_the_dumps(tmp_path, monkeypatch):  # C-15,
     assert ("Run", (".",), worker.run_kwargs("setup", 1, True)) in log
 
 
+def test_the_c_box_of_a_curve_port_is_its_one_edge(tmp_path, monkeypatch):  # C-18 for a CurvePort
+    fake_openems(monkeypatch)
+    curve = {"name": "L1", "kind": "curve", "dir": None, "start": [-5.0, 0.0, 0.0], "stop": [-5.0, 0.0, 0.5],
+             "nodes": [[-5.0, 0.0, 0.0], [-5.0, 0.0, 0.5]], "part": True}
+    job = write_job(tmp_path, {**SMOKE, "ports": [*SMOKE["ports"], curve]}, "setup")
+    (job / worker.LOG).write_text(SETUP_LOG, encoding="utf-8")
+    (job / worker.ERR).write_text("", encoding="utf-8")
+    for f in DUMPS.iterdir():
+        shutil.copy(f, job)
+    monkeypatch.chdir(job)
+    assert worker.main(["job.json"]) == 0
+    c = json.loads((job / "setup.json").read_text(encoding="utf-8"))["c_box"]["L1"]
+    assert c == pytest.approx(1.9037e-14, rel=1e-3)  # the z-edge at (−5, 0, 0.25): one substrate edge
+
+
 def test_a_setup_log_with_no_timestep_is_a_crash(tmp_path, monkeypatch):
     fake_openems(monkeypatch)
     job = write_job(tmp_path, SMOKE, "setup")

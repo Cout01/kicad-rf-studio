@@ -13,7 +13,7 @@ from pathlib import Path
 import numpy as np
 
 from kicad_rf_studio.core.model.csx import build_csx
-from kicad_rf_studio.core.model.readers import c_box, pec_roots, read_log, read_probe, read_unused
+from kicad_rf_studio.core.model.readers import c_box, curve_edge, pec_roots, read_log, read_probe, read_unused
 
 LOG, ERR = "log.txt", "err.txt"  # the orchestrator sends the worker's stdout and stderr there
 SETUP_FAILED = 10
@@ -40,9 +40,19 @@ def _waves(ports: int) -> dict[str, np.ndarray]:
     return waves
 
 
+def _box(lines: list, port: dict) -> tuple[list, list, int]:
+    """The start, stop and axis of the box of `port` that its C_box counts: a lumped port's own box, a CurvePort's one
+    edge (curve_edge)."""
+    if port["kind"] != "curve":
+        return port["start"], port["stop"], "xyz".index(port["dir"])
+    axis, i = curve_edge(lines, port["start"], port["stop"])
+    return [lines[n][i[n]] for n in range(3)], [lines[n][i[n] + (n == axis)] for n in range(3)], axis
+
+
 def _setup(spec: dict) -> dict:
     """setup.json: dt, cells and node from the log; the properties stderr says place nothing (C-16); the dump files
-    written; the PEC roots of each port's nodes (C-15); the C_box of each port with a part at the log's dt (C-18)."""
+    written; the PEC roots of each port's nodes (C-15); the C_box of each port with a part at the log's dt (C-18), over
+    its box (_box)."""
     log = read_log(Path(LOG).read_text(encoding="utf-8"))
     if (dt := log["dt"]) is None:
         raise RuntimeError(f"{LOG} holds no FDTD timestep")
@@ -52,8 +62,8 @@ def _setup(spec: dict) -> dict:
             "unused": read_unused(Path(ERR).read_text(encoding="utf-8")),
             "dumps": sorted(f.name for f in Path().glob("*_dump.*")),
             "pec": [pec_roots(Path("PEC_dump.vtp"), lines, p["nodes"]) for p in ports],
-            "c_box": {p["name"]: c_box(Path("operator_dump.vtr"), lines, p["start"], p["stop"],
-                                       "xyz".index(p["dir"]), dt) for p in ports if p["part"]}}
+            "c_box": {p["name"]: c_box(Path("operator_dump.vtr"), lines, *_box(lines, p), dt)
+                      for p in ports if p["part"]}}
 
 
 def main(argv: list[str] | None = None) -> int:

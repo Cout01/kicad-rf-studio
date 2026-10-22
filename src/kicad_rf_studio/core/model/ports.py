@@ -21,6 +21,7 @@ if TYPE_CHECKING:
     from kicad_rf_studio.core.geometry.copper import Piece
     from kicad_rf_studio.core.geometry.zstack import Slab
     from kicad_rf_studio.core.kicad.board import Board, Pad
+    from kicad_rf_studio.core.kicad.shapes import XY
     from kicad_rf_studio.core.mesh import Mesh
 
 
@@ -28,12 +29,14 @@ if TYPE_CHECKING:
 class End:
     """A port's two ends in the board's frame (y up): the copper of its signal and of its reference, on the copper
     layer `layer`. `name` is the port's name, or the part's ref; `role` is "external" for a port of project.json's
-    `ports`, else the part's role (port, curve_port or grid)."""
+    `ports`, else the part's role (port, curve_port or grid). `centers`, a part's only, are the centres of its
+    reference and signal pads, where its CurvePort ends."""
     name: str
     signal: BaseGeometry
     reference: BaseGeometry
     layer: str
     role: str
+    centers: tuple[XY, XY] | None = None
 
 
 def _pad(board: Board, name: str, uuid: str = "", layer: str | None = None) -> Pad:
@@ -104,7 +107,7 @@ def ends(board: Board, project: dict, pieces: list[Piece]) -> list[End]:
             layer = signal_layer(board, sig)
             ref = {"pad": part["pads"][1], "uuid": ""}
             out.append(End(part["ref"], sig.polygon, _reference(board, pieces, part["ref"], sig, layer, ref), layer,
-                           part["role"]))
+                           part["role"], (_pad(board, ref["pad"], "", layer).center, sig.center)))
     return out
 
 
@@ -115,13 +118,26 @@ def nominal_boxes(ends: list[End]) -> tuple[Polygon, ...]:
 
 
 def place(end: End, mesh: Mesh, zs: tuple[Slab, ...]) -> dict:
-    """The lumped port of `end` on the lines of `mesh` (spec 5.6). Its box runs along the in-plane axis on which the
-    signal and the reference are apart while their spans across it overlap: from the reference's line nearest the
-    signal to the signal's line nearest the reference, across over the lines inside that overlap, and in z over the
-    copper slab of `end.layer`. It starts at the reference end, so that openEMS's u is V_signal − V_reference. Its
-    `nodes` are the reference cap, the signal cap, then the reference and signal witnesses (the line of each pad
-    farthest from the other), on the line across nearest the box's middle, at the copper's top face. Every coordinate
-    is a line of `mesh` and every value JSON-native: lists of Python floats. Raises E_PORT_SPANS and E_PORT_BOX."""
+    """The port of `end` on the lines of `mesh` (spec 5.6): a CurvePort for a curve_port, else a lumped port.
+    The lumped port's box runs along the in-plane axis on which the signal and the reference are apart while their
+    spans across it overlap: from the reference's line nearest the signal to the signal's line nearest the reference,
+    across over the lines inside that overlap, and in z over the copper slab of `end.layer`. It starts at the reference
+    end, so that openEMS's u is V_signal − V_reference. Its `nodes` are the reference cap, the signal cap, then the
+    reference and signal witnesses (the line of each pad farthest from the other), on the line across nearest the
+    box's middle, at the copper's top face.
+    The CurvePort (C-37) runs from the reference pad's centre to the signal pad's, each on the nearest x and y lines, at
+    the copper's top face; its `nodes` are those two ends. openEMS puts its one-edge port at their middle, joined to
+    both by PEC curves, and orders them along its axis itself: its u is V_signal − V_reference only when the
+    reference lies lower along it.
+    Every coordinate is a line of `mesh` and every value JSON-native: lists of Python floats. Raises E_PORT_SPANS and
+    E_PORT_BOX."""
+    slab = next(c for c in zs if c.copper == end.layer)
+    if end.role == CURVE_PORT:
+        z = float(slab.z1)  # ponytail: the top face for any layer; P0-B tests F.Cu only
+        start, stop = ([float(mesh.x[np.abs(mesh.x - x).argmin()]), float(mesh.y[np.abs(mesh.y - y).argmin()]), z]
+                       for x, y in end.centers)
+        return {"name": end.name, "kind": "curve", "dir": None, "start": start, "stop": stop, "nodes": [start, stop],
+                "part": True}
     # ponytail: pads are taken as their bounding boxes; a round pad's corner can leave a cap edge in air, which the PEC
     # check tolerates
     s, r = end.signal.bounds, end.reference.bounds
@@ -144,7 +160,6 @@ def place(end: End, mesh: Mesh, zs: tuple[Slab, ...]) -> dict:
     ref, ref_far = (r_in.min(), r_in.max()) if forward else (r_in.max(), r_in.min())
     lo, hi = width.min(), width.max()
     tc = width[np.argmin(np.abs(width - (lo + hi) / 2))]
-    slab = next(c for c in zs if c.copper == end.layer)
 
     def at(u: float, v: float, z: float) -> list[float]:
         """The point `u` along p, `v` across it and at `z`, as [x, y, z]."""

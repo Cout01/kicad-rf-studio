@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """Readers of openEMS's output (v0.37.0): its log and stderr, the probes, the statistics and the VTK dumps; from the
-dumps, the PEC pieces of the ports' nodes (C-15) and the capacitance of a port box (C-18). Standard library and numpy
-only: the worker imports this module."""
+dumps, the PEC pieces of the ports' nodes (C-15) and the capacitance of a port box (C-18), a CurvePort's being its one
+edge (curve_edge). Standard library and numpy only: the worker imports this module."""
 from __future__ import annotations
 
 import base64
@@ -161,3 +161,21 @@ def c_box(path: Path, lines, start, stop, axis: int, dt: float) -> float:
     c = np.divide(dt * (1 + vv), 2 * vi, out=np.zeros(vi.shape), where=vi != 0)
     layers = c.sum(axis=tuple(n for n in range(3) if n != axis))
     return float(1 / (1 / layers).sum())
+
+
+def curve_edge(lines, start, stop) -> tuple[int, tuple[int, int, int]]:
+    """The axis (0, 1, 2 for x, y, z) and the start index [i, j, k] on `lines` of the one-cell edge that openEMS's
+    CurvePort (ports.py v0.37.0) builds from `start` to `stop` (mm): the axis is the dominant one of stop − start; ends
+    whose nearest lines along it are one cell apart give their own edge, from the end lower along it; otherwise the
+    edge starts at the lines nearest the midpoint. A point takes the nearest line per axis, the lower on a tie, as
+    openEMS does."""
+    a, b = (np.asarray(p, dtype=float) for p in (start, stop))
+    axis = int(np.argmax(np.abs(b - a)))
+    if a[axis] > b[axis]:
+        a, b = b, a
+
+    def snap(p: np.ndarray) -> tuple[int, ...]:
+        return tuple(int(np.abs(np.asarray(ln, dtype=float) - v).argmin()) for ln, v in zip(lines, p))
+
+    i = snap(a)
+    return axis, i if abs(snap(b)[axis] - i[axis]) == 1 else snap(0.5 * (a + b))

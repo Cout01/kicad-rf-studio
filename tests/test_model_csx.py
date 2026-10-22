@@ -71,3 +71,9 @@ def test_grid_parts_are_lumped_elements_named_for_the_gate(monkeypatch):  # C-16
     part = {**TINY["ports"][0], "name": "C4", "R": None, "C": 1e-12}
     build_csx({**TINY, "grid": [part]}, 1, 1e-9)
     assert ("AddLumpedElement", ("lumped_0",), {"ny": 2, "caps": True, "C": 1e-12}) in log
+
+
+def test_build_csx_adds_a_curve_port(monkeypatch):
+    log = fake_openems(monkeypatch)
+    build_csx({**TINY, "ports": [{**TINY["ports"][0], "kind": "curve"}]}, 1, 1e-9)
+    assert ("AddCurvePort", (1, 50, [2.0, 2.0, 0.0], [2.0, 2.0, 1.0]), {"excite": 1}) in log

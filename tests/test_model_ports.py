@@ -98,3 +98,16 @@ def test_a_rotated_part_needs_the_switch():  # C-12, C-37
     with pytest.raises(KrsError) as e:
         ends(board, p, build_geometry(board, p).pieces)
     assert (e.value.code, e.value.params) == ("E_ROTATED_PART", {"ref": "L1"})
+
+
+def test_a_rotated_part_becomes_a_curve_port_behind_the_switch():  # C-37, spec 5.7
+    board, p = project_of("lpf915-45", "U1.1", "J1.1", "--lid-height", "2.5")
+    p = {**copy.deepcopy(p), "allow_curve_port": True}
+    g = build_geometry(board, p)
+    e = ends(board, p, g.pieces)
+    m = mesh_with_lint(g, replace(g.protected, boxes=nominal_boxes(e)), 2)
+    l1 = place(next(x for x in e if x.name == "L1"), m, g.zs)
+    cx, cy = board.pads("L1.2")[0].center
+    assert (l1["kind"], l1["start"][2], l1["stop"][2]) == ("curve", 0.78, 0.78)
+    assert l1["start"][:2] == [min(m.x, key=lambda v: abs(v - cx)), min(m.y, key=lambda v: abs(v - cy))]
+    assert l1["nodes"] == [l1["start"], l1["stop"]]

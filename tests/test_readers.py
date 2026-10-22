@@ -4,8 +4,8 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-from kicad_rf_studio.core.model.readers import (c_box, pec_roots, read_log, read_probe, read_run_stats, read_stats,
-                                                read_unused, read_vtk)
+from kicad_rf_studio.core.model.readers import (c_box, curve_edge, pec_roots, read_log, read_probe, read_run_stats,
+                                                read_stats, read_unused, read_vtk)
 
 SETUP_LOG = ("openEMS - verbose level 2\n"
              "Operator::CalcTimestep_Var3: Smallest timestep (1.73972e-13s) found at position: 2 : 0;0;6\n"
@@ -62,3 +62,9 @@ def test_pec_pieces_tell_the_strip_from_the_ground():  # C-15
 def test_c_box_of_port_1():  # C-18: 4 layers of 5 z-edges in series
     c = c_box(DUMPS / "operator_dump.vtr", LINES, [-5, -0.5, 0], [-5, 0.5, 0.5], 2, 1.73972e-13)
     assert c == pytest.approx(2.3796e-14, rel=1e-3)
+
+
+def test_curve_edge_follows_openems():  # ports.py CurvePort, v0.37.0
+    lines = ([0.0, 1.0, 2.0, 3.0, 4.0], [0.0, 1.0, 2.0], [0.0, 1.0])
+    assert curve_edge(lines, [0.2, 1.0, 1.0], [3.9, 1.0, 1.0]) == (0, (2, 1, 1))  # the edge at the midpoint
+    assert curve_edge(lines, [1.1, 1.0, 1.0], [1.9, 1.0, 1.0]) == (0, (1, 1, 1))  # one cell apart: its own edge

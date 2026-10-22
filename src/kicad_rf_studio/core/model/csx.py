@@ -16,7 +16,8 @@ def _prism(prop: object, solid: dict, priority: int) -> None:
 def build_csx(spec: dict, excite: int, t_max: float) -> tuple[object, object]:
     """The ContinuousStructure and the openEMS object of `spec` (model_spec()), in mm, run up to `t_max` s with port
     `excite` (1-based) excited: EndCriteria 1e-15, Mur on all six sides, the spec's pulse and openEMS's own time step
-    (W-1); each port a 50 Ω lumped port, each grid part a lumped R or C, whichever it sets. Points go to CSXCAD as
+    (W-1); each port a 50 Ω lumped port, or for kind "curve" a 50 Ω CurvePort (openEMS's one-edge lumped port joined
+    to both ends by PEC curves, r3); each grid part a lumped R or C, whichever it sets. Points go to CSXCAD as
     [xs, ys]: it misreads an (N, 2) array silently. CSXCAD and openEMS are imported here only, so that only a worker
     loads them."""
     from CSXCAD import ContinuousStructure
@@ -52,7 +53,11 @@ def build_csx(spec: dict, excite: int, t_max: float) -> tuple[object, object]:
         metal.AddCurve([[x, x], [y, y], [z0, z1]])
 
     for k, port in enumerate(spec["ports"], 1):
-        fdtd.AddLumpedPort(k, 50, port["start"], port["stop"], port["dir"], excite=1 if k == excite else 0)
+        on = 1 if k == excite else 0
+        if port["kind"] == "curve":
+            fdtd.AddCurvePort(k, 50, port["start"], port["stop"], excite=on)
+        else:
+            fdtd.AddLumpedPort(k, 50, port["start"], port["stop"], port["dir"], excite=on)
     for i, part in enumerate(spec["grid"]):
         value = {key: part[key] for key in ("R", "C") if part[key] is not None}
         element = csx.AddLumpedElement(f"lumped_{i}", ny="xyz".index(part["dir"]), caps=True, **value)
