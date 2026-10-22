@@ -471,11 +471,6 @@ def _run(path: Path, run_dir: Path) -> int:
     emit = partial(runs.emit, run_dir)  # (kind, code, params, job=None)
     project, board, geom, notes = load(path)
     gates, preset = project["gates"], project["preset"]
-
-    def limits() -> None:  # C-10
-        for code, params in gate_lines(gates):
-            emit("message", code, params)
-
     for code, params in [("W_FILLS_AS_SAVED", {}), *notes]:
         emit("message", code, params)
     if stop := stops(notes):
@@ -484,9 +479,40 @@ def _run(path: Path, run_dir: Path) -> int:
     if model.blocked:
         for code, params in model.blocked:
             emit("verdict", code, params)
-        limits()
+        for code, params in gate_lines(gates):  # C-10
+            emit("message", code, params)
         return 3
     loss = expected_loss(geom, project["f0_hz"])  # before prepare: an error here costs no job
+    if (out := simulate(model, project, run_dir)) is None:
+        return 3
+    done, setup, wall_s = out
+    kept = sum(j["verdict"] in KEPT for j in done)
+    if kept < len(done):  # C-24: the previous results stay
+        emit("result", "W_RUN_NOT_KEPT", {"kept": kept, "runs": len(done), "wall": duration(wall_s),
+                                          "folder": str(run_dir)})
+        return 4
+    data = load_project(path)  # as it is now: only results is replaced
+    data["results"] = {"model_hash": spec_hash(model.spec), "run_dir": str(run_dir), "gates": gates, "preset": preset,
+                       "loss_expected": loss, "dt": setup["dt"], "c_box": setup["c_box"], "wall_s": wall_s,
+                       "jobs": done}
+    save_project(path, data)
+    emit("result", "I_RESULTS", {"kept": kept, "runs": len(done), "wall": duration(wall_s), "path": str(path)})
+    lines = write_outputs(path, data, command_line("kicad-rf-studio", "retune", str(path)), layout_on_part_error=True)
+    for code, params in lines:
+        emit("message" if code.startswith("E_") else "result", code, params)
+    return 2 if any(code.startswith("E_") for code, _ in lines) else 0
+
+
+def simulate(model: Model, project: dict, run_dir: Path) -> tuple[list[dict], dict, float] | None:
+    """The job phase of a built `model` (one with a spec) in `run_dir`, which run and verify share (spec 6.1): prepare
+    and the setup gate, its blocking gates as verdict events and its warnings as message events, then gate_lines and
+    None when it blocks; else I_GATES_PASSED, gate_lines and the cost lines, then one job per port of the model under
+    the stop rule at the project's preset, each job's verdict (classify_job) followed by gate_lines, and the
+    calibration's speed refreshed. Returns (the jobs as project.json's results records them, setup.json, the job
+    phase's wall time in s). STOP or Ctrl+C before the jobs start propagates as KeyboardInterrupt; once they run, it
+    stops them, and their verdicts say so."""
+    emit = partial(runs.emit, run_dir)  # (kind, code, params, job=None)
+    gates, preset = project["gates"], project["preset"]
     threads, pool, per_job_mcs = prepare(model, partial(emit, "message"))
     settings = runs.load_settings()
     setup, blocked, warnings = setup_gate(model, project, run_dir, settings, threads)
@@ -495,10 +521,12 @@ def _run(path: Path, run_dir: Path) -> int:
     for code, params in warnings:
         emit("message", code, params, 0)
     if blocked:
-        limits()
-        return 3
+        for code, params in gate_lines(gates):  # C-10
+            emit("message", code, params)
+        return None
     emit("message", "I_GATES_PASSED", {"dt": f"{setup['dt']:.4e}"})
-    limits()
+    for code, params in gate_lines(gates):
+        emit("message", code, params)
     for code, params in cost_notes(model, project, setup, threads, pool, per_job_mcs):
         emit("cost", code, params)
 
@@ -534,7 +562,8 @@ def _run(path: Path, run_dir: Path) -> int:
         r = r if r is not None and math.isfinite(r) else None  # a diverged job's NaN is no residual, nor in JSON
         emit("verdict", VERDICTS[kind], {"port": names[k - 1], "t_ns": None if t is None else f"{t * 1e9:.2f}",
                                          "residual_db": None if r is None else f"{r:.1f}", "log": str(job / LOG)}, k)
-        limits()
+        for code, params in gate_lines(gates):
+            emit("message", code, params)
         waves = f"{job.name}/waves.npz"
         done.append({"port": names[k - 1], "verdict": kind, "t_cut": verdict.t if verdict else None, "t_stop": t_stop,
                      "residual_db": r, "waves": waves if (run_dir / waves).is_file() else None})
@@ -546,20 +575,7 @@ def _run(path: Path, run_dir: Path) -> int:
         entry = settings["machines"][runs.machine_key()]
         entry["aggregate_mcs"] = sum(speeds) / len(speeds) * entry["pool"] / 1e6  # prepare's / pool: the per-job speed
         runs.save_settings(settings)
-    kept = sum(j["verdict"] in KEPT for j in done)
-    if kept < len(jobs):  # C-24: the previous results stay
-        emit("result", "W_RUN_NOT_KEPT", {"kept": kept, "runs": len(jobs), "wall": duration(wall_s),
-                                          "folder": str(run_dir)})
-        return 4
-    data = load_project(path)  # as it is now: only results is replaced
-    data["results"] = {"model_hash": spec_hash(model.spec), "run_dir": str(run_dir), "gates": gates, "preset": preset,
-                       "loss_expected": loss, "dt": dt, "c_box": setup["c_box"], "wall_s": wall_s, "jobs": done}
-    save_project(path, data)
-    emit("result", "I_RESULTS", {"kept": kept, "runs": len(jobs), "wall": duration(wall_s), "path": str(path)})
-    lines = write_outputs(path, data, command_line("kicad-rf-studio", "retune", str(path)), layout_on_part_error=True)
-    for code, params in lines:
-        emit("message" if code.startswith("E_") else "result", code, params)
-    return 2 if any(code.startswith("E_") for code, _ in lines) else 0
+    return done, setup, wall_s
 
 
 def results_of(project: dict, model: Model) -> dict:
