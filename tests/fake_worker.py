@@ -83,7 +83,7 @@ def act(job: dict, spec: dict) -> int:
 
 def main() -> int:
     """Writes env.json, then does the job of job.json (argv[1]) in the current folder, its job folder."""
-    seen ={"cwd": os.getcwd(), "isolated": sys.flags.isolated,
+    seen ={"cwd": os.getcwd(), "pid": os.getpid(), "isolated": sys.flags.isolated,
             **{name: os.environ.get(name) for name in ("OPENBLAS_NUM_THREADS", "CSXCAD_INSTALL_PATH")}}
     Path("env.json").write_text(json.dumps(seen), encoding="utf-8")
     job = json.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))

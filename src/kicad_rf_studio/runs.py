@@ -4,11 +4,13 @@ run and job folders, the project lock, events.jsonl, the pool of worker processe
 `setup-openems` installs the wheels of the official Windows package; `check_openems` reads the installed versions."""
 import contextlib
 import ctypes
+import functools
 import itertools
 import json
 import os
 import re
 import secrets
+import signal
 import socket
 import subprocess
 import sys
@@ -218,6 +220,19 @@ def worker_env(settings: dict) -> dict:
     return env
 
 
+@functools.cache
+def _job_object() -> ctypes.c_void_p:
+    """A Windows job object that kills its processes when its last handle closes, which Windows does when this process
+    ends, however it ends (a closed console window, Task Manager); the cache keeps its handle open until then."""
+    kernel32 = ctypes.WinDLL("kernel32")
+    kernel32.CreateJobObjectW.restype = ctypes.c_void_p  # a HANDLE, which the default int would cut to 32 bits
+    job = ctypes.c_void_p(kernel32.CreateJobObjectW(None, None))
+    info = (ctypes.c_ulonglong * 18)()  # JOBOBJECT_EXTENDED_LIMIT_INFORMATION (x64) as 18 uint64s
+    info[2] = 0x2000  # BasicLimitInformation.LimitFlags: JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE
+    kernel32.SetInformationJobObject(job, 9, info, ctypes.sizeof(info))  # 9: JobObjectExtendedLimitInformation
+    return job
+
+
 def run_jobs(jobs: list[Path], pool: int, run_dir: Path, settings: dict,
              watch: Callable[[Path], bool] | None = None) -> dict[Path, dict]:
     """Runs a worker in each job folder of `jobs`, up to `pool` at once in list order (spec 6.1, C-25), and returns
@@ -225,11 +240,14 @@ def run_jobs(jobs: list[Path], pool: int, run_dir: Path, settings: dict,
     in `run_dir`, or Ctrl+C, stops the run (C-26): ABORT goes into every running job's folder and no other job starts;
     a job with no port_ut_1 yet is still in setup, where openEMS never looks for ABORT, and is killed at once, any
     other one if it still runs ABORT_WAIT_S later. Otherwise a running job for which `watch(job)` is true gets ABORT
-    once. No worker outlives the call."""
+    once. No worker outlives the call, nor this process, however it ends: Windows (a job object) or Linux kills it."""
     out = {job: {"code": None, "stopped": False} for job in jobs}
     todo, running, env = list(jobs), {}, worker_env(settings)
     spawn = ({"creationflags": subprocess.CREATE_NEW_PROCESS_GROUP | subprocess.CREATE_NO_WINDOW}
              if sys.platform == "win32" else {"start_new_session": True})  # so Ctrl+C reaches only this process
+    if sys.platform == "linux":  # a worker gets SIGKILL when this process ends, however it ends (PR_SET_PDEATHSIG)
+        prctl = ctypes.CDLL(None).prctl
+        spawn["preexec_fn"] = lambda: prctl(1, signal.SIGKILL)
     try:
         try:
             while todo or running:
@@ -240,6 +258,9 @@ def run_jobs(jobs: list[Path], pool: int, run_dir: Path, settings: dict,
                     with open(job / LOG, "wb") as log, open(job / ERR, "wb") as err:
                         running[job] = subprocess.Popen([sys.executable, *WORKER, "job.json"], cwd=job, env=env,
                                                         stdout=log, stderr=err, **spawn)
+                    if sys.platform == "win32":  # likewise: the job object kills it when this process ends
+                        ctypes.WinDLL("kernel32").AssignProcessToJobObject(
+                            _job_object(), ctypes.c_void_p(int(running[job]._handle)))
                 time.sleep(POLL_S)
                 for job, proc in list(running.items()):
                     if proc.poll() is not None:

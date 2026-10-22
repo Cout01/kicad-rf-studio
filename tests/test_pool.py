@@ -1,6 +1,10 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 import itertools
 import json
+import os
+import signal
+import subprocess
+import sys
 import threading
 import time
 from pathlib import Path
@@ -31,7 +35,7 @@ def test_the_pool_runs_isolated_workers_at_most_pool_at_once(tmp_path, fake, mon
     out = runs.run_jobs(js, 2, run_dir, {"openems_dir": "/x/openEMS"})
     assert [out[j] for j in js] == [{"code": 0, "stopped": False}] * 3
     env = json.loads((js[0] / "env.json").read_text(encoding="utf-8"))
-    assert Path(env.pop("cwd")).resolve() == js[0].resolve()
+    assert Path(env.pop("cwd")).resolve() == js[0].resolve() and env.pop("pid") > 0
     assert env == {"isolated": 1, "OPENBLAS_NUM_THREADS": "1", "CSXCAD_INSTALL_PATH": "/x/openEMS"}
     assert most_at_once(tmp_path / "times.txt") <= 2
 
@@ -54,6 +58,37 @@ def test_ctrl_c_kills_a_job_in_setup_and_leaves_no_process(tmp_path, fake, ctrl_
     t = time.monotonic()
     out = runs.run_jobs(tiny_jobs(run_dir, 1), 1, run_dir, {})
     assert list(out.values())[0]["stopped"] and time.monotonic() - t < 3 and started[0].poll() is not None
+
+
+def worker_pid(job):
+    """The pid that the fake worker in `job` writes in its env.json, once it has."""
+    deadline = time.monotonic() + 30
+    while True:
+        try:
+            return json.loads((job / "env.json").read_text(encoding="utf-8"))["pid"]
+        except (OSError, ValueError):  # not there yet, or half written
+            assert time.monotonic() < deadline, "the worker never started"
+            time.sleep(0.05)
+
+
+def test_no_worker_outlives_a_killed_orchestrator(tmp_path, fake, monkeypatch):  # final review I2
+    # a closed console window, Task Manager or `kill` ends the CLI without run_jobs's finally; its workers ran on
+    monkeypatch.setenv("KRS_FAKE", "hang")
+    run_dir = tmp_path / "run"
+    (job,) = tiny_jobs(run_dir, 1)
+    script = (f"from pathlib import Path; from kicad_rf_studio import runs; runs.WORKER = {runs.WORKER!r}; "
+              f"runs.run_jobs([Path({str(job)!r})], 1, Path({str(run_dir)!r}), {{}})")
+    cli = subprocess.Popen([sys.executable, "-c", script])
+    pid = worker_pid(job)
+    assert runs._alive(pid)  # it hangs until it is killed
+    cli.kill()
+    cli.wait()
+    deadline = time.monotonic() + 10
+    while runs._alive(pid) and time.monotonic() < deadline:
+        time.sleep(0.05)
+    if alive := runs._alive(pid):
+        os.kill(pid, signal.SIGTERM)  # not left running for its 600 s
+    assert not alive
 
 
 def test_watch_aborts_only_the_job_it_names(tmp_path, fake, monkeypatch):
