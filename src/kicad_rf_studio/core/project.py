@@ -212,6 +212,16 @@ def read_project(path: Path) -> dict:
     return check_project(load_project(path), path)
 
 
+def relative_path(file: str | Path, folder: Path) -> tuple[str, bool]:
+    """`file` as project.json stores a path, and whether it is absolute: relative to `folder` with forward slashes (a
+    relative `file` read from the working directory), and False; on another drive, which relpath cannot cross, its
+    absolute path, and True."""
+    try:
+        return Path(os.path.relpath(file, folder)).as_posix(), False
+    except ValueError:
+        return Path(file).absolute().as_posix(), True
+
+
 def board_file(path: Path, data: dict) -> Path:
     """The board file of the project at `path`. Its stored path is relative to the project file, not to the working
     directory; `load_project` leaves it as stored, so that a saved project keeps a relative path."""

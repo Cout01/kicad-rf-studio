@@ -162,7 +162,15 @@ CATALOG: dict[str, str] = {
     "I_LIMIT_50_OHM": "Limit: insertion loss, return loss and harmonic rejection are relative to a 50 Ω source and load.",
     "I_LIMIT_IDEAL": "Limit: the ideal schematic is the same part models (preset or S2P) joined ideally: no layout, no C_box, no traces.",
     "I_LIMIT_LOSS": "Limit: the expected dielectric loss is a lower bound from the measured straight sections.",
-    "E_INTERNAL": "Internal error: {detail}. Please report it.",
+    "E_RETUNE_NO_PARTS": "This project has no part ports (a single trace), so there is nothing to retune; `run` writes its outputs.",
+    "E_RETUNE_ARG": "Cannot read \"{arg}\": write REF=VALUE, as in C1=4.7pF, or REF=file.s2p:series (or :shunt).",
+    "E_RETUNE_TWICE": "{ref} is assigned twice; give each part once.",
+    "E_RETUNE_UNKNOWN": "No part {ref} is a port of this project. The parts you can retune: {refs}.",
+    "E_RETUNE_ROLE": "Part {ref} is {role} in the model, not a port, so retune cannot change it. To retune it, set its role to \"port\" in project.json and run `run` again (each port adds a run).",
+    "E_RETUNE_VALUE": "Cannot read \"{value}\" as the value of {ref}: a C, L or R takes a value in its own unit (4.7pF, 4p7, 15nH, 50R; a C above 0), and any part takes an S2P file as {ref}=file.s2p:series (or :shunt).",
+    "E_NO_RESULTS": "project.json has no results yet. Run `run` first.",
+    "E_RESULTS_STALE": "The model changed since the last run (a board re-saved in KiCad can change it too), or that run is older than this version, so its results no longer apply. Run `run` again.",
+    "E_INTERNAL":"Internal error: {detail}. Please report it.",
 }
 
 _translation = gettext.translation(

@@ -1,10 +1,11 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
-"""What `cost`, `run` and `preview` share (spec 6.1): a project read with its board and geometry, its model built
-through the mesh gates, the calibration that sizes its jobs, the setup gate on openEMS's setup-only run (timestep
+"""What `cost`, `run`, `retune` and `preview` share (spec 6.1): a project read with its board and geometry, its model
+built through the mesh gates, the calibration that sizes its jobs, the setup gate on openEMS's setup-only run (timestep
 floor, port connectivity, unused primitives), the cost model (spec 6.4) and the outputs of a run's results (spec 7.3);
-and `cost` (spec 3.2), `run` (spec 6.1) and `preview` (C-34) themselves."""
+and `cost` (spec 3.2), `run` (spec 6.1), `retune` (spec 3.2, 7.2, 7.8) and `preview` (C-34) themselves."""
 from __future__ import annotations
 
+import copy
 import json
 import math
 import os
@@ -26,9 +27,10 @@ from kicad_rf_studio.core.cs2d import ShortError, solve
 from kicad_rf_studio.core.geometry import build_geometry
 from kicad_rf_studio.core.geometry.sections import cross_section
 from kicad_rf_studio.core.kicad import load_board
+from kicad_rf_studio.core.kicad.values import port_value
 from kicad_rf_studio.core.mesh.gates import check_fit2d, dt_floor_reference, fit2d, mesh_with_lint
 from kicad_rf_studio.core.messages import KrsError, render
-from kicad_rf_studio.core.model.parts import GRID
+from kicad_rf_studio.core.model.parts import CURVE_PORT, GRID, PORT
 from kicad_rf_studio.core.model.ports import ends, nominal_boxes, place
 from kicad_rf_studio.core.model.readers import read_log, read_probe, read_run_stats, read_stats
 from kicad_rf_studio.core.model.spec import grid_entry, model_spec, spec_hash
@@ -38,7 +40,7 @@ from kicad_rf_studio.core.post.outputs import (LIMITS, OUTPUTS, marker_lines, po
                                                touchstone, write)
 from kicad_rf_studio.core.post.waves import layout
 from kicad_rf_studio.core.project import (GATES, board_file, board_hash, load_project, mesh_n, parts, read_project,
-                                          save_project)
+                                          relative_path, save_project)
 from kicad_rf_studio.stoprule import KEPT, Records, Verdict, residual_db, stop_rule
 from kicad_rf_studio.worker import LOG
 
@@ -558,6 +560,79 @@ def _run(path: Path, run_dir: Path) -> int:
     for code, params in lines:
         emit("message" if code.startswith("E_") else "result", code, params)
     return 2 if any(code.startswith("E_") for code, _ in lines) else 0
+
+
+def results_of(project: dict, model: Model) -> dict:
+    """The results in `project` when they are the last run's of `model` (spec 7.8, C-22, C-23): E_NO_RESULTS without
+    any; E_RESULTS_STALE when the model has no spec (E_EDGE_LINT), its spec_hash is not the one the run recorded, or
+    the run recorded no loss_expected (a run before this version)."""
+    # ponytail: rebuilds the model (1.2–3.2 s on lpf915) to compare hashes; Stage 2 may cache it
+    if "results" not in project:
+        raise KrsError("E_NO_RESULTS")
+    results = project["results"]
+    if model.spec is None or spec_hash(model.spec) != results.get("model_hash") or "loss_expected" not in results:
+        raise KrsError("E_RESULTS_STALE")
+    return results
+
+
+def assign(project: dict, assignments: list[str], folder: Path) -> dict:
+    """A deep copy of `project` with each assignment "REF=RIGHT" stored, split at the first "=" (C-17, C-18): a RIGHT
+    FILE:series or FILE:shunt sets the part's s2p to FILE, as relative_path stores it against `folder` (a relative
+    FILE is read from the working directory, as `new` reads BOARD), its value and model kept; any other RIGHT is
+    stored verbatim as its value, its s2p None, when port_value reads it (so a C of 0 is refused). Refusals, the first
+    in argument order: E_RETUNE_ARG (no "="), E_RETUNE_TWICE, E_RETUNE_UNKNOWN (no such part; it names the retunable
+    ones, in project order), E_RETUNE_ROLE (copper, open or grid), E_RETUNE_VALUE."""
+    # ponytail: a file on another drive is stored absolute without a warning; a moved project then meets E_S2P_MISSING
+    new = copy.deepcopy(project)
+    by_ref, seen = parts(new), set()
+    for arg in assignments:
+        ref, eq, right = arg.partition("=")
+        if not eq:
+            raise KrsError("E_RETUNE_ARG", arg=arg)
+        if ref in seen:
+            raise KrsError("E_RETUNE_TWICE", ref=ref)
+        seen.add(ref)
+        if ref not in by_ref:
+            raise KrsError("E_RETUNE_UNKNOWN", ref=ref,
+                           refs=", ".join(r for r, q in by_ref.items() if q["role"] in (PORT, CURVE_PORT)))
+        part = by_ref[ref]
+        if part["role"] not in (PORT, CURVE_PORT):
+            raise KrsError("E_RETUNE_ROLE", ref=ref, role=part["role"])
+        file, _, connection = right.rpartition(":")  # the last ":", so a drive's colon stays in the file
+        if file and connection in ("series", "shunt"):
+            part["s2p"] = {"file": relative_path(file, folder)[0], "connection": connection}
+        elif port_value(ref, right) is None:
+            raise KrsError("E_RETUNE_VALUE", ref=ref, value=right)
+        else:
+            part["value"], part["s2p"] = right, None
+    return new
+
+
+def retune(path: Path, assignments: list[str], emit: Callable[[str, dict], None] | None = None) -> int:
+    """`retune` on the project at `path` (spec 3.2, 7.2, C-17..C-23), returning its exit code. A project that cannot
+    be read refuses first, as in run. Then, under the project lock: the project read; E_RETUNE_NO_PARTS for
+    assignments to a project without part ports (a single trace, C-21); the `assignments` stored in a copy (assign);
+    its model built and results_of; write_outputs, whose E_RESULTS_WRITE advises this command with its assignments;
+    then project.json saved, only when there were assignments (none: the outputs alone, C-19). Then `emit(code,
+    params)` for each line, which prints it by default (Stage 2's GUI passes its own, C-4), and 0. It starts no worker
+    and needs no openEMS; any refusal raises before anything is stored (C-20)."""
+    read_project(path)  # before the lock, as in run: its file needs the project's folder, which a typo lacks
+    # ponytail: results/ stands in for the lock's run folder, so E_LOCKED names results/ while a retune holds the lock
+    with runs.project_lock(path, path.parent / "results"):
+        project = read_project(path)  # again under the lock: a run may have saved new results since
+        if assignments and not any(q["role"] in (PORT, CURVE_PORT) for q in parts(project).values()):
+            raise KrsError("E_RETUNE_NO_PARTS")
+        new = assign(project, assignments, path.parent)
+        # ponytail: load()'s notes (W_BOARD_CHANGED too) go unreported: results_of's hash check is retune's one gate
+        _, board, geom, _ = load(path)
+        results_of(new, build_model(new, board, geom))
+        lines = write_outputs(path, new, command_line("kicad-rf-studio", "retune", str(path), *assignments))
+        if assignments:
+            save_project(path, new)
+    emit = emit or (lambda code, params: print(render(code, **params)))
+    for code, params in lines:
+        emit(code, params)
+    return 0
 
 
 def appcsxcad(settings: dict) -> str | None:
