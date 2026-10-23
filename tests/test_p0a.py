@@ -104,3 +104,81 @@ def test_the_triplet_reads_the_microstrip_coupon_in_real_openems(tmp_path, monke
                                   np.array([p0a.F0]), job["t_cut"], 0.0)
     assert job["verdict"] in KEPT  # r7 measured 49.117 Ω and 3.4099 at 6 ns
     assert z0[0].real == pytest.approx(49.117, abs=0.5) and eeff[0] == pytest.approx(3.410, abs=0.03)
+
+
+def test_the_p0a_rules():  # D-26, D-27, D-29, D-30; RF 2
+    def r(e_fit, dz0, deeff=0.0, delta=0.2, verdict="converged", dt=1.0):
+        return {"coupon": "coupon_gcpw", "n": 2, "point": "s0", "section": 0, "e_fit_pct": e_fit, "dz0_pct": dz0,
+                "deeff_pct": deeff, "delta_pp": delta, "verdict": verdict, "lint": None, "dt_ratio": dt,
+                "pass": abs(dz0) <= 5 and abs(deeff) <= 3}
+
+    def twin(d2, d3, name="coupon_gcpw_45"):
+        return [{"twin": name, "n": 2, "dz0_pct": d2}, {"twin": name, "n": 3, "dz0_pct": d3}]
+
+    mid = {"coupon": "coupon_gcpw_45", "n": 2, "point": "mid", "section": None, "theta": 45.0, "verdict": "converged",
+           "lint": None, "dt_ratio": 1.0, "pass": None}  # PF-19: a converged midpoint feeds only the twins
+    m = {"rows": [r(2.55, 1.0, dt=0.95), r(3.78, 0.5), r(-3.5, 6.0), mid], "pairs": [{"pass": True}],
+         "twins": twin(3.0, 2.0) + twin(2.5, 1.5, "coupon_gcpw_arc"), "pad": {"pass": True, "dt_ratio": 0.92},
+         "stray": {"dt_ratio": 0.45, "trips": True}}
+    d = p0a.decide(m)  # the −3.5 % row lies outside |e_fit| ≤ 3: the gate filters on the magnitude
+    assert (d["fit2d"]["branch"], d["fit2d"]["i_at_3"], d["twins"]["branch"]) == ("keep", True, "advice")
+    assert d["verdict"] == {"value": "pass", "fails": []}
+    assert d["dt_floor"] == {"rule": "D-30", "min_ratio": 0.92, "stray_ratio": 0.45, "stray_trips": True}
+    assert p0a.decide({**m, "rows": [r(2.9, 5.6), r(2.4, 1.0)]})["fit2d"] == {
+        "rule": "D-29", "i_at_3": False, "limit_pct": 2.5, "max_delta_pp": 0.2, "ii": True, "branch": "lower"}
+    assert p0a.decide({**m, "rows": [r(2.55, 1.0, deeff=3.2)]})["fit2d"]["branch"] == "lower"  # εeff counts in (i)
+    assert p0a.decide({**m, "rows": [r(2.5, 1.0, delta=1.3)]})["fit2d"]["branch"] == "keep-state"
+    low = p0a.decide({**m, "rows": [r(2.5, 1.0), r(0.3, 6.0)]})  # a row fit2d cannot explain: the floor holds
+    assert (low["fit2d"]["branch"], low["fit2d"]["limit_pct"], low["verdict"]["value"]) == ("unpredicted", 3.0, "fail")
+    flat = p0a.decide({**m, "rows": [r(2.5, 1.0), r(2.0, 9.0, verdict="t_max")]})  # left out, and named
+    assert (flat["fit2d"]["branch"], flat["verdict"]["value"], len(flat["verdict"]["fails"])) == ("keep", "fail", 1)
+    lint = {"coupon": "coupon_dense", "n": 3, "lint": "E_EDGE_LINT", "pass": False}
+    assert p0a.decide({**m, "rows": [r(2.5, 1.0), lint]})["verdict"]["value"] == "fail"
+    assert p0a.decide({**m, "twins": twin(-6.0, 4.0)})["twins"]["branch"] == "refuse"
+    assert p0a.decide({**m, "twins": twin(3.0, 4.0) + twin(2.5, 1.5, "coupon_gcpw_arc")})["twins"]["branch"] == "keep"
+
+
+def test_the_p0a_steps_run_through_the_harness_and_the_product(p0_out, monkeypatch):  # D-9, D-28, D-30
+    monkeypatch.setenv("KRS_FAKE", "network")
+    monkeypatch.setattr(p0, "cli", in_process)
+    assert p0a.main(["--out", str(p0_out), "--only", "p0a-coupon_ms-n2,p0a-pad"]) == 0
+    coupon, pad = (rec["result"] for rec in p0.records(p0_out, ["p0a-coupon_ms-n2", "p0a-pad"]))
+    assert [j["verdict"] for j in coupon["jobs"]] == ["converged"] and coupon["blocked"] == []
+    assert pad["exit"] == {"new": 0, "cost": 0, "run": 0}
+    summary = p0.summary(p0.records(p0_out, ["p0a-pad"])[0])
+    assert [j["verdict"] for j in summary["jobs"]] == ["converged"] * 2 and summary["warnings"] == ["W_LOSS_BUDGET"]
+    monkeypatch.setenv("KRS_FAKE_SETUP", json.dumps({"dt": 5e-14}))  # under 0.8 × coupon_gcpw's 6.7e-14 s
+    assert p0a.main(["--out", str(p0_out), "--only", "p0a-stray"]) == 0
+    stray = p0.records(p0_out, ["p0a-stray"])[0]["result"]
+    assert [code for code, _ in stray["blocked"]] == ["E_DT_FLOOR"] and stray["jobs"] == []
+
+
+def test_rows_read_each_points_probes_at_f0_against_its_references(p0_out, monkeypatch):  # D-24, D-25, D-29
+    monkeypatch.setattr(p0, "command_lines", lambda: [])
+    assert p0a.main(["--out", str(p0_out), "--only", "p0a-coupon_gcpw_arc-n2"]) == 0
+    record = p0.records(p0_out, ["p0a-coupon_gcpw_arc-n2"])[0]
+    model, geom, pts, _ = p0a.coupon_model("coupon_gcpw_arc", 2)
+    job, t = p0.run_path(record["result"]["run_dir"]) / record["result"]["jobs"][0]["job"], np.arange(0, 6e-9, 1e-11)
+    for pt in pts:  # the fake writes no probe file: a forward pulse of 50 Ω and εeff 2.7, 1/cos θ along the normal
+        v, axis = C0 / math.sqrt(2.7) * math.cos(math.radians(pt["theta"])), "xy".index(pt["normal"])
+        group = [q for q in model.spec["probes"] if q["name"].startswith(pt["label"] + "_")]
+        for q in group:
+            tt, x = t + (5e-12 if q["type"] else 0.0), (q["start"][axis] - group[0]["start"][axis]) * 1e-3
+            value = np.exp(-((tt - x / v - 1e-9) / 0.15e-9) ** 2) / (50.0 if q["type"] else 1.0)
+            (job / q["name"]).write_text("% t/s\tvalue\n" + "".join(
+                f"{a!r}\t{b!r}\n" for a, b in zip(tt.tolist(), value.tolist())), encoding="utf-8")
+    rows = p0a.rows(record, "coupon_gcpw_arc", 2)
+    assert [(row["point"], row["section"], row["verdict"]) for row in rows] == [
+        ("s0", 0, "converged"), ("s1", 1, "converged"), ("mid", None, "converged")]
+    for row, pt in zip(rows, pts):
+        assert (row["z0"], row["eeff"]) == (pytest.approx(50.0, rel=1e-6), pytest.approx(2.7, rel=1e-4))
+        if pt["section"] is not None:
+            ref = p0a.references(geom, model.mesh, pt)
+            assert (row["dz0_pct"], row["delta_pp"], row["pass"]) == (
+                pytest.approx(100 * (50.0 / ref["z0_ref"] - 1), rel=1e-5),
+                pytest.approx(100 * (50.0 / ref["z0_2d"] - 1 - ref["e_fit"]), rel=1e-4), True)
+    assert (rows[2]["dz0_pct"], rows[2]["delta_pp"], rows[2]["pass"]) == (None, None, None)  # a midpoint
+    with pytest.raises(SystemExit):  # another model than the step ran
+        p0a.rows({**record, "key": "other@" + record["code"]}, "coupon_gcpw_arc", 2)
+    assert p0a.rows({"result": {"lint": ["E_EDGE_LINT", {}]}}, "coupon_dense", 3) == [
+        {"coupon": "coupon_dense", "n": 3, "lint": "E_EDGE_LINT", "pass": False}]
