@@ -1,4 +1,5 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
+import json
 import subprocess
 import sys
 import time
@@ -48,6 +49,18 @@ def calibrated(fake):
         "threads": 2, "pool": 2, "aggregate_mcs": 400.0, "single": {"2": 200.0}, "parallel": {"2": 400.0},
         "at": "2026-10-21T00:00:00"}}})
     return fake
+
+
+@pytest.fixture
+def p0_out(tmp_path, monkeypatch, calibrated):
+    """A P0 folder named with a space and an accent, with the fake worker and this machine's calibration in the
+    data folder p0.enter makes inside it (D-7). Returns the folder; p0.enter stays the real one."""
+    out = tmp_path / "p0 ação"
+    for name in ("LOCALAPPDATA", "XDG_DATA_HOME"):
+        monkeypatch.setenv(name, "unused")  # restored after the test; p0.enter sets both
+    monkeypatch.setattr(runs, "data_dir", lambda: out / "data" / "kicad-rf-studio")
+    runs.save_settings(json.loads((calibrated / "settings.json").read_text(encoding="utf-8")))
+    return out
 
 
 @pytest.fixture

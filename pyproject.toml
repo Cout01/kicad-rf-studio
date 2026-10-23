@@ -25,4 +25,5 @@ kicad_rf_studio = ["data/**/*.json"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+pythonpath = ["tools"]
 markers = ["openems: needs openEMS importable in this Python (CI tier b)"]
