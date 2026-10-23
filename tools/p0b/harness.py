@@ -189,12 +189,16 @@ def kmax_values(dt: float, c_cell: float) -> list[tuple[float, float]]:
 
 
 def _b1_run(out: Path) -> str:
-    """The name of B1's run folder, from its step record; SystemExit when B1 has none yet."""
-    return p0.records(out, ["p0b-B1"])[0]["result"]["run_dir"]
+    """The name of B1's run folder, from its step record; RuntimeError when B1 has none yet, so that main logs the
+    step that needs it and goes on with the next (p0.records' SystemExit would end the harness)."""
+    path = out / "steps" / "p0b-B1.json"
+    if not path.is_file():
+        raise RuntimeError("p0b: B1 has no record yet; run B1 first")
+    return _read(path)["result"]["run_dir"]
 
 
 def kmax_sweep(out: Path) -> None:
-    """The K_MAX sweep (D-39): B1's model rebuilt from its project, SystemExit unless its hash is its results'; the L1
+    """The K_MAX sweep (D-39): B1's model rebuilt from its project, RuntimeError unless its hash is its results'; the L1
     cell's C read from verify_spec's grid entry at the as-built values; then per k of K_SWEEP the step p0b-kmax-<k>:
     verify's model with L1 at kmax_values' L, built with spec.K_MAX lifted to 1.0, run on P1 alone at Strict to
     KMAX_T_MAX, keyed by its spec_hash and B1's run. Strict, because its −70 dB level cannot stop lpf915 before about
@@ -203,7 +207,7 @@ def kmax_sweep(out: Path) -> None:
     data, board, geom, _ = pipeline.load(pj)
     spec, results = pipeline.build_model(data, board, geom).spec, data["results"]
     if spec is None or spec_hash(spec) != results["model_hash"]:
-        raise SystemExit("p0b: B1's project no longer builds the model of its results; run B1 again")
+        raise RuntimeError("p0b: B1's project no longer builds the model of its results; run B1 again")
     by_ref, dt = parts(data), results["dt"]
     dump = runs.job_dir(p0.run_path(run), 0, "setup") / "operator_dump.vtr"
     built = spec_module.verify_spec(spec, by_ref, results["c_box"], dump, dt)

@@ -128,3 +128,18 @@ def test_p0b_on_the_fake_worker_writes_a_plain_private_free_gate_json(p0_out, mo
     b1 = data["evidence"]["B1"]
     assert b1["ok"] and all(isinstance(j[key], bool) for j in b1["jobs"] for key in ("event", "abort", "order"))
     assert [s["k"] for s in data["kmax"]] == list(harness.K_SWEEP)
+
+
+def test_a_step_that_raises_is_logged_and_skipped_and_the_others_still_run(p0_out, monkeypatch, capsys):  # D-6
+    monkeypatch.setattr(p0, "cli", in_process)
+
+    def cli_run(pj, command):  # B1's run crashes; B4's stores a stand-in
+        if pj.parent.name == "B1":
+            raise RuntimeError("B1 crashed")
+        return {"exit": 0, "run_dir": None, "jobs": None, "wall_s": None}
+
+    monkeypatch.setattr(p0, "cli_run", cli_run)
+    assert harness.main(["--out", str(p0_out), "--only", "B1,B2,B3,B4,kmax"]) == 1
+    assert [path.stem for path in (p0_out / "steps").glob("*.json")] == ["p0b-B4"]
+    out, err = capsys.readouterr()  # the steps after B1 that need its run are logged, B4 is not
+    assert "p0b: failed: B1, B2, B3, kmax" in out and err.count("RuntimeError: p0b: B1 has no record yet") == 3
