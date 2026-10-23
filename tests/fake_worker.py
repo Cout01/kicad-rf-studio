@@ -5,7 +5,7 @@ $KRS_FAKE_EXIT is an exit code and $KRS_FAKE "hang" a worker that never ends, in
 run's kind: "converge" (the default), "slow", "crash" (only on port $KRS_FAKE_JOB when it is set), "network" (the
 waves of the known N-port networks.star, from networks.network_trace) or a kind of traces.trace.
 $KRS_FAKE_SETUP is JSON that setup.json takes, and $KRS_FAKE_LOG a file that gets a line as each fake starts and
-ends."""
+ends. The setup mode writes setup.json, and an empty operator_dump.vtr when a port holds a part."""
 import json
 import math
 import os
@@ -81,6 +81,8 @@ def act(job: dict, spec: dict) -> int:
                  "c_box": {p["name"]: 2e-14 for p in ports if p["part"]}}
         setup.update(json.loads(os.environ.get("KRS_FAKE_SETUP") or "{}"))
         Path("setup.json").write_text(json.dumps(setup), encoding="utf-8")
+        if any(p["part"] for p in ports):  # verify needs the dump to exist; a test stands in for its reader, c_box
+            Path("operator_dump.vtr").write_bytes(b"")
         return 0
     if job["mode"] == "xml":
         Path("model.xml").write_text("<openEMS/>", encoding="utf-8")
