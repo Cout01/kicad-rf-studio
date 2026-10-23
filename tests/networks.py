@@ -74,8 +74,9 @@ def write_s2p(path, z, connection, f, z0=50.0):
     fixture of z0 Ω (spec 9.1's synthetic S2P files from ideal RLC)."""
     import skrf as rf
 
+    # the path as given: skrf adds .s2p only to a name without an extension, and C2.shunt has one
     rf.Network(frequency=rf.Frequency.from_f(f, unit="Hz"), s=thru(z, connection, z0), z0=z0,
-               name="part").write_touchstone(str(path.with_suffix("")))
+               name="part").write_touchstone(str(path))
     return path
 
 
