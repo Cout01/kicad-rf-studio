@@ -522,7 +522,7 @@ Deferred until the TX side is in; the output chain is 50 Ω at both ends. When t
   - Generic regexes catch absolute drive and home paths, UNC shares and e-mail addresses in file contents. CI repeats only these, as a backstop.
   - Before the first push, the whole history is scanned and rewritten to the chosen identity (§12).
 - **`.gitignore`** excludes project files, Touchstone files, run and result folders, and KiCad side files, except under `tests/fixtures`.
-- **Fixtures** are generated once, at dev time, with KiCad 9's pcbnew in an isolated KiCad profile, and committed. The profile's KICAD_CONFIG_HOME, KICAD_DOCUMENTS_HOME, KICAD_CACHE_HOME and TEMP point at a scratch folder. The fixtures are:
+- **Fixtures** are generated once, at dev time, with KiCad 9's pcbnew in an isolated KiCad profile, and committed. The profile's KICAD_CONFIG_HOME, KICAD_DOCUMENTS_HOME, KICAD_CACHE_HOME, TEMP and TMP point at a scratch folder, APPDATA and LOCALAPPDATA are redirected into it, and TMPDIR and every other KICAD* variable are cleared, so KiCad's API pipe and instance locks never share the owner's temp folder. (A-3, plan 5: controller recommendation, owner unavailable.) The fixtures are:
   - 50 Ω GCPW and microstrip coupons, mask-free by construction, plus masked variants and one GCPW coupon with pads at both ends;
   - a dense-neighbour coupon, a 45° GCPW and an arc coupon;
   - `lpf915` and its twin `lpf915-45`;
@@ -604,7 +604,7 @@ P0-A and the `lpf915` run go through CI containers (Debian 12, Ubuntu 24.04, Fed
 
 ### 9.6 KiCad button pre-check
 
-In an isolated KiCad 9.0.7 profile, check that the `exec` plugin runtime accepts a `.cmd` launcher. If it does not, the owner chooses the fallback, for example the `python` runtime. The owner's KiCad settings are not touched.
+In an isolated KiCad 9.0.7 profile (§9.1), check that the `exec` plugin runtime accepts a `.cmd` launcher. The profile's `kicad_common.json` is seeded before any GUI start, with the API server on, so no first-run dialog appears. (A-3, plan 5: controller recommendation, owner unavailable.) If it does not, the owner chooses the fallback, for example the `python` runtime. The owner's KiCad settings are not touched.
 
 ### 9.7 Order, exit, timebox and reports
 
