@@ -1,0 +1,205 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# CI tier (b), nightly on ubuntu:24.04, and P0-D, dispatched by hand on debian:12, ubuntu:24.04 and fedora:44 (spec 9.1,
+# 9.5; D-47, D-48). openEMS v0.37.0 is built by upstream's scripts with the app's venv active and the GUI build on, and
+# cached by (distro, tag, Python). The P0 models (tools/p0d.py) run at Draft, one job per (model, excitation), and each
+# distro's S is judged against the Windows references in tests/fixtures/p0d under the criterion-1 limits, a coupon's
+# Z0 and eps_eff within p0d.ZE_LIMIT_PCT. Prepared, not run: nothing is pushed before the owner says so (spec 12).
+name: linux-openems
+
+on:
+  schedule:
+    - cron: "17 3 * * *"  # tier (b)
+  workflow_dispatch:  # P0-D
+
+permissions:
+  contents: read
+
+jobs:
+  models:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    outputs:
+      entries: ${{ steps.matrix.outputs.entries }}
+      distros: ${{ steps.matrix.outputs.distros }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: python -m pip install -e .
+      - run: python tools/p0d.py models --out models
+      - uses: actions/upload-artifact@v4
+        with:
+          name: models
+          path: models
+      - id: matrix
+        env:
+          NIGHTLY: '[{"image": "ubuntu:24.04", "slug": "ubuntu2404"}]'
+          DISPATCH: >-
+            [{"image": "ubuntu:24.04", "slug": "ubuntu2404"}, {"image": "debian:12", "slug": "debian12"},
+            {"image": "fedora:44", "slug": "fedora44"}]
+        run: |
+          echo "entries=$(cat models/matrix.json)" >> "$GITHUB_OUTPUT"
+          if [ "$GITHUB_EVENT_NAME" = schedule ]; then echo "distros=$NIGHTLY"; else echo "distros=$DISPATCH"; fi >> "$GITHUB_OUTPUT"
+
+  build:
+    needs: models
+    runs-on: ubuntu-24.04
+    timeout-minutes: 350
+    strategy:
+      fail-fast: false
+      matrix:
+        distro: ${{ fromJSON(needs.models.outputs.distros) }}
+    container: ${{ matrix.distro.image }}
+    steps:
+      # The three step groups "base packages", "openEMS dependencies" and "cache key" recur in every job that needs
+      # openEMS, on purpose: each job runs in its own fresh container, where the shared libraries openEMS and CSXCAD
+      # link against are installed again; only /opt/openEMS and the app's venv /opt/krs come from the cache.
+      - name: Base packages
+        run: |
+          if command -v apt-get > /dev/null; then
+            apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y git sudo python3 python3-venv
+          else
+            dnf install -y git sudo python3 python3-pip
+          fi
+      - uses: actions/checkout@v4
+      - name: openEMS dependencies
+        run: |
+          git clone --depth 1 --branch v0.37.0 https://github.com/thliebig/openEMS-Project.git /tmp/oe
+          cd /tmp/oe && ./scripts/install_deps.sh --auto --python
+      - name: Cache key
+        id: key
+        run: python3 -c 'import sys; print("py=%d.%d" % sys.version_info[:2])' >> "$GITHUB_OUTPUT"
+      - uses: actions/cache@v4
+        id: cache
+        with:
+          path: |
+            /opt/openEMS
+            /opt/krs
+          key: openems-v0.37.0-${{ matrix.distro.slug }}-py${{ steps.key.outputs.py }}
+      - name: Build openEMS into the app's venv
+        if: steps.cache.outputs.cache-hit != 'true'
+        run: |
+          git -C /tmp/oe submodule update --init --recursive --depth 1
+          python3 -m venv /opt/krs
+          . /opt/krs/bin/activate && pip install -e . && cd /tmp/oe && ./update_openEMS.sh /opt/openEMS --python
+      - name: Version probe
+        run: |
+          . /opt/krs/bin/activate && python -c "import openEMS, CSXCAD, importlib.metadata as m; v = m.version('openEMS'); print(v); assert v.startswith('0.37.'), v"
+
+  excite:
+    needs: [models, build]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 350
+    strategy:
+      fail-fast: false
+      matrix:
+        distro: ${{ fromJSON(needs.models.outputs.distros) }}
+        entry: ${{ fromJSON(needs.models.outputs.entries) }}
+    container: ${{ matrix.distro.image }}
+    steps:
+      # The three step groups again: a fresh container (see build).
+      - name: Base packages
+        run: |
+          if command -v apt-get > /dev/null; then
+            apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y git sudo python3 python3-venv
+          else
+            dnf install -y git sudo python3 python3-pip
+          fi
+      - uses: actions/checkout@v4
+      - name: openEMS dependencies
+        run: |
+          git clone --depth 1 --branch v0.37.0 https://github.com/thliebig/openEMS-Project.git /tmp/oe
+          cd /tmp/oe && ./scripts/install_deps.sh --auto --python
+      - name: Cache key
+        id: key
+        run: python3 -c 'import sys; print("py=%d.%d" % sys.version_info[:2])' >> "$GITHUB_OUTPUT"
+      - uses: actions/cache/restore@v4
+        with:
+          path: |
+            /opt/openEMS
+            /opt/krs
+          key: openems-v0.37.0-${{ matrix.distro.slug }}-py${{ steps.key.outputs.py }}
+          fail-on-cache-miss: true
+      - uses: actions/download-artifact@v4
+        with:
+          name: models
+          path: models
+      # The P0 folder lies outside the checkout, which p0.enter refuses; the upload holds only its own folder, so that
+      # compare's merged download gives runs/<model>-k<port>/. runner.temp, in both: in a container job, the context
+      # and the RUNNER_TEMP variable need not name the same folder.
+      - name: Excite
+        run: |
+          . /opt/krs/bin/activate
+          pip install -e .
+          python tools/p0d.py excite --spec models/${{ matrix.entry.model }}.json --port ${{ matrix.entry.port }} \
+            --out "${{ runner.temp }}/runs/${{ matrix.entry.model }}-k${{ matrix.entry.port }}"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: runs-${{ matrix.distro.slug }}-${{ matrix.entry.model }}-k${{ matrix.entry.port }}
+          path: ${{ runner.temp }}/runs
+
+  compare:
+    needs: [models, excite]
+    if: always()  # a failed excitation is reported, as a missing one
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        distro: ${{ fromJSON(needs.models.outputs.distros) }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: python -m pip install -e .
+      - uses: actions/download-artifact@v4
+        with:
+          name: models
+          path: models
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: runs-${{ matrix.distro.slug }}-*
+          merge-multiple: true
+          path: runs
+      - run: python tools/p0d.py compare --runs runs --refs tests/fixtures/p0d --models models --out compare-${{ matrix.distro.slug }}.json
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: compare-${{ matrix.distro.slug }}
+          path: compare-${{ matrix.distro.slug }}.json
+
+  openems-tests:
+    if: github.event_name == 'schedule'
+    needs: build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    container: ubuntu:24.04
+    steps:
+      # The three step groups again: a fresh container (see build).
+      - name: Base packages
+        run: |
+          if command -v apt-get > /dev/null; then
+            apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y git sudo python3 python3-venv
+          else
+            dnf install -y git sudo python3 python3-pip
+          fi
+      - uses: actions/checkout@v4
+      - name: openEMS dependencies
+        run: |
+          git clone --depth 1 --branch v0.37.0 https://github.com/thliebig/openEMS-Project.git /tmp/oe
+          cd /tmp/oe && ./scripts/install_deps.sh --auto --python
+      - name: Cache key
+        id: key
+        run: python3 -c 'import sys; print("py=%d.%d" % sys.version_info[:2])' >> "$GITHUB_OUTPUT"
+      - uses: actions/cache/restore@v4
+        with:
+          path: |
+            /opt/openEMS
+            /opt/krs
+          key: openems-v0.37.0-ubuntu2404-py${{ steps.key.outputs.py }}
+          fail-on-cache-miss: true
+      - name: The openems tier
+        run: |
+          . /opt/krs/bin/activate && pip install -e ".[dev]" && python -m pytest -m openems -q
