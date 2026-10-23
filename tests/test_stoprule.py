@@ -5,7 +5,7 @@ from dataclasses import replace
 import numpy as np
 import pytest
 
-from kicad_rf_studio.stoprule import Records, stop_rule
+from kicad_rf_studio.stoprule import GROWTH_DB, Records, growth_rise, stop_rule
 from traces import trace
 
 EXC = {"f1": 457.5e6, "f2": 3.0195e9, "t0": 9 / (2 * math.pi * 1.281e9)}
@@ -41,3 +41,7 @@ def test_no_growth_before_the_pulse_ends():  # armed only after 2·t0
     early = rec.te < 2 * EXC["t0"]
     dip = np.where(early, np.geomspace(1e-9, 1.0, len(rec.e)), rec.e)  # a deep dip inside the pulse: an unarmed
     assert stop_rule(replace(rec, e=dip), 0, "normal", EXC).kind == "converged"  # running minimum flags growth at 2.26 ns
+
+
+def test_growth_rise_is_the_statistic_the_stop_rule_compares():  # D-38
+    assert growth_rise(trace("growth"), EXC["t0"]) >= GROWTH_DB > 10 > growth_rise(trace("converge"), EXC["t0"])

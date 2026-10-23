@@ -121,3 +121,11 @@ def test_results_that_cannot_be_reduced_name_the_fix(tmp_path, what):  # C-22, X
     with pytest.raises(KrsError) as e:
         layout(P915, results)
     assert (e.value.code, e.value.params) == expected
+
+
+def test_the_layout_at_other_frequencies_is_the_same_reduction(tmp_path):  # P0: EMerge's points, another band
+    results = fake_run(tmp_path, synth_records(lambda f: star(f, 3), 3, F1, F2, DT, 10e-9),
+                       [port("P1"), port("P2"), port("C1", True)])
+    whole, some = layout(P915, results), layout(P915, results, f=F[[71, 213, 300]])
+    assert np.array_equal(some.f, F[[71, 213, 300]]) and some.markers == [0, 1]
+    assert np.abs(some.s - whole.s[[71, 213, 300]]).max() <= 1e-12

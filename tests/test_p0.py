@@ -11,7 +11,32 @@ import pytest
 
 import p0
 from kicad_rf_studio import runs
+from kicad_rf_studio.cli import main
 from kicad_rf_studio.core.messages import KrsError
+from kicad_rf_studio.core.model.spec import excitation
+from kicad_rf_studio.core.post.waves import grid
+from kicad_rf_studio.core.project import load_project
+from kicad_rf_studio.stoprule import stop_rule
+from networks import network_trace, star, terminate_np
+from test_model_csx import TINY
+from test_post_chain import M0402
+from test_run import lpf_loads, lpf_run
+
+F, _ = grid(915e6, 3, 1.1)
+
+
+def in_process(*args):
+    """p0.cli inside this process, so that the `fake` fixture's worker runs; other test files import it."""
+    out = io.StringIO()
+    with contextlib.redirect_stdout(out), contextlib.redirect_stderr(out):
+        code = main(list(args))
+    return code, out.getvalue()
+
+
+EXC40 = excitation({"f0_hz": 915e6, "harmonics": 3, "band_factor": 1.1, "t_max_s": 40e-9})
+TWO = {**TINY, "excitation": EXC40,  # the fake's traces converge at about 10.7 ns at Normal; TINY's 1 ns never would
+       "ports": [TINY["ports"][0], {**TINY["ports"][0], "name": "P2", "start": [3.0, 3.0, 0.0], "stop": [3.0, 3.0, 1.0],
+                                    "nodes": [[3.0, 3.0, 0.0], [3.0, 3.0, 1.0], [3.0, 3.0, 0.0], [3.0, 3.0, 1.0]]}]}
 
 
 def test_enter_points_every_child_at_the_p0_data_folder(tmp_path, monkeypatch):  # D-7
@@ -112,3 +137,95 @@ def test_records_refuse_a_missing_step_or_two_codes(tmp_path, fake, monkeypatch)
     with pytest.raises(SystemExit):
         p0.records(tmp_path, ["a", "b"])
     assert p0.table([{"a": 1.23456, "b": None}], ["a", "b"]).splitlines()[2] == "| 1.235 | – |"
+
+
+def test_run_model_runs_only_the_excited_ports_and_records_its_gates(tmp_path, calibrated):  # D-9, D-17
+    run = p0.run_model(p0.model_of(TWO), "normal", "two", [1])
+    (job,) = run["jobs"]
+    assert (job["port"], job["verdict"]) == ("P1", "converged")
+    assert [code for code, _ in run["blocked"]] == ["E_DT_FLOOR"]  # the fake's dt on 1 mm cells: recorded, not applied
+    folder = p0.run_path(run["run_dir"])
+    assert (folder / job["waves"]).is_file() and not (folder / job["job"] / "et").exists()
+    assert not list(folder.glob("job-2-*")) and run["run_dir"] != p0.run_model(p0.model_of(TWO), "normal", "two", [])["run_dir"]
+
+
+def test_a_stopped_run_is_never_recorded(tmp_path, calibrated, ctrl_c_on_third_poll, monkeypatch):  # D-6; RF 1
+    monkeypatch.setattr(p0, "command_lines", lambda: [])
+    with pytest.raises(KeyboardInterrupt):
+        p0.step(tmp_path, "s", "k", lambda: p0.run_model(p0.model_of(TWO), "normal", "two", [1]))
+    assert not (tmp_path / "steps" / "s.json").exists()
+
+
+def test_a_trace_round_trips_and_replays_to_its_live_cut(tmp_path, calibrated):  # D-40
+    run = p0.run_model(p0.model_of(TWO), "normal", "two", [1])
+    job = run["jobs"][0]
+    path = p0.save_trace(p0.run_path(run["run_dir"]) / job["job"], 2, run["setup"]["dt"], 1, TWO["excitation"],
+                         job["t_cut"], tmp_path / "t.npz")
+    rec, k, exc, t_cut = p0.load_trace(path)
+    assert sorted(np.load(path).files) == ["e", "exc", "i", "k", "t_cut", "t_i", "t_u", "te", "u"]
+    assert (k, t_cut) == (0, job["t_cut"]) and stop_rule(rec, k, "normal", exc).t == job["t_cut"]
+    assert path.stat().st_size <= 50_000
+
+
+def test_a_trace_thins_only_its_energy_rows_and_refuses_probes_over_50_kb(tmp_path):  # D-40, PF-12, PF-13, PF-15
+    rng = np.random.default_rng(0)
+
+    def job(name, samples, rows):
+        """A one-port job folder: `samples` random probe samples and `rows` random energy rows."""
+        folder = tmp_path / name
+        folder.mkdir()
+        t = np.arange(samples) * 1e-11
+        for q in "ui":
+            lines = (f"{a}\t{b}\n" for a, b in zip(t, rng.normal(size=samples)))
+            (folder / f"port_{q}t_1").write_text("".join(lines), encoding="utf-8")
+        (folder / "openEMS_run_stats.txt").write_text(
+            "".join(f"0.1\t{n}\t5e7\t{e}\n" for n, e in enumerate(rng.random(rows))), encoding="utf-8")
+        return folder
+
+    exc = {"f1": 1e9, "f2": 2e9, "t0": 1e-9}
+    path = p0.save_trace(job("long", 100, 20_000), 1, 1e-12, 1, exc, None, tmp_path / "out" / "long.npz")
+    rec, _, _, t_cut = p0.load_trace(path)
+    assert len(rec.t_u) == len(rec.t_i) == 100 and 0 < len(rec.te) < 20_000 and t_cut is None  # NaN stored
+    assert path.stat().st_size <= 50_000
+    with pytest.raises(ValueError) as e:
+        p0.save_trace(job("dense", 4_000, 10), 1, 1e-12, 1, exc, None, tmp_path / "dense.npz")
+    assert "dense" in str(e.value) and not (tmp_path / "dense.npz").exists()
+
+
+def test_s_of_cuts_or_replays_each_record_and_reduces_it():  # D-35, D-48
+    traces = [(network_trace(2, k, EXC40["f1"], EXC40["f2"], 1e-13, 40e-9), k, EXC40, None) for k in (0, 1)]
+    s, t_cut = p0.s_of(traces, F, "draft")
+    assert np.abs(s - star(F, 2)).max() <= 1e-5 and (t_cut < 40e-9).all()
+    assert p0.s_of(traces[:1], F, "draft")[0].shape == (len(F), 2, 1)
+    whole, cuts = p0.s_of(traces, F)  # no preset: each record's own t_cut, here none, so whole
+    assert np.abs(whole - star(F, 2)).max() <= 1e-5 and np.isnan(cuts).all()
+    three = [(network_trace(3, k, EXC40["f1"], EXC40["f2"], 1e-13, 40e-9), k, EXC40, None) for k in (0, 1)]
+    assert np.abs(p0.s_of(three, F, rows=[0, 1])[0] - star(F, 3)[:, :2, :2]).max() <= 0.05  # port 3 stays loaded
+
+
+def test_the_closed_chain_of_a_run_at_its_models_ideal_values_cuts_and_boxes(tmp_path, calibrated,
+                                                                             monkeypatch):  # D-34, D-37, D-43
+    pj = lpf_run(tmp_path, monkeypatch)  # tests/test_run.py: lpf915 on the network fake
+    results = load_project(pj)["results"]
+    assert p0.model_key(pj) == results["model_hash"]
+    f, s, k0 = p0.closed_chain(pj)
+    assert k0 == 71 and np.abs(s - terminate_np(star(F, 6), [0, 1], lpf_loads(M0402))).max() <= 1e-5
+    f, s, _ = p0.closed_chain(pj, ideal=True, f=F[[71, 213]])
+    assert np.abs(s - terminate_np(star(F, 6), [0, 1], lpf_loads(None))[[71, 213]]).max() <= 1e-5
+    same = p0.closed_chain(pj, cuts=[j["t_cut"] for j in results["jobs"]], cbox=results["c_box"])[1]
+    assert np.abs(same - p0.closed_chain(pj)[1]).max() == 0
+
+
+def test_criterion_1_reads_the_spec_limits_and_no_null_as_na():  # spec 9.4 criterion 1
+    ok = {"ds21_db_f0": 0.1, "ds11_f0": 0.02, "ds_max": 0.03, "nulls": []}
+    assert p0.criterion1(ok) == {"ds21_db_f0": True, "ds11_f0": True, "ds_max": True, "nulls": "n/a", "pass": True}
+    assert not p0.criterion1({**ok, "ds_max": 0.0301})["pass"]
+    assert p0.criterion1({**ok, "nulls": [{"f_hz": 2.7e9, "shift": -0.021}]})["nulls"] is False
+    assert p0.criterion1({**ok, "nulls": [{"f_hz": 2.7e9, "shift": None}]})["pass"] is False  # an unmatched null
+
+
+def test_the_small_helpers():  # D-16; P0-B's dotted edits
+    assert p0.predicted_s(6, 4, 2_694_450, 5.4043e-14, 17e-9, 120.0) == pytest.approx(
+        2 * 2_694_450 * (17e-9 / 5.4043e-14) / 120e6)
+    assert p0.edit({"mesh": {"n": 2}}, {"mesh.n": 3, "gates.fit2d_limit": 0.05}) == {
+        "mesh": {"n": 3}, "gates": {"fit2d_limit": 0.05}}

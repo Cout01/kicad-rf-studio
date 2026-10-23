@@ -4,6 +4,7 @@ It reads the records in simulated time only, so its verdict depends on neither t
 orchestrator polls. Times are in s and levels in dB."""
 from __future__ import annotations
 
+from collections.abc import Iterator
 from dataclasses import dataclass
 
 import numpy as np
@@ -74,9 +75,9 @@ def stop_rule(rec: Records, k: int, preset: str, exc: dict) -> Verdict | None:
     return Verdict(kind, t, np.nan if kind == "diverged" else float(r_db[np.searchsorted(rec.t_u, t, "right") - 1]))
 
 
-def _growth(rec: Records, t0: float) -> float:
-    """The first te after the pulse (te > 2·t0) where the energy envelope reaches GROWTH_DB over its minimum on the
-    earlier samples after the pulse; inf when it never does. The envelope is the peak of E_dB over the last WINDOW_S,
+def _rises(rec: Records, t0: float) -> Iterator[tuple[float, float]]:
+    """(te, rise) at each te after the pulse (te > 2·t0): the rise in dB of the energy envelope over its minimum on
+    the earlier samples after the pulse, -inf at the first. The envelope is the peak of E_dB over the last WINDOW_S,
     widened to the last 4 samples, so a sparse log does not alias it."""
     on = rec.e > 0  # a sample at 0 has no dB: skipped
     te, e_db = rec.te[on], 10 * np.log10(rec.e[on])
@@ -84,10 +85,20 @@ def _growth(rec: Records, t0: float) -> float:
     floor = np.inf
     for m in np.flatnonzero(te > 2 * t0):
         env = e_db[lo[m]:m + 1].max()
-        if env >= GROWTH_DB + floor:
-            return te[m]
+        yield te[m], env - floor
         floor = min(floor, env)
-    return np.inf
+
+
+def _growth(rec: Records, t0: float) -> float:
+    """The first te after the pulse where the energy envelope rises GROWTH_DB over its running minimum (_rises); inf
+    when it never does."""
+    return next((t for t, rise in _rises(rec, t0) if rise >= GROWTH_DB), np.inf)
+
+
+def growth_rise(rec: Records, t0: float) -> float:
+    """The largest rise in dB of the energy envelope over its running minimum after the pulse (te > 2·t0), the
+    statistic _growth compares with GROWTH_DB (D-38); 0.0 when it never rises."""
+    return float(max([0.0, *(rise for _, rise in _rises(rec, t0))]))
 
 
 def _converged(rec: Records, r_db: np.ndarray, k: int, level: float, tol: float, exc: dict) -> float:

@@ -58,8 +58,8 @@ def level_db(a: np.ndarray) -> np.ndarray:
 
 @dataclass(frozen=True)
 class Layout:
-    """The layout N-port of a run (spec 7.1): S (F, N, N) on the grid f, ports in job order and every port
-    V_signal − V_reference; `markers`, the grid indices of f0, 2f0, … up to the project's harmonics, those on the grid;
+    """The layout N-port of a run (spec 7.1): S (F, N, N) on f, ports in job order and every port
+    V_signal − V_reference; `markers`, the indices in f of f0, 2f0, … up to the project's harmonics, those f holds;
     the excitation level `a_db` (F,); model.json's port entries and which of them openEMS measured reversed."""
     f: np.ndarray
     markers: list[int]
@@ -79,10 +79,11 @@ def flipped(port: dict) -> bool:
     return port["start"][axis] > port["stop"][axis]
 
 
-def layout(project: dict, results: dict) -> Layout:
+def layout(project: dict, results: dict, f: np.ndarray | None = None) -> Layout:
     """The layout N-port of the run `results` holds, its `run_dir` and `jobs` (project.json's results, or verify's
-    own), on the grid of `project` (spec 7.1, C-10). Each job's waves are cut at its t_cut, both u and i, or taken whole
-    when t_cut is None (t_max); S is then normalised to V_signal − V_reference at every flipped port. Raises
+    own), at the frequencies `f` (Hz), by default the grid of `project` (spec 7.1, C-10); a point of f is n·f0 within
+    1e-9 relative, and a_db is relative to its peak on f. Each job's waves are cut at its t_cut, both u and i, or taken
+    whole when t_cut is None (t_max); S is then normalised to V_signal − V_reference at every flipped port. Raises
     E_RESULTS_JOB for a job whose S was not kept, then E_RESULTS_WAVES for a missing model.json, then for a job's
     missing waves file (run_dir itself when the job has none)."""
     jobs, run_dir = results["jobs"], Path(results["run_dir"])
@@ -99,10 +100,13 @@ def layout(project: dict, results: dict) -> Layout:
             t_u, u, t_i, i = (waves[key] for key in ("t_u", "u", "t_i", "i"))
         n = len(t_u) if job["t_cut"] is None else np.searchsorted(t_u, job["t_cut"], "right")
         records.append((t_u[:n], u[:, :n], t_i[:n], i[:, :n]))
-    f, q = grid(project["f0_hz"], project["harmonics"], project["band_factor"])
+    f0 = project["f0_hz"]
+    if f is None:
+        f = grid(f0, project["harmonics"], project["band_factor"])[0]
     s, a = s_matrix(records, f)
     ports = json.loads(paths[0].read_text(encoding="utf-8"))["ports"]
     flips = [flipped(port) for port in ports]
     d = np.where(flips, -1.0, 1.0)  # D·S·D, D = −1 at each flipped port (C-10)
-    markers = list(range(q // 2, min(project["harmonics"] * q, len(f)), q))  # n·f0 at n·q − q//2 (grid)
+    markers = [int(k) for n in range(1, project["harmonics"] + 1)  # n·f0 to 1e-9; the grid's is index n·q − q//2
+               for k in np.flatnonzero(np.isclose(f, n * f0, rtol=1e-9, atol=0))]
     return Layout(f, markers, s * np.outer(d, d), level_db(a), ports, flips)
