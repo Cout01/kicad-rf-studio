@@ -120,17 +120,19 @@ def nominal_boxes(ends: list[End]) -> tuple[Polygon, ...]:
 def place(end: End, mesh: Mesh, zs: tuple[Slab, ...]) -> dict:
     """The port of `end` on the lines of `mesh` (spec 5.6): a CurvePort for a curve_port, else a lumped port.
     The lumped port's box runs along the in-plane axis on which the signal and the reference are apart while their
-    spans across it overlap: from the reference's line nearest the signal to the signal's line nearest the reference,
-    across over the lines inside that overlap, and in z over the copper slab of `end.layer`. It starts at the reference
-    end, so that openEMS's u is V_signal − V_reference. Its `nodes` are the reference cap, the signal cap, then the
-    reference and signal witnesses (the line of each pad farthest from the other), on the line across nearest the
-    box's middle, at the copper's top face.
+    spans (bounds) across it overlap: from the reference's cap to the signal's, across over the lines inside that
+    overlap, and in z over the copper slab of `end.layer`. It starts at the reference end, so that openEMS's u is
+    V_signal − V_reference. Its `nodes` are the reference cap, the signal cap, then the reference and signal witnesses,
+    at the copper's top face on one line across: the one nearest the middle of those lines (a tie to the lower) at
+    which each pad keeps a line along, inside its bounds, whose point lies inside its copper shrunk by SIMPLIFY (D-11:
+    the copper solids are simplified by up to SIMPLIFY). A cap is the pad's kept line nearest the other pad, a witness
+    its kept line farthest from it.
     The CurvePort (C-37) runs from the reference pad's centre to the signal pad's, each on the nearest x and y lines, at
     the copper's top face; its `nodes` are those two ends. openEMS puts its one-edge port at their middle, joined to
     both by PEC curves, and orders them along its axis itself: its u is V_signal − V_reference only when the
     reference lies lower along it.
-    Every coordinate is a line of `mesh` and every value JSON-native: lists of Python floats. Raises E_PORT_SPANS and
-    E_PORT_BOX."""
+    Every coordinate is a line of `mesh` and every value JSON-native: lists of Python floats. Raises E_PORT_SPANS, and
+    E_PORT_BOX when no line across qualifies."""
     slab = next(c for c in zs if c.copper == end.layer)
     if end.role == CURVE_PORT:
         z = float(slab.z1)  # ponytail: the top face for any layer; P0-B tests F.Cu only
@@ -138,8 +140,8 @@ def place(end: End, mesh: Mesh, zs: tuple[Slab, ...]) -> dict:
                        for x, y in end.centers)
         return {"name": end.name, "kind": "curve", "dir": None, "start": start, "stop": stop, "nodes": [start, stop],
                 "part": True}
-    # ponytail: pads are taken as their bounding boxes; a round pad's corner can leave a cap edge in air, which the PEC
-    # check tolerates
+    # ponytail: the nodes sit inside the real copper (by SIMPLIFY); the box's other lines across may cross a rounded
+    # corner's air
     s, r = end.signal.bounds, end.reference.bounds
     apart = [s[k + 2] <= r[k] or r[k + 2] <= s[k] for k in (0, 1)]  # their spans along k do not overlap
     if apart[0] == apart[1]:
@@ -151,21 +153,30 @@ def place(end: End, mesh: Mesh, zs: tuple[Slab, ...]) -> dict:
     def inside(lines: np.ndarray, a: float, b: float) -> np.ndarray:
         return lines[(lines > a) & (lines < b)]
 
-    s_in, r_in = inside(along, s[p], s[p + 2]), inside(along, r[p], r[p + 2])
-    width = inside(across, max(s[t], r[t]), min(s[t + 2], r[t + 2]))
-    if not (s_in.size and r_in.size and width.size):
-        raise KrsError("E_PORT_BOX", name=end.name)
-    forward = s[p + 2] <= r[p]  # the reference lies past the signal along p
-    sig, sig_far = (s_in.max(), s_in.min()) if forward else (s_in.min(), s_in.max())
-    ref, ref_far = (r_in.min(), r_in.max()) if forward else (r_in.max(), r_in.min())
-    lo, hi = width.min(), width.max()
-    tc = width[np.argmin(np.abs(width - (lo + hi) / 2))]
-
     def at(u: float, v: float, z: float) -> list[float]:
         """The point `u` along p, `v` across it and at `z`, as [x, y, z]."""
         xy = (u, v) if p == 0 else (v, u)
         return [float(xy[0]), float(xy[1]), float(z)]
 
+    def kept(lines: np.ndarray, copper: BaseGeometry, v: float) -> np.ndarray:
+        """The `lines` along p whose point at `v` across lies inside `copper`."""
+        return lines[[copper.contains(Point(at(u, v, 0)[:2])) for u in lines]]
+
+    s_in, r_in = inside(along, s[p], s[p + 2]), inside(along, r[p], r[p + 2])
+    width = inside(across, max(s[t], r[t]), min(s[t + 2], r[t + 2]))
+    if not (s_in.size and r_in.size and width.size):
+        raise KrsError("E_PORT_BOX", name=end.name)
+    lo, hi = width.min(), width.max()
+    sig_cu, ref_cu = end.signal.buffer(-SIMPLIFY), end.reference.buffer(-SIMPLIFY)  # the solids are simplified
+    for tc in sorted(width, key=lambda v: abs(v - (lo + hi) / 2)):  # stable: a tie goes to the lower line
+        s_at, r_at = kept(s_in, sig_cu, tc), kept(r_in, ref_cu, tc)
+        if s_at.size and r_at.size:
+            break
+    else:
+        raise KrsError("E_PORT_BOX", name=end.name)
+    forward = s[p + 2] <= r[p]  # the reference lies past the signal along p
+    sig, sig_far = (s_at.max(), s_at.min()) if forward else (s_at.min(), s_at.max())
+    ref, ref_far = (r_at.min(), r_at.max()) if forward else (r_at.max(), r_at.min())
     return {"name": end.name, "kind": "lumped", "dir": "xy"[p],
             "start": at(ref, lo, slab.z0), "stop": at(sig, hi, slab.z1),
             "nodes": [at(ref, tc, slab.z1), at(sig, tc, slab.z1), at(ref_far, tc, slab.z1), at(sig_far, tc, slab.z1)],

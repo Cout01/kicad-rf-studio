@@ -3,12 +3,20 @@ import copy
 from dataclasses import replace
 from functools import cache
 
+import numpy as np
 import pytest
+from shapely.geometry import Point, box
 
+from kicad_rf_studio import runs
+from kicad_rf_studio.cli import main
 from kicad_rf_studio.core.geometry import build_geometry
+from kicad_rf_studio.core.geometry.zstack import Slab
+from kicad_rf_studio.core.mesh import Mesh
 from kicad_rf_studio.core.mesh.gates import mesh_with_lint
-from kicad_rf_studio.core.messages import KrsError
-from kicad_rf_studio.core.model.ports import ends, nominal_boxes, place
+from kicad_rf_studio.core.messages import KrsError, render
+from kicad_rf_studio.core.model.ports import End, ends, nominal_boxes, place
+from kicad_rf_studio.core.project import load_project, save_project
+from test_cli_cost import FIX
 from test_gates import project_of
 from test_project import edit
 
@@ -111,3 +119,55 @@ def test_a_rotated_part_becomes_a_curve_port_behind_the_switch():  # C-37, spec 
     assert (l1["kind"], l1["start"][2], l1["stop"][2]) == ("curve", 0.78, 0.78)
     assert l1["start"][:2] == [min(m.x, key=lambda v: abs(v - cx)), min(m.y, key=lambda v: abs(v - cy))]
     assert l1["nodes"] == [l1["start"], l1["stop"]]
+
+
+@pytest.mark.parametrize("n", [2, 3])
+@pytest.mark.parametrize(("name", "start", "end"), [("coupon_gcpw_pads", "TP1.1", "TP2.1"), ("lpf915", "U1.1", "J1.1"),
+                                                   ("lpf915-45", "U1.1", "J1.1")])
+def test_every_node_of_every_port_lies_inside_its_copper(name, start, end, n):  # D-11, r3 B-3
+    more = ("--lid-height", "2.5") if name.startswith("lpf") else ()
+    board, p = project_of(name, start, end, *more)
+    p = {**p, "allow_curve_port": True}
+    g = build_geometry(board, p)
+    e = ends(board, p, g.pieces)
+    m = mesh_with_lint(g, replace(g.protected, boxes=nominal_boxes(e)), n)
+    outside = []
+    for x in e:
+        q = place(x, m, g.zs)
+        owners = [x.reference, x.signal] if q["kind"] == "curve" else [x.reference, x.signal, x.reference, x.signal]
+        outside += [(x.name, k) for k, (node, cu) in enumerate(zip(q["nodes"], owners))
+                    if not cu.contains(Point(node[:2]))]
+    assert outside == []
+
+
+def test_lpf915s_p2_moves_to_the_width_line_where_both_pads_have_copper():  # D-11: n = 2 places it
+    board, p = project_of("lpf915", "U1.1", "J1.1", "--lid-height", "2.5")
+    g = build_geometry(board, p)
+    e = ends(board, p, g.pieces)
+    m = mesh_with_lint(g, replace(g.protected, boxes=nominal_boxes(e)), 2)
+    p2 = place(next(x for x in e if x.name == "P2"), m, g.zs)
+    assert [node[0] for node in p2["nodes"]] == pytest.approx([112.9024] * 4, abs=1e-4)
+
+
+def test_a_round_pad_with_no_line_inside_its_copper_is_a_coded_refusal():  # D-11: never E_INTERNAL
+    mesh = Mesh(np.array([-0.295, 0.295, 0.6, 0.9]), np.array([-0.2, 0.0, 0.2]), np.array([0.745, 0.78]), 0.1, 0.03,
+                {}, {})
+    end = End("P9", Point(0, 0).buffer(0.3), box(0.5, -0.05, 1.0, 0.05), "F.Cu", "external")
+    with pytest.raises(KrsError) as e:
+        place(end, mesh, (Slab("copper", 0.745, 0.78, None, None, "F.Cu"),))
+    assert (e.value.code, e.value.params) == ("E_PORT_BOX", {"name": "P9"})
+
+
+@pytest.mark.openems
+def test_lpf915_at_n3_passes_the_port_gates(tmp_path, capsys, monkeypatch):  # D-11; about 1–2 min
+    monkeypatch.setattr(runs, "data_dir", lambda: tmp_path / "data")
+    runs.save_settings({"machines": {runs.machine_key(): {"threads": 4, "pool": 1, "aggregate_mcs": 200.0}}})
+    pj = tmp_path / "lpf915" / "project.json"
+    assert main(["new", str(FIX / "lpf915.kicad_pcb"), "--start", "U1.1", "--end", "J1.1", "--f0", "915MHz",
+                 "--lid-height", "2.5", "-o", str(pj.parent)]) == 0
+    d = load_project(pj)
+    d["mesh"]["n"], d["gates"]["fit2d_limit"] = 3, 0.05  # E_FIT2D_FINE's own advice: RF_B reads +4.39 %
+    save_project(pj, d)
+    capsys.readouterr()
+    assert main(["cost", str(pj)]) == 0
+    assert render("E_PORT_OPEN", name="P2", end="signal") not in capsys.readouterr().out
