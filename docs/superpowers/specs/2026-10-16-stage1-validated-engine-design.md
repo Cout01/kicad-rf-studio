@@ -1,7 +1,7 @@
 # kicad-rf-studio — Stage 1 design: a validated simulation engine
 
 - **Date:** 2026-10-16
-- **Status:** design approved section by section in conversation, revised on 2026-10-19 after an independent review, and approved by the owner. On 2026-10-21 the owner confirmed one amendment to §5.4: the substrate height now counts in the cell size.
+- **Status:** design approved section by section in conversation, revised on 2026-10-19 after an independent review, and approved by the owner. On 2026-10-21 the owner confirmed one amendment to §5.4: the substrate height now counts in the cell size. On 2026-10-22, plan 5 amended §1.1, §7.6, §9.1, §9.2 and §9.6 (A-1 to A-4) as controller recommendations while the owner was unavailable; the owner reviews them.
 - **Scope:** Stage 1 of the project: the headless engine, the command-line orchestrator and the validation gates. The GUI and the KiCad toolbar button (Stage 2) get their own spec, written with Stage 1's results.
 
 ---
@@ -42,7 +42,7 @@ The users are hardware engineers who use KiCad and are not FDTD experts. The pro
 | KiCad | Version 9 minimum; reads KiCad 9 and 10 files |
 | Default v1 scope | The output chain: RF switch common port → DC block → pi low-pass → coaxial connector, under a shield lid. TX-side matching, which has rotated parts, joins only if the rotated-port test passes (§9.3) |
 | Time policy | Whether Draft or Normal accuracy is the default is decided after the Stage 1 measurements |
-| Fallback if the private-board gate fails | Keep the instant retune, labelled "relative / what-if", and offer a full verification run of the final value set (§7.6) |
+| Fallback if the private-board gate fails | Keep the instant retune, labelled "relative / what-if", and offer a full verification run of the final value set (§7.6). The label is shown from the start, until the gate passes (A-4) |
 
 ### 1.2 What v1 must show, and what Stage 1 measures
 
@@ -470,7 +470,7 @@ Accuracy is reported as |ΔS| or as a null shift, never in dB at a null.
   - LEtype=1 is never used, because it is unstable in 0.37.
 - Its result is compared with a retune at the same ideal values: |ΔS| at f0 and up to f2. It checks the layout reduction, not the vendor part data, and the output says so.
 - It is the consistency reference for P0-B and P0-C.
-- **If P0-C fails** (§9.4), v1 labels the instant retune "relative / what-if" and offers `verify` for the final value set.
+- **Until P0-C passes** (§9.4), v1 labels the instant retune "relative / what-if" and offers `verify` for the final value set; if P0-C fails, the label stays. (A-4, plan 5: controller recommendation, owner unavailable.)
 
 ### 7.7 Complex targets at IC pins
 
