@@ -543,7 +543,7 @@ Deferred until the TX side is in; the output chain is 50 Ω at both ends. When t
 
 ### 9.2 P0-A: coupons (35 µm)
 
-- Z0 within 5 % of KiCad's line calculator, εeff within 3 % of the 2D reference, and a clean edge lint. The coupons use openEMS's own `MSLPort` and `CPWPort`, whose voltage and current probes give Z0 and β directly, with no port parasitics.
+- Z0 within 5 % of KiCad's line calculator, εeff within 3 % of the 2D reference, and a clean edge lint. Each coupon is fed by lumped ports at its line ends and measured by a voltage and current probe triplet at a section cut, which gives Z0 and β by `MSLPort`'s own equations, with no port parasitics. `MSLPort` itself is not used: its current probe cuts through the one-cell solid strips and read 66–113 Ω on a 49 Ω line; `CPWPort` agrees with the triplet within 0.1 %. The 2D εeff reference uses a box 45 substrate heights tall. (A-1, plan 5: controller recommendation, owner unavailable.)
 - The masked variants: the shift the mask causes (masked minus mask-free) in FDTD against the same shift in 2D, within 0.5 % for Z0 and 1 % for εeff (proposed; P0-A may adjust them). This validates §5.3 in FDTD. The 5 % and 3 % absolute checks also apply.
 - The dense-neighbour coupon, with the same thresholds.
 - The 45° and arc coupons against their axis-aligned twins: a Z0 difference above 5 % makes §5.5 refuse; otherwise it warns.
