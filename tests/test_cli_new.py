@@ -13,14 +13,17 @@ from kicad_rf_studio.core.kicad import choose_reference, classify, load_board
 from kicad_rf_studio.core.kicad.sexpr import child, children, parse
 from kicad_rf_studio.core.kicad.tracer import Classes
 from kicad_rf_studio.core.messages import render
-from kicad_rf_studio.core.project import board_file, board_hash, load_project, read_project
+from kicad_rf_studio.core.model.spec import spec_hash
+from kicad_rf_studio.core.project import board_file, board_hash, load_project, read_project, save_project
+from kicad_rf_studio.pipeline import build_model, load
 from test_cli_cost import EDGE, SEG
 from test_geometry_sections import four_layer
 
 FIX = Path(__file__).parent / "fixtures"
 LPF = FIX / "lpf915.kicad_pcb"
+# spec 3.2: `new` prints every value it assumed
 DEFAULTS = ("Preset normal (provisional default), band factor 1.1, T_max 40 ns, harmonics 3, mesh n 2, "
-            "region 3 substrate heights past the chain.")  # spec 3.2: `new` prints every value it assumed
+            "region 3 substrate heights past the chain, margin scale 1, protected reach 3 substrate heights.")
 KEYS = {"schema", "board", "f0_hz", "harmonics", "preset", "band_factor", "t_max_s", "region", "mesh", "stackup",
         "lid_height_mm", "lid", "classes", "chain", "others", "ports", "gates", "allow_curve_port"}
 
@@ -135,7 +138,7 @@ def test_options_reach_the_project_and_the_summary(tmp_path, capsys):
     lines = capsys.readouterr().out.splitlines()
     assert "f0 2400 MHz, with 5 harmonics." in lines
     assert ("Preset strict (provisional default), band factor 1.1, T_max 40 ns, harmonics 5, mesh n 3, "
-            "region 3 substrate heights past the chain.") in lines
+            "region 3 substrate heights past the chain, margin scale 1, protected reach 3 substrate heights.") in lines
 
 
 def test_classes_are_the_computed_sets(tmp_path):
@@ -666,3 +669,25 @@ def test_a_chain_off_the_outline_is_refused_before_writing(tmp_path, capsys, min
     assert main(["new", str(board), "--start", "TP1.1", "--end", "TP2.1", "--f0", "915MHz", "--stackup", "jlcpcb-2l",
                  "-o", str(out)]) == 2
     assert capsys.readouterr().err == render("E_CHAIN_OFF_OUTLINE", nets="SIG") + "\n" and not out.exists()
+
+
+# --- plan 5, task 3: the optional fields mesh.reach_h and region.margin_scale ---------------------------------
+
+
+def test_reach_and_margin_are_optional_and_enter_the_model(tmp_path):  # D-12, Review Focus 5
+    _, pj = run_new(tmp_path, "--lid-height", "2.5")
+
+    def model_hash():
+        project, board, geom, _ = load(pj)
+        return spec_hash(build_model(project, board, geom).spec)
+
+    base = model_hash()
+    d = load_project(pj)
+    del d["mesh"]["reach_h"], d["region"]["margin_scale"]
+    save_project(pj, d)
+    assert model_hash() == base  # a project.json from plan 4 reads the defaults and keeps its hash
+    for group, key, value in (("mesh", "reach_h", 6.0), ("region", "margin_scale", 2.0)):
+        d[group][key] = value
+        save_project(pj, d)
+        assert model_hash() != base
+        del d[group][key]

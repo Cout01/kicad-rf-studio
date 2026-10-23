@@ -5,12 +5,13 @@ from pathlib import Path
 
 import pytest
 
-from kicad_rf_studio.core.geometry.region import build_region, coarse_cell, f_max
+from kicad_rf_studio.core.geometry.region import WALL_CELLS, WALL_MM, build_region, coarse_cell, f_max
 from kicad_rf_studio.core.geometry.zstack import substrate_h, zstack
 from kicad_rf_studio.core.kicad import load_board
 from kicad_rf_studio.core.kicad.stackup import Stackup, kicad_default, preset
 from kicad_rf_studio.core.kicad.tracer import Chain, ChainPart
 from kicad_rf_studio.core.messages import KrsError
+from test_gates import project_of
 
 FIX = Path(__file__).parent / "fixtures"
 
@@ -95,3 +96,12 @@ def test_roi_covers_net_areas_part_pads_and_port_references(mini_board):
     g = 3 * substrate_h(zs)
     roi = build_region(b, chain, ports, zs, 1e9).roi
     assert roi.bounds == pytest.approx((-20.5 - g, -6 - g, 30 + g, 20.5 + g))
+
+
+def test_margin_scale_multiplies_the_wall_margin():  # D-12, spec 9.4 criterion 4
+    board, p = project_of("lpf915", "U1.1", "J1.1", "--lid-height", "2.5")
+    zs = zstack(Stackup.from_json(p["stackup"]), board.copper_layers)
+    one, two = (build_region(board, chain_of(p), p["ports"], zs, 3.0195e9, 3.0, s) for s in (1.0, 2.0))
+    margin = WALL_MM + WALL_CELLS * one.coarse
+    assert one.walls[1] - one.roi.bounds[2] == pytest.approx(margin, abs=2e-6)
+    assert two.walls[1] - two.roi.bounds[2] == pytest.approx(2 * margin, abs=2e-6)

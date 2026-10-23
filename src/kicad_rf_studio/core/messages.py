@@ -58,7 +58,7 @@ CATALOG: dict[str, str] = {
     "I_PART_NO_MODEL": "Part {ref} {value}: {role}; no package preset, so as a port a C, L or R takes its ideal value and any other part needs its S2P file (`retune PROJECT {ref}=file.s2p:series`, or :shunt).",
     "I_PORT": "Port {name}: signal {signal}, reference {reference} ({rule}).",
     "I_F0": "f0 {f0_mhz} MHz, with {harmonics} harmonics.",
-    "I_DEFAULTS": "Preset {preset} (provisional default), band factor {band_factor}, T_max {t_max_ns} ns, harmonics {harmonics}, mesh n {mesh_n}, region {expand_h} substrate heights past the chain.",
+    "I_DEFAULTS": "Preset {preset} (provisional default), band factor {band_factor}, T_max {t_max_ns} ns, harmonics {harmonics}, mesh n {mesh_n}, region {expand_h} substrate heights past the chain, margin scale {margin_scale}, protected reach {reach_h} substrate heights.",
     "I_LID": "Shield lid {state}: \"lid\": null in project.json means on when harmonics > 1; true or false forces it.",
     "W_FILLS_AS_SAVED": "Fills as saved — refill (B) in KiCad and save if you changed copper.",
     "W_LID_HEIGHT_MISSING": "Shield {refs} covers the simulated region and no --lid-height was given; set lid_height_mm in project.json before `run`, or \"lid\": false to leave the lid out.",

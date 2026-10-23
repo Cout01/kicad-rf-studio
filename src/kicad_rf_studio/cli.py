@@ -21,8 +21,9 @@ from kicad_rf_studio.core.kicad.stackup import preset as stackup_preset
 from kicad_rf_studio.core.kicad.tracer import signal_layer
 from kicad_rf_studio.core.kicad.values import parse_frequency
 from kicad_rf_studio.core.messages import KrsError, reason, render
-from kicad_rf_studio.core.project import (BAND_FACTOR, DEFAULT_PRESET, EXPAND_H, HARMONICS, MESH_N, T_MAX_S,
-                                          board_hash, make_project, relative_path, save_project, shown_reference)
+from kicad_rf_studio.core.project import (BAND_FACTOR, DEFAULT_PRESET, EXPAND_H, HARMONICS, MARGIN_SCALE, MESH_N,
+                                          REACH_H, T_MAX_S, board_hash, make_project, relative_path, save_project,
+                                          shown_reference)
 
 PRESETS = ("draft", "normal", "strict")  # the run presets; `--stackup` names a stackup preset, which is another thing
 
@@ -122,7 +123,8 @@ def _new(a: argparse.Namespace) -> None:
                            "rule": p["rule"] or "none"}) for p in ports),
              ("I_F0", {"f0_mhz": f"{a.f0 / 1e6:g}", "harmonics": a.harmonics}),
              ("I_DEFAULTS", {"preset": a.preset, "band_factor": BAND_FACTOR, "t_max_ns": f"{T_MAX_S * 1e9:g}",
-                             "harmonics": a.harmonics, "mesh_n": MESH_N[a.preset], "expand_h": f"{EXPAND_H:g}"}),
+                             "harmonics": a.harmonics, "mesh_n": MESH_N[a.preset], "expand_h": f"{EXPAND_H:g}",
+                             "margin_scale": f"{MARGIN_SCALE:g}", "reach_h": f"{REACH_H:g}"}),
              ("I_LID", {"state": "on" if a.harmonics > 1 else "off"})]
     if heavy := stackup.nonstandard_copper():
         notes.append(("W_COPPER_WEIGHT", {"layers": _list(heavy)}))

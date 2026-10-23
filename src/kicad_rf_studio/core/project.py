@@ -5,9 +5,10 @@ and has forward slashes, so a project folder and its board can move together.
 Coordinates in it are in KiCad's frame: mm, with y pointing down, as KiCad shows them and as a user types them in. The
 board as read (core.kicad) has y up, so a point [x, y] here is (x, -y) there, and the other way round.
 
-Every key that make_project writes is required, `region` and `mesh` too, and only `results` is optional: read_project
-names the first field that is missing or of the wrong kind (E_PROJECT_FIELD), so a file written by an older `new` is
-re-created with `new`, never read with defaults."""
+Every key that make_project writes is required, `region` and `mesh` too, but `mesh.reach_h` and `region.margin_scale`
+(D-12): a file from plan 4 lacks them, reads their defaults and keeps its model hash. `results` is optional as well.
+read_project names the first field that is missing or of the wrong kind (E_PROJECT_FIELD), so a file that lacks any
+other key, written by an older `new`, is re-created with `new`, never read with defaults."""
 from __future__ import annotations
 
 import contextlib
@@ -26,7 +27,9 @@ if TYPE_CHECKING:  # the types only: project.py imports no board code
 
 SCHEMA = 1
 EXPAND_H = 3.0  # substrate heights the ROI grows by past the chain (spec 5.1)
+MARGIN_SCALE = 1.0  # the factor on the walls' margin past the ROI, WALL_MM + WALL_CELLS·coarse (D-12)
 MESH_N = {"draft": 2, "normal": 2, "strict": 3}  # the mesh rule's n by preset (spec 5.4, plan 2 Decisions)
+REACH_H = 3.0  # the protected set's reach in substrate heights (spec 5.4, D-12)
 ROLES = ("port", "copper", "open", "grid", "curve_port")  # what a part is in the model (spec 5.7)
 # ponytail: provisional constants, the same for every preset; the owner sets the time policy (spec 1.1) after P0-C.
 DEFAULT_PRESET, HARMONICS, BAND_FACTOR, T_MAX_S = "normal", 3, 1.1, 40e-9
@@ -36,6 +39,16 @@ GATES = {"fit2d_limit": 0.03, "dt_floor": 0.8}  # ponytail: provisional until P0
 def region_expand_h(data: dict) -> float:
     """project.json's region.expand_h, else EXPAND_H."""
     return data.get("region", {}).get("expand_h", EXPAND_H)
+
+
+def region_margin_scale(data: dict) -> float:
+    """project.json's region.margin_scale, else MARGIN_SCALE."""
+    return data.get("region", {}).get("margin_scale", MARGIN_SCALE)
+
+
+def mesh_reach_h(data: dict) -> float:
+    """project.json's mesh.reach_h, else REACH_H."""
+    return data.get("mesh", {}).get("reach_h", REACH_H)
 
 
 def mesh_n(data: dict) -> int:
@@ -75,7 +88,8 @@ def make_project(board_path: str, board_sha256: str, f0_hz: float, stackup: Stac
     return {
         "schema": SCHEMA, "board": {"path": board_path, "sha256": board_sha256},
         "f0_hz": f0_hz, "harmonics": harmonics, "preset": preset, "band_factor": BAND_FACTOR, "t_max_s": T_MAX_S,
-        "region": {"expand_h": EXPAND_H}, "mesh": {"n": MESH_N[preset]},
+        "region": {"expand_h": EXPAND_H, "margin_scale": MARGIN_SCALE},
+        "mesh": {"n": MESH_N[preset], "reach_h": REACH_H},
         "stackup": stackup.to_json(), "lid_height_mm": lid_height_mm, "lid": None,
         "classes": {"gnd_nets": sorted(classes.gnd), "power_nets": sorted(classes.power),
                     "connectors": sorted(classes.connectors), "shields": sorted(classes.shields)},
@@ -146,6 +160,7 @@ def _reference(v) -> bool:
 # a dict is an object with those fields; a (dict, text) pair is a list of such objects.
 _TEXT = (lambda v: isinstance(v, str), "text")
 _ABOVE_0 = (lambda v: _number(v) and v > 0, "a number above 0")
+_OPTIONAL_ABOVE_0 = (lambda v: v is _MISSING or _number(v) and v > 0, "a number above 0")  # missing reads the default
 _FLAG = (lambda v: isinstance(v, bool), "true or false")
 _TWO_NAMES = (lambda v: _names(v) and len(v) == 2, "two names")
 _CLASS = (lambda v: v is None or _names(v), "a list of names, or null (computed from the board)")
@@ -163,8 +178,8 @@ _FIELDS = {
     "preset": (lambda v: v in tuple(MESH_N), "draft, normal or strict"),  # in a dict, a list would raise TypeError
     "band_factor": _ABOVE_0,
     "t_max_s": _ABOVE_0,
-    "region": {"expand_h": _ABOVE_0},
-    "mesh": {"n": (lambda v: type(v) is int and v >= 2, "a whole number of 2 or more")},
+    "region": {"expand_h": _ABOVE_0, "margin_scale": _OPTIONAL_ABOVE_0},
+    "mesh": {"n": (lambda v: type(v) is int and v >= 2, "a whole number of 2 or more"), "reach_h": _OPTIONAL_ABOVE_0},
     "stackup": {"source": _TEXT, "layers": ({
         "name": _TEXT, "kind": (lambda v: v in ("mask", "copper", "dielectric"), "mask, copper or dielectric"),
         "thickness_mm": (lambda v: _number(v) and v >= 0, "a number of 0 or more"),
@@ -183,7 +198,7 @@ _FIELDS = {
     "gates": {"fit2d_limit": _ABOVE_0, "dt_floor": (lambda v: _number(v) and 0 < v <= 1,
                                                     "a number above 0 and at most 1")},
     "allow_curve_port": _FLAG}
-_MISSING = object()  # a key that is not there, which no field accepts (null is a value)
+_MISSING = object()  # a key that is not there, which only an optional field accepts (null is a value)
 
 
 def _check(value, spec, field: str, path: Path) -> None:
@@ -198,7 +213,7 @@ def _check(value, spec, field: str, path: Path) -> None:
     if isinstance(test, dict) and isinstance(value, list):  # a list of objects with these fields
         for i, item in enumerate(value):
             _check(item, test, f"{field}[{i}]", path)
-    elif isinstance(test, dict) or value is _MISSING or not test(value):
+    elif isinstance(test, dict) or not test(value):  # every test but an optional one refuses _MISSING
         raise KrsError("E_PROJECT_FIELD", path=str(path), field=field, expected=expected)
 
 

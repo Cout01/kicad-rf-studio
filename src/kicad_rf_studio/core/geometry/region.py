@@ -16,7 +16,7 @@ from kicad_rf_studio.core.kicad.tracer import Chain
 from kicad_rf_studio.core.messages import KrsError
 
 C0 = 299_792_458.0  # m/s
-WALL_MM, WALL_CELLS = 4.0, 8  # the walls sit 4 mm and 8 coarse cells past the ROI, on all six faces
+WALL_MM, WALL_CELLS = 4.0, 8  # the walls sit 4 mm and 8 coarse cells past the ROI, on all six faces (× margin_scale)
 CROP_MM = 1.0  # the through-crop, past the walls
 
 
@@ -49,10 +49,11 @@ class Region:
 
 
 def build_region(board: Board, chain: Chain, ports: list[dict], zs: tuple[Slab, ...], f_max: float,
-                 expand_h: float = 3.0) -> Region:
+                 expand_h: float = 3.0, margin_scale: float = 1.0) -> Region:
     """The region of `chain`. The ROI is the bounding box of the copper of the chain's nets (tracks, areas and pads),
     the chain parts' pads and the ports' pads and reference points (project.json's `ports`), grown by `expand_h`
     substrate heights. It is clipped to the board outline unless it lies inside it to within the outline's 1 µm grid.
+    The walls sit `margin_scale` × (WALL_MM + WALL_CELLS coarse cells) past it, on all six faces.
     Every coordinate is quantised to 1e-6 mm. Raises E_CHAIN_OFF_OUTLINE when the chain's nets have no copper, or a
     piece of it (a track, an area, a pad) misses the outline: of several Edge.Cuts loops (a panel, a frame, a coupon
     beside the board) the board reader keeps the largest (R-P2-14). A chain on another loop had an empty ROI (a raw
@@ -78,7 +79,7 @@ def build_region(board: Board, chain: Chain, ports: list[dict], zs: tuple[Slab, 
         roi = roi.intersection(board.outline)
     roi = shapely.set_precision(roi, 1e-6)
     coarse = coarse_cell(f_max, max(s.eps_r for s in zs if s.eps_r is not None))
-    m = WALL_MM + WALL_CELLS * coarse
+    m = margin_scale * (WALL_MM + WALL_CELLS * coarse)
     x0, y0, x1, y1 = roi.bounds
     walls = tuple(round(v, 6) for v in (x0 - m, x1 + m, y0 - m, y1 + m, zs[0].z0 - m, zs[-1].z1 + m))
     crop = box(walls[0] - CROP_MM, walls[2] - CROP_MM, walls[1] + CROP_MM, walls[3] + CROP_MM)

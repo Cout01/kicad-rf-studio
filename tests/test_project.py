@@ -88,6 +88,8 @@ def edit(data, where, value):
     (["harmonics"], "3", "harmonics", "a whole number above 0"),
     (["preset"], "Strict", "preset", "draft, normal or strict"),
     (["mesh", "n"], 3.0, "mesh.n", "a whole number of 2 or more"),
+    (["mesh", "reach_h"], 0, "mesh.reach_h", "a number above 0"),
+    (["region", "margin_scale"], "2", "region.margin_scale", "a number above 0"),
     (["classes", "shields"], "SH1", "classes.shields", "a list of names, or null (computed from the board)"),
     (["ports", 0, "reference"], DELETE, "ports[0].reference", "a pad, a point or null"),
     (["stackup", "layers", 1, "thickness_mm"], DELETE, "stackup.layers[1].thickness_mm", "a number of 0 or more"),

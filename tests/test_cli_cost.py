@@ -14,8 +14,8 @@ from kicad_rf_studio.core.geometry import build_geometry
 from kicad_rf_studio.core.kicad import classify, load_board
 from kicad_rf_studio.core.kicad.stackup import kicad_default
 from kicad_rf_studio.core.messages import KrsError, render
-from kicad_rf_studio.core.project import (board_hash, load_project, make_project, mesh_n, region_expand_h,
-                                          save_project)
+from kicad_rf_studio.core.project import (board_hash, load_project, make_project, mesh_n, mesh_reach_h,
+                                          region_expand_h, region_margin_scale, save_project)
 from kicad_rf_studio.pipeline import build_model, load
 from test_geometry_sections import four_layer
 
@@ -98,13 +98,14 @@ def test_cost_starts_no_worker(tmp_path, monkeypatch):  # a project without port
 def test_new_writes_region_and_mesh_defaults(tmp_path, preset, n):
     # R-P2-8: `new` needs two pads, so coupon_gcpw_pads (TP1.1 → TP2.1) stands in for the pad-less coupon_ms
     d = load_project(new_project(tmp_path, "coupon_gcpw_pads", preset=preset))
-    assert d["region"] == {"expand_h": 3.0} and d["mesh"] == {"n": n}
+    assert d["region"] == {"expand_h": 3.0, "margin_scale": 1.0} and d["mesh"] == {"n": n, "reach_h": 3.0}
 
 
 def test_a_project_without_region_or_mesh_reads_their_defaults():  # a bare dict; read_project requires both
     assert region_expand_h({}) == 3.0 and region_expand_h({"region": {"expand_h": 2}}) == 2
     assert mesh_n({"preset": "strict"}) == 3 and mesh_n({"preset": "draft"}) == 2 and mesh_n({"preset": "normal"}) == 2
     assert mesh_n({"preset": "strict", "mesh": {"n": 2}}) == 2
+    assert (mesh_reach_h({}), region_margin_scale({}), mesh_reach_h({"mesh": {"reach_h": 6}})) == (3.0, 1.0, 6)
 
 
 # --- beyond the brief's tests ---------------------------------------------------------------------------------
