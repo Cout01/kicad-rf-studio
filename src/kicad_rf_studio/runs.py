@@ -340,8 +340,9 @@ def choose(single: dict[int, float], parallel: dict[int, float], cpus: int) -> t
 def calibrate(settings: dict) -> dict:
     """Measures this machine (spec 6.4, C-35) in a run folder of its own: one job at a time at 1, 2, 4 and N threads,
     N being os.cpu_count(), then k jobs at once at N // k threads for k = 2 and 4 up to N, each job's speed read from
-    its openEMS_stats.txt. Stores what choose() makes of them, with the speeds, in settings["machines"] under
-    machine_key(), saves settings.json and returns the entry. Raises what check_job raises."""
+    its openEMS_stats.txt. Stores what choose() makes of them, with the speeds and the per-job MC/s of each level it
+    timed at choose()'s threads ("levels": k jobs at once by str(k)), in settings["machines"] under machine_key(),
+    saves settings.json and returns the entry. Raises what check_job raises."""
     n, run_dir, spec = os.cpu_count(), run_dir_for("calibrate"), calibration_spec()
     number = itertools.count(1)  # the jobs' k, counted on from one group to the next
     print(render("I_CALIBRATING"))
@@ -359,9 +360,13 @@ def calibrate(settings: dict) -> dict:
     single = {t: measure(1, t, f"{t}t") for t in sorted({1, 2, 4, n}) if t <= n}
     parallel = {k: measure(k, n // k, f"{k}x{n // k}t") for k in (2, 4) if k <= n}
     threads, pool, aggregate = choose(single, parallel, n)
+    levels = {str(pool): aggregate / pool}
+    if threads in single:  # one job at N // pool threads was timed only when single holds that count
+        levels["1"] = single[threads]
     entry = {"threads": threads, "pool": pool, "aggregate_mcs": aggregate,
              "single": {str(t): mcs for t, mcs in single.items()},
-             "parallel": {str(k): mcs for k, mcs in parallel.items()}, "at": time.strftime("%Y-%m-%dT%H:%M:%S")}
+             "parallel": {str(k): mcs for k, mcs in parallel.items()}, "levels": levels,
+             "at": time.strftime("%Y-%m-%dT%H:%M:%S")}
     settings.setdefault("machines", {})[machine_key()] = entry
     save_settings(settings)
     print(render("I_CALIBRATED", threads=threads, pool=pool, speed=f"{aggregate:.0f}"))
@@ -378,3 +383,10 @@ def sizing(entry: dict, cells: int) -> tuple[int, int]:
     and the free RAM allow (pool_size)."""
     threads = entry["threads"]
     return threads, min(entry["pool"], pool_size(cells, threads, free_ram_mb(), os.cpu_count()))
+
+
+def per_job_mcs(entry: dict, k: int) -> float:
+    """The per-job MC/s of the calibration `entry` with `k` jobs at once (D-16): its "levels" entry for k, which a
+    run at that level refreshes, else its aggregate over its pool."""
+    # ponytail: a level never run reads the calibration's aggregate / pool, as before plan 5
+    return entry.get("levels", {}).get(str(k), entry["aggregate_mcs"] / entry["pool"])

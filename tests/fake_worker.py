@@ -31,9 +31,11 @@ def note(what: str, port: int) -> None:
 
 
 def run(job: dict, spec: dict) -> int:
-    """Mode "run": the records of the kind, sample by sample as openEMS writes them, until an ABORT file appears;
-    "slow" converges at 0.2 s per sample, and "crash" writes the converging samples up to 12 ns, ignoring ABORT, and
-    exits 7 with no waves.npz."""
+    """Mode "run": empty excitation arrays et and ht first, as openEMS writes them, then the records of the kind,
+    sample by sample as openEMS writes them, until an ABORT file appears; "slow" converges at 0.2 s per sample, and
+    "crash" writes the converging samples up to 12 ns, ignoring ABORT, and exits 7 with no waves.npz."""
+    for name in ("et", "ht"):
+        Path(name).write_bytes(b"")
     kind, ports, ex = os.environ.get("KRS_FAKE", "converge"), range(1, len(spec["ports"]) + 1), spec["excitation"]
     if kind == "crash" and os.environ.get("KRS_FAKE_JOB", str(job["port"])) != str(job["port"]):
         kind = "converge"

@@ -327,6 +327,19 @@ def test_the_cost_lines_count_no_more_jobs_at_once_than_runs(tmp_path, capsys, c
     assert [line.split("(")[-1] for line in out if line.startswith("RAM:")] == ["2 jobs at once)."]
 
 
+def test_cost_predicts_at_the_speed_of_its_own_level(tmp_path, capsys, calibrated, monkeypatch):  # D-16
+    monkeypatch.setattr(runs, "sizing", lambda entry, cells: (2, 2))  # level 2 on any runner, 2 vCPUs too
+    pj = new_project(tmp_path, "coupon_gcpw_pads", preset="draft")  # 2 runs
+
+    def worst(levels):
+        runs.save_settings({"machines": {runs.machine_key(): {"threads": 2, "pool": 2, "aggregate_mcs": 400.0,
+                                                              "levels": levels}}})
+        assert main(["cost", str(pj)]) == 0
+        return next(x for x in capsys.readouterr().out.splitlines() if x.startswith("Worst case:"))
+
+    assert worst({}) == worst({"2": 200.0}) != worst({"2": 50.0})
+
+
 @pytest.mark.openems
 def test_cost_on_the_pad_coupon_with_openems(tmp_path, capsys, monkeypatch):  # tier b: setup-only at n = 2
     monkeypatch.setattr(runs, "data_dir", lambda: tmp_path / "data")

@@ -221,9 +221,9 @@ def cost_notes(model: Model, project: dict, setup: dict, threads: int, pool: int
 def prepare(model: Model, emit: Callable[[str, dict], None]) -> tuple[int, int, float]:
     """What the jobs of a built `model` (one with a mesh) run with: (threads, pool, per-job MC/s), from this machine's
     calibration, measured first on a machine that has none (spec 6.4), the pool no larger than the number of runs, so
-    that the cost lines count only jobs that run at once. Calls `emit(code, params)` with check_openems()'s warnings,
-    before any worker (C-31), and with W_RAM when one job needs more RAM than is free. Raises check_openems()'s
-    refusals and what calibrate raises."""
+    that the cost lines count only jobs that run at once, and the per-job MC/s at that level (runs.per_job_mcs, D-16).
+    Calls `emit(code, params)` with check_openems()'s warnings, before any worker (C-31), and with W_RAM when one job
+    needs more RAM than is free. Raises check_openems()'s refusals and what calibrate raises."""
     for code, params in runs.check_openems():
         emit(code, params)
     entry = runs.ensure_calibrated(runs.load_settings())
@@ -233,7 +233,8 @@ def prepare(model: Model, emit: Callable[[str, dict], None]) -> tuple[int, int, 
     free = runs.free_ram_mb()
     if need > free:
         emit("W_RAM", {"need_gb": f"{need / 1024:.1f}", "free_gb": f"{free / 1024:.1f}"})
-    return threads, min(pool, len(model.spec["ports"])), entry["aggregate_mcs"] / entry["pool"]
+    pool = min(pool, len(model.spec["ports"]))
+    return threads, pool, runs.per_job_mcs(entry, pool)
 
 
 def setup_gate(model: Model, project: dict, run_dir: Path, settings: dict, threads: int) -> tuple[dict, list, list]:
@@ -552,16 +553,15 @@ def _model_phase(path: Path, emit: Callable[..., None]) -> tuple[dict, Geometry,
 def simulate(model: Model, project: dict, run_dir: Path) -> tuple[list[dict], dict, float] | None:
     """The job phase of a built `model` (one with a spec) in `run_dir`, which run and verify share (spec 6.1): prepare
     and the setup gate, its blocking gates as verdict events and its warnings as message events, then gate_lines and
-    None when it blocks; else I_GATES_PASSED, gate_lines and the cost lines, then one job per port of the model under
-    the stop rule at the project's preset, each job's verdict (classify_job) followed by gate_lines, and the
-    calibration's speed refreshed. Returns (the jobs as project.json's results records them, setup.json, the job
-    phase's wall time in s). STOP or Ctrl+C before the jobs start propagates as KeyboardInterrupt; once they run, it
-    stops them, and their verdicts say so."""
+    None when it blocks; else I_GATES_PASSED, gate_lines and the cost lines, then run_ports on every port of the model
+    at the project's preset, and the per-job speed of the level it ran at refreshed in the calibration (D-16).
+    Returns (the jobs as project.json's results records them, setup.json, the job phase's wall time in s). STOP or
+    Ctrl+C before the jobs start propagates as KeyboardInterrupt; once they run, it stops them, and their verdicts say
+    so."""
     emit = partial(runs.emit, run_dir)  # (kind, code, params, job=None)
-    gates, preset = project["gates"], project["preset"]
+    gates = project["gates"]
     threads, pool, per_job_mcs = prepare(model, partial(emit, "message"))
-    settings = runs.load_settings()
-    setup, blocked, warnings = setup_gate(model, project, run_dir, settings, threads)
+    setup, blocked, warnings = setup_gate(model, project, run_dir, runs.load_settings(), threads)
     for code, params in blocked:
         emit("verdict", code, params, 0)
     for code, params in warnings:
@@ -575,15 +575,34 @@ def simulate(model: Model, project: dict, run_dir: Path) -> tuple[list[dict], di
         emit("message", code, params)
     for code, params in cost_notes(model, project, setup, threads, pool, per_job_mcs):
         emit("cost", code, params)
+    done, speeds, wall_s = run_ports(model, run_dir, setup, threads, pool, project["preset"], gates)
+    if speeds:  # spec 6.4: refreshed from the run's Speed lines; a run whose every job died measured nothing
+        settings = runs.load_settings()
+        # D-16: only the level this run used; aggregate_mcs stays the calibration's
+        settings["machines"][runs.machine_key()].setdefault("levels", {})[str(pool)] = sum(speeds) / len(speeds) / 1e6
+        runs.save_settings(settings)
+    return done, setup, wall_s
 
+
+def run_ports(model: Model, run_dir: Path, setup: dict, threads: int, pool: int, preset: str, gates: dict,
+              ports: list[int] | None = None, t_max: float | None = None) -> tuple[list[dict], list[float], float]:
+    """The jobs of a built `model` in `run_dir` once its setup gate passed (`setup`: setup.json), which simulate and
+    the P0 harnesses share (spec 6.1): I_RUN_START; one job job-{k}-{name} per port number k in `ports` (1-based,
+    default every port) to `t_max` (default the spec's), `pool` at once with `threads` threads each under the stop rule
+    at `preset`, with I_PROGRESS as its energy log grows; each job's verdict (classify_job) followed by
+    gate_lines(`gates`), then its excitation arrays et and ht removed (D-17), the run folder itself kept (C-23).
+    Returns (the jobs as project.json's results record them, openEMS's speed in cells/s of each job that wrote its
+    stats, the job phase's wall time in s). STOP or Ctrl+C stops the jobs, and their verdicts say so."""
+    emit = partial(runs.emit, run_dir)  # (kind, code, params, job=None)
     names, exc, dt = [q["name"] for q in model.spec["ports"]], model.spec["excitation"], setup["dt"]
-    jobs = [runs.write_job(runs.job_dir(run_dir, k, name), k, "run", threads, exc["t_max"])
-            for k, name in enumerate(names, 1)]
+    ports = range(1, len(names) + 1) if ports is None else ports
+    t_max = exc["t_max"] if t_max is None else t_max
+    jobs = {runs.write_job(runs.job_dir(run_dir, k, names[k - 1]), k, "run", threads, t_max): k for k in ports}
     live, rows = {}, {}  # each job's live verdict, and the energy rows its last I_PROGRESS saw
 
     def watch(job: Path) -> bool:
         """Whether the stop rule has a verdict on `job`; I_PROGRESS when its energy log has a new row."""
-        k = jobs.index(job) + 1
+        k = jobs[job]
         rec = records(job, len(names), dt)
         live[job] = stop_rule(rec, k - 1, preset, exc)
         if len(rec.e) > rows.get(job, 0) and len(rec.t_u):
@@ -596,11 +615,11 @@ def simulate(model: Model, project: dict, run_dir: Path) -> tuple[list[dict], di
 
     emit("message", "I_RUN_START", {"runs": len(jobs), "pool": pool, "folder": str(run_dir)})
     start = time.monotonic()
-    out = runs.run_jobs(jobs, pool, run_dir, settings, watch)
+    out = runs.run_jobs(list(jobs), pool, run_dir, runs.load_settings(), watch)
     wall_s = time.monotonic() - start
 
     done, speeds = [], []  # each job's results, and openEMS's speed (cells/s) of each job that wrote its stats
-    for k, job in enumerate(jobs, 1):
+    for job, k in jobs.items():
         rec = records(job, len(names), dt)
         kind, verdict = classify_job(job, out[job], live.get(job), rec, k, preset, exc)
         t_stop, r_last = last_sample(rec)
@@ -610,18 +629,14 @@ def simulate(model: Model, project: dict, run_dir: Path) -> tuple[list[dict], di
                                          "residual_db": None if r is None else f"{r:.1f}", "log": str(job / LOG)}, k)
         for code, params in gate_lines(gates):
             emit("message", code, params)
+        for array in ("et", "ht"):  # up to 32 MB a job, and nothing reads them
+            (job / array).unlink(missing_ok=True)
         waves = f"{job.name}/waves.npz"
         done.append({"port": names[k - 1], "verdict": kind, "t_cut": verdict.t if verdict else None, "t_stop": t_stop,
                      "residual_db": r, "waves": waves if (run_dir / waves).is_file() else None})
         if (stats := job / "openEMS_stats.txt").is_file():  # a killed or crashed job has none
             speeds.append(read_stats(stats.read_text(encoding="utf-8"))["speed"])
-
-    if speeds:  # spec 6.4: refreshed from the run's Speed lines; a run whose every job died measured nothing
-        settings = runs.load_settings()
-        entry = settings["machines"][runs.machine_key()]
-        entry["aggregate_mcs"] = sum(speeds) / len(speeds) * entry["pool"] / 1e6  # prepare's / pool: the per-job speed
-        runs.save_settings(settings)
-    return done, setup, wall_s
+    return done, speeds, wall_s
 
 
 def results_of(project: dict, model: Model) -> dict:

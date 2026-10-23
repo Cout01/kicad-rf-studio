@@ -72,7 +72,8 @@ def result_codes(run_dir):
     return [e["code"] for e in events if e["kind"] == "result"]
 
 
-def test_run_converges_and_records_its_results(tmp_path, calibrated):  # spec 6.1, 3.3, C-29
+def test_run_converges_and_records_its_results(tmp_path, calibrated, monkeypatch):  # spec 6.1, 3.3, C-29
+    monkeypatch.setattr(runs, "sizing", lambda entry, cells: (2, 2))
     pj = coupon(tmp_path)
     assert main(["run", str(pj)]) == 0
     r = load_project(pj)["results"]
@@ -85,8 +86,9 @@ def test_run_converges_and_records_its_results(tmp_path, calibrated):  # spec 6.
     kinds = {json.loads(line)["kind"] for line in (run_dir / "events.jsonl").read_text(encoding="utf-8").splitlines()}
     assert kinds == {"message", "verdict", "cost", "progress", "result"}
     assert not (pj.parent / "project.json.lock").exists()
-    # refreshed from openEMS's per-job speed: the fake's 5e7 × 2 threads = 1e8 cells/s a job, × the calibration's pool 2
-    assert runs.load_settings()["machines"][runs.machine_key()]["aggregate_mcs"] == pytest.approx(200.0)
+    entry = runs.load_settings()["machines"][runs.machine_key()]
+    # the fake's 5e7 × 2 threads a job, at 2 jobs
+    assert (entry["aggregate_mcs"], entry["levels"]) == (400.0, {"2": pytest.approx(100.0)})
 
 
 def test_results_record_the_preset_and_the_expected_loss(tmp_path, calibrated):  # C-25
@@ -375,6 +377,14 @@ def test_the_retune_is_labelled_what_if_until_p0c_passes(tmp_path, calibrated, m
     assert b"Relative / what-if" not in (pj.parent / "results" / "chain.s2p").read_bytes()
 
 
+def test_a_classified_job_leaves_no_excitation_arrays(tmp_path, calibrated):  # D-17
+    pj = coupon(tmp_path)
+    assert main(["run", str(pj)]) == 0
+    jobs = sorted(Path(load_project(pj)["results"]["run_dir"]).glob("job-[12]-*"))
+    assert len(jobs) == 2 and all((j / "waves.npz").is_file() for j in jobs)
+    assert [p for j in jobs for p in (j / "et", j / "ht") if p.exists()] == []
+
+
 # --- beyond the brief's tests ------------------------------------------------------------------------------------
 
 
@@ -440,3 +450,13 @@ def test_three_external_ports_and_a_part_port_get_the_label_after_w_not_two_port
     lines = write_outputs(pj, project, "c")
     assert [c for c, _ in lines][-len(LIMITS) - 3:] == ["W_NOT_TWO_PORT", "I_WHAT_IF", "I_OUTPUTS", *LIMITS]
     assert b"! Relative / what-if: " in (pj.parent / "results" / "chain.s3p").read_bytes()
+
+
+def test_run_ports_runs_only_the_ports_it_is_given_to_their_t_max(tmp_path, calibrated):  # D-9: the harnesses' jobs
+    project, board, geom, _ = load(coupon(tmp_path))
+    model, run_dir = pipeline.build_model(project, board, geom), runs.run_dir_for("ports")
+    setup, _, _ = pipeline.setup_gate(model, project, run_dir, runs.load_settings(), 2)
+    done, speeds, _ = pipeline.run_ports(model, run_dir, setup, 2, 1, "draft", GATES, [2], 3e-9)  # 40 ns converges
+    assert [(j["port"], j["verdict"], j["waves"]) for j in done] == [("P2", "t_max", "job-2-P2/waves.npz")]
+    assert verdict_codes(run_dir) == {2: "W_JOB_T_MAX"} and speeds == [1e8]  # the fake's 5e7 × 2 threads
+    assert [p.name for p in run_dir.glob("job-[1-9]*")] == ["job-2-P2"]

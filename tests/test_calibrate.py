@@ -23,6 +23,7 @@ def test_calibrate_measures_and_stores_this_machine(fake, monkeypatch, capsys, c
     entry = runs.calibrate({})
     assert (entry["threads"], entry["pool"], entry["aggregate_mcs"]) == (cpus, 1, 50.0 * cpus)
     assert (entry["single"], entry["parallel"]) == (single, parallel)
+    assert entry["levels"] == {"1": 50.0 * cpus}
     assert runs.load_settings()["machines"][runs.machine_key()] == entry
     assert capsys.readouterr().out.splitlines() == [render("I_CALIBRATING"),
                                                     render("I_CALIBRATED", threads=cpus, pool=1, speed=f"{50 * cpus}")]
@@ -44,6 +45,19 @@ def test_calibrate_with_openems(tmp_path, monkeypatch):  # tier b, about 20–30
     monkeypatch.setattr(runs, "data_dir", lambda: tmp_path / "data")
     entry = runs.calibrate(runs.load_settings())
     assert entry["aggregate_mcs"] > 0 and 1 <= entry["threads"] <= os.cpu_count() and entry["pool"] >= 1
+
+
+def test_the_per_job_speed_is_the_levels_else_the_calibrations():  # D-16
+    entry = {"pool": 4, "aggregate_mcs": 800.0, "levels": {"1": 450.0, "4": 120.0}}
+    assert [runs.per_job_mcs(entry, k) for k in (1, 2, 4)] == [450.0, 200.0, 120.0]
+    assert runs.per_job_mcs({"pool": 4, "aggregate_mcs": 800.0}, 2) == 200.0  # an entry from before plan 5
+
+
+def test_calibrate_stores_only_the_levels_it_timed(calibrated, monkeypatch):  # D-16: 2 × 8 threads wins on 16 CPUs
+    monkeypatch.setattr(os, "cpu_count", lambda: 16)
+    monkeypatch.setattr(runs, "choose", lambda single, parallel, cpus: (8, 2, 742.2))
+    entry = runs.calibrate(runs.load_settings())
+    assert entry["levels"] == {"2": pytest.approx(371.1)}  # no "1": one job at 8 threads was never timed
 
 
 # --- beyond the brief's tests ------------------------------------------------------------------
