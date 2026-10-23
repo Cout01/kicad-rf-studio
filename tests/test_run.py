@@ -460,3 +460,21 @@ def test_run_ports_runs_only_the_ports_it_is_given_to_their_t_max(tmp_path, cali
     assert [(j["port"], j["verdict"], j["waves"]) for j in done] == [("P2", "t_max", "job-2-P2/waves.npz")]
     assert verdict_codes(run_dir) == {2: "W_JOB_T_MAX"} and speeds == [1e8]  # the fake's 5e7 × 2 threads
     assert [p.name for p in run_dir.glob("job-[1-9]*")] == ["job-2-P2"]
+
+
+def test_run_ports_keeps_going_when_windows_holds_a_jobs_et(tmp_path, calibrated, monkeypatch):  # D-17
+    project, board, geom, _ = load(coupon(tmp_path))
+    model, run_dir = pipeline.build_model(project, board, geom), runs.run_dir_for("held")
+    setup, _, _ = pipeline.setup_gate(model, project, run_dir, runs.load_settings(), 2)
+    unlink = Path.unlink
+
+    def held(path, missing_ok=False):  # an antivirus or the indexer still holds job 1's et
+        if path.name == "et" and path.parent.name == "job-1-P1":
+            raise PermissionError(13, "The process cannot access the file", str(path))
+        unlink(path, missing_ok)
+
+    monkeypatch.setattr(Path, "unlink", held)
+    done, speeds, _ = pipeline.run_ports(model, run_dir, setup, 2, 2, "draft", GATES)
+    assert [(j["port"], j["verdict"]) for j in done] == [("P1", "converged"), ("P2", "converged")]
+    assert speeds == [1e8, 1e8]  # the fake's 5e7 × 2 threads, each job's
+    assert [p.relative_to(run_dir).as_posix() for p in run_dir.glob("*/[eh]t")] == ["job-1-P1/et"]  # left in place

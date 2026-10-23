@@ -6,6 +6,7 @@ run's results (spec 7.3); and `cost` (spec 3.2), `run` (spec 6.1), `retune` (spe
 and `preview` (C-34) themselves."""
 from __future__ import annotations
 
+import contextlib
 import copy
 import json
 import math
@@ -630,7 +631,8 @@ def run_ports(model: Model, run_dir: Path, setup: dict, threads: int, pool: int,
         for code, params in gate_lines(gates):
             emit("message", code, params)
         for array in ("et", "ht"):  # up to 32 MB a job, and nothing reads them
-            (job / array).unlink(missing_ok=True)
+            with contextlib.suppress(OSError):  # Windows: an antivirus or the indexer may still hold it; it stays
+                (job / array).unlink(missing_ok=True)
         waves = f"{job.name}/waves.npz"
         done.append({"port": names[k - 1], "verdict": kind, "t_cut": verdict.t if verdict else None, "t_stop": t_stop,
                      "residual_db": r, "waves": waves if (run_dir / waves).is_file() else None})
