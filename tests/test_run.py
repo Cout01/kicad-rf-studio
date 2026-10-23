@@ -12,7 +12,7 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-from kicad_rf_studio import runs
+from kicad_rf_studio import pipeline, runs
 from kicad_rf_studio.cli import main
 from kicad_rf_studio.core.kicad.stackup import kicad_default
 from kicad_rf_studio.core.messages import render
@@ -275,7 +275,7 @@ def test_run_writes_the_outputs_of_a_known_network(tmp_path, calibrated, monkeyp
     assert np.abs(read_s(out / "chain.s2p") - terminate_np(star(F, 6), [0, 1], lpf_loads(M0402))).max() <= 1e-5
     assert result_codes(load_project(pj)["results"]["run_dir"]) == [
         "I_RESULTS", "I_BASIS", "I_MARKER", "I_MARKER", "I_HR", "I_MARKER", "I_HR", "I_PASSIVITY", "I_RECIPROCITY",
-        "W_LOSS_BUDGET", "I_OUTPUTS", *LIMITS]  # the star's lines lose 19 % or more
+        "W_LOSS_BUDGET", "I_WHAT_IF", "I_OUTPUTS", *LIMITS]  # the star's lines lose 19 % or more
 
 
 def test_a_single_trace_writes_its_two_port_and_summary(tmp_path, calibrated, monkeypatch):  # spec 7.3, C-31, C-24
@@ -356,11 +356,23 @@ def test_a_held_output_file_still_prints_the_results_and_the_limits(tmp_path, ca
     codes = [json.loads(line)["code"] for line in (run_dir / "events.jsonl").read_text(encoding="utf-8").splitlines()]
     assert codes[codes.index("I_RESULTS"):] == [
         "I_RESULTS", "I_BASIS", "I_MARKER", "I_MARKER", "I_HR", "I_MARKER", "I_HR", "I_PASSIVITY", "I_RECIPROCITY",
-        "W_LOSS_BUDGET", "E_RESULTS_WRITE", *LIMITS]  # no I_OUTPUTS
+        "W_LOSS_BUDGET", "I_WHAT_IF", "E_RESULTS_WRITE", *LIMITS]  # no I_OUTPUTS
     out = capsys.readouterr().out.splitlines()
     assert render("E_RESULTS_WRITE", path=str(pj.parent / "results" / "summary.csv"), reason="permission denied",
                   command=command_line("kicad-rf-studio", "retune", str(pj))) in out
     assert out[-len(LIMITS):] == [render(code) for code in LIMITS]
+
+
+def test_the_retune_is_labelled_what_if_until_p0c_passes(tmp_path, calibrated, monkeypatch, capsys):  # D-15, A-4
+    pj = lpf_run(tmp_path, monkeypatch)
+    label = render("I_WHAT_IF", command=command_line("kicad-rf-studio", "verify", str(pj)))
+    assert "I_WHAT_IF" in result_codes(load_project(pj)["results"]["run_dir"])
+    assert b"! Relative / what-if: " in (pj.parent / "results" / "chain.s2p").read_bytes()
+    monkeypatch.setattr(pipeline, "RETUNE_VALIDATED", True)
+    capsys.readouterr()
+    assert main(["retune", str(pj)]) == 0
+    assert label not in capsys.readouterr().out
+    assert b"Relative / what-if" not in (pj.parent / "results" / "chain.s2p").read_bytes()
 
 
 # --- beyond the brief's tests ------------------------------------------------------------------------------------
@@ -413,3 +425,18 @@ def test_the_expected_loss_takes_the_core_by_the_copper_and_skips_a_short(tmp_pa
     assert top > 0 and loss(gcpw("B.Cu")) == pytest.approx(top, rel=1e-3)  # B.Cu: the mask below, the core above
     short = SEG.format(5, 15, 35, 15, 0.3, "F.Cu", "SIG", "s") + SEG.format(5, 15.2, 35, 15.2, 0.3, "F.Cu", "GND", "g")
     assert loss(short) == 0.0  # GND overlaps SIG at its cut, so its one section has no εeff (ShortError)
+
+
+def test_three_external_ports_and_a_part_port_get_the_label_after_w_not_two_port(tmp_path):  # D-15, PF-6
+    rec = synth_records(lambda f: star(f, 4), 4, 457.5e6, 3.0195e9, 1.73972e-13, 10e-9)
+    results = {**fake_run(tmp_path, rec, [port("P1"), port("P2"), port("P3"), port("C1", part=True)]),
+               "preset": "normal", "gates": GATES, "c_box": {"C1": C_BOX}, "loss_expected": 0.0}
+    ports = [{"name": f"P{k}", "signal": f"J{k}.1", "reference": {"pad": f"J{k}.2", "uuid": ""}} for k in (1, 2, 3)]
+    c1 = {"ref": "C1", "pads": ["C1.1", "C1.2"], "nets": ["A", "GND"], "value": "1pF", "dnp": False, "role": "port",
+          "model": None, "s2p": None}
+    project = {"f0_hz": 915e6, "harmonics": 3, "band_factor": 1.1, "ports": ports, "others": [],
+               "chain": {"nets": ["A"], "series": [], "shunt": [c1]}, "results": results}
+    pj = tmp_path / "p" / "project.json"
+    lines = write_outputs(pj, project, "c")
+    assert [c for c, _ in lines][-len(LIMITS) - 3:] == ["W_NOT_TWO_PORT", "I_WHAT_IF", "I_OUTPUTS", *LIMITS]
+    assert b"! Relative / what-if: " in (pj.parent / "results" / "chain.s3p").read_bytes()

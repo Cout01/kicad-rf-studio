@@ -56,6 +56,9 @@ if TYPE_CHECKING:
 GEOMETRY_GATES = ("E_OPEN_IN_ROI", "E_SHORT_IN_ROI")  # the geometry's notes that block a run
 VERDICTS = {"converged": "I_JOB_CONVERGED", "flat": "W_JOB_FLAT", "t_max": "W_JOB_T_MAX", "diverged": "E_JOB_DIVERGED",
             "growth": "E_JOB_GROWTH", "unclassified": "W_JOB_UNCLASSIFIED", "stopped": "W_JOB_STOPPED"}  # spec 6.3
+# spec 7.6 (amendment A-4): the instant retune is labelled relative / what-if until P0-C passes; the owner sets True
+# after P0-C (controller recommendation, owner unavailable)
+RETUNE_VALIDATED = False
 
 
 def project_path(arg: str) -> Path:
@@ -405,12 +408,15 @@ def write_outputs(path: Path, project: dict, command: str, *,
                   errors_as_lines: bool = False) -> list[tuple[str, dict]]:
     """The outputs of the run in `project`'s results (spec 3.2, 7.3, C-26..C-32), the step `run` and `retune` share:
     layout.s{N}p; chain.s{P}p when part ports are closed; with P = 2 summary.csv and summary.png, else W_NOT_TWO_PORT
-    (C-31); all written to results/ beside `path` (write, with `command` as E_RESULTS_WRITE's advice). Returns the
-    lines to report: I_BASIS with each flagged job, gate_lines, the part notes, the marker and indicator lines, then
-    I_OUTPUTS and LIMITS. A part's refusal (E_PART_NO_VALUE, E_S2P_*, E_CBOX) and write's E_RESULTS_WRITE are raised,
-    or, with `errors_as_lines`, each becomes a line: a part's refusal in the place of the chain's lines and files, so
-    that the layout N-port is still written (C-26); E_RESULTS_WRITE in the place of I_OUTPUTS, so that the lines
-    already computed and LIMITS are still reported (spec 7.5). Raises layout's refusals and E_S_SINGULAR."""
+    (C-31); all written to results/ beside `path` (write, with `command` as E_RESULTS_WRITE's advice). Until
+    RETUNE_VALIDATED, closed part ports put the what-if label I_WHAT_IF, which offers `verify` (D-15), as the last
+    comment line of chain.s{P}p and the second line of summary.png's title. Returns the lines to report: I_BASIS with
+    each flagged job, gate_lines, the part notes, the marker and indicator lines (W_NOT_TWO_PORT after them), the
+    label's line, then I_OUTPUTS and LIMITS. A part's refusal (E_PART_NO_VALUE, E_S2P_*, E_CBOX) and write's
+    E_RESULTS_WRITE are raised, or, with `errors_as_lines`, each becomes a line: a part's refusal in the place of the
+    chain's lines and files, so that the layout N-port is still written (C-26); E_RESULTS_WRITE in the place of
+    I_OUTPUTS, so that the lines already computed and LIMITS are still reported (spec 7.5). Raises layout's refusals
+    and E_S_SINGULAR."""
     results = project["results"]
     lay = layout(project, results)
     ext, refs = _split(lay)
@@ -435,19 +441,23 @@ def write_outputs(path: Path, project: dict, command: str, *,
         lines.append((err.code, err.params))
     else:
         chain = terminate(lay.s, ext, zk, lay.f)
+        what_if = {"command": command_line("kicad-rf-studio", "verify", str(path))}
+        label = render("I_WHAT_IF", **what_if) if refs and not RETUNE_VALIDATED else None
         if refs:
             files[f"chain.s{p}p"] = touchstone(chain, lay.f, [lay.ports[k]["name"] for k in ext],
-                                               port_map(project, results, lay, ext))
+                                               port_map(project, results, lay, ext) + ([label] if label else []))
         if p == 2:
             ideal = ideal_schematic(project, zparts, lay.f) if refs else None
             p_layout = loss_budget(lay.s, ext, zk)
             lines += [*marker_lines(lay, chain, ideal),
                       *indicator_lines(lay.f, lay.a_db, lay.s, p_layout, results["loss_expected"])]
             files["summary.csv"] = summary_csv(lay, chain, ideal, p_layout, results["loss_expected"])
-            files["summary.png"] = summary_png(lay, chain, ideal, path.absolute().parent.name)  # `run .` too
+            files["summary.png"] = summary_png(lay, chain, ideal, path.absolute().parent.name, label)  # `run .` too
         else:
             lines += [*indicator_lines(lay.f, lay.a_db, lay.s, None, results["loss_expected"]),
                       ("W_NOT_TWO_PORT", {"ports": p})]
+        if label:
+            lines.append(("I_WHAT_IF", what_if))
     try:
         write(folder, files, OUTPUTS, command)
     except KrsError as err:  # E_RESULTS_WRITE: a file held open, say

@@ -148,6 +148,7 @@ CATALOG: dict[str, str] = {
     "I_HR_TRACE": "Harmonic rejection at {marker}: {hr_db} dB.",
     "I_BASIS": "Results of the run in {run_dir} at preset {preset}: {converged} jobs converged, {flat} flat, {t_max} at T_max.",
     "W_NOT_TWO_PORT": "The project has {ports} external ports, not 2, so the 2-port summary (PNG, CSV, IL, RL, harmonic rejection, loss budget, ideal schematic) is skipped; the Touchstone files and the passivity and reciprocity checks are written. Keep two ports in project.json for the summary.",
+    "I_WHAT_IF": "Relative / what-if: the instant retune is not yet validated against a full simulation of a real board (spec 7.6), so read these chain results as relative. Check the final values with `{command}`.",
     "I_OUTPUTS": "Wrote {files} in {folder}.",
     "I_PLOT_TITLE": "{name}: relative to a 50 Ω source and load",
     "I_PLOT_LAYOUT": "with layout",

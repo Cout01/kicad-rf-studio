@@ -135,10 +135,11 @@ def summary_csv(lay: Layout, chain: np.ndarray, ideal: np.ndarray | None, p_layo
     return out.getvalue().encode("utf-8")
 
 
-def summary_png(lay: Layout, chain: np.ndarray, ideal: np.ndarray | None, name: str) -> bytes:
+def summary_png(lay: Layout, chain: np.ndarray, ideal: np.ndarray | None, name: str, label: str | None = None) -> bytes:
     """summary.png (C-30): |S21| and |S11| in dB against GHz, with layout solid and the ideal schematic dashed, a thin
-    line at each marker, and S11's locus on a Smith chart with the markers as dots; a Figure drawn by Agg, never a
-    pyplot figure, as PNG at 100 dpi."""
+    line at each marker, and S11's locus on a Smith chart with the markers as dots, under I_PLOT_TITLE with `label`
+    (the what-if label, D-15) as its second line when given; a Figure drawn by Agg, never a pyplot figure, as PNG at
+    100 dpi."""
     from matplotlib.figure import Figure  # here only: no other code of the core loads matplotlib (C-5)
 
     fig = Figure(figsize=(15, 4.5), layout="constrained")
@@ -146,9 +147,9 @@ def summary_png(lay: Layout, chain: np.ndarray, ideal: np.ndarray | None, name: 
     rf.plotting.smith(ax=ax_smith, draw_labels=True)
     ghz = lay.f / 1e9
     curves = [(chain, "-", "I_PLOT_LAYOUT")] + ([(ideal, "--", "I_PLOT_IDEAL")] if ideal is not None else [])
-    for s, style, label in curves:
-        ax21.plot(ghz, 20 * np.log10(np.abs(s[:, 1, 0])), style, label=render(label))
-        ax11.plot(ghz, 20 * np.log10(np.abs(s[:, 0, 0])), style, label=render(label))
+    for s, style, code in curves:
+        ax21.plot(ghz, 20 * np.log10(np.abs(s[:, 1, 0])), style, label=render(code))
+        ax11.plot(ghz, 20 * np.log10(np.abs(s[:, 0, 0])), style, label=render(code))
         s11 = s[:, 0, 0]
         locus, = ax_smith.plot(s11.real, s11.imag, style)
         ax_smith.plot(s11[lay.markers].real, s11[lay.markers].imag, "o", color=locus.get_color())
@@ -157,7 +158,7 @@ def summary_png(lay: Layout, chain: np.ndarray, ideal: np.ndarray | None, name: 
             ax.axvline(ghz[k], color="grey", linewidth=0.5)
         ax.set(xlabel=render("I_PLOT_FREQUENCY"), ylabel=ylabel)
         ax.legend()
-    fig.suptitle(render("I_PLOT_TITLE", name=name))
+    fig.suptitle(render("I_PLOT_TITLE", name=name) + ("\n" + label if label else ""), wrap=True)
     out = io.BytesIO()
     fig.savefig(out, format="png", dpi=100)
     return out.getvalue()

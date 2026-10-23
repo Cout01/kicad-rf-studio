@@ -10,6 +10,7 @@ from pathlib import Path
 import numpy as np
 import pytest
 import skrf
+from matplotlib.figure import Figure
 
 from kicad_rf_studio.core.messages import KrsError, render
 from kicad_rf_studio.core.post.chain import ideal_schematic
@@ -93,6 +94,15 @@ def test_the_png_draws_on_agg_and_leaves_no_pyplot_figure():  # C-30, spec 3.1
     assert summary_png(lay_of(EXT, chain), chain, chain, "lpf915")[:8] == b"\x89PNG\r\n\x1a\n"
     import matplotlib.pyplot
     assert matplotlib.pyplot.get_fignums() == []
+
+
+def test_the_png_title_carries_the_what_if_label(monkeypatch):  # D-15
+    titles = []
+    monkeypatch.setattr(Figure, "suptitle", lambda self, text, **kw: titles.append(text))
+    chain = ideal_schematic(PI, PI_Z, F)
+    summary_png(lay_of(EXT, chain), chain, chain, "lpf915", label="L")
+    summary_png(lay_of(EXT, chain), chain, chain, "lpf915")
+    assert titles == [render("I_PLOT_TITLE", name="lpf915") + "\nL", render("I_PLOT_TITLE", name="lpf915")]
 
 
 def test_only_the_png_writer_imports_matplotlib():  # C-5
