@@ -1781,3 +1781,181 @@ def test_the_draft_replay_of_the_committed_traces_reproduces_the_references(name
 - **Push-gated:** running P0-D, tier (b) and tier (c); F-R1's Linux PR_SET_PDEATHSIG test; moving `board.py`'s NEWEST_TESTED after tier (c).
 - **Deferred by ruling (D-2):** a mesh-rule recalibration (D-31: R-P2-20, R-P2-21 and R-P2-27 stay stated limits; the calibration is the Stage 2 estimate's first item); a C_box correction (D-35, report only); an F-R3 gate (O-35, a known limit); fitting package presets to vendor S2P files (only the owner's own check through `p0c.py --s2p`); Babel tooling (O-33); band-1.25 runs, a stop-preset retune and a RAM-model change on this PC; tightening σ_max, reciprocity and the loss limit (P0-C data); a committed pre-check tool (D-49); every §10 item.
 - **Known limits:** the 2D reference's dielectric runs past the coupons' board edge (A-13); KiCad's 35 µm CPWG formula reads Z0 +3.1 % and εeff −10.2 % against cs2d; the mesh resolves about 80 % of a 0.15 mm GCPW gap's mask shift at n = 2; lpf915's 2.5 mm lid snaps +8.9 % at n = 2 and +3.6 % at n = 3, which enters B5 against B1; the lid on and off (R46) is measured by P0-C's step C5 on the owner's board, while P0-B reports only the snapped height (D-32); the load check reads command lines by substring at a step's start and end only; the empty-box fit assumes white residuals and one geometry; the K_MAX sweep runs one cell (lpf915's L1) for 10 ns at the Strict level; the reach is judged at common cuts, the twin and the bias also as stored; EMerge is a same-day beta with four workarounds (D-42) and only 8 pinned packages, and its coupons in the 45 h box are unmeasured in size; P0-C's wall time per preset is a round model and its RAM a system-wide reading; lpf915 has no in-band null, so the null criterion is untested until P0-C; the growth and K_MAX decisions rest on lpf915 and the coupons only; the workflow's build steps, library path and version metadata are unverified until the first dispatch.
+
+## Pre-flight rulings (the controller, 2026-10-22; binding)
+
+The pre-flight scan ran before Task 1: 8 scanners, 151 rows, 13 serious findings (all confirmed by a refuter) and about 50 minor ones. The controller ruled on each one, as a recommendation while the owner was unavailable. Each task's rulings below are appended to its brief and amend its text.
+
+#### Rulings for Task 1
+- PF-1. `.gitignore` also gets `!tests/fixtures/*.kicad_sch`, `!tests/fixtures/*.kicad_dru`, `!tests/fixtures/fp-lib-table` and `!tests/fixtures/sym-lib-table`, next to the existing `!tests/fixtures/*.kicad_pcb`. Spec §9.1 excludes KiCad side files except under `tests/fixtures`.
+
+#### Rulings for Task 2
+- PF-2. Anchor the line across as the brief says: the middle of the bounds' overlap, with a tie going to the lower line. Step 4 lists every port node that moves.
+  - If that list differs from the brief's measured list, and today's anchor reproduces the brief's list, use today's anchor and say so in the report. Today's anchor is the middle of the width lines, `(width.min() + width.max()) / 2`.
+  - If neither anchor reproduces the list, report DONE_WITH_CONCERNS with both lists.
+
+#### Rulings for Task 3
+- PF-3. `tests/test_cli_new.py` imports `save_project` from `kicad_rf_studio.core.project` and `spec_hash` from `kicad_rf_studio.core.model.spec`.
+- PF-4. The new `DEFAULTS` replaces the existing one in place, at `tests/test_cli_new.py:22-23` (it is used at :280 and :403). The strict variant at :137-138 is revised as the brief says. There is never a second definition.
+- PF-5. D-12 is read as the brief reads it: the two fields reach the model spec only through the walls and mesh lines they move, never as keys. Plan-4 projects therefore keep their hash (Review Focus 5).
+
+#### Rulings for Task 4
+- PF-6. Emit I_WHAT_IF only when chain results exist, on the branch that prints the indicator lines. It is the line just before the I_OUTPUTS / E_RESULTS_WRITE slot, so it comes after W_NOT_TWO_PORT when P ≠ 2. No label is emitted when a part refusal replaced the chain results.
+
+#### Rulings for Task 5
+- PF-7. The fake worker writes its `et`/`ht` files as part of Step 1, as test scaffolding. That way `test_a_classified_job_leaves_no_excitation_arrays` fails at Step 2 for the stated reason, and passes once `run_ports` removes those files.
+
+#### Rulings for Task 6
+- PF-8. Follow D-18 literally: rank k walks only the active rule's order.
+  - When the pad rule applies, that order is the GND pads, sorted by (distance, number, uuid). Otherwise it is the copper rule's candidates.
+  - Rank k is None when that rule has fewer than k + 1 candidates.
+  - A pad rule never continues into the copper rule. Invert any test row that asserts such a continuation, so that it expects None.
+
+  If this is wrong, C3 measures nothing for a port whose footprint has a single GND pad (Task 11's PF-40).
+
+#### Rulings for Task 7a
+- PF-9. Only the three process counts decide `loaded`: it is set when a count is above 0, or None because `command_lines` raised. The calibration entry is recorded but never tested for `loaded`.
+- PF-10. `command_lines` decodes its output with `errors="replace"`, because PowerShell writes in the console code page. Only a failed check then reads as None.
+
+#### Rulings for Task 7b
+- PF-11. Add `load_project` to the test imports (`from kicad_rf_studio.core.project import load_project`).
+- PF-12. `save_trace` stores a None `t_cut` as NaN, and `load_trace` returns None for NaN. Nothing is pickled: `np.load` is never called with `allow_pickle`.
+- PF-13. One test checks that `save_trace` raises ValueError naming the job when the probe samples alone exceed 50 kB. Task 8c's tests cover `summary` and `cli_run`.
+- PF-14. `predicted_s` and the one-trace column of `s_of` each carry a one-line comment naming the formula they mirror:
+  - `predicted_s` mirrors the `time()` in pipeline.cost_notes;
+  - the `s_of` column mirrors the `s(at)` in stoprule._converged.
+- PF-15. The 50 kB cap thins only the energy rows, never the probe samples, because D-48's exact replay needs them. This is a deviation from D-40's "decimated if needed", and Task 18's report records it.
+- PF-16. `cli_run` picks the newest run folder whose whole name matches the product's run-folder pattern, `<ascii name>-YYYYMMDD-HHMMSS-xxxx`. It never uses a prefix glob.
+- PF-17. `layout(f=)` marks a point as n·f0 when `np.isclose(f, n * f0, rtol=1e-9, atol=0)`, for n = 1..harmonics.
+
+#### Rulings for Task 8b
+- PF-18. Each row from `measure` carries `section`, the point's section index. It is None for a midpoint row.
+
+#### Rulings for Task 8c
+- PF-19. These rows are left out of the rules and named among the fails:
+  - a section-point row whose job did not converge or whose model failed its lint;
+  - a midpoint row whose job did not converge.
+
+  A converged midpoint row feeds only the twins (D-27) and is never named as left out. `test_the_p0a_rules` adds this converged midpoint row: `{"coupon": "coupon_gcpw_45", "n": 2, "point": "mid", "section": None, "theta": 45.0, "verdict": "converged", "lint": None, "dt_ratio": 1.0, "pass": None}`. It keeps its asserts: the verdict is `{"value": "pass", "fails": []}` and fit2d is "keep".
+- PF-20. Add `p0a.PAD_NEW = ("--start", "TP1.1", "--end", "TP2.1", "--f0", "915MHz")`. Before the `p0a-pad` step:
+  1. Set `pj = <out>/p0a/projects/coupon_gcpw_pads/project.json`.
+  2. If `pj` is missing, copy `coupon_gcpw_pads.kicad_pcb` into `<out>/boards` and run `p0.cli("new", <board copy>, *PAD_NEW, "-o", str(pj.parent))`. A non-zero exit raises a one-line error: the step is logged and skipped, and the harness exits 1.
+  3. If `pj` exists, record `new`'s code as 0. `new` writes project.json only after every refusal check has passed.
+  4. Key the step by `p0.model_key(pj)`.
+- PF-21. `decide` picks section points by `row.get("section") is not None`.
+- PF-22. `dt_floor` takes its `min_ratio` over the rows that hold a `dt_ratio` (rows with a run) plus the pad.
+- PF-23. The stray line goes 10 µm from the pinned x line nearest the cut (`Mesh.pinned["x"]`), as D-30 says.
+- PF-24. `--out` defaults to None. Compute `out = Path(a.out) if a.out else p0.default_out()` only in that case, immediately before `p0.enter`. Task 9 does the same.
+- PF-25. In p0a.json, `"calibration"` is the value of this machine's settings entry (aggregate_mcs, pool, threads, levels), never its key, because the key holds a host name.
+
+#### Rulings for Task 9
+- PF-26. When emerge.json holds any reason that reads "EMerge <level> not solved", `decide` sets `verdict.value` to "pending" with `emerge_accepted` False, the same as for a missing emerge.json: the FEM step must be rerun.
+  - An inconclusive result is accepted only when two things hold: every FDTD-internal criterion passed, and every reason is one of D-43's preconditions (a coupon z0 or eeff miss, "chain moved", "sigma_max", "reciprocity").
+  - A test row pins the "not solved" case.
+  - If the FEM step still cannot solve after one rerun on an idle PC, the controller records the cause under D-44 in the P0-B report and decides acceptance there.
+- PF-27. `measure` reads job verdicts and `growth_db` only from the P0-A rows that hold a `verdict`. Lint rows had no job.
+- PF-28. The reach assertion uses `{**m["reach"], "ds_max": 0.011}`, so that only ds_max crosses its limit.
+- PF-29. In p0b.json, `"calibration"` is the value of this machine's settings entry, never its key.
+- PF-30. `main` runs the two B3 steps. `empty_box(out)` only reads their records through `p0.records`, which raises SystemExit when one is missing, so `--report` never starts a run.
+- PF-31. Any failed FDTD-internal criterion gives "fail", whether or not emerge.json exists. The verdict is "pending" only when every FDTD criterion passed and emerge.json is missing or holds a "not solved" reason (PF-26).
+- PF-32. `--out` defaults to None, as in PF-24.
+
+#### Rulings for Task 10
+- PF-33. `"compare_n3"` is null when `p0.records(out)` has no `p0b-B5` record, and is computed otherwise. `cross_check` finds B5's project path without calling `harness.project`, which would create it. The test may add `assert out["compare_n3"] is None`.
+- PF-34. "EMerge <level> not solved" is described as a missing FEM output, not as a failed precondition. `verdict` may still return "inconclusive" with that reason; Task 9 turns it into pending.
+- PF-35 (OI-7):
+  - `export` also writes two values per coupon:
+    - `"cs_10h"`: the same cross-section built with `box_h=10`, fit2d's BOX_H;
+    - `"eeff_ref_10h"`: cs2d's exact-mask εeff in that box.
+
+    `z0_ref` (KiCad's) is unchanged.
+  - `emerge_fem.py coupon` takes `--box 45|10` (default 45), which picks `cs` or `cs_10h`.
+  - `main` runs step `p0b-emerge-coupon-<name>-50-10h` with `--box 10` only when the 45 h coupon step exits non-zero or leaves no output. That step's output is `<name>-50-10h.json`, and its key is input.json's sha256 plus its arguments.
+  - `cross_check` uses the 45 h row when it exists. Otherwise it uses the 10 h row against `eeff_ref_10h`, and lists "<name>: 10 h box (OI-7)" among its deviations.
+  - A fake test covers how the fallback is selected.
+- PF-36. The freeze is `uv pip freeze --python <venv python>`, run with the same explicit environment as the venv and install calls.
+- PF-37. `fem()` passes `emerge_fem.py` by its absolute path, `p0.ROOT / "tools" / "p0b" / "emerge_fem.py"`, because its working folder is `<out>/emerge`.
+
+#### Rulings for Task 11
+- PF-38. In p0c-public.json, `machine.loaded_steps` is `len(p0.machine(records)["loaded"])`. The step ids stay in the private p0c.json.
+- PF-39. When C1's preset is below Normal, every quantity built on the base at Normal reads None: c2 and the C3–C6 deltas.
+  - The reports are written at the end of every invocation, with the criteria of absent steps set to None.
+  - A fake-worker case runs `--preset draft --steps C0,C1` and asserts that the three reports exist and every criterion is None.
+- PF-40. In C3, a port whose rank-1 candidate is None keeps its rank-0 reference.
+  - When every port's rank-1 candidate is None, C3 is skipped and c3 reads None.
+  - When a reference changes, set `port["rule"] = ref.rule` as well as `port["reference"] = cli._reference(ref)`.
+- PF-41. The closed base at Normal is `p0.closed_chain(<C1's project>, cuts=<the Normal replay cuts>)`. Call `waves.layout` directly only for criterion 2's N-port.
+- PF-42. C0's first `cost` calibrates `OUT/data` (D-7). The docstring says so; nothing else changes.
+
+#### Rulings for Task 12
+- PF-43. `references` and `traces` read step records with one `p0.records` call per harness: the P0-A ids together, then `["p0b-B1"]` on its own. The two sets are never mixed, because the two harnesses may differ in "code". `test_references_and_traces_come_from_a_p0_folder` runs `harness.main` under `monkeypatch.setattr(p0, "code_id", lambda: "other")` to cover that case.
+- PF-44. `PADS` is removed. `p0d.models` builds coupon_gcpw_pads from `p0a.PAD_NEW` and lpf915 from `harness.NEW`, and the Consumes list gains both.
+- PF-45. `compare_runs` expects the excitations k = 1..`ref["S"].shape[2]`.
+- PF-46. `references()` and `compare_runs` take the points (label, theta) from `p0a.coupon_model(name, 2, edits=PIN)[2]`, never from the probe entries. The twins' midpoints sit at 45°.
+- PF-47. `compare_runs` reads a job from `runs/<model>-k<port>/data/kicad-rf-studio/runs/<result run_dir>/<job>`, never through `p0.run_path`. Test 3 compares from a copy whose source data folder was removed.
+- PF-48. `excite` uploads `${{ runner.temp }}/runs`, which holds only its own `<model>-k<port>` folder. `download-artifact` with `merge-multiple: true` into `runs/` then yields `runs/<model>-k<port>/`.
+- PF-49. `models()` writes matrix.json as one compact line, so the models job can publish it as its `entries` output.
+- PF-50. `test_models` monkeypatches the default REACH_H to 6.0 before calling `p0d.models`, and still expects 3.0. This is what tests PIN.
+- PF-51. The three step groups are copied into each job on purpose: each job runs in its own fresh container. A YAML comment says so.
+
+#### Rulings for Task 13
+- PF-52. Finished steps are reused when a fix touches only `tools/`. A fix under `src/` changes `p0.code_id()`, so every P0-A step reruns, which takes about 3–4 h again.
+
+#### Rulings for Task 14
+- PF-53. After a fix under `src/`, every P0-B record must carry the new code before the next night's command. Otherwise `write` refuses the mixed records. Either way works:
+  - rerun the earlier nights' commands, starting from night 1;
+  - run `harness.py --out <P0>` once, without `--only`.
+
+  A fix confined to `tools/` keeps the finished steps whose keys did not change.
+- PF-54. Night 3's done-check accepts either `pending` or `fail` (PF-31).
+
+#### Rulings for Task 15
+- PF-55. The OI-7 10 h fallback runs inside the command (Task 10's PF-35). The P0-B report records it.
+
+#### Rulings for Task 16
+- PF-56. C0's time includes calibrating the fresh data folder, which takes several minutes.
+
+#### Rulings for Task 17
+- PF-57. When `refuse` (D-27) or `lower` (D-29) fires, Task 17 decides and records the branch and writes its report text. It makes the product change (test and code) only after P0-B's final decision, which comes after Task 18's last pass, including 18b and any OI-6 rerun. Nothing of that change sits in the working tree during a rerun.
+- PF-58. In the `lower` branch, `test_new_writes_every_key_and_reads_it_back` compares the gates against `dict(GATES)`. `test_the_fit2d_limit_follows_p0a` stays the only test that pins the new value.
+
+#### Rulings for Task 18
+- PF-59. When D-33 fails and the controller orders Task 18b under D-45, this pass does only Step 5: the report, with the diagnosis and the D-45 call.
+  - Steps 1–4 (the product commits and A-5) run once, on the final p0b.json. That is the rerun's p0b.json when 18b ran; otherwise it is this one, which covers three cases: no rerun, the ceiling date has passed, or the ceiling stays failed.
+  - D-30 is applied by Task 17. When 18b ran, re-check Task 17's D-30 comment or stated limit against the rerun's `decisions.dt_floor`, and fix it in Step 3's commit.
+- PF-60. Under Task 17's `refuse`, D-34's pass text adds one point. A rotated part on 45° or arc copper is still refused by E_STAIRCASED (P0-A), so the TX side joins v1 only where its copper is axis-aligned. E_ROTATED_PART's text and A-5 say so.
+- PF-61. Apply OI-6 as registered; it is not a fresh controller call.
+  - The report states the t_max_s that lpf915 needed.
+  - Section 5 names OI-7's 10 h box deviation if it occurred, and PF-15's trace-cap deviation.
+- PF-62. The report gives the per-run maximum `trunc_2ns` that Task 9 stores, labelled as such.
+- PF-63. Section 4 marks the K_MAX sweep at Strict with a 10 ns record as "controller recommendation, owner unavailable" (OI-8).
+- PF-64. In D-37's false branch, change protect.py's docstring "(provisional: P0-B checks it)" to "(P0-B raised it to 6 on <date>)". The parameter default may stay.
+
+#### Rulings for Task 18b
+- PF-65 (code-fix branch). Before the first command, move the following into `<P0>/superseded-<date>/`; never delete them:
+  - `<P0>/steps/p0b-*.json`, including `p0b-emerge-*`;
+  - `<P0>/p0b/p0b.json`, `p0b.md` and `emerge.json`.
+
+  Run folders and `<P0>/emerge/` stay where they are.
+- PF-66 (OI-6 branch).
+  - **Before:** the O-13 raise is recorded under D-45, there is no code change, and the date is before 2026-11-19.
+  - **Edit:** double `t_max_s` once in `<P0>/p0b/projects/<run>/project.json`. Use B1 for a B1 or B2 job, and B4 for a B4 job.
+  - **Commands for B4:** `.venv\Scripts\python.exe tools\p0b\harness.py --out <P0> --only B4`.
+  - **Commands for B1 or B2:** first move `<P0>/p0b/emerge.json` into the superseded folder. Then run the harness with `--only B1,B2,B3,kmax`, then Task 15's command.
+  - **Done when:** as in Tasks 14 and 15.
+- PF-67. P0-A's gate changes (D-27 refuse, D-29 lower) are not yet committed while 18b runs (PF-57).
+
+#### Rulings for Task 19
+- PF-68. `p0d.traces` reads the records of each harness separately (PF-43).
+
+#### Rulings for Task 20
+- PF-69. If OI-6 raised B1's t_max_s, Task 20 gives lpf915 the same t_max_s through a per-model pin in p0d, added test-first, so that the spec_hash test holds. The P0-D report states it.
+- PF-70. `p0d.references` reads the records of each harness separately (PF-43).
+- PF-71. Section 4 marks P0-D's 0.5 % Z0/εeff limit as "controller recommendation, owner unavailable" (OI-8).
+
+#### Rulings for Task 21
+- PF-72. §9.6 passes when every key of precheck.json except "commit" is True. "commit" gives the commit the pre-check ran at.
+
+#### Rulings for Task 22
+- PF-73. When OI-6 fired on B1, the tutorial shows the W_JOB_T_MAX line and the t_max_s raise.
+- PF-74. The tutorial's cost line quotes B1's predicted and worst times from its summary. The retune time is measured while the tutorial is written, and stated as such. The pre-check's "about 2 min" is stated as an estimate.
