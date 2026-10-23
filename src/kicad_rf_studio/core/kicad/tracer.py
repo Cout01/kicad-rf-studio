@@ -190,11 +190,13 @@ def signal_layer(board: Board, pad: Pad) -> str:
         pad.layers[0])
 
 
-def choose_reference(board: Board, classes: Classes, signal: str) -> Reference | None:
+def choose_reference(board: Board, classes: Classes, signal: str, rank: int = 0) -> Reference | None:
     """The reference of the port at pad `signal` (spec 5.6): the nearest ground pad of its connector or IC (centre to
     centre; a tie goes to the lower pad number, then the lower uuid), else the nearest ground copper. It always lies
-    on the signal pad's layer, `signal_layer`. None when there is none. Raises KrsError for a signal that
-    `trace_chain` would refuse as an end."""
+    on the signal pad's layer, `signal_layer`. A `rank` k > 0 gives the k-th next best of that rule's own order
+    (spec 9.4 criterion 3, D-18): the next ground pad, or the nearest point of another piece of the layer's ground
+    copper united, by (distance, x, y); a pad rule never goes on to the copper rule. None when there is none.
+    Raises KrsError for a signal that `trace_chain` would refuse as an end."""
     sig = _resolve(board, classes, signal)[0]
     layer = signal_layer(board, sig)
     fp = board.footprints[sig.ref]
@@ -203,8 +205,10 @@ def choose_reference(board: Board, classes: Classes, signal: str) -> Reference |
     grounds = [p for p in fp.pads if p.net in classes.gnd and layer in p.layers] if rule else []
     if grounds:
         # ponytail: pad numbers compare as text ("10" before "2"); it only matters between exactly equal distances
-        near = min(grounds, key=lambda p: (round(math.dist(sig.center, p.center), TIE_DECIMALS), p.number, p.uuid))
-        return Reference(rule, near.name, near.uuid, None, layer)
+        grounds.sort(key=lambda p: (round(math.dist(sig.center, p.center), TIE_DECIMALS), p.number, p.uuid))
+        if rank >= len(grounds):
+            return None  # a pad rule never goes on to the copper rule (PF-8)
+        return Reference(rule, grounds[rank].name, grounds[rank].uuid, None, layer)
     shapes = [t.polygon() for t in board.tracks if t.layer == layer and t.net in classes.gnd]
     shapes += [a.polygon for a in board.areas if a.layer == layer and a.net in classes.gnd]
     shapes += [p.polygon for f in board.footprints.values() for p in f.pads
@@ -214,5 +218,11 @@ def choose_reference(board: Board, classes: Classes, signal: str) -> Reference |
         return None
     here = Point(sig.center)
     # ponytail: measures every ground shape of the layer once per port; an STRtree if a big board makes it slow
-    x, y = nearest_points(here, min(shapes, key=here.distance))[1].coords[0]
-    return Reference("copper", None, None, (x, y), layer)
+    order = [nearest_points(here, min(shapes, key=here.distance))[1]]
+    if rank:
+        # the rank-0 point lies on its piece's outline, where an exact intersects test can miss by float noise: a
+        # piece within 1e-6 mm of it holds it
+        pieces = [q for q in shapely.get_parts(shapely.union_all(shapes)) if q.distance(order[0]) > 1e-6]
+        order += sorted((nearest_points(here, q)[1] for q in pieces),
+                        key=lambda p: (round(here.distance(p), TIE_DECIMALS), p.x, p.y))
+    return Reference("copper", None, None, order[rank].coords[0], layer) if rank < len(order) else None

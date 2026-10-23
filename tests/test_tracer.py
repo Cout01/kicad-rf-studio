@@ -485,3 +485,55 @@ def test_the_signal_must_be_a_pad_a_chain_may_touch(lpf, name, code):
     with pytest.raises(KrsError) as e:
         ref_of(lpf, name)
     assert e.value.code == code
+
+
+# --- the next-best reference (D-18) --------------------------------------------------------------------
+
+
+def test_the_next_best_reference_is_the_second_of_the_choosers_own_order(lpf):  # D-18, spec 9.4 criterion 3
+    c = classify(lpf)
+    assert choose_reference(lpf, c, "U1.1", 0) == choose_reference(lpf, c, "U1.1")
+    u = choose_reference(lpf, c, "U1.1", 1)
+    assert (u.rule, u.pad, u.layer) == ("ic", "U1.4", "F.Cu")  # 1.5 mm off, after U1.2 at 0.5 mm
+    j0, j1 = (choose_reference(lpf, c, "J1.1", k) for k in (0, 1))
+    assert (j1.rule, j1.pad) == ("connector", "J1.2") and j1.uuid != j0.uuid  # the U.FL's other ground pad
+    t = load_board(FIX / "coupon_gcpw_pads.kicad_pcb")
+    ct = classify(t)
+    r0, r1 = (choose_reference(t, ct, "TP1.1", k) for k in (0, 1))
+    assert r0.point == pytest.approx((100.0, -100.6505), abs=1e-6) and (r1.rule, r1.layer) == ("copper", "F.Cu")
+    assert r1.point == pytest.approx((100.0, -99.3495), abs=1e-6)  # the ground on the line's other side
+    assert choose_reference(t, ct, "TP1.1", 2) is None
+
+
+@pytest.mark.parametrize("signal, rank", [("U1.1", 3), ("J1.1", 2), ("J2.1", 2)])
+def test_past_its_last_ground_pad_the_pad_rule_gives_none(lpf, signal, rank):
+    """PF-8: the pad rule never goes on to the copper rule, though lpf915 has ground copper on F.Cu. J2's two
+    ground pads on B.Cu are never candidates."""
+    assert choose_reference(lpf, classify(lpf), signal, rank) is None
+
+
+def test_the_copper_rule_ranks_the_other_ground_pieces_by_distance_then_x_then_y(mini_board):
+    # the nearest ground is 1.5 mm off; four pads 3.5 mm off tie, so x decides, then y
+    spots = [(0, -2), (4, 0), (-4, 0), (0, 4), (0, -4)]  # pad centres in the file, y down
+    b = mini_board(SIGNAL + "".join(part(f"G{i}", smd(1, "GND", x, y)) for i, (x, y) in enumerate(spots, 1)))
+    c = classify(b)
+    points = [choose_reference(b, c, "TP1.1", k).point for k in range(5)]
+    assert points == [pytest.approx(p, abs=1e-9) for p in [(0, 1.5), (-3.5, 0), (0, -3.5), (0, 3.5), (3.5, 0)]]
+    assert choose_reference(b, c, "TP1.1", 5) is None
+
+
+def test_touching_ground_is_one_piece_and_the_other_layer_never_counts(mini_board):
+    # the pad lies in the pour, so past the track only the pour is left; the decoys are nearer than both
+    b = mini_board(SIGNAL + DECOYS + "".join(copper for copper, _ in GROUND.values()))
+    c = classify(b)
+    r = choose_reference(b, c, "TP1.1", 1)
+    assert (r.rule, r.layer) == ("copper", "F.Cu") and r.point == pytest.approx(GROUND["area"][1], abs=1e-9)
+    assert choose_reference(b, c, "TP1.1", 2) is None
+
+
+def test_the_nearest_ground_is_skipped_though_its_point_misses_it_by_float_noise(mini_board):
+    # the diagonal track's nearest point is 5e-17 mm off its outline, where an exact intersects test says no
+    b = mini_board(SIGNAL + track("F.Cu", "GND", -1, 2, 3, 1) + pour("F.Cu", "GND", -5, 4, 5, 8))
+    c = classify(b)
+    assert choose_reference(b, c, "TP1.1", 1).point == pytest.approx((0.0, -4.0), abs=1e-9)
+    assert choose_reference(b, c, "TP1.1", 2) is None
