@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 import json
 import subprocess
+from datetime import date
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -93,6 +94,81 @@ def test_a_coupon_moves_to_the_10h_box_only_when_its_45h_solve_fails(p0_out, mon
     (e / "coupon_ms-50.json").unlink()  # its step's record stays; its output is gone
     ran.clear()
     assert emerge_app.fem_steps(p0_out) == [] and ran == [("coupon", "coupon_ms-50-10h.json", "10")]
+
+
+def test_a_fem_step_reruns_after_a_fix_to_its_script_or_its_requirements(p0_out, monkeypatch, tmp_path):
+    monkeypatch.setattr(p0, "command_lines", lambda: [])
+    (p0_out / "emerge").mkdir(parents=True)
+    (p0_out / "emerge" / "input.json").write_text("{}", encoding="utf-8")
+    ran = []
+    monkeypatch.setattr(emerge_app, "fem", lambda out, mode, *args: ran.append(mode) or {"exit": 0, "output": "x"})
+    for name in ("FEM", "REQUIREMENTS"):
+        (tmp_path / name).write_bytes(b"1\n")
+        monkeypatch.setattr(emerge_app, name, tmp_path / name)
+
+    def step():
+        emerge_app._fem_step(p0_out, "p0b-emerge-nport-75", "nport", "--out", "lpf915-75.npz")
+
+    step()
+    (tmp_path / "FEM").write_bytes(b"1\r\n")  # a checkout under core.autocrlf
+    step()  # the same input.json and scripts (a fix elsewhere in tools/, a checkout's CRLF): the record is kept
+    for name in ("FEM", "REQUIREMENTS"):
+        (tmp_path / name).write_bytes(b"2\n")  # a fix to it
+        step()
+    assert ran == ["nport"] * 3
+
+
+@pytest.fixture
+def fakes(p0_out, monkeypatch):
+    """emerge_app.main on fakes up to harness.write's records check: no venv, an input.json of {}, a cross-check that
+    writes emerge.json with a "pass", P0-B's own steps, measure, decide and tables empty, and a fem that leaves its
+    output. Returns `exits`: by output name, the fem's exit code instead of 0 (no output then), or what it raises."""
+    monkeypatch.setattr(p0, "command_lines", lambda: [])
+    monkeypatch.setattr(emerge_app, "venv", lambda e: None)
+    monkeypatch.setattr(emerge_app, "export", lambda pj, out: p0.save(out / "emerge" / "input.json", {}))
+    monkeypatch.setattr(emerge_app, "cross_check",
+                        lambda out: p0.save(out / "p0b" / "emerge.json", {"verdict": "pass"}))
+    for name, value in (("STEPS", ()), ("measure", lambda out: {}), ("decide", lambda m: {}),
+                        ("tables", lambda result: "")):
+        monkeypatch.setattr(harness, name, value)
+    exits = {}
+
+    def fem(out, mode, *args):
+        name = args[args.index("--out") + 1]
+        if isinstance(code := exits.get(name, 0), Exception):
+            raise code
+        if not code:
+            (out / "emerge" / name).write_text("{}", encoding="utf-8")
+        return {"exit": code, "output": name}
+
+    monkeypatch.setattr(emerge_app, "fem", fem)
+    return exits
+
+
+def test_records_that_no_longer_apply_move_aside_before_the_gate_is_written(p0_out, fakes):  # PF-65's folder
+    stale = ["p0b-emerge-coupon-coupon_ms-50-10h", emerge_app.NOMASK_FEM, emerge_app.NOMASK_OPENEMS]
+    for sid in stale:  # made by other code; coupon_ms's 45 h step solves and the verdict is not "fail"
+        p0.save(p0_out / "steps" / f"{sid}.json",
+                {"step": sid, "key": "k@older", "code": "older", "wall_s": 1.0, "loaded": False})
+    assert emerge_app.main(["run", "--out", str(p0_out)]) == 0
+    assert json.loads((p0_out / "p0b" / "p0b.json").read_text(encoding="utf-8"))["machine"]["steps"] == 4
+    assert sorted(path.stem for path in (p0_out / f"superseded-{date.today().isoformat()}").iterdir()) == sorted(stale)
+
+
+def test_a_fem_step_left_unsolved_exits_1_once_the_gate_is_written(p0_out, fakes, capsys):
+    fakes.update({"coupon_gcpw-50.json": 1, "lpf915-60.npz": 1})  # coupon_gcpw solves in its 10 h box; 60 µm does not
+    assert emerge_app.main(["run", "--out", str(p0_out)]) == 1
+    assert capsys.readouterr().out.endswith("emerge_app: failed: p0b-emerge-nport-60\n")
+    assert all((p0_out / "p0b" / name).is_file() for name in ("emerge.json", "p0b.json"))
+
+
+def test_a_fem_step_that_raises_is_logged_and_the_run_goes_on(p0_out, fakes, capsys):  # D-6
+    fakes["lpf915-75.npz"] = OSError("no venv")
+    assert emerge_app.main(["run", "--out", str(p0_out)]) == 1
+    out, err = capsys.readouterr()
+    assert "OSError: no venv" in err and out.endswith("emerge_app: failed: p0b-emerge-nport-75\n")
+    assert (p0_out / "steps" / "p0b-emerge-nport-60.json").is_file()  # the next step still ran
+    assert all((p0_out / "p0b" / name).is_file() for name in ("emerge.json", "p0b.json"))
 
 
 def test_the_cross_check_closes_both_sides_as_d43_says(p0_out, monkeypatch):  # D-43: the plumbing, on the fake

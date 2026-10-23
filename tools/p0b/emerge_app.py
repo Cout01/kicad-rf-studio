@@ -14,6 +14,7 @@ import subprocess
 import sys
 import traceback
 from dataclasses import asdict
+from datetime import date
 from functools import partial
 from pathlib import Path
 
@@ -192,8 +193,11 @@ def fem(out: Path, mode: str, *args: str) -> dict:
 
 
 def _digest(out: Path) -> str:
-    """The sha256 of <out>/emerge/input.json, which keys the FEM steps."""
-    return hashlib.sha256((out / "emerge" / "input.json").read_bytes()).hexdigest()
+    """The sha256 of <out>/emerge/input.json, of FEM and of REQUIREMENTS, each read with LF line ends (a checkout under
+    core.autocrlf writes CRLF), which key the FEM steps: a fix to either script runs them again, a fix elsewhere in
+    tools/ keeps their records."""
+    paths = (out / "emerge" / "input.json", FEM, REQUIREMENTS)
+    return "|".join(hashlib.sha256(path.read_bytes().replace(b"\r\n", b"\n")).hexdigest() for path in paths)
 
 
 def _key(out: Path, sid: str) -> str:
@@ -203,34 +207,55 @@ def _key(out: Path, sid: str) -> str:
 
 
 def _fem_step(out: Path, sid: str, mode: str, *args: str) -> dict:
-    """The FEM step `sid`, fem(out, mode, *args) through p0.step, keyed by input.json's sha256 and the arguments."""
+    """The FEM step `sid`, fem(out, mode, *args) through p0.step, keyed by _digest and the arguments."""
     return p0.step(out, sid, f"{_digest(out)}|{' '.join((mode, *args))}", partial(fem, out, mode, *args))
 
 
+def _supersede(out: Path, *sids: str) -> None:
+    """Moves the records of the steps `sids`, conditional steps that do not apply in this call, into
+    <out>/superseded-<date> (PF-65's folder, made when needed), so p0b.json counts only the steps this call used and a
+    record of other code left there never blocks harness.write."""
+    for path in (out / "steps" / f"{sid}.json" for sid in sids):
+        if path.is_file():
+            folder = out / f"superseded-{date.today().isoformat()}"
+            folder.mkdir(exist_ok=True)
+            path.replace(folder / path.name)  # ponytail: a record moved aside twice in one day keeps the later one
+
+
+def _solved(out: Path, sid: str, mode: str, *args: str) -> bool | None:
+    """The FEM step `sid`, printed, then run through _fem_step: whether it solved, exiting 0 with its output on disk;
+    None, its traceback printed, when it raised (SystemExit, STOP or too little RAM, and KeyboardInterrupt end the
+    command)."""
+    print(f"emerge_app: {sid}", flush=True)
+    try:
+        res = _fem_step(out, sid, mode, *args)["result"]
+    except Exception:
+        traceback.print_exc()
+        return None
+    return not res["exit"] and (out / "emerge" / res["output"]).is_file()
+
+
 def fem_steps(out: Path) -> list[str]:
-    """The FEM steps (D-43), each printed and run through _fem_step: each coupon of COUPONS at 50 µm in the 45 h box,
-    p0b-emerge-coupon-<name>-50, then, only when its FEM exited non-zero or left no output, in the 10 h box,
-    p0b-emerge-coupon-<name>-50-10h (OI-7, PF-35); the 6-port at each level of LEVELS, p0b-emerge-nport-<um>. A step
-    that raises is printed and skipped, a coupon's 10 h step with it; SystemExit (STOP, too little RAM) and
-    KeyboardInterrupt end the command. Returns the ids of the steps that raised."""
+    """The FEM steps (D-43), each through _solved: each coupon of COUPONS at 50 µm in the 45 h box,
+    p0b-emerge-coupon-<name>-50, then, only when it ran and did not solve, in the 10 h box,
+    p0b-emerge-coupon-<name>-50-10h (OI-7, PF-35), whose record moves aside (_supersede) when the 45 h step solved;
+    the 6-port at each level of LEVELS, p0b-emerge-nport-<um>. Returns the ids of the steps that raised or did not
+    solve, a coupon's 45 h step not among them when its 10 h step solved."""
     failed = []
-
-    def run(sid: str, mode: str, *args: str) -> dict | None:
-        print(f"emerge_app: {sid}", flush=True)
-        try:
-            return _fem_step(out, sid, mode, *args)
-        except Exception:
-            failed.append(sid)
-            traceback.print_exc()
-            return None
-
     for name in COUPONS:
         sid, args = f"p0b-emerge-coupon-{name}-50", ("--input", "input.json", "--name", name, "--edge-um", "50")
-        rec = run(sid, "coupon", *args, "--out", f"{name}-50.json")
-        if rec and (rec["result"]["exit"] or not (out / "emerge" / rec["result"]["output"]).is_file()):
-            run(f"{sid}-10h", "coupon", *args, "--box", "10", "--out", f"{name}-50-10h.json")
+        ok = _solved(out, sid, "coupon", *args, "--out", f"{name}-50.json")
+        if ok:  # its fallback does not apply in this call
+            _supersede(out, f"{sid}-10h")
+        elif ok is False:
+            sid += "-10h"
+            ok = _solved(out, sid, "coupon", *args, "--box", "10", "--out", f"{name}-50-10h.json")
+        if not ok:
+            failed.append(sid)
     for um in LEVELS:
-        run(f"p0b-emerge-nport-{um}", "nport", "--input", "input.json", "--edge-um", um, "--out", f"lpf915-{um}.npz")
+        sid = f"p0b-emerge-nport-{um}"
+        if not _solved(out, sid, "nport", "--input", "input.json", "--edge-um", um, "--out", f"lpf915-{um}.npz"):
+            failed.append(sid)
     return failed
 
 
@@ -261,7 +286,7 @@ def cross_check(out: Path) -> dict:
     level (_nport), closed by Z_ideal alone (_chain); "compare", checks.compare(a = EMerge's chain at the finer level,
     b = openEMS's), "compare_75" at the other level, "compare_cbox" with B1's C_box on EMerge's side too (a
     sensitivity), "compare_n3", B5's chain against EMerge's (D-36; None without a p0b-B5 record, PF-33, its project
-    found without harness.project, which would make it), "compare_nomask" once nomask ran on this input.json and B1's
+    found without harness.project, which would make it), "compare_nomask" once nomask ran on this _digest and B1's
     run (else None: an older pair stays on disk after a model fix): EMerge's no-mask chain against the no-mask openEMS
     run closed by the C_box of its own setup.json; "move", the largest |ΔS| between
     the two levels' chains; "nport", STATS per level (None for one not solved); "coupons", each coupon's 45 h row
@@ -317,18 +342,19 @@ def cross_check(out: Path) -> dict:
         "freeze": (e / "freeze.txt").read_text(encoding="utf-8").splitlines()})
 
 
-def nomask(out: Path) -> None:
+def nomask(out: Path) -> list[str]:
     """D-43's no-mask diagnostic pair, run after a "fail" (OI-4): EMerge's 6-port at 75 µm with no mask, step
-    NOMASK_FEM; openEMS's, B1's model.json (the run folder of its step record) less its mask_* materials as a harness
-    model at Normal on every port, step NOMASK_OPENEMS, keyed by its spec_hash and B1's run, so B1 running again runs
-    it again."""
-    _fem_step(out, NOMASK_FEM, "nport", "--input", "input.json", "--edge-um", LEVELS[0], "--mask", "none",
-              "--out", "lpf915-75-nomask.npz")
+    NOMASK_FEM (_solved); openEMS's, B1's model.json (the run folder of its step record) less its mask_* materials as
+    a harness model at Normal on every port, step NOMASK_OPENEMS, keyed by its spec_hash and B1's run, so B1 running
+    again runs it again. Returns [NOMASK_FEM] when that FEM step raised or did not solve, else []."""
+    ok = _solved(out, NOMASK_FEM, "nport", "--input", "input.json", "--edge-um", LEVELS[0], "--mask", "none",
+                 "--out", "lpf915-75-nomask.npz")
     run = p0.records(out, ["p0b-B1"])[0]["result"]["run_dir"]
     spec = _read(p0.run_path(run) / "model.json")
     bare = {**spec, "materials": [m for m in spec["materials"] if not m["name"].startswith("mask_")]}
     p0.step(out, NOMASK_OPENEMS, f"{spec_hash(bare)}|{run}",
             partial(p0.run_model, p0.model_of(bare), "normal", NOMASK_OPENEMS, list(range(1, len(bare["ports"]) + 1))))
+    return [] if ok else [NOMASK_FEM]
 
 
 def venv(e: Path) -> None:
@@ -351,8 +377,9 @@ def venv(e: Path) -> None:
 def main(argv: list[str] | None = None) -> int:
     """python tools/p0b/emerge_app.py run [--out DIR] (D-41..D-43), one background command: enters the P0 folder
     first, then the validation venv, export of B1's project, the FEM steps, the cross-check, the no-mask pair and the
-    cross-check again when its verdict is "fail", then harness.write. Returns 1, before the cross-check, when a FEM
-    step raised, else 0."""
+    cross-check again when its verdict is "fail" (else the pair's records move aside, _supersede), then
+    harness.write. Returns 1, once the gate is written, when a FEM step raised or did not solve (a coupon solved in
+    its 10 h box counts as solved), else 0."""
     parser = argparse.ArgumentParser(prog="emerge_app", description="P0-B's EMerge cross-check (D-41..D-44).")
     parser.add_argument("command", choices=["run"], help="run every step not yet recorded, then write the gate")
     parser.add_argument("--out", help="the P0 folder (default: kicad-rf-studio-p0 beside the per-user data folder)")
@@ -360,14 +387,16 @@ def main(argv: list[str] | None = None) -> int:
     out = p0.enter(Path(a.out) if a.out else p0.default_out())
     venv(out / "emerge")
     export(harness._path(out, "B1"), out)
-    if failed := fem_steps(out):
-        print(f"emerge_app: failed: {', '.join(failed)}", flush=True)
-        return 1
+    failed = fem_steps(out)
     if cross_check(out)["verdict"] == "fail":
-        nomask(out)
+        failed += nomask(out)
         cross_check(out)
+    else:  # the pair runs only after a "fail" (D-43)
+        _supersede(out, NOMASK_FEM, NOMASK_OPENEMS)
     harness.write(out)
-    return 0
+    if failed:
+        print(f"emerge_app: failed: {', '.join(failed)}", flush=True)
+    return 1 if failed else 0
 
 
 if __name__ == "__main__":
