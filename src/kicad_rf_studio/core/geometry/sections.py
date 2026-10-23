@@ -20,7 +20,7 @@ from kicad_rf_studio.core.kicad.shapes import XY
 
 ALIGN = 1.5e-6  # mm: ends one 1e-6 mm grid step apart still share x or y; the half step is float noise
 REACH = 1e4  # mm, half the cut a gap is looked for along: past any crop
-BOX_H = 10  # the cross-section's box runs this many substrate heights past the line's edges and past the stack
+BOX_H = 10  # cross_section's default box_h: the box runs this many substrate heights past the line and the stack
 NEAR = 1.0  # track widths past a run's edges within which its copper must not change where it is cut
 MODES = ("none", "exact", "smeared")
 
@@ -182,8 +182,8 @@ def staircase_gap(board: Board, nets: Iterable[str], pieces: list[Piece]) -> flo
 
 
 def cross_section(sec: Section, pieces: list[Piece], zs: tuple[Slab, ...], mask: MaskModel | None, mode: str,
-                  dz0: float | None = None) -> CrossSection:
-    """The cut perpendicular to `sec` at `sec.cut`, BOX_H substrate heights past its edges either side, through every
+                  dz0: float | None = None, box_h: float = BOX_H) -> CrossSection:
+    """The cut perpendicular to `sec` at `sec.cut`, `box_h` substrate heights past its edges either side, through every
     piece it meets there, each as thick as its layer: the strip of `sec`'s net under its centre line is the signal,
     and any other conductor ground, its net's other copper too (as signal, a hairpin's two arms read as one line of
     half the Z0, and an arm cut at the box's side touched its 0 V face). The dielectric layers span the cut, and so
@@ -192,10 +192,12 @@ def cross_section(sec: Section, pieces: list[Piece], zs: tuple[Slab, ...], mask:
     dielectric is under it. The outer copper layers are in air, with the mask (Decisions): `mode` "none", or no
     `mask`, leaves it out; "exact" fills the gaps between the outer conductors over their z-cell and lays a coat t_m
     thick on the copper and the gaps; "smeared" fills the same gaps and smears the coat over the first z-cell, `dz0`
-    thick, as the FDTD model does. The box runs BOX_H substrate heights past the stack too, in air."""
+    thick, as the FDTD model does. The box runs `box_h` substrate heights past the stack too, in air: the default BOX_H
+    reads a microstrip's Z0 about 0.7 % under a 45 h box, which P0-A's 2D references take (D-14); fit2d's two solves
+    share the box, so its bias cancels there."""
     if mode not in MODES:
         raise ValueError(f"cross-section mode {mode!r} is not one of {MODES}")
-    m = BOX_H * substrate_h(zs)
+    m = box_h * substrate_h(zs)
     line, k, c = _cut(sec, sec.width / 2 + m)
     lo, hi = round(c - sec.width / 2 - m, 6), round(c + sec.width / 2 + m, 6)
     own = (sec.net, sec.layer)

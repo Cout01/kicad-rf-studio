@@ -84,3 +84,14 @@ def test_build_csx_adds_a_curve_port(monkeypatch):
     log = fake_openems(monkeypatch)
     build_csx({**TINY, "ports": [{**TINY["ports"][0], "kind": "curve"}]}, 1, 1e-9)
     assert ("AddCurvePort", (1, 50, [2.0, 2.0, 0.0], [2.0, 2.0, 1.0]), {"excite": 1}) in log
+
+
+def test_probes_follow_the_ports(monkeypatch):  # D-13
+    log = fake_openems(monkeypatch)
+    volt = {"name": "s0_v1", "type": 0, "weight": 1, "start": [2.0, 2.0, 1.0], "stop": [2.0, 2.0, 0.0]}
+    loop = {"name": "s0_i0", "type": 1, "weight": 1, "norm_dir": 0, "start": [2.5, 1.5, 0.5], "stop": [2.5, 2.5, 2.5]}
+    build_csx({**TINY, "probes": [volt, loop]}, 1, 1e-9)
+    names = [n for n, _, _ in log]
+    assert ("AddProbe", ("s0_v1",), {"p_type": 0, "weight": 1}) in log
+    assert ("AddProbe", ("s0_i0",), {"p_type": 1, "weight": 1, "norm_dir": 0}) in log
+    assert ("AddBox", ([2.5, 1.5, 0.5], [2.5, 2.5, 2.5]), {}) in log and names.index("AddProbe") > names.index("AddLumpedPort")

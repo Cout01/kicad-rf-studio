@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """CI tier (a) (spec 9.1): the ported KiCad line formulas pinned to KiCad 9's line calculator, and cs2d against them on
-the mask-free coupons, through the full pipeline."""
+the mask-free coupons, through the full pipeline; and the wider 2D box of P0-A's references (D-14)."""
 from pathlib import Path
 
 import pytest
@@ -13,6 +13,7 @@ from kicad_rf_studio.core.geometry.mask import mask_model
 from kicad_rf_studio.core.geometry.sections import cross_section, sections
 from kicad_rf_studio.core.geometry.zstack import zstack
 from kicad_rf_studio.core.kicad import load_board
+from test_gates import geom_of
 
 ROOT = Path(__file__).resolve().parents[1]
 FIX = ROOT / "tests" / "fixtures"
@@ -72,6 +73,17 @@ def test_cs2d_matches_kicad_on_coupons(name, formula, tol):  # CI tier (a): mask
     h, t, er = coupon_stackup_values(name)
     z, _ = microstrip(sec.width, h, t, er) if formula == "ms" else cpwg(sec.width, sec.gap, h, t, er)
     assert solve(cs).z0 == pytest.approx(z, rel=tol)
+
+
+@pytest.mark.parametrize(("name", "z0", "eeff"), [("coupon_ms", 48.863, 3.3576), ("coupon_ms_masked", 48.182, 3.4533),
+                                                   ("coupon_gcpw", 50.197, 2.6516),
+                                                   ("coupon_gcpw_masked", 47.308, 2.9853)])
+def test_the_2d_box_can_grow_for_the_p0a_references(name, z0, eeff):  # D-14; r7 §2.1
+    g, _ = geom_of(name)  # tests/test_gates.py
+    s = g.sections[0]
+    wide = solve(cross_section(s, g.pieces, g.zs, g.masks.get(s.layer), "exact", box_h=45))
+    assert (wide.z0, wide.eps_eff) == (pytest.approx(z0, abs=2e-3), pytest.approx(eeff, abs=2e-4))
+    assert solve(cross_section(s, g.pieces, g.zs, g.masks.get(s.layer), "exact")).z0 < wide.z0  # 10 h reads low
 
 
 def test_notice_lists_third_party():

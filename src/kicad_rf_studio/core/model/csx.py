@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """The openEMS model of a model spec (spec 3.3, 5.8, 6.2): the CSX and the FDTD setup a worker runs. Property names
 carry their role (C-16): `port_*` are openEMS's own port properties, `lumped_*` the grid's parts, and `metal`,
-`substrate_*` and `mask_*` the rest."""
+`substrate_*` and `mask_*` the rest; a P0 harness's probes keep the names it gives them (D-13)."""
 from __future__ import annotations
 
 METAL_PRIORITY = 1000  # above every material's 10 + i
@@ -17,9 +17,12 @@ def build_csx(spec: dict, excite: int, t_max: float) -> tuple[object, object]:
     """The ContinuousStructure and the openEMS object of `spec` (model_spec()), in mm, run up to `t_max` s with port
     `excite` (1-based) excited: EndCriteria 1e-15, Mur on all six sides, the spec's pulse and openEMS's own time step
     (W-1); each port a 50 Ω lumped port, or for kind "curve" a 50 Ω CurvePort (openEMS's one-edge lumped port joined
-    to both ends by PEC curves, r3); each grid part a lumped element of whichever of R, C and L it sets, in parallel:
-    LEtype is never set, so it is 0 (1 is unstable in 0.37). Points go to CSXCAD as [xs, ys]: it misreads an (N, 2)
-    array silently. CSXCAD and openEMS are imported here only, so that only a worker loads them."""
+    to both ends by PEC curves, r3); after the ports, each entry of the optional `spec["probes"]` ({"name", "type" (0
+    voltage, 1 current), "weight", "norm_dir" (optional), "start", "stop"}) an openEMS probe box, whose file the job
+    leaves in its folder: the P0 harnesses' probes, which the product never writes (D-13); each grid part a lumped
+    element of whichever of R, C and L it sets, in parallel: LEtype is never set, so it is 0 (1 is unstable in 0.37).
+    Points go to CSXCAD as [xs, ys]: it misreads an (N, 2) array silently. CSXCAD and openEMS are imported here only,
+    so that only a worker loads them."""
     from CSXCAD import ContinuousStructure
     from openEMS import openEMS
 
@@ -58,6 +61,10 @@ def build_csx(spec: dict, excite: int, t_max: float) -> tuple[object, object]:
             fdtd.AddCurvePort(k, 50, port["start"], port["stop"], excite=on)
         else:
             fdtd.AddLumpedPort(k, 50, port["start"], port["stop"], port["dir"], excite=on)
+    for probe in spec.get("probes", ()):
+        normal = {"norm_dir": probe["norm_dir"]} if "norm_dir" in probe else {}
+        box = csx.AddProbe(probe["name"], p_type=probe["type"], weight=probe["weight"], **normal)
+        box.AddBox(probe["start"], probe["stop"])
     for i, part in enumerate(spec["grid"]):
         value = {key: part[key] for key in ("R", "C", "L") if part.get(key) is not None}
         element = csx.AddLumpedElement(f"lumped_{i}", ny="xyz".index(part["dir"]), caps=True, **value)
