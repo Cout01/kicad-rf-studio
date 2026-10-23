@@ -77,10 +77,11 @@ def _check(where: str, text: str, deny: list[str], generic: bool) -> list[str]:
 
 
 def _scan_file(where: str, path: str, data: bytes, deny: list[str], generic: bool) -> list[str]:
-    """Archives are checked by member name, other binaries are skipped, the rest is text: UTF-16 when it
-    starts with a byte order mark, else UTF-8, else cp1252 (what a Windows editor saves), so that an
-    accented entry matches. Text that is not UTF-8 is also read as UTF-8 with the bad bytes replaced, so
-    that one stray byte does not hide the rest of a UTF-8 file."""
+    """Archives are checked by member name, other binaries are skipped, the rest is text: UTF-8, else
+    cp1252 (what a Windows editor saves), so that an accented entry matches. Text that is not UTF-8 is
+    also read as UTF-8 with the bad bytes replaced, so that one stray byte does not hide the rest of a
+    UTF-8 file. Text that starts with a UTF-16 byte order mark is read as UTF-16, UTF-8 and cp1252, since
+    those two bytes can also open a file that is not UTF-16. A hit found in several readings counts once."""
     if path.lower().endswith(ARCHIVES):
         try:
             with zipfile.ZipFile(io.BytesIO(data)) as z:
@@ -88,15 +89,17 @@ def _scan_file(where: str, path: str, data: bytes, deny: list[str], generic: boo
         except zipfile.BadZipFile:
             pass  # named like an archive but is not one: treat it like any other file
     if data[:2] in (b"\xff\xfe", b"\xfe\xff"):  # UTF-16 is full of NULs: read it before the binary test
-        return _check(where, data.decode("utf-16", "replace"), deny, generic)
-    if b"\0" in data[:8192]:
+        codecs = ("utf-16", "utf-8", "cp1252")
+    elif path and b"\0" in data[:8192]:  # commit and tag text has no path: git tag keeps a NUL
         return []
-    try:
-        return _check(where, data.decode("utf-8"), deny, generic)
-    except UnicodeDecodeError:
-        both = [data.decode("cp1252", "replace"), data.decode("utf-8", "replace")]  # the same lines: "\n" is ASCII
-        found = dict.fromkeys(hit for text in both for hit in scan_text(text, deny, generic))  # each hit once
-        return [f"{where}:{n}: {rule}" for n, rule in sorted(found, key=lambda hit: hit[0])]
+    else:
+        try:
+            return _check(where, data.decode("utf-8"), deny, generic)
+        except UnicodeDecodeError:
+            codecs = ("cp1252", "utf-8")  # the same lines: "\n" is ASCII
+    texts = [data.decode(codec, "replace") for codec in codecs]
+    found = dict.fromkeys(hit for text in texts for hit in scan_text(text, deny, generic))  # each hit once
+    return [f"{where}:{n}: {rule}" for n, rule in sorted(found, key=lambda hit: hit[0])]
 
 
 def _scan_files(prefix: str, files: list[tuple[str, str]], deny: list[str], allow: set[str],
@@ -118,7 +121,7 @@ def _scan_files(prefix: str, files: list[tuple[str, str]], deny: list[str], allo
 
 def _scan_commit(sha: str, deny: list[str], allow: set[str], seen: set) -> list[str]:
     prefix = sha[:8] + ":"
-    out = _check(prefix + "commit", git("cat-file", "commit", sha), deny, False)
+    out = _scan_file(prefix + "commit", "", git("cat-file", "commit", sha, raw=True), deny, False)  # read as a blob
     files = []
     for entry in filter(None, git("ls-tree", "-r", "-z", "--full-tree", sha).split("\0")):
         meta, path = entry.split("\t", 1)
@@ -148,6 +151,19 @@ def _pushed(stdin_text: str, remote_name: str) -> tuple[list[str], list[str], li
     return list(dict.fromkeys(commits)), refs, tags
 
 
+def _tags(shas: list[str]) -> list[str]:
+    """Each tag object of `shas`, then every tag object it reaches through nested tags, each once."""
+    out = []
+    for sha in shas:
+        while sha not in out:
+            out.append(sha)
+            obj, kind = git("cat-file", "tag", sha).splitlines()[:2]  # "object <sha>", "type <type>"
+            if kind != "type tag":
+                break
+            sha = obj.split()[1]
+    return out
+
+
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(prog="privacy_gate", description="Local privacy gate.")
     mode = ap.add_mutually_exclusive_group(required=True)
@@ -167,7 +183,9 @@ def main(argv: list[str] | None = None) -> int:
     seen = set()
     if args.staged:
         names = git("diff", "--cached", "--name-only", "-z", "--diff-filter=ACMR").split("\0")
-        out = _scan_files("", [(":" + n, n) for n in names if n], deny, allow, seen)
+        index = git("ls-files", "--stage", "-z").split("\0")
+        gitlinks = {e.split("\t", 1)[1] for e in index if e.startswith("160000 ")}  # a submodule's commit, not ours
+        out = _scan_files("", [(":" + n, n) for n in names if n and n not in gitlinks], deny, allow, seen)
     else:
         if args.all:
             commits = git("rev-list", "--all").split()
@@ -177,8 +195,8 @@ def main(argv: list[str] | None = None) -> int:
         else:
             commits, refs, tags = _pushed(sys.stdin.read(), args.pre_push[0])
         out = _check("refs", "\n".join(refs), deny, False)
-        for sha in tags:  # the tagger and the message: the private list only, as for a commit's header
-            out += _check(sha[:8] + ":tag", git("cat-file", "tag", sha), deny, False)
+        for sha in _tags(tags):  # the tagger and the message: the private list only, as for a commit's header
+            out += _scan_file(sha[:8] + ":tag", "", git("cat-file", "tag", sha, raw=True), deny, False)
         for sha in commits:
             out += _scan_commit(sha, deny, allow, seen)
     if out:

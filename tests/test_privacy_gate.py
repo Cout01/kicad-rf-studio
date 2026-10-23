@@ -202,6 +202,14 @@ def test_a_utf16_file_with_a_byte_order_mark_is_text_not_binary(repo, capsys, en
     assert hits(capsys.readouterr().out) == [(f"{sha[:8]}:notes.txt", "2", "deny#1")]
 
 
+@pytest.mark.parametrize("data", [b"\xff\xfeProject ACME\n", b"\xfe\xffProject ACME\n", b"\xef\xbb\xbfProject ACME\n"],
+                         ids=["ff-fe", "fe-ff", "utf8-bom"])
+def test_a_byte_order_mark_never_hides_the_utf8_reading(repo, capsys, data):  # D-19
+    sha = commit_bytes(repo, "notes.txt", data)
+    assert gate.main(["--all"]) == 1
+    assert hits(capsys.readouterr().out) == [(f"{sha[:8]}:notes.txt", "1", "deny#1")]
+
+
 @pytest.mark.parametrize("data", [
     "Projeto ação\n".encode("cp1252"),                    # what a Windows editor saves: not UTF-8
     "Projeto ação\n".encode() + b"\xe9\n",                # UTF-8 with one stray byte: its UTF-8 reading still counts
@@ -212,6 +220,30 @@ def test_an_accented_entry_matches_text_that_is_not_utf8(repo, monkeypatch, tmp_
     assert gate.main(["--all"]) == 1
 
 
+@pytest.mark.parametrize("what", ["commit", "tag"])
+def test_commit_and_tag_text_in_cp1252_is_read(repo, monkeypatch, tmp_path_factory, what):  # D-19
+    monkeypatch.setenv("KRS_PRIVATE_LIST", str(private_list(tmp_path_factory, "ação\n".encode())))
+    message = tmp_path_factory.mktemp("msg") / "m.txt"
+    message.write_bytes("Projeto ação\n".encode("cp1252"))
+    if what == "commit":
+        stage(repo, "a.txt", "clean\n")
+        git(repo, *IDENT, "-c", "i18n.commitEncoding=cp1252", "commit", "-q", "-F", str(message))
+    else:
+        commit(repo, "a.txt", "clean\n")
+        git(repo, "-c", "user.name=t", *IDENT[2:], "-c", "tag.gpgsign=false", "tag", "-a", "v1", "-F", str(message))
+    assert gate.main(["--all"]) == 1
+
+
+def test_a_nul_byte_never_hides_tag_text(repo, capsys, tmp_path_factory):  # git tag keeps a NUL; git commit refuses it
+    commit(repo, "a.txt", "clean\n")
+    message = tmp_path_factory.mktemp("msg") / "m.txt"
+    message.write_bytes(b"v1\0\nRelease ACME\n")
+    git(repo, "-c", "user.name=t", *IDENT[2:], "-c", "tag.gpgsign=false", "tag", "-a", "v1", "-F", str(message))
+    sha = git(repo, "rev-parse", "v1")
+    assert gate.main(["--all"]) == 1
+    assert [where for where, _, _ in hits(capsys.readouterr().out)] == [f"{sha[:8]}:tag"]
+
+
 @TAGS
 def test_all_scans_annotated_tags(repo, capsys, tagger, message, exit_code):
     commit(repo, "a.txt", "clean\n")
@@ -219,6 +251,17 @@ def test_all_scans_annotated_tags(repo, capsys, tagger, message, exit_code):
     assert gate.main(["--all"]) == exit_code
     out = capsys.readouterr().out
     assert [where for where, _, _ in hits(out)] == [f"{sha[:8]}:tag"] * exit_code and "acme" not in out.lower()
+
+
+def test_a_tag_of_a_tag_is_scanned_through_to_the_inner_tag(repo, monkeypatch, capsys):  # D-19
+    commit(repo, "a.txt", "clean\n")
+    inner = tag(repo, "inner", "Release ACME", "t")
+    git(repo, "-c", "user.name=t", *IDENT[2:], "-c", "tag.gpgsign=false", "tag", "-a", "outer", "inner", "-m", "v1")
+    git(repo, "tag", "-d", "inner")  # only the outer tag's ref is left
+    outer = git(repo, "rev-parse", "outer")
+    assert gate.main(["--all"]) == 1
+    assert [where for where, _, _ in hits(capsys.readouterr().out)] == [f"{inner[:8]}:tag"]
+    assert push(monkeypatch, f"refs/tags/outer {outer} refs/tags/outer {NEVER}") == 1
 
 
 def test_a_blob_is_checked_at_every_path_it_has(repo):
@@ -278,6 +321,15 @@ def test_staged_scans_the_index_blob_not_the_worktree(repo, capsys):
     stage(repo, "a.txt", "clean\n")
     (repo / "a.txt").write_bytes(b"acme\n")         # an unstaged edit is not part of the commit
     assert gate.main(["--staged"]) == 0
+
+
+def test_a_staged_gitlink_is_skipped_without_a_git_error(repo, capsys):  # D-19: a submodule commit the repo lacks
+    commit(repo, "a.txt", "clean\n")
+    git(repo, "update-index", "--add", "--cacheinfo", f"160000,{'1' * 40},sub")
+    stage(repo, "b.txt", "acme\n")  # the rest of the index is still scanned
+    assert gate.main(["--staged"]) == 1
+    out = capsys.readouterr()
+    assert (out.out, out.err) == ("b.txt:1: deny#1\n", "")
 
 
 def test_pre_push_scans_the_whole_range(repo, monkeypatch):

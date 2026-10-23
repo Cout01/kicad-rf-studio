@@ -37,3 +37,24 @@ def test_env_files_are_ignored():
     not_ignored = [p for p in paths
                    if subprocess.run(["git", "check-ignore", "-q", p], cwd=ROOT).returncode != 0]
     assert not_ignored == []
+
+def test_run_folders_and_kicad_side_files_are_ignored_and_the_p0_fixtures_are_not():  # D-20, spec 9.1
+    ignored = ["runs/r/model.json", "p0/runs/job-1/waves.npz", "#auto_saved_files#", "_autosave-x", "a.kicad_sch",
+               "a.kicad_dru", "fp-lib-table", "sym-lib-table"]
+    kept = ["tests/fixtures/traces/lpf915-k1.npz", "tests/fixtures/p0d/lpf915.npz", "tests/fixtures/lpf915.kicad_pcb",
+            "docs/validation/2026-11-05-p0-a.md", "docs/validation/2026-11-05-p0-a.json",
+            "tests/fixtures/a.kicad_sch", "tests/fixtures/a.kicad_dru", "tests/fixtures/fp-lib-table",
+            "tests/fixtures/sym-lib-table"]  # PF-1: KiCad side files stay committable under tests/fixtures
+
+    def by_git(path):  # --no-index: a tracked fixture is held to the patterns too
+        return subprocess.run(["git", "check-ignore", "-q", "--no-index", path], cwd=ROOT).returncode == 0
+
+    assert [p for p in ignored if not by_git(p)] == [] and [p for p in kept if by_git(p)] == []
+
+def test_the_readme_names_both_licence_texts():  # D-21
+    first = (ROOT / "README.md").read_text(encoding="utf-8").split("\n\n")[1]
+    assert "`LICENSE`" in first and "`COPYING.LESSER`" in first
+
+def test_every_workflow_starts_with_an_spdx_header():  # D-55
+    files = sorted((ROOT / ".github" / "workflows").glob("*.yml"))
+    assert files and [p.name for p in files if p.read_text(encoding="utf-8").splitlines()[0] != SPDX] == []
