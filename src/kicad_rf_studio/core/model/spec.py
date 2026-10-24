@@ -21,7 +21,7 @@ from kicad_rf_studio.core.geometry.region import band
 from kicad_rf_studio.core.kicad.tracer import signal_layer
 from kicad_rf_studio.core.kicad.values import part_kind, part_value, port_value
 from kicad_rf_studio.core.messages import KrsError
-from kicad_rf_studio.core.model.parts import COPPER, c_box_of
+from kicad_rf_studio.core.model.parts import COPPER
 from kicad_rf_studio.core.model.ports import _pad
 from kicad_rf_studio.core.model.readers import c_box
 
@@ -153,16 +153,15 @@ def _cell(lines: list[float], lo: float, hi: float) -> tuple[float, float]:
     return lines[i], lines[i + 1]
 
 
-def verify_spec(spec: dict, parts: dict[str, dict], boxes: dict, dump: Path, dt: float) -> dict:
-    """verify's model (spec 7.6, C-36, C-37): a copy of the run's `spec` whose part ports, all lumped, leave `ports`
-    for `grid`, after the run's own grid parts, each at its value in `parts` (project.json's parts by ref), on the same
-    lines. A C sits in its port's box as C_part + its C_box in `boxes` (the run's, by ref): a grid C replaces the box's
-    own capacitance. An R sits in its box and keeps that capacitance. An L sits in one cell of its box, at the box's
-    centre and in its copper slab, joined to the box's two ends by PEC strips in `metal.copper`, with the cell's own
-    capacitance, from the operator dump `dump` at the time step `dt` (s), as an explicit C: without one, openEMS 0.37
-    lowers it. Raises, part by part in port order, E_VERIFY_VALUE for a part that is not a C, L or R whose value
-    reads, E_CBOX for a C whose C_box cannot close the port, and for an L, E_VERIFY_DUMP when `dump` is missing, then
-    E_VERIFY_K when k = dt/(2·√(L·C)) is above K_MAX."""
+def verify_spec(spec: dict, parts: dict[str, dict], dump: Path, dt: float) -> dict:
+    """verify's model (spec 7.6, C-36, C-37, D-45): a copy of the run's `spec` whose part ports, all lumped, leave
+    `ports` for `grid`, after the run's own grid parts, each at its value in `parts` (project.json's parts by ref), on
+    the same lines: in one cell of its box along the box's axis, at its middle and in its copper slab, a C or an R
+    across the box's whole width and an L one cell wide, joined to the box's two ends by PEC fill of the cell's width
+    in `metal.copper`. The cell's own capacitance, from the operator dump `dump` at the time step `dt` (s), is added to
+    a C (a grid C replaces it) and is an L's explicit C (without one, openEMS 0.37 lowers it); an R keeps it. Raises,
+    part by part in port order, E_VERIFY_VALUE for a part that is not a C, L or R whose value reads, E_VERIFY_DUMP
+    when `dump` is missing, then for an L E_VERIFY_K when k = dt/(2·√(L·C)) is above K_MAX."""
     out = copy.deepcopy(spec)
     lines, copper = [out["mesh"][a] for a in "xyz"], out["metal"]["copper"]
     moved, out["ports"] = [q for q in out["ports"] if q["part"]], [q for q in out["ports"] if not q["part"]]
@@ -171,24 +170,21 @@ def verify_spec(spec: dict, parts: dict[str, dict], boxes: dict, dump: Path, dt:
         kind, text = part_kind(ref), parts[ref]["value"]
         if (value := port_value(ref, text)) is None:
             raise KrsError("E_VERIFY_VALUE", ref=ref, value=text)
-        if kind == "C":
-            out["grid"].append({**port, "R": None, "C": value + c_box_of(boxes, ref)})
-            continue
-        if kind == "R":
-            out["grid"].append({**port, "R": value, "C": None})
-            continue
         if not dump.is_file():
             raise KrsError("E_VERIFY_DUMP", path=str(dump))
         # per axis, the smaller and the larger end: a box can start at its higher end
         lo, hi = ([f(a, b) for a, b in zip(port["start"], port["stop"])] for f in (min, max))
-        cell = [_cell(lines[0], lo[0], hi[0]), _cell(lines[1], lo[1], hi[1]), (lo[2], hi[2])]
-        start, stop = [e[0] for e in cell], [e[1] for e in cell]
         p = "xyz".index(port["dir"])
+        cell = [(lo[n], hi[n]) for n in range(3)]
+        for n in (0, 1) if kind == "L" else (p,):  # D-45: a C or an R spans its box's width, an L one cell
+            cell[n] = _cell(lines[n], lo[n], hi[n])
+        start, stop = [e[0] for e in cell], [e[1] for e in cell]
         c = c_box(dump, lines, start, stop, p, dt)
         k = dt / (2 * math.sqrt(value * c)) if value * c > 0 else math.inf  # a C (or an L) of 0 reads as k inf
-        if k > K_MAX:
+        if kind == "L" and k > K_MAX:
             raise KrsError("E_VERIFY_K", ref=ref, k=f"{k:.3g}", limit=f"{K_MAX:g}")
-        out["grid"].append({**port, "start": start, "stop": stop, "R": None, "C": c, "L": value})
+        values = {"C": {"R": None, "C": value + c}, "R": {"R": value, "C": None}, "L": {"R": None, "C": c, "L": value}}
+        out["grid"].append({**port, "start": start, "stop": stop, **values[kind]})
         for span in ((lo[p], start[p]), (stop[p], hi[p])):  # along dir: from lo to the cell, from the cell to hi
             if span[0] < span[1]:
                 (x0, x1), (y0, y1), z = (span if n == p else cell[n] for n in range(3))

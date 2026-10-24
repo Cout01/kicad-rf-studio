@@ -14,7 +14,7 @@ from kicad_rf_studio.core.model import spec as spec_module
 from kicad_rf_studio.core.post.outputs import LIMITS, grid_lines
 from kicad_rf_studio.core.post.waves import grid, layout
 from kicad_rf_studio.core.project import load_project, parts, save_project
-from networks import C_BOX, read_s, star, terminate_np
+from networks import read_s, star, terminate_np
 from test_cli_cost import FIX, fail
 from test_run import coupon, lpf_loads, lpf_project, lpf_run, result_codes
 
@@ -44,7 +44,7 @@ def test_verify_runs_the_parts_in_the_grid_and_compares(tmp_path, calibrated, mo
     assert [g["name"] for g in model["grid"]] == ["C1", "L1", "C2", "C3"] and [q["name"] for q in model["ports"]] == [
         "P1", "P2"]
     assert (model["grid"][0]["C"], model["grid"][1]["L"], model["grid"][1]["C"]) == (
-        pytest.approx(100e-12 + C_BOX), 15e-9, 6e-16)
+        pytest.approx(100e-12 + 6e-16, rel=1e-12, abs=0), 15e-9, 6e-16)  # value + the cell's C
     retuned = terminate_np(star(F, 6), [0, 1], lpf_loads(None))  # ideal values ∥ C_box (C-38)
     assert v["compare"]["ds_max"] == pytest.approx(np.abs(star(F, 2) - retuned).max(), abs=1e-4)
     file = pj.parent / "results" / "verify.s2p"
@@ -149,7 +149,7 @@ def test_grid_lines_say_what_each_part_sat_in_the_grid_as():  # C-36, C-37: lpf9
             {"name": "C1", "R": None, "C": 1.0002e-10}, {"name": "R1", "R": 0.0, "C": None},
             {"name": "L1", "R": None, "C": 6e-16, "L": 1.5e-08}]
     assert grid_lines(grid, {"C1": "100pF", "R1": "0R", "L1": "15nH"}) == [
-        "in grid: C1 100pF as C 1.0002e-10 F (value + C_box)", "in grid: R1 0R as R 0 ohm",
+        "in grid: C1 100pF as C 1.0002e-10 F (value + the cell's C)", "in grid: R1 0R as R 0 ohm",
         "in grid: L1 15nH as L 1.5e-08 H with the cell's C 6e-16 F"]
 
 

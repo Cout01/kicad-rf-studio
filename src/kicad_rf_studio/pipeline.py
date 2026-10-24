@@ -757,7 +757,7 @@ def _verify(path: Path, run_dir: Path) -> int:
     by_ref, (ext, refs) = parts(project), _split(lay)
     values = {ref: by_ref[ref]["value"] for ref in refs}
     dump = runs.job_dir(Path(results["run_dir"]), 0, "setup") / "operator_dump.vtr"
-    vspec = verify_spec(model.spec, by_ref, results["c_box"], dump, results["dt"])
+    vspec = verify_spec(model.spec, by_ref, dump, results["dt"])
     zk = loads({ref: z_part(part_kind(ref), port_value(ref, values[ref]), None, lay.f) for ref in refs}, refs,
                results["c_box"], lay.f)  # the ideal values, the part models and S2P files ignored (C-38)
     if (out := simulate(replace(model, spec=vspec), project, run_dir)) is None:

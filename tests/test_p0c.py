@@ -29,7 +29,7 @@ def test_p0c_refuses_paths_inside_a_git_work_tree(tmp_path):  # D-46; Review Foc
 def test_p0c_on_lpf915_with_the_fake_worker(tmp_path, p0_out, monkeypatch):  # D-46; Review Focus 4
     monkeypatch.setenv("KRS_FAKE", "network")
     monkeypatch.setattr(p0, "cli", in_process)
-    monkeypatch.setattr(spec_module, "c_box", lambda *a: 6e-16)  # verify's L cell: the fake's dump is empty
+    monkeypatch.setattr(spec_module, "c_box", lambda *a: 6e-16)  # verify's cells: the fake's dump is empty
     board = tmp_path / "placa ação" / "lpf915.kicad_pcb"
     board.parent.mkdir()
     board.write_bytes((p0.FIX / "lpf915.kicad_pcb").read_bytes())

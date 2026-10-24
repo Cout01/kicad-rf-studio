@@ -210,13 +210,13 @@ def kmax_sweep(out: Path) -> None:
         raise RuntimeError("p0b: B1's project no longer builds the model of its results; run B1 again")
     by_ref, dt = parts(data), results["dt"]
     dump = runs.job_dir(p0.run_path(run), 0, "setup") / "operator_dump.vtr"
-    built = spec_module.verify_spec(spec, by_ref, results["c_box"], dump, dt)
+    built = spec_module.verify_spec(spec, by_ref, dump, dt)
     for k, inductance in kmax_values(dt, next(g["C"] for g in built["grid"] if g["name"] == "L1")):
         swept = {**by_ref, "L1": {**by_ref["L1"], "value": f"{inductance * 1e12:.6g}pH"}}
         # ponytail: patches the module's K_MAX for this process while verify_spec builds the sweep's spec
         k_max, spec_module.K_MAX = spec_module.K_MAX, 1.0
         try:
-            vspec = spec_module.verify_spec(spec, swept, results["c_box"], dump, dt)
+            vspec = spec_module.verify_spec(spec, swept, dump, dt)
         finally:
             spec_module.K_MAX = k_max
         sid = KMAX_STEPS[k]

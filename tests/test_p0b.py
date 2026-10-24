@@ -112,7 +112,7 @@ def test_the_p0b_rules():  # D-30, D-33, D-34, D-37..D-39, D-44; O-11; PF-26, PF
 def test_p0b_on_the_fake_worker_writes_a_plain_private_free_gate_json(p0_out, monkeypatch):  # D-40, D-51; RF 3
     monkeypatch.setenv("KRS_FAKE", "network")
     monkeypatch.setattr(p0, "cli", in_process)
-    monkeypatch.setattr(spec_module, "c_box", lambda *a: 6e-16)  # verify's L cell: the fake's dump is empty
+    monkeypatch.setattr(spec_module, "c_box", lambda *a: 6e-16)  # verify's cells: the fake's dump is empty
     p0.save(p0_out / "p0a" / "p0a.json", P0A)
     assert harness.main(["--out", str(p0_out)]) == 0  # every step, then p0b.json
     text = (p0_out / "p0b" / "p0b.json").read_text(encoding="utf-8")

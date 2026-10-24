@@ -14,7 +14,7 @@ from kicad_rf_studio.core.model.spec import verify_spec
 from kicad_rf_studio.core.post.checks import recip_err, sigma_max
 from kicad_rf_studio.core.post.waves import grid, kappa_eq, s_matrix
 from kicad_rf_studio.worker import ERR, LOG
-from test_model_spec import CBOX, DT, VPARTS, VPORTS
+from test_model_spec import DT, VPARTS, VPORTS
 from test_readers import DUMPS
 from test_worker import write_job
 
@@ -75,7 +75,7 @@ def test_the_waves_tool_and_the_lumped_port_order_on_real_openems(tmp_path, monk
 def test_verifys_grid_elements_run_stable(tmp_path):  # spec 7.6, C-36, C-37, C-41; about 45 s
     spec = make_waves()["microstrip"](5e-9)
     spec["ports"] = [{**q, "part": False} for q in spec["ports"]] + VPORTS[1:]  # tests/test_model_spec.py
-    v = verify_spec(spec, VPARTS, CBOX, DUMPS / "operator_dump.vtr", DT)  # the L cell sits on the substrate's top
+    v = verify_spec(spec, VPARTS, DUMPS / "operator_dump.vtr", DT)  # every part's cell sits on the substrate's top
     assert [g["name"] for g in v["grid"]] == ["C1", "L1", "R3"] and [q["name"] for q in v["ports"]] == ["P1", "P2"]
     job = write_job(tmp_path, v, "run")
     assert run_worker(job) == 0

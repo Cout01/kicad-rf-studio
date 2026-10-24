@@ -77,12 +77,12 @@ def port_map(project: dict, results: dict, lay: Layout, idx: list[int]) -> list[
 
 def grid_lines(grid: list[dict], values: dict[str, str]) -> list[str]:
     """The port-map lines of verify's parts (C-36, C-37): one per entry of a model spec's `grid` that `values` names
-    (each part's value text by ref), in grid order, with what it sat in the grid as: a C as its value plus its C_box,
-    an R as its value, an L with its cell's own C."""
+    (each part's value text by ref), in grid order, with what it sat in the grid as: a C as its value plus its cell's
+    own C, an R as its value, an L with its cell's own C."""
     def element(g: dict) -> str:
         if "L" in g:
             return f"L {g['L']:.6g} H with the cell's C {g['C']:.6g} F"
-        return f"R {g['R']:g} ohm" if g["R"] is not None else f"C {g['C']:.6g} F (value + C_box)"
+        return f"R {g['R']:g} ohm" if g["R"] is not None else f"C {g['C']:.6g} F (value + the cell's C)"
 
     return [f"in grid: {g['name']} {values[g['name']]} as {element(g)}" for g in grid if g["name"] in values]
 
