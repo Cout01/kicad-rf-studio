@@ -82,7 +82,7 @@ CATALOG: dict[str, str] = {
     "E_REFERENCE_LAYER": "Port {name}: its reference is on {reference_layer} and its signal pad on {signal_layer}; Stage 1 builds horizontal ports only. Choose a reference on {signal_layer} in project.json.",
     "E_ROTATED_PART": "Part {ref} is not at a multiple of 90°, so its port would be a CurvePort, which P0-B has not validated. Rotate it in KiCad, or set \"allow_curve_port\": true in project.json at your own risk.",
     "E_PORT_SPANS": "Port {name}: its two pads face each other neither along x nor along y, so no box joins them. Choose a reference straight across from the signal pad in project.json.",
-    "E_PORT_BOX": "Port {name}: no mesh line lies inside its pads, so its box cannot sit on them. Set mesh.n to 3 in project.json, or use larger pads.",
+    "E_PORT_BOX": "Port {name}: its box finds no mesh line inside its pads, or no copper-free mesh line between them with each end on its own pad's copper. Set mesh.n to 3 in project.json, use larger pads, or clear other copper from between the pads; look at it with `preview`.",
     "E_PART_VALUE": "Part {ref} is in the grid but its value \"{value}\" cannot be read. Fix its value in project.json, or set its role to \"open\" or \"port\".",
     "E_GRID_KIND": "Part {ref} cannot sit in the grid: only a C or an R can. Set its role to \"port\" or \"open\" in project.json.",
     "E_LOCKED": "Another run of this project has been running since {started} in {run}. Wait for it, or create a file named STOP in that folder to stop it; if no run is going on, delete {lock}.",

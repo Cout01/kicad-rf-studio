@@ -45,7 +45,7 @@ def test_kappa_is_set_at_f0():  # spec 5.3
 @cache
 def lpf_spec():
     board, p, g, e, m = lpf_model()  # tests/test_model_ports.py
-    return g, m, model_spec(p, board, g, m, [place(x, m, g.zs) for x in e], [])
+    return g, m, model_spec(p, board, g, m, [place(x, m, g.zs, g.pieces) for x in e], [])
 
 
 def test_the_lpf915_spec():

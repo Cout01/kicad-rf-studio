@@ -124,7 +124,7 @@ def build_model(project: dict, board: Board, geom: Geometry) -> Model:
     by_ref = parts(project)
     ports, grid = [], []
     for end in e:
-        placed = place(end, mesh, geom.zs)
+        placed = place(end, mesh, geom.zs, geom.pieces)
         if end.role == GRID:
             grid.append(grid_entry(placed, by_ref[end.name]))
         else:

@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 import numpy as np
+import shapely
 from shapely.geometry import Point, box
 
 from kicad_rf_studio.core.geometry.copper import SIMPLIFY
@@ -117,22 +118,29 @@ def nominal_boxes(ends: list[End]) -> tuple[Polygon, ...]:
     return tuple(e.signal.union(e.reference).convex_hull for e in ends)
 
 
-def place(end: End, mesh: Mesh, zs: tuple[Slab, ...]) -> dict:
-    """The port of `end` on the lines of `mesh` (spec 5.6): a CurvePort for a curve_port, else a lumped port.
-    The lumped port's box runs along the in-plane axis on which the signal and the reference are apart while their
-    spans (bounds) across it overlap: from the reference's cap to the signal's, across over the lines inside that
-    overlap, and in z over the copper slab of `end.layer`. It starts at the reference end, so that openEMS's u is
-    V_signal − V_reference. Its `nodes` are the reference cap, the signal cap, then the reference and signal witnesses,
-    at the copper's top face on one line across: the one nearest the middle of those lines (a tie to the lower) at
-    which each pad keeps a line along, inside its bounds, whose point lies inside its copper shrunk by SIMPLIFY (D-11:
-    the copper solids are simplified by up to SIMPLIFY). A cap is the pad's kept line nearest the other pad, a witness
-    its kept line farthest from it.
+def place(end: End, mesh: Mesh, zs: tuple[Slab, ...], pieces: list[Piece]) -> dict:
+    """The port of `end` on the lines of `mesh` (spec 5.6): a CurvePort for a curve_port, else a lumped port; `pieces`
+    are the board's copper (geom.pieces), and those on `end.layer` are the metal the box keeps out of. The lumped port's
+    box runs along the in-plane axis p on which the signal and the reference are apart while their spans (bounds) across
+    it overlap, and in z over the copper slab of `end.layer`; it starts at the reference end, so that openEMS's u is
+    V_signal − V_reference. openEMS keeps PEC on every edge whose midpoint lies in metal but the box's own edges along
+    p, so the box holds no copper (D-45): walking from the reference's facing line to the signal's, its caps are the
+    last line before, and the first line after, the first run of lines on which no node across and no midpoint between
+    two of those lines lies in that metal; across, it takes the lines inside the spans' overlap, less an outer line
+    whose edge outward, at a line between the caps, has its midpoint in metal; and each cap must touch, at those lines
+    or midway between them, the piece of metal that holds its witness and no other. Its `nodes` are the reference cap,
+    the signal cap, then the reference and signal witnesses, at the copper's top face on one line across of the box, tc:
+    the one nearest the middle of the overlap's lines (a tie to the lower; chosen again among the box's lines when the
+    cut took it) at which each pad keeps a line along, inside its bounds, whose point lies inside its copper shrunk by
+    SIMPLIFY (D-11: the copper solids are simplified by up to SIMPLIFY). A pad's facing line is its kept line nearest
+    the other pad, its witness its kept line farthest from it; a cap node may lie in air, on the box's PEC end.
     The CurvePort (C-37) runs from the reference pad's centre to the signal pad's, each on the nearest x and y lines, at
     the copper's top face; its `nodes` are those two ends. openEMS puts its one-edge port at their middle, joined to
     both by PEC curves, and orders them along its axis itself: its u is V_signal − V_reference only when the
     reference lies lower along it.
     Every coordinate is a line of `mesh` and every value JSON-native: lists of Python floats. Raises E_PORT_SPANS, and
-    E_PORT_BOX when no line across qualifies."""
+    E_PORT_BOX when no line across qualifies, copper fills every line between the facing lines, or a cap touches no
+    piece of metal or another than its witness's."""
     slab = next(c for c in zs if c.copper == end.layer)
     if end.role == CURVE_PORT:
         z = float(slab.z1)  # ponytail: the top face for any layer; P0-B tests F.Cu only
@@ -140,8 +148,9 @@ def place(end: End, mesh: Mesh, zs: tuple[Slab, ...]) -> dict:
                        for x, y in end.centers)
         return {"name": end.name, "kind": "curve", "dir": None, "start": start, "stop": stop, "nodes": [start, stop],
                 "part": True}
-    # ponytail: the nodes sit inside the real copper (by SIMPLIFY); the box's other lines across may cross a rounded
-    # corner's air
+    # ponytail: one walk along p and one cut across; a box they leave with a cap off its own copper (a side finger on an
+    # outer line's node, a cap whose copper lay only on a cut line, a gap with no mesh line) is refused, not walked
+    # again; model_spec's 0R hulls come later and are not counted
     s, r = end.signal.bounds, end.reference.bounds
     apart = [s[k + 2] <= r[k] or r[k + 2] <= s[k] for k in (0, 1)]  # their spans along k do not overlap
     if apart[0] == apart[1]:
@@ -166,18 +175,47 @@ def place(end: End, mesh: Mesh, zs: tuple[Slab, ...]) -> dict:
     width = inside(across, max(s[t], r[t]), min(s[t + 2], r[t + 2]))
     if not (s_in.size and r_in.size and width.size):
         raise KrsError("E_PORT_BOX", name=end.name)
-    lo, hi = width.min(), width.max()
     sig_cu, ref_cu = end.signal.buffer(-SIMPLIFY), end.reference.buffer(-SIMPLIFY)  # the solids are simplified
-    for tc in sorted(width, key=lambda v: abs(v - (lo + hi) / 2)):  # stable: a tie goes to the lower line
-        s_at, r_at = kept(s_in, sig_cu, tc), kept(r_in, ref_cu, tc)
-        if s_at.size and r_at.size:
-            break
-    else:
+    metal = shapely.union_all([pc.polygon for pc in pieces if pc.layer == end.layer])
+
+    def witness_line(width: np.ndarray) -> tuple[float, np.ndarray, np.ndarray]:
+        """tc and the lines each pad keeps there; E_PORT_BOX when no line of `width` qualifies."""
+        for tc in sorted(width, key=lambda v: abs(v - (width.min() + width.max()) / 2)):  # stable: a tie, the lower
+            s_at, r_at = kept(s_in, sig_cu, tc), kept(r_in, ref_cu, tc)
+            if s_at.size and r_at.size:
+                return tc, s_at, r_at
         raise KrsError("E_PORT_BOX", name=end.name)
+
+    def busy(u: float, vs, cu: BaseGeometry = metal) -> bool:
+        """Whether the point at `u` along p and any of `vs` across lies in `cu`, its edge included."""
+        return any(cu.covers(Point(at(u, v, 0)[:2])) for v in vs)
+
+    tc, s_at, r_at = witness_line(width)
     forward = s[p + 2] <= r[p]  # the reference lies past the signal along p
-    sig, sig_far = (s_at.max(), s_at.min()) if forward else (s_at.min(), s_at.max())
-    ref, ref_far = (r_at.min(), r_at.max()) if forward else (r_at.max(), r_at.min())
+    ref, sig = (r_at.min(), s_at.max()) if forward else (r_at.max(), s_at.min())  # the pads' facing lines
+    run = along[(along >= min(ref, sig)) & (along <= max(ref, sig))]
+    run = run[::-1] if forward else run  # from the reference's facing line to the signal's
+    if run.size > 2:
+        free = np.array([not busy(u, np.r_[width, (width[1:] + width[:-1]) / 2]) for u in run])
+        free[0] = free[-1] = False  # the facing lines lie in their pads
+        if not free.any():
+            raise KrsError("E_PORT_BOX", name=end.name)
+        i = int(free.argmax())  # the first free line
+        j = i + int((~free[i:]).argmax())  # the first line in copper after it
+        ref, sig, inner = run[i - 1], run[j], run[i:j]
+        below, above = across[across < width.min()], across[across > width.max()]
+        cut = [below.size and any(busy(u, [(width.min() + below.max()) / 2]) for u in inner),
+               above.size and any(busy(u, [(width.max() + above.min()) / 2]) for u in inner)]
+        width = width[int(cut[0]):width.size - int(cut[1])]
+        if tc not in width:
+            tc, s_at, r_at = witness_line(width)
+    sig_far, ref_far = (s_at.min(), r_at.max()) if forward else (s_at.max(), r_at.min())
+    parts = getattr(metal, "geoms", [metal])  # the layer's copper, one polygon per connected piece
+    span = np.r_[width, (width[1:] + width[:-1]) / 2]  # a cap's nodes and its edges across, inside the box
+    for cap, far in ((ref, ref_far), (sig, sig_far)):  # each cap touches its witness's piece of copper, and no other
+        if [busy(cap, span, g) for g in parts] != [g.covers(Point(at(far, tc, 0)[:2])) for g in parts]:
+            raise KrsError("E_PORT_BOX", name=end.name)
     return {"name": end.name, "kind": "lumped", "dir": "xy"[p],
-            "start": at(ref, lo, slab.z0), "stop": at(sig, hi, slab.z1),
+            "start": at(ref, width.min(), slab.z0), "stop": at(sig, width.max(), slab.z1),
             "nodes": [at(ref, tc, slab.z1), at(sig, tc, slab.z1), at(ref_far, tc, slab.z1), at(sig_far, tc, slab.z1)],
             "part": end.role != "external"}

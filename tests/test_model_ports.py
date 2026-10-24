@@ -5,17 +5,20 @@ from functools import cache
 
 import numpy as np
 import pytest
+import shapely
 from shapely.geometry import Point, box
 
 from kicad_rf_studio import runs
 from kicad_rf_studio.cli import main
 from kicad_rf_studio.core.geometry import build_geometry
+from kicad_rf_studio.core.geometry.copper import Piece
 from kicad_rf_studio.core.geometry.zstack import Slab
 from kicad_rf_studio.core.mesh import Mesh
 from kicad_rf_studio.core.mesh.gates import mesh_with_lint
 from kicad_rf_studio.core.messages import KrsError, render
 from kicad_rf_studio.core.model.ports import End, ends, nominal_boxes, place
 from kicad_rf_studio.core.project import load_project, save_project
+from kicad_rf_studio.pipeline import build_model
 from test_cli_cost import FIX
 from test_gates import project_of
 from test_project import edit
@@ -35,14 +38,19 @@ def test_lpf915_ports_in_job_order():
         ("P1", "external"), ("P2", "external"), ("C1", "port"), ("L1", "port"), ("C2", "port"), ("C3", "port")]
 
 
-def test_port_boxes_sit_on_lines_inside_their_pads():  # spec 5.6, C-14
+def test_port_boxes_span_the_copper_free_gap_between_their_ends():  # spec 5.6, C-14, D-45
     board, p, g, e, m = lpf_model()
-    p1, p2, c1, c2 = (place(x, m, g.zs) for x in (e[0], e[1], e[2], e[4]))
+    ports = {q["name"]: q for q in build_model(p, board, g).spec["ports"]}
+    p1, p2, c1, c2 = (ports[k] for k in ("P1", "P2", "C1", "C2"))
     assert (p1["dir"], p2["dir"], c1["dir"], c2["dir"]) == ("y", "y", "x", "y")
-    assert -99.625 < p1["start"][1] < -99.375 and -100.125 < p1["stop"][1] < -99.875  # U1.2, then U1.1
-    assert 101.05 < p1["start"][0] < p1["stop"][0] < 101.875
-    assert 112.825 < p2["start"][0] < p2["stop"][0] < 112.925  # J1.1 and J1.2 overlap 0.1 mm in x
-    assert 103.7 < c1["start"][0] < 104.26 and 102.74 < c1["stop"][0] < 103.3  # C1.2 (reference), then C1.1
+    # along: from the reference's last line in copper to the signal's first, all of F.Cu counted (the GND pour reaches
+    # past U1.2, J1.2 and C2.2, C2.1's RF_B copper past its pad); across: C1 drops its two outer lines, whose edges out
+    # end in the pour's fingers between its pads
+    assert [[*q["start"][:2], *q["stop"][:2]] for q in (p1, p2, c1, c2)] == [
+        pytest.approx([101.119184, -99.712411, 101.868219, -99.895311], abs=1e-6),  # U1.2's side, then U1.1's
+        pytest.approx([112.828045, -99.330719, 112.902421, -99.623658], abs=1e-6),  # J1.2's side, then J1.1's
+        pytest.approx([103.740804, -100.219158, 103.291384, -99.779563], abs=1e-6),  # C1.2's side, then C1.1's
+        pytest.approx([104.714549, -100.479893, 105.238873, -100.290607], abs=1e-6)]  # C2.2's side, then C2.1's
     for q in (p1, p2, c1, c2):
         assert (q["start"][2], q["stop"][2]) == (0.745, 0.78)
         assert {q["start"][0], q["stop"][0]} <= set(m.x.tolist()) and {q["start"][1], q["stop"][1]} <= set(m.y.tolist())
@@ -53,7 +61,7 @@ def test_a_copper_rule_reference_takes_the_ground_under_the_point():  # S-3: the
     board, p = project_of("coupon_gcpw_pads", "TP1.1", "TP2.1")
     g = build_geometry(board, p)
     e = ends(board, p, g.pieces)
-    q = place(e[0], mesh_with_lint(g, replace(g.protected, boxes=nominal_boxes(e)), 2), g.zs)
+    q = place(e[0], mesh_with_lint(g, replace(g.protected, boxes=nominal_boxes(e)), 2), g.zs, g.pieces)
     assert q["dir"] == "y" and q["start"][1] < -100.6505 < -100.5 < q["stop"][1] < -99.5
     assert 99.5 < q["start"][0] < q["stop"][0] < 100.5
 
@@ -97,7 +105,7 @@ def test_pads_that_face_each_other_on_no_axis_are_refused():
     q = copy.deepcopy(p)
     q["ports"][0]["reference"] = {"pad": "C2.2", "uuid": board.pads("C2.2")[0].uuid}  # diagonal to U1.1
     with pytest.raises(KrsError) as e:
-        place(ends(board, q, g.pieces)[0], m, g.zs)
+        place(ends(board, q, g.pieces)[0], m, g.zs, g.pieces)
     assert (e.value.code, e.value.params) == ("E_PORT_SPANS", {"name": "P1"})
 
 
@@ -114,30 +122,78 @@ def test_a_rotated_part_becomes_a_curve_port_behind_the_switch():  # C-37, spec 
     g = build_geometry(board, p)
     e = ends(board, p, g.pieces)
     m = mesh_with_lint(g, replace(g.protected, boxes=nominal_boxes(e)), 2)
-    l1 = place(next(x for x in e if x.name == "L1"), m, g.zs)
+    l1 = place(next(x for x in e if x.name == "L1"), m, g.zs, g.pieces)
     cx, cy = board.pads("L1.2")[0].center
     assert (l1["kind"], l1["start"][2], l1["stop"][2]) == ("curve", 0.78, 0.78)
     assert l1["start"][:2] == [min(m.x, key=lambda v: abs(v - cx)), min(m.y, key=lambda v: abs(v - cy))]
     assert l1["nodes"] == [l1["start"], l1["stop"]]
 
 
-@pytest.mark.parametrize("n", [2, 3])
-@pytest.mark.parametrize(("name", "start", "end"), [("coupon_gcpw_pads", "TP1.1", "TP2.1"), ("lpf915", "U1.1", "J1.1"),
-                                                   ("lpf915-45", "U1.1", "J1.1")])
-def test_every_node_of_every_port_lies_inside_its_copper(name, start, end, n):  # D-11, r3 B-3
+CASES = [("coupon_gcpw_pads", "TP1.1", "TP2.1", 2), ("coupon_gcpw_pads", "TP1.1", "TP2.1", 3),
+         ("lpf915", "U1.1", "J1.1", 2), ("lpf915", "U1.1", "J1.1", 3), ("lpf915-45", "U1.1", "J1.1", 2)]
+
+
+@pytest.mark.parametrize(("name", "start", "end", "n"), CASES)
+def test_every_witness_lies_inside_its_copper_and_every_cap_on_its_box_end(name, start, end, n):  # D-11, r3 B-3, D-45
     more = ("--lid-height", "2.5") if name.startswith("lpf") else ()
     board, p = project_of(name, start, end, *more)
     p = {**p, "allow_curve_port": True}
     g = build_geometry(board, p)
     e = ends(board, p, g.pieces)
     m = mesh_with_lint(g, replace(g.protected, boxes=nominal_boxes(e)), n)
-    outside = []
+    wrong = []
     for x in e:
-        q = place(x, m, g.zs)
-        owners = [x.reference, x.signal] if q["kind"] == "curve" else [x.reference, x.signal, x.reference, x.signal]
-        outside += [(x.name, k) for k, (node, cu) in enumerate(zip(q["nodes"], owners))
-                    if not cu.contains(Point(node[:2]))]
-    assert outside == []
+        q = place(x, m, g.zs, g.pieces)
+        if q["kind"] == "curve":
+            wrong += [(x.name, k) for k, (node, cu) in enumerate(zip(q["nodes"], [x.reference, x.signal]))
+                      if not cu.contains(Point(node[:2]))]
+            continue
+        k = "xy".index(q["dir"])
+        lo, hi = sorted((q["start"][1 - k], q["stop"][1 - k]))
+        rc, sc, rw, sw = q["nodes"]  # a cap node may lie in air: the box's PEC end joins it to the copper (A-6)
+        if not (rc[k] == q["start"][k] and sc[k] == q["stop"][k] and lo <= rc[1 - k] == sc[1 - k] == sw[1 - k] <= hi
+                and rw[1 - k] == rc[1 - k]):
+            wrong.append((x.name, "caps"))
+        wrong += [(x.name, i) for i, node, cu in ((2, rw, x.reference), (3, sw, x.signal))
+                  if not cu.contains(Point(node[:2]))]
+    assert wrong == []
+
+
+@pytest.mark.parametrize(("name", "start", "end", "n"), CASES)
+def test_no_copper_shorts_a_cell_of_a_lumped_port_box(name, start, end, n):  # D-45
+    # openEMS keeps PEC on every edge whose midpoint lies in metal but a lumped box's own edges along its axis
+    # (operator.cpp:1051-1053, 1681-1741, 2030-2062): a node strictly between the caps that copper touches, at the node
+    # (its z edge) or midway to the next line across on either side, shorts the cells beside it
+    board, p = project_of(name, start, end, *(("--lid-height", "2.5") if name.startswith("lpf") else ()))
+    p = copy.deepcopy({**p, "allow_curve_port": True})
+    p["mesh"]["n"] = n
+    g = build_geometry(board, p)
+    spec = build_model(p, board, g).spec
+    metal = shapely.union_all([pc.polygon for pc in g.pieces if pc.layer == "F.Cu"])  # every port here is on F.Cu
+    shorted = []
+    for q in spec["ports"]:
+        if q["kind"] == "curve":
+            continue
+        k = "xy".index(q["dir"])
+        along, across = (np.array(spec["mesh"][a]) for a in ("xy"[k], "xy"[1 - k]))
+        (a, b), (lo, hi) = (sorted((q["start"][j], q["stop"][j])) for j in (k, 1 - k))
+        rows = np.flatnonzero((across >= lo) & (across <= hi))
+        out = across[max(rows[0] - 1, 0):rows[-1] + 2]  # the box's lines across and one beyond each side
+        vs = [*across[rows], *(out[1:] + out[:-1]) / 2]
+        if any(metal.covers(Point((u, v) if k == 0 else (v, u))) for u in along[(along > a) & (along < b)] for v in vs):
+            shorted.append(q["name"])
+    assert shorted == []
+
+
+def test_lpf915_45s_p2_at_n3_is_refused_rather_than_left_open():  # D-45: the gap's ends would touch no copper
+    board, p = project_of("lpf915-45", "U1.1", "J1.1", "--lid-height", "2.5")
+    p = {**p, "allow_curve_port": True}
+    g = build_geometry(board, p)
+    e = ends(board, p, g.pieces)
+    m = mesh_with_lint(g, replace(g.protected, boxes=nominal_boxes(e)), 3)
+    with pytest.raises(KrsError) as err:
+        place(next(x for x in e if x.name == "P2"), m, g.zs, g.pieces)
+    assert (err.value.code, err.value.params) == ("E_PORT_BOX", {"name": "P2"})
 
 
 def test_lpf915s_p2_moves_to_the_width_line_where_both_pads_have_copper():  # D-11: n = 2 places it
@@ -145,7 +201,7 @@ def test_lpf915s_p2_moves_to_the_width_line_where_both_pads_have_copper():  # D-
     g = build_geometry(board, p)
     e = ends(board, p, g.pieces)
     m = mesh_with_lint(g, replace(g.protected, boxes=nominal_boxes(e)), 2)
-    p2 = place(next(x for x in e if x.name == "P2"), m, g.zs)
+    p2 = place(next(x for x in e if x.name == "P2"), m, g.zs, g.pieces)
     assert [node[0] for node in p2["nodes"]] == pytest.approx([112.9024] * 4, abs=1e-4)
 
 
@@ -154,20 +210,50 @@ def test_a_round_pad_with_no_line_inside_its_copper_is_a_coded_refusal():  # D-1
                 {}, {})
     end = End("P9", Point(0, 0).buffer(0.3), box(0.5, -0.05, 1.0, 0.05), "F.Cu", "external")
     with pytest.raises(KrsError) as e:
-        place(end, mesh, (Slab("copper", 0.745, 0.78, None, None, "F.Cu"),))
+        place(end, mesh, (Slab("copper", 0.745, 0.78, None, None, "F.Cu"),), [])
     assert (e.value.code, e.value.params) == ("E_PORT_BOX", {"name": "P9"})
 
 
+def synthetic(extra):
+    """place() of port P9 on F.Cu between a signal pad at x 0..0.3 and a reference pad at 0.6..0.9 (y -0.5..0.5), two
+    mesh lines across inside both (y -0.1 and 0.1), and `extra`, more GND copper."""
+    mesh = Mesh(np.array([0.1, 0.2, 0.35, 0.45, 0.55, 0.7, 0.8]), np.array([-0.6, -0.1, 0.1, 0.6]),
+                np.array([0.745, 0.78]), 0.1, 0.03, {}, {})
+    sig, ref = box(0.0, -0.5, 0.3, 0.5), box(0.6, -0.5, 0.9, 0.5)
+    pieces = [Piece("F.Cu", net, q, True) for net, q in (("SIG", sig), ("GND", ref), ("GND", extra))]
+    return place(End("P9", sig, ref, "F.Cu", "external"), mesh, (Slab("copper", 0.745, 0.78, None, None, "F.Cu"),),
+                 pieces)
+
+
+def test_a_finger_beside_the_gap_cuts_a_line_across_and_the_nodes_move_off_it():  # D-45
+    # the finger holds the midpoint of line -0.1's edge outward at x 0.45, between the caps: -0.1 is cut, and the nodes,
+    # which sat on it (a tie goes to the lower line), move to 0.1
+    q = synthetic(box(0.41, -0.7, 0.49, -0.3))
+    assert (q["dir"], q["start"], q["stop"]) == ("x", [0.7, 0.1, 0.745], [0.2, 0.1, 0.78])
+    assert q["nodes"] == [[0.7, 0.1, 0.78], [0.2, 0.1, 0.78], [0.8, 0.1, 0.78], [0.1, 0.1, 0.78]]
+
+
+@pytest.mark.parametrize("extra", [box(0.32, -0.7, 0.58, 0.7), box(0.41, -0.7, 0.49, -0.08)])
+def test_copper_in_the_gap_that_no_box_clears_is_a_coded_refusal(extra):  # D-45: never E_INTERNAL, never a cap off its copper
+    # the strip leaves no copper-free line between the pads; the finger covers line -0.1's node at x 0.45, so the gap
+    # would end there and the signal's cap would touch only the finger
+    with pytest.raises(KrsError) as e:
+        synthetic(extra)
+    assert (e.value.code, e.value.params) == ("E_PORT_BOX", {"name": "P9"})
+    assert "copper-free mesh line between them" in render("E_PORT_BOX", name="P9")
+
+
 @pytest.mark.openems
-def test_lpf915_at_n3_passes_the_port_gates(tmp_path, capsys, monkeypatch):  # D-11; about 1–2 min
+@pytest.mark.parametrize("n", [2, 3])
+def test_lpf915_passes_the_port_gates(tmp_path, capsys, monkeypatch, n):  # D-11, D-45; about 1–2 min each
     monkeypatch.setattr(runs, "data_dir", lambda: tmp_path / "data")
     runs.save_settings({"machines": {runs.machine_key(): {"threads": 4, "pool": 1, "aggregate_mcs": 200.0}}})
     pj = tmp_path / "lpf915" / "project.json"
     assert main(["new", str(FIX / "lpf915.kicad_pcb"), "--start", "U1.1", "--end", "J1.1", "--f0", "915MHz",
                  "--lid-height", "2.5", "-o", str(pj.parent)]) == 0
     d = load_project(pj)
-    d["mesh"]["n"], d["gates"]["fit2d_limit"] = 3, 0.05  # E_FIT2D_FINE's own advice: RF_B reads +4.39 %
+    d["mesh"]["n"], d["gates"]["fit2d_limit"] = n, 0.05  # n = 3: E_FIT2D_FINE's own advice, RF_B reads +4.39 %
     save_project(pj, d)
     capsys.readouterr()
-    assert main(["cost", str(pj)]) == 0
+    assert main(["cost", str(pj)]) == 0  # 3 when a gate blocks: C-15 on all six ports; at n = 2 P2's cap nodes lie in air
     assert render("E_PORT_OPEN", name="P2", end="signal") not in capsys.readouterr().out
