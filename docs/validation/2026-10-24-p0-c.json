@@ -1,0 +1,1 @@
+{"steps": ["C0", "C1", "C2", "C3", "C4a", "C4b", "C5", "C6", "S2P"], "criteria": ["c1", "c2", "c3", "c4"], "smoke": {"steps": ["C0", "C1"], "ran": true}}
