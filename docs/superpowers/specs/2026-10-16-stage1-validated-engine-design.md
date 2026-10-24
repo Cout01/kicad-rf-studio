@@ -1,7 +1,7 @@
 # kicad-rf-studio — Stage 1 design: a validated simulation engine
 
 - **Date:** 2026-10-16
-- **Status:** design approved section by section in conversation, revised on 2026-10-19 after an independent review, and approved by the owner. On 2026-10-21 the owner confirmed one amendment to §5.4: the substrate height now counts in the cell size. On 2026-10-22, plan 5 amended §1.1, §7.6, §9.1, §9.2 and §9.6 (A-1 to A-4) as controller recommendations while the owner was unavailable; the owner reviews them.
+- **Status:** design approved section by section in conversation, revised on 2026-10-19 after an independent review, and approved by the owner. On 2026-10-21 the owner confirmed one amendment to §5.4: the substrate height now counts in the cell size. On 2026-10-22, plan 5 amended §1.1, §7.6, §9.1, §9.2 and §9.6 (A-1 to A-4) as controller recommendations while the owner was unavailable; the owner reviews them. On 2026-10-24, D-45's fix amended §5.6 (A-6) the same way.
 - **Scope:** Stage 1 of the project: the headless engine, the command-line orchestrator and the validation gates. The GUI and the KiCad toolbar button (Stage 2) get their own spec, written with Stage 1's results.
 
 ---
@@ -317,10 +317,12 @@ Only the edge lint first tries one automatic re-mesh; the other gates block dire
   4. if there is none, `run` refuses until the reference pad is set in `project.json`.
 
   A reference on the opposite layer is never chosen automatically: on one layout, moving a reference from the adjacent pour to the bottom layer changed |S11| from −9.1 to −4.6 dB.
-- **Port boxes on the mesh:**
-  - the in-plane ends sit on the last mesh line inside each pad;
+- **Port boxes on the mesh** (A-6, plan 5: controller recommendation, owner unavailable):
+  - along the box, the ends sit on the last mesh line in the reference's copper and the first in the signal's, counting all the copper on that layer, not the pads only: the box spans the copper-free gap between them;
   - z spans the full copper thickness;
-  - the width is snapped inward to lines inside the pad.
+  - the width is snapped inward to lines inside both pads, less an outer line whose edge outward, at a line between the ends, has its midpoint in copper;
+  - each end must touch, across the box's width, only the piece of copper that holds its own pad's witness, else the port is refused (E_PORT_BOX); this covers a part in the grid too, which the setup gate does not check;
+  - so no copper lies in a box: openEMS keeps PEC on every edge whose midpoint lies in metal, except a lumped element's own edges along its axis. On `lpf915`, boxes from pad to pad had 2 to 8 shorted cells each: `verify`'s C2 and C3 acted as 8.8 pF instead of 3.3 pF, C1 gained 57–72 pF to ground, and the co-simulation's six-port was non-reciprocal by 0.16 (P0-B, D-45).
 - **After setup** (setup-only plus a PEC dump), the PEC edges are grouped into connected pieces. Each port's two ends must lie in the pieces of its declared signal pad and reference pad, and those must be different pieces. The dump has no labels, and a lumped port's own end caps are PEC, so touching PEC alone proves nothing. Otherwise the run is blocked.
 - An "unused primitive" on a port, excitation, probe or lumped part is an error.
 
