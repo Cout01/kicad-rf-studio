@@ -38,7 +38,7 @@ import p0  # noqa: E402
 import p0a  # noqa: E402
 from p0b import harness  # noqa: E402
 
-NPORT_FREE_MB = 21000  # r6 §6: the 60 µm level peaks near 20 GB on this 31 GB PC; 1 GB of headroom, the page file covers an overshoot
+NPORT_FREE_MB = 21000  # MiB, as runs.free_ram_mb reads it; r6 §6: the 60 µm level peaks near 20 GB on this 31 GB PC, so at least 0.5 GiB of headroom, and the page file covers an overshoot
 COUPONS = ("coupon_ms", "coupon_gcpw")  # D-43's coupons, solved at 50 µm
 LEVELS = ("75", "60")  # µm, the 6-port's two mesh levels (D-43); the last, the finer, is the one compared
 PRECONDITIONS = {"z0_pct": 5.0, "eeff_pct": 3.0, "move": 0.01, "sigma": 1.01, "recip": 0.01}  # D-43's limits
