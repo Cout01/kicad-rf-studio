@@ -1,7 +1,7 @@
 # kicad-rf-studio — Stage 1 design: a validated simulation engine
 
 - **Date:** 2026-10-16
-- **Status:** design approved section by section in conversation, revised on 2026-10-19 after an independent review, and approved by the owner. On 2026-10-21 the owner confirmed one amendment to §5.4: the substrate height now counts in the cell size. On 2026-10-22, plan 5 amended §1.1, §7.6, §9.1, §9.2 and §9.6 (A-1 to A-4) as controller recommendations while the owner was unavailable; the owner reviews them. On 2026-10-24, D-45's fix amended §5.6 (A-6) the same way.
+- **Status:** design approved section by section in conversation, revised on 2026-10-19 after an independent review, and approved by the owner. On 2026-10-21 the owner confirmed one amendment to §5.4: the substrate height now counts in the cell size. On 2026-10-22, plan 5 amended §1.1, §7.6, §9.1, §9.2 and §9.6 (A-1 to A-4) as controller recommendations while the owner was unavailable; the owner reviews them. On 2026-10-24, D-45's fix amended §5.6 (A-6) and §7.6 (A-7) the same way.
 - **Scope:** Stage 1 of the project: the headless engine, the command-line orchestrator and the validation gates. The GUI and the KiCad toolbar button (Stage 2) get their own spec, written with Stage 1's results.
 
 ---
@@ -466,7 +466,7 @@ Accuracy is reported as |ΔS| or as a null shift, never in dB at a null.
 ### 7.6 Verification run and fallback
 
 - **`verify`** runs once with every part in the grid as an ideal element at its current value. S2P and ESL/ESR models are replaced by that value. Each part sits in the box of the port it replaces:
-  - capacitors are classic C of C_part + C_box. A classic C replaces the box's own capacitance instead of adding to it (measured), so the box's C_box is added back to match the retune's Z_part ∥ C_box;
+  - capacitors and resistors sit in one cell along the box's axis, at its middle, across the box's whole width, joined to its two ends by PEC fill of that width (A-7, plan 5: controller recommendation, owner unavailable; D-45: spread over the whole box, lpf915's grid capacitors kept in-band lines with Q above 200 even clear of copper). A capacitor is a classic C of C_part + the cell's own capacitance from the operator dump: a classic C replaces that capacitance instead of adding to it (measured). A resistor is R_part and keeps the cell's capacitance. The fill pieces, one cell apart, add a fringe capacitance across the part that the retune's Z_part ∥ C_box does not hold: on lpf915 about 11 fF across C1 and 6 fF across C2 and C3 (max |ΔS| about 0.003), a known difference in P0-B's report;
   - inductors use LEtype=0 in a one-cell box, joined to both pads by PEC strips, with an explicit C equal to the cell's own capacitance. Without it, openEMS 0.37's Z_FACT rule lowers that capacitance, using the excitation's cut-off frequency, which the custom pulse never sets (it reads uninitialised memory: the cell's C fell to zero in 4 of 22 runs), and the run can diverge;
   - the k check, k = dt/(2·√(L·C)) ≤ 0.45, makes sure the time step resolves each inductor cell's resonance. An isolated cell is stable up to k = 1, but in the grid, at openEMS's own dt, runs diverged from k ≥ 0.49. Real parts read k ≈ 0.003–0.03. If a part fails it, `verify` refuses and names the part;
   - LEtype=1 is never used, because it is unstable in 0.37.
