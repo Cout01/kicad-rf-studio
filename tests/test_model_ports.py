@@ -234,9 +234,9 @@ def test_a_finger_beside_the_gap_cuts_a_line_across_and_the_nodes_move_off_it():
 
 
 @pytest.mark.parametrize("extra", [box(0.32, -0.7, 0.58, 0.7), box(0.41, -0.7, 0.49, -0.08)])
-def test_copper_in_the_gap_that_no_box_clears_is_a_coded_refusal(extra):  # D-45: never E_INTERNAL, never a cap off its copper
-    # the strip leaves no copper-free line between the pads; the finger covers line -0.1's node at x 0.45, so the gap
-    # would end there and the signal's cap would touch only the finger
+def test_copper_in_the_gap_that_no_box_clears_is_a_coded_refusal(extra):  # D-45
+    # never E_INTERNAL, never a cap off its copper: the strip leaves no copper-free line between the pads; the finger
+    # covers line -0.1's node at x 0.45, so the gap would end there and the signal's cap would touch only the finger
     with pytest.raises(KrsError) as e:
         synthetic(extra)
     assert (e.value.code, e.value.params) == ("E_PORT_BOX", {"name": "P9"})
@@ -255,5 +255,6 @@ def test_lpf915_passes_the_port_gates(tmp_path, capsys, monkeypatch, n):  # D-11
     d["mesh"]["n"], d["gates"]["fit2d_limit"] = n, 0.05  # n = 3: E_FIT2D_FINE's own advice, RF_B reads +4.39 %
     save_project(pj, d)
     capsys.readouterr()
-    assert main(["cost", str(pj)]) == 0  # 3 when a gate blocks: C-15 on all six ports; at n = 2 P2's cap nodes lie in air
+    # 3 when a gate blocks: C-15 on all six ports; at n = 2 P2's cap nodes lie in air
+    assert main(["cost", str(pj)]) == 0
     assert render("E_PORT_OPEN", name="P2", end="signal") not in capsys.readouterr().out

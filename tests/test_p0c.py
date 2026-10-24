@@ -5,6 +5,7 @@ import numpy as np
 
 import p0
 import p0c
+from kicad_rf_studio.core.messages import KrsError
 from kicad_rf_studio.core.model import spec as spec_module
 from kicad_rf_studio.core.post.waves import grid
 from kicad_rf_studio.core.project import load_project
@@ -41,6 +42,9 @@ def test_p0c_on_lpf915_with_the_fake_worker(tmp_path, p0_out, monkeypatch):  # D
     public = json.loads((p0_out / "report" / "p0c-public.json").read_text(encoding="utf-8"))
     assert set(private["criteria"]) == {"c1", "c2", "c3", "c4"} and (p0_out / "board" / "lpf915.kicad_pcb").is_file()
     assert "compare" in load_project(p0_out / "projects" / "C2" / "project.json")["verify"]
+    base = p0_out / "projects" / "base" / "project.json"
+    own, best = load_project(base)["ports"], p0c.next_best(base)  # P1's next-best reference leaves no port box
+    assert best[0] != own[0] and load_project(p0_out / "projects" / "C3" / "project.json")["ports"] == [own[0], best[1]]
 
     def leaves(x):
         items = x.values() if isinstance(x, dict) else x if isinstance(x, list) else None
@@ -54,6 +58,21 @@ def test_p0c_on_lpf915_with_the_fake_worker(tmp_path, p0_out, monkeypatch):  # D
     c = {k: bool(v["pass"]) for k, v in public["criteria"].items()}
     assert public["verdict"] == {"pass": c["c1"] and c["c2"] and c["c4"], "refine_mesh": not c["c4"],
                                  "fallback": not (c["c1"] and c["c2"]), "prominent_reference": not c["c3"]}
+
+
+def test_p0c_skips_c3_when_no_next_best_reference_leaves_a_port_box(tmp_path, p0_out, monkeypatch, capsys):  # PF-40
+    monkeypatch.setattr(p0, "cli", in_process)
+    moved = iter(["P1", "P2"])  # next_best moves both of lpf915's references
+
+    def refused(pj):  # only C3 asks for a model key here
+        raise KrsError("E_PORT_BOX", name=next(moved))
+
+    monkeypatch.setattr(p0, "model_key", refused)
+    board = tmp_path / "lpf915.kicad_pcb"
+    board.write_bytes((p0.FIX / "lpf915.kicad_pcb").read_bytes())
+    assert p0c.main(["--board", str(board), *ARGS, "--lid-height", "2.5", "--out", str(p0_out), "--steps", "C3"]) == 0
+    assert "p0c: C3 skipped: no port has a next-best reference that leaves a port box\n" in capsys.readouterr().out
+    assert not (p0_out / "steps" / "p0c-C3.json").exists()
 
 
 def test_p0c_with_c1_at_draft_reads_every_criterion_as_none(tmp_path, p0_out, monkeypatch):  # PF-39

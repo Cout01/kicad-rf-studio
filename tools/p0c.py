@@ -31,6 +31,7 @@ import p0
 from kicad_rf_studio import pipeline, runs
 from kicad_rf_studio.cli import _reference
 from kicad_rf_studio.core.kicad import choose_reference, classify, load_board
+from kicad_rf_studio.core.messages import KrsError
 from kicad_rf_studio.core.model.readers import read_stats
 from kicad_rf_studio.core.post.chain import loads, part_impedances
 from kicad_rf_studio.core.post.checks import LOSS_LIMIT, RECIP_LIMIT, SIGMA_LIMIT, loss_budget, recip_err, sigma_max
@@ -187,8 +188,12 @@ def c1_run(out: Path) -> str:
 
 def run_step(out: Path, a: argparse.Namespace, name: str) -> None:
     """The step `name` (STEPS) through p0.step (D-6). C0 is keyed by the base's model key, C1 by that and the preset,
-    C2 by C1's run folder, S2P by that and the files' names and sha256, the other variants by their own model key; C3
-    is skipped, with a line, when no port has a next-best reference (PF-40)."""
+    C2 by C1's run folder, S2P by that and the files' names and sha256, the other variants by their own model key. C3
+    moves each port's reference to its next-best one (next_best); a port without one keeps its own (PF-40), and so
+    does a port whose next-best reference leaves no port box: while C3's model is refused with E_PORT_BOX naming a
+    moved port, that port's entry is put back from the base, with a line, and the model built again (PF-40 extended,
+    controller ruling). Any other refusal, or E_PORT_BOX of a port or part C3 did not move, propagates. C3 is skipped,
+    with a line, when no port has a next-best reference, or no moved port is left."""
     sid, pj = f"p0c-{name}", base(out, a)
     if name == "C0":
         p0.step(out, sid, p0.model_key(pj), partial(command, pj, "cost"))
@@ -200,14 +205,28 @@ def run_step(out: Path, a: argparse.Namespace, name: str) -> None:
         files = s2p_files(Path(a.s2p))
         key = "|".join([c1_run(out), *(f"{p.name}:{hashlib.sha256(p.read_bytes()).hexdigest()}" for p in files)])
         p0.step(out, sid, key, partial(retunes, out, files))
+    elif name == "C3":
+        if (ports := next_best(pj)) is None:
+            print("p0c: C3 skipped: no port has a next-best reference", flush=True)
+            return
+        own, key = load_project(pj)["ports"], None
+        while key is None:
+            pj = variant(out, name, {**VARIANTS[name], "ports": ports})
+            try:
+                key = p0.model_key(pj)
+            except KrsError as err:
+                i = next((i for i, q in enumerate(ports) if q != own[i] and q["name"] == err.params.get("name")), None)
+                if err.code != "E_PORT_BOX" or i is None:
+                    raise
+                print(f"p0c: C3: {own[i]['name']} keeps its own reference: its next-best one leaves no port box "
+                      "(E_PORT_BOX)", flush=True)
+                ports[i] = own[i]
+                if ports == own:
+                    print("p0c: C3 skipped: no port has a next-best reference that leaves a port box", flush=True)
+                    return
+        p0.step(out, sid, key, partial(command, pj, "run"))
     else:
-        edits = VARIANTS[name]
-        if name == "C3":
-            if (ports := next_best(pj)) is None:
-                print("p0c: C3 skipped: no port has a next-best reference", flush=True)
-                return
-            edits = {**edits, "ports": ports}
-        pj = variant(out, name, edits)
+        pj = variant(out, name, VARIANTS[name])
         p0.step(out, sid, p0.model_key(pj), partial(fine_mesh, pj) if name == "C4a" else partial(command, pj, "run"))
 
 
