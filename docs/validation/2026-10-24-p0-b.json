@@ -1,0 +1,879 @@
+{
+  "gate": "P0-B",
+  "versions": {
+    "commit": "891d109",
+    "code": "dcadc63798df33120a651ee991de349154f88f34",
+    "python": "3.14.2",
+    "openems": "0.37.0",
+    "csxcad": "0.7.0",
+    "os": "Windows-11-10.0.26200-SP0",
+    "cpus": 16
+  },
+  "calibration": {
+    "threads": 4,
+    "pool": 4,
+    "aggregate_mcs": 737.1028615582543,
+    "single": {
+      "1": 208.2584578008464,
+      "2": 245.05665808285372,
+      "4": 555.5060120985123,
+      "16": 340.1078107635591
+    },
+    "parallel": {
+      "2": 694.1377418810749,
+      "4": 737.1028615582543
+    },
+    "levels": {
+      "4": 151.38446790153648,
+      "1": 555.5060120985123,
+      "2": 225.8630461987263
+    },
+    "at": "2026-10-23T08:47:45"
+  },
+  "runs": {
+    "B1": {
+      "exit": 0,
+      "cells": 2694450,
+      "dt": 5.4043e-14,
+      "dt_ratio": 1.0488287693830418,
+      "pool": 4,
+      "jobs": [
+        {
+          "t_stop": 1.2626058216e-08,
+          "port": "P1",
+          "verdict": "converged",
+          "t_cut": 1.25846613038e-08,
+          "residual_db": -69.31184305066928,
+          "growth_db": 0.0
+        },
+        {
+          "t_stop": 2.35548430325e-08,
+          "port": "P2",
+          "verdict": "converged",
+          "t_cut": 2.35134461203e-08,
+          "residual_db": -68.15637818784715,
+          "growth_db": 0.0
+        },
+        {
+          "t_stop": 1.65587648734e-08,
+          "port": "C1",
+          "verdict": "converged",
+          "t_cut": 1.65173679613e-08,
+          "residual_db": -68.1437889239647,
+          "growth_db": 0.0
+        },
+        {
+          "t_stop": 1.58136204541e-08,
+          "port": "L1",
+          "verdict": "converged",
+          "t_cut": 1.5772223542e-08,
+          "residual_db": -68.06070825749495,
+          "growth_db": 0.0
+        },
+        {
+          "t_stop": 9.93525892407e-09,
+          "port": "C2",
+          "verdict": "converged",
+          "t_cut": 9.89386201188e-09,
+          "residual_db": -69.26340535199233,
+          "growth_db": 0.0
+        },
+        {
+          "t_stop": 2.35962399447e-08,
+          "port": "C3",
+          "verdict": "converged",
+          "t_cut": 2.35548430325e-08,
+          "residual_db": -66.62631371013691,
+          "growth_db": 0.0
+        }
+      ],
+      "wall_s": 11863.30803059999,
+      "predicted_s": 12768.367474190269,
+      "worst_s": 21644.74933991879,
+      "indicators": {
+        "sigma": 1.0141,
+        "recip": 0.159,
+        "loss_pct": 80.9,
+        "expected_pct": 0.45
+      },
+      "warnings": [
+        "W_RECIPROCITY",
+        "W_LOSS_BUDGET"
+      ],
+      "lid_mm": 2.7219619999999995,
+      "run_dir": "B1-20261023-115431-b2d4"
+    },
+    "B2": {
+      "exit": 0,
+      "cells": 2694450,
+      "dt": 5.4043e-14,
+      "dt_ratio": 1.0488287693830418,
+      "pool": 2,
+      "jobs": [
+        {
+          "t_stop": 2.33892553837e-08,
+          "port": "P1",
+          "verdict": "flat",
+          "t_cut": 2.33478584716e-08,
+          "residual_db": -42.910645311117136,
+          "growth_db": 0.3079019881871261
+        },
+        {
+          "t_stop": 1.94151518141e-08,
+          "port": "P2",
+          "verdict": "converged",
+          "t_cut": 1.93737549019e-08,
+          "residual_db": -60.21228922629518,
+          "growth_db": 0.03160635372779552
+        }
+      ],
+      "wall_s": 5064.894144799997,
+      "predicted_s": 3832.62871799668,
+      "worst_s": 6554.511727923828,
+      "indicators": {
+        "sigma": 1.0955,
+        "recip": 0.0138,
+        "loss_pct": 70.42,
+        "expected_pct": 0.45
+      },
+      "warnings": [
+        "W_VERIFY_NULL_UNMATCHED",
+        "W_VERIFY_NULL_UNMATCHED",
+        "W_PASSIVITY",
+        "W_VERIFY_LOSS_BUDGET"
+      ],
+      "lid_mm": 2.7219619999999995,
+      "run_dir": "B1-20261023-151246-9269"
+    },
+    "B4": {
+      "exit": 0,
+      "cells": 2927739,
+      "dt": 5.49235e-14,
+      "dt_ratio": 1.065306359951122,
+      "pool": 4,
+      "jobs": [
+        {
+          "t_stop": 1.38133729851e-08,
+          "port": "P1",
+          "verdict": "converged",
+          "t_cut": 1.3772015581e-08,
+          "residual_db": -70.09142411894153,
+          "growth_db": 0.0
+        },
+        {
+          "t_stop": 1.45578062598e-08,
+          "port": "P2",
+          "verdict": "converged",
+          "t_cut": 1.45164488556e-08,
+          "residual_db": -65.51512872666466,
+          "growth_db": 0.0
+        },
+        {
+          "t_stop": 1.75355393584e-08,
+          "port": "C1",
+          "verdict": "converged",
+          "t_cut": 1.74941819542e-08,
+          "residual_db": -67.77230724769792,
+          "growth_db": 0.0
+        },
+        {
+          "t_stop": 8.85048448748e-09,
+          "port": "L1",
+          "verdict": "converged",
+          "t_cut": 8.80912708333e-09,
+          "residual_db": -65.23528915578032,
+          "growth_db": 0.0
+        },
+        {
+          "t_stop": 1.21590768192e-08,
+          "port": "C2",
+          "verdict": "converged",
+          "t_cut": 1.21177194151e-08,
+          "residual_db": -71.3338452424821,
+          "growth_db": 0.0
+        },
+        {
+          "t_stop": 1.45991636639e-08,
+          "port": "C3",
+          "verdict": "converged",
+          "t_cut": 1.45578062598e-08,
+          "residual_db": -65.56806453762081,
+          "growth_db": 0.0
+        }
+      ],
+      "wall_s": 9116.2504433,
+      "predicted_s": 13330.805745551848,
+      "worst_s": 30408.6586060235,
+      "indicators": {
+        "sigma": 1.0215,
+        "recip": 0.172,
+        "loss_pct": 84.72,
+        "expected_pct": 0.43
+      },
+      "warnings": [
+        "W_PASSIVITY",
+        "W_RECIPROCITY",
+        "W_LOSS_BUDGET"
+      ],
+      "lid_mm": 2.696153,
+      "run_dir": "B4-20261023-182407-e703"
+    },
+    "B5": {
+      "exit": 0,
+      "cells": 5349090,
+      "dt": 4.12059e-14,
+      "dt_ratio": 1.0095550764406116,
+      "pool": 4,
+      "jobs": [
+        {
+          "t_stop": 1.41074128964e-08,
+          "port": "P1",
+          "verdict": "converged",
+          "t_cut": 1.40660421841e-08,
+          "residual_db": -67.87606074792811,
+          "growth_db": 0.0
+        },
+        {
+          "t_stop": 2.4863798096e-08,
+          "port": "P2",
+          "verdict": "converged",
+          "t_cut": 2.48224273837e-08,
+          "residual_db": -68.98146422355158,
+          "growth_db": 0.0
+        },
+        {
+          "t_stop": 1.51830514164e-08,
+          "port": "C1",
+          "verdict": "converged",
+          "t_cut": 1.51416807041e-08,
+          "residual_db": -69.22170028158189,
+          "growth_db": 0.0
+        },
+        {
+          "t_stop": 1.7830777004e-08,
+          "port": "L1",
+          "verdict": "converged",
+          "t_cut": 1.77894062917e-08,
+          "residual_db": -69.79621908649095,
+          "growth_db": 0.0
+        },
+        {
+          "t_stop": 1.02185659396e-08,
+          "port": "C2",
+          "verdict": "converged",
+          "t_cut": 1.01771952273e-08,
+          "residual_db": -70.11473466515336,
+          "growth_db": 0.0
+        },
+        {
+          "t_stop": 2.65186265883e-08,
+          "port": "C3",
+          "verdict": "converged",
+          "t_cut": 2.6477255876e-08,
+          "residual_db": -69.04764974534842,
+          "growth_db": 0.0
+        }
+      ],
+      "wall_s": 29273.423397999984,
+      "predicted_s": 45363.453623872905,
+      "worst_s": 68425.04225899425,
+      "indicators": {
+        "sigma": 1.0126,
+        "recip": 0.0666,
+        "loss_pct": 93.82,
+        "expected_pct": 0.45
+      },
+      "warnings": [
+        "W_GATE_LIMITS",
+        "W_RECIPROCITY",
+        "W_LOSS_BUDGET"
+      ],
+      "lid_mm": 2.591086,
+      "run_dir": "B5-20261024-021117-9d7c"
+    },
+    "B6": {
+      "exit": 0,
+      "cells": 4467060,
+      "dt": 5.4043e-14,
+      "dt_ratio": 1.0488287693830418,
+      "pool": 4,
+      "jobs": [
+        {
+          "t_stop": 1.32056149866e-08,
+          "port": "P1",
+          "verdict": "converged",
+          "t_cut": 1.31642180744e-08,
+          "residual_db": -68.8263158212384,
+          "growth_db": 0.0
+        },
+        {
+          "t_stop": 2.44655751005e-08,
+          "port": "P2",
+          "verdict": "converged",
+          "t_cut": 2.44241781883e-08,
+          "residual_db": -68.79625579430831,
+          "growth_db": 0.0
+        },
+        {
+          "t_stop": 1.73039092928e-08,
+          "port": "C1",
+          "verdict": "converged",
+          "t_cut": 1.72625123806e-08,
+          "residual_db": -68.10325075618357,
+          "growth_db": 0.0
+        },
+        {
+          "t_stop": 1.65173679613e-08,
+          "port": "L1",
+          "verdict": "converged",
+          "t_cut": 1.64759710491e-08,
+          "residual_db": -68.41844769737588,
+          "growth_db": 0.0
+        },
+        {
+          "t_stop": 1.1508341587e-08,
+          "port": "C2",
+          "verdict": "converged",
+          "t_cut": 1.14669446749e-08,
+          "residual_db": -69.72238319705282,
+          "growth_db": 0.0
+        },
+        {
+          "t_stop": 2.44655751005e-08,
+          "port": "C3",
+          "verdict": "converged",
+          "t_cut": 2.44241781883e-08,
+          "residual_db": -67.5213904230314,
+          "growth_db": 0.0
+        }
+      ],
+      "wall_s": 18773.244675399998,
+      "predicted_s": 26867.76246161848,
+      "worst_s": 43927.45701051496,
+      "indicators": {
+        "sigma": 1.0142,
+        "recip": 0.159,
+        "loss_pct": 80.95,
+        "expected_pct": 0.45
+      },
+      "warnings": [
+        "W_RECIPROCITY",
+        "W_LOSS_BUDGET"
+      ],
+      "lid_mm": 2.7219619999999995,
+      "run_dir": "B6-20261023-205632-3435"
+    }
+  },
+  "evidence": {
+    "B1": {
+      "jobs": [
+        {
+          "port": "P1",
+          "event": true,
+          "abort": true,
+          "order": true,
+          "ok": true
+        },
+        {
+          "port": "P2",
+          "event": true,
+          "abort": true,
+          "order": true,
+          "ok": true
+        },
+        {
+          "port": "C1",
+          "event": true,
+          "abort": true,
+          "order": true,
+          "ok": true
+        },
+        {
+          "port": "L1",
+          "event": true,
+          "abort": true,
+          "order": true,
+          "ok": true
+        },
+        {
+          "port": "C2",
+          "event": true,
+          "abort": true,
+          "order": true,
+          "ok": true
+        },
+        {
+          "port": "C3",
+          "event": true,
+          "abort": true,
+          "order": true,
+          "ok": true
+        }
+      ],
+      "cut_delta": 0.00020488584116581688,
+      "trunc_2ns": 0.004614545854293791,
+      "ok": true
+    },
+    "B2": {
+      "jobs": [
+        {
+          "port": "P1",
+          "event": false,
+          "abort": true,
+          "order": true,
+          "ok": false
+        },
+        {
+          "port": "P2",
+          "event": true,
+          "abort": true,
+          "order": true,
+          "ok": true
+        }
+      ],
+      "cut_delta": 0.0031646616398931593,
+      "trunc_2ns": 0.04800342302243109,
+      "ok": false
+    },
+    "B4": {
+      "jobs": [
+        {
+          "port": "P1",
+          "event": true,
+          "abort": true,
+          "order": true,
+          "ok": true
+        },
+        {
+          "port": "P2",
+          "event": true,
+          "abort": true,
+          "order": true,
+          "ok": true
+        },
+        {
+          "port": "C1",
+          "event": true,
+          "abort": true,
+          "order": true,
+          "ok": true
+        },
+        {
+          "port": "L1",
+          "event": true,
+          "abort": true,
+          "order": true,
+          "ok": true
+        },
+        {
+          "port": "C2",
+          "event": true,
+          "abort": true,
+          "order": true,
+          "ok": true
+        },
+        {
+          "port": "C3",
+          "event": true,
+          "abort": true,
+          "order": true,
+          "ok": true
+        }
+      ],
+      "cut_delta": 0.0003211478972351557,
+      "trunc_2ns": 0.007832223454376699,
+      "ok": true
+    }
+  },
+  "consistency": {
+    "ds21_db_f0": 19.2252376404708,
+    "ds11_f0": 0.5639216384458701,
+    "ds_max": 0.6591365764819623,
+    "nulls": [
+      {
+        "f_hz": 1936823028.169014,
+        "shift": null
+      },
+      {
+        "f_hz": 2299781619.71831,
+        "shift": null
+      }
+    ]
+  },
+  "tx": {
+    "ds21_db_f0": 10.879383570041334,
+    "ds11_f0": 0.19471355204729673,
+    "ds_max": 0.28327771784107897,
+    "nulls": []
+  },
+  "tx_ideal": {
+    "ds21_db_f0": 10.53628136150721,
+    "ds11_f0": 0.19297376241033395,
+    "ds_max": 0.3063955476965072,
+    "nulls": []
+  },
+  "reach": {
+    "ds21_db_f0": 0.0022724754105638567,
+    "ds11_f0": 2.7476893491218955e-05,
+    "ds_max": 0.05238247368319172,
+    "nulls": []
+  },
+  "reach_stored": {
+    "ds21_db_f0": 0.003879324417201957,
+    "ds11_f0": 2.1771035392256605e-05,
+    "ds_max": 0.05294994599062365,
+    "nulls": []
+  },
+  "bias": {
+    "fit2d_n2": [
+      {
+        "net": "RF_A",
+        "width_mm": 0.25,
+        "pct": 2.5805323815010217
+      },
+      {
+        "net": "RF_A",
+        "width_mm": 0.6,
+        "pct": 1.492653004980271
+      },
+      {
+        "net": "RF_B",
+        "width_mm": 0.6,
+        "pct": 2.3682797231497243
+      },
+      {
+        "net": "RF_C",
+        "width_mm": 0.6,
+        "pct": 1.9634579243596573
+      },
+      {
+        "net": "RF_OUT",
+        "width_mm": 0.6,
+        "pct": 1.9634579243596573
+      }
+    ],
+    "fit2d_n3": [
+      {
+        "net": "RF_A",
+        "width_mm": 0.25,
+        "pct": 4.2892043737999375
+      },
+      {
+        "net": "RF_A",
+        "width_mm": 0.6,
+        "pct": 3.500066370265742
+      },
+      {
+        "net": "RF_B",
+        "width_mm": 0.6,
+        "pct": 4.393012024584864
+      },
+      {
+        "net": "RF_C",
+        "width_mm": 0.6,
+        "pct": 3.980183294599393
+      },
+      {
+        "net": "RF_OUT",
+        "width_mm": 0.6,
+        "pct": 3.980183294599393
+      }
+    ],
+    "compare": {
+      "ds21_db_f0": 2.4514852229514226,
+      "ds11_f0": 0.2116208556123391,
+      "ds_max": 0.5606713249695294,
+      "nulls": []
+    },
+    "compare_common": {
+      "ds21_db_f0": 2.4462628347681807,
+      "ds11_f0": 0.2116999681466684,
+      "ds_max": 0.558008126657278,
+      "nulls": []
+    },
+    "s21_db": {
+      "f0": [
+        -20.726393291894126,
+        -18.274908068942704
+      ],
+      "2f0": [
+        -21.39495008999793,
+        -24.604124609043488
+      ],
+      "3f0": [
+        -37.53918335674086,
+        -35.7911682529713
+      ]
+    },
+    "lid_mm": {
+      "n2": 2.7219619999999995,
+      "n3": 2.591086
+    }
+  },
+  "empty_box": {
+    "A": {
+      "ds_max": 0.12162462947039647,
+      "ds11_f0": 0.11359217572608601,
+      "ds21_f0": 0.0005837077625005363
+    },
+    "B": {
+      "ds_max": 0.01699689881902975,
+      "ds11_f0": 0.0159059483544098,
+      "ds21_f0": 0.004343615477801268
+    },
+    "c_box": {
+      "C1": 1.9013784824159816e-15,
+      "L1": 2.7352283757568576e-15,
+      "C2": 1.3973863767437562e-15,
+      "C3": 1.3900768340706135e-15
+    },
+    "c_p": {
+      "C1": -1.990040931859752e-14,
+      "L1": -1.5650439278799937e-12,
+      "C2": -7.694429847208927e-13,
+      "C3": 6.146868128278834e-13
+    },
+    "dc_ff": {
+      "C1": -21.801787801013504,
+      "L1": -1567.7791562557506,
+      "C2": -770.8403710976364,
+      "C3": 613.2967359938127
+    },
+    "cond": 10.79979986846213,
+    "verify_ds_max": {
+      "c_box": 0.6591365764819623,
+      "c_p": null
+    }
+  },
+  "kmax": [
+    {
+      "k": 0.35,
+      "l_h": 2.22393e-12,
+      "verdict": "t_max",
+      "t_ns": 9.97665583625,
+      "growth_db": 0.0
+    },
+    {
+      "k": 0.4,
+      "l_h": 1.70269e-12,
+      "verdict": "t_max",
+      "t_ns": 9.97665583625,
+      "growth_db": 0.0
+    },
+    {
+      "k": 0.45,
+      "l_h": 1.34534e-12,
+      "verdict": "t_max",
+      "t_ns": 9.97665583625,
+      "growth_db": 0.0
+    },
+    {
+      "k": 0.48,
+      "l_h": 1.18243e-12,
+      "verdict": "t_max",
+      "t_ns": 9.97665583625,
+      "growth_db": 0.0
+    },
+    {
+      "k": 0.5,
+      "l_h": 1.08972e-12,
+      "verdict": "t_max",
+      "t_ns": 9.97665583625,
+      "growth_db": 0.0
+    },
+    {
+      "k": 0.55,
+      "l_h": 9.00598e-13,
+      "verdict": "t_max",
+      "t_ns": 9.97665583625,
+      "growth_db": 0.0
+    }
+  ],
+  "verdicts": {
+    "B1": [
+      "converged",
+      "converged",
+      "converged",
+      "converged",
+      "converged",
+      "converged"
+    ],
+    "B2": [
+      "flat",
+      "converged"
+    ],
+    "B3": [
+      "converged",
+      "converged",
+      "converged",
+      "converged"
+    ],
+    "B4": [
+      "converged",
+      "converged",
+      "converged",
+      "converged",
+      "converged",
+      "converged"
+    ],
+    "B5": [
+      "converged",
+      "converged",
+      "converged",
+      "converged",
+      "converged",
+      "converged"
+    ],
+    "B6": [
+      "converged",
+      "converged",
+      "converged",
+      "converged",
+      "converged",
+      "converged"
+    ],
+    "p0a": [
+      "converged",
+      "converged",
+      "converged",
+      "converged",
+      "converged",
+      "converged",
+      "converged",
+      "converged",
+      "converged",
+      "converged",
+      "converged",
+      "converged",
+      "converged",
+      "converged",
+      "converged",
+      "converged",
+      "converged",
+      "converged",
+      "converged",
+      "converged"
+    ]
+  },
+  "growth_db": [
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.3079019881871261,
+    0.03160635372779552,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0
+  ],
+  "dt_ratios": {
+    "p0a_min": 0.9216578857031984,
+    "B1": 1.0488287693830418,
+    "B2": 1.0488287693830418,
+    "B4": 1.065306359951122,
+    "B5": 1.0095550764406116,
+    "B6": 1.0488287693830418
+  },
+  "stray": {
+    "dt_ratio": 0.5683587217678473,
+    "codes": [
+      "E_DT_FLOOR"
+    ],
+    "trips": true
+  },
+  "emerge": null,
+  "decisions": {
+    "consistency": {
+      "ds21_db_f0": false,
+      "ds11_f0": false,
+      "ds_max": false,
+      "nulls": false,
+      "pass": false,
+      "verify_converged": false
+    },
+    "tx": {
+      "ds21_db_f0": false,
+      "ds11_f0": false,
+      "ds_max": false,
+      "nulls": "n/a",
+      "pass": false,
+      "all_converged": true
+    },
+    "reach": {
+      "confirmed": false
+    },
+    "growth": {
+      "max_db": 0.3079019881871261,
+      "healthy_growth": [],
+      "sweep_caught": false,
+      "confirmed": false
+    },
+    "kmax": {
+      "stable_through": 0.55,
+      "confirmed": true,
+      "k_max": 0.45
+    },
+    "dt_floor": {
+      "rule": "D-30",
+      "min_ratio": 0.9216578857031984,
+      "stray_ratio": 0.5683587217678473,
+      "stray_trips": true,
+      "confirmed": true
+    },
+    "verdict": {
+      "value": "fail",
+      "fails": [
+        "consistency: the co-simulation against verify fails criterion 1 (D-33)",
+        "B2: its jobs ended flat, converged, not every one converged (D-33)"
+      ],
+      "emerge_accepted": false
+    }
+  },
+  "machine": {
+    "steps": 13,
+    "machine_hours": 24.226383332888872,
+    "loaded": [],
+    "elapsed_days": 2
+  }
+}
