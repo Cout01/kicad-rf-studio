@@ -20,7 +20,7 @@ from kicad_rf_studio.pipeline import build_model, load
 from test_geometry_sections import four_layer
 
 FIX = Path(__file__).parent / "fixtures"
-PADS = {"coupon_gcpw_pads": ("TP1.1", "TP2.1"), "lpf915": ("U1.1", "J1.1")}
+PADS = {"coupon_gcpw_pads": ("TP1.1", "TP2.1"), "lpf915": ("U1.1", "J1.1"), "lpf915-45": ("U1.1", "J1.1")}
 HEADER = "2D estimate: bends, vias, pads and parts not included"
 FILLS, PORTLESS = render("W_FILLS_AS_SAVED"), render("W_NO_PORTS")
 SEG = '(segment (start {} {}) (end {} {}) (width {}) (layer "{}") (net "{}") (uuid "{}")) '
@@ -81,11 +81,20 @@ def test_cost_prints_2d_readout(tmp_path, capsys):
 
 
 def test_cost_on_45_degree_coupon(tmp_path, capsys):
-    # Review Focus 4: no straight, axis-aligned section prints the staircase warning and no row, and does not crash
-    assert main(["cost", str(new_project(tmp_path, "coupon_gcpw_45"))]) == 0
+    # Review Focus 4: no straight, axis-aligned section prints the staircase refusal (D-27) and no row, and does not
+    # crash; the refusal is a geometry gate, so a portless project stops with exit 3
+    assert main(["cost", str(new_project(tmp_path, "coupon_gcpw_45"))]) == 3
     out = capsys.readouterr().out
-    assert "no straight, axis-aligned sections" in out and "staircased" in out
-    assert out.splitlines() == [FILLS, render("W_NO_SECTIONS"), render("W_STAIRCASED", net="LINE"), PORTLESS]
+    assert "no straight, axis-aligned sections" in out and "the run is blocked" in out
+    assert out.splitlines() == [FILLS, render("W_NO_SECTIONS"), render("E_STAIRCASED", net="LINE"), PORTLESS]
+
+
+def test_staircased_measured_copper_is_refused_after_p0a(tmp_path, capsys, calibrated):  # D-27: P0-A's refuse branch
+    pj = new_project(tmp_path, "lpf915-45")
+    # the switch and a lid height pass E_ROTATED_PART (L1) and E_LID_HEIGHT, so only the staircase stops `cost`
+    save_project(pj, {**load_project(pj), "allow_curve_port": True, "lid_height_mm": 2.5})
+    capsys.readouterr()
+    assert main(["cost", str(pj)]) == 3 and render("E_STAIRCASED", net="RF_B") in capsys.readouterr().out.splitlines()
 
 
 def test_cost_starts_no_worker(tmp_path, monkeypatch):  # a project without ports stops after the 2D estimate

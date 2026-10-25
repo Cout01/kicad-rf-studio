@@ -134,8 +134,9 @@ def _gap(sec: Section, pieces: list[Piece]) -> float | None:
 def sections(board: Board, nets: Iterable[str], pieces: list[Piece]) -> tuple[list[Section], list[tuple[str, dict]]]:
     """The straight runs of the tracks of `nets`, by net in that order, then by place. A track whose ends share x or y
     within 1e-6 mm is one, joined on its layer with the collinear tracks of its width that it touches. Any other track
-    of a net (a 45° segment, an arc) is staircased in the model: one W_STAIRCASED per net. `pieces` and the board's
-    pads place each cut, `pieces` give the gaps."""
+    of a net (a 45° segment, an arc) is staircased in the model, which P0-A measured past the 5 % Z0 budget: one
+    E_STAIRCASED per net, a geometry gate (D-27). `pieces` and the board's pads place each cut, `pieces` give the
+    gaps."""
     out, notes = [], []
     for net in nets:
         runs: dict[tuple[str, str, float, float], list[tuple[float, float]]] = defaultdict(list)
@@ -151,7 +152,7 @@ def sections(board: Board, nets: Iterable[str], pieces: list[Piece]) -> tuple[li
             else:
                 staircased = True
         if staircased:
-            notes.append(("W_STAIRCASED", {"net": net}))
+            notes.append(("E_STAIRCASED", {"net": net}))
         found = []
         for (layer, axis, at, width), spans in runs.items():
             for lo, hi in _merge(spans):

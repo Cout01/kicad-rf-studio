@@ -69,7 +69,7 @@ def test_microstrip_section_has_no_gap():
 
 def test_diagonal_net_has_no_sections():
     s, w = sections(b := load_board(FIX / "coupon_gcpw_45.kicad_pcb"), ("LINE",), pieces_of(b))
-    assert s == [] and ("W_STAIRCASED", {"net": "LINE"}) in w
+    assert s == [] and ("E_STAIRCASED", {"net": "LINE"}) in w
 
 
 def test_staircase_gap_is_the_gap_no_section_measures():
@@ -84,7 +84,7 @@ def test_staircase_gap_is_the_gap_no_section_measures():
 
 def test_arc_coupon_keeps_straight_parts():  # coupon_gcpw_arc: two straights either side of the arc
     s, w = sections(b := load_board(FIX / "coupon_gcpw_arc.kicad_pcb"), ("LINE",), pieces_of(b))
-    assert len(s) == 2 and ("W_STAIRCASED", {"net": "LINE"}) in w
+    assert len(s) == 2 and ("E_STAIRCASED", {"net": "LINE"}) in w
 
 
 def test_cross_section_layers():
@@ -105,8 +105,8 @@ def test_cross_section_layers():
 
 def test_runs_merge_by_width_and_gap_is_the_nearer_copper(mini_board):
     # LINE along x: two touching 0.5 mm runs merge, a 0.3 mm run and a separate run do not; a run along y; a 45°
-    # segment and an arc give one warning. GND tracks 0.5 mm from the first run and from the y run, 2.5 mm on the far
-    # side of the first: the gap is the nearer one, measured across the cut at the midpoint, on the pieces, whose
+    # segment and an arc give one E_STAIRCASED. GND tracks 0.5 mm from the first run and from the y run, 2.5 mm on the
+    # far side of the first: the gap is the nearer one, measured across the cut at the midpoint, on the pieces, whose
     # simplification moves a round-capped track's straight edge by a micrometre or two (0.501801 for the y run)
     seg = '(segment (start {} {}) (end {} {}) (width {}) (layer "F.Cu") (net "{}") (uuid "s{}"))'
     runs = [(0, 0, 5, 0, .5, "LINE"), (5, 0, 10, 0, .5, "LINE"), (10, 0, 12, 0, .3, "LINE"), (14, 0, 16, 0, .5, "LINE"),
@@ -119,7 +119,7 @@ def test_runs_merge_by_width_and_gap_is_the_nearer_copper(mini_board):
         ("x", (0.0, 0.0), (10.0, 0.0), .5, 10.0), ("x", (10.0, 0.0), (12.0, 0.0), .3, 2.0),
         ("x", (14.0, 0.0), (16.0, 0.0), .5, 2.0), ("y", (20.0, -4.0), (20.0, -1.0), .5, 3.0)]
     assert [x.gap for x in s] == pytest.approx([0.5, None, None, 0.5], abs=SIMPLIFY)
-    assert w == [("W_STAIRCASED", {"net": "LINE"})]
+    assert w == [("E_STAIRCASED", {"net": "LINE"})]
 
 
 def test_cross_section_cuts_every_conductor_and_places_the_mask():
