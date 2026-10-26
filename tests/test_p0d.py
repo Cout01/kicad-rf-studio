@@ -160,3 +160,6 @@ def test_the_linux_workflow_is_prepared():  # D-47
         assert needle in text, needle
     assert "needs: build" in text.split("openems-tests:")[1]
     assert max(int(m) for m in re.findall(r"timeout-minutes: (\d+)", text)) <= 350
+    assert "git -C /tmp/oe submodule update --init --recursive\n" in text  # deep submodules: git describe needs tags
+    excite = text.split("\n  excite:\n")[1].split("\n  compare:\n")[0]
+    assert "if: ${{ !cancelled() && needs.models.result == 'success' }}" in excite  # a failed build skips no distro

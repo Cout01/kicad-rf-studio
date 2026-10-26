@@ -80,7 +80,7 @@ jobs:
       - name: Build openEMS into the app's venv
         if: steps.cache.outputs.cache-hit != 'true'
         run: |
-          git -C /tmp/oe submodule update --init --recursive --depth 1
+          git -C /tmp/oe submodule update --init --recursive
           python3 -m venv /opt/krs
           . /opt/krs/bin/activate && pip install -e . && cd /tmp/oe && ./update_openEMS.sh /opt/openEMS --python
       - name: Version probe
@@ -89,6 +89,7 @@ jobs:
 
   excite:
     needs: [models, build]
+    if: ${{ !cancelled() && needs.models.result == 'success' }}  # a failed build fails only its own distro's cache restores
     runs-on: ubuntu-24.04
     timeout-minutes: 350
     strategy:
