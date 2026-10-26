@@ -685,7 +685,8 @@ def test_reach_and_margin_are_optional_and_enter_the_model(tmp_path):  # D-12, R
     d = load_project(pj)
     del d["mesh"]["reach_h"], d["region"]["margin_scale"]
     save_project(pj, d)
-    assert model_hash() == base  # a project.json from plan 4 reads the defaults and keeps its hash
+    # a project.json from plan 4 reads today's defaults; since D-37 (reach 6) its results read stale (E_RESULTS_STALE)
+    assert model_hash() == base
     for group, key, value in (("mesh", "reach_h", 3.0), ("region", "margin_scale", 2.0)):  # 6.0 is D-37's default
         d[group][key] = value
         save_project(pj, d)

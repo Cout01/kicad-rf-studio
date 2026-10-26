@@ -6,9 +6,10 @@ Coordinates in it are in KiCad's frame: mm, with y pointing down, as KiCad shows
 board as read (core.kicad) has y up, so a point [x, y] here is (x, -y) there, and the other way round.
 
 Every key that make_project writes is required, `region` and `mesh` too, but `mesh.reach_h` and `region.margin_scale`
-(D-12): a file from plan 4 lacks them, reads their defaults and keeps its model hash. `results` is optional as well.
-read_project names the first field that is missing or of the wrong kind (E_PROJECT_FIELD), so a file that lacks any
-other key, written by an older `new`, is re-created with `new`, never read with defaults."""
+(D-12): a file from plan 4 lacks them and reads today's defaults, so since D-37 (reach 6) its results read stale
+(E_RESULTS_STALE). `results` is optional as well. read_project names the first field that is missing or of the wrong
+kind (E_PROJECT_FIELD), so a file that lacks any other key, written by an older `new`, is re-created with `new`, never
+read with defaults."""
 from __future__ import annotations
 
 import contextlib
