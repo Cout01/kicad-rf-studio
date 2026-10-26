@@ -1,7 +1,7 @@
 # kicad-rf-studio — Stage 1 design: a validated simulation engine
 
 - **Date:** 2026-10-16
-- **Status:** design approved section by section in conversation, revised on 2026-10-19 after an independent review, and approved by the owner. On 2026-10-21 the owner confirmed one amendment to §5.4: the substrate height now counts in the cell size. On 2026-10-22, plan 5 amended §1.1, §7.6, §9.1, §9.2 and §9.6 (A-1 to A-4) as controller recommendations while the owner was unavailable; the owner reviews them. On 2026-10-24, D-45's fix amended §5.6 (A-6) and §7.6 (A-7) the same way.
+- **Status:** design approved section by section in conversation, revised on 2026-10-19 after an independent review, and approved by the owner. On 2026-10-21 the owner confirmed one amendment to §5.4: the substrate height now counts in the cell size. On 2026-10-22, plan 5 amended §1.1, §7.6, §9.1, §9.2 and §9.6 (A-1 to A-4) as controller recommendations while the owner was unavailable; the owner reviews them. On 2026-10-24, D-45's fix amended §5.6 (A-6) and §7.6 (A-7) the same way. On 2026-10-25, P0-B's TX-side outcome amended §1.1 and §12 (A-5) the same way.
 - **Scope:** Stage 1 of the project: the headless engine, the command-line orchestrator and the validation gates. The GUI and the KiCad toolbar button (Stage 2) get their own spec, written with Stage 1's results.
 
 ---
@@ -40,7 +40,7 @@ The users are hardware engineers who use KiCad and are not FDTD experts. The pro
 | Architecture | Our own thin core, one CLI orchestrator and worker processes. In Stage 2, a PySide6 GUI client that never imports openEMS. No fork of an existing tool, and no GUI hosted inside KiCad |
 | Order | Validate first (this spec), build the GUI afterwards |
 | KiCad | Version 9 minimum; reads KiCad 9 and 10 files |
-| Default v1 scope | The output chain: RF switch common port → DC block → pi low-pass → coaxial connector, under a shield lid. TX-side matching, which has rotated parts, joins only if the rotated-port test passes (§9.3) |
+| Default v1 scope | The output chain: RF switch common port → DC block → pi low-pass → coaxial connector, under a shield lid. TX-side matching stays out of v1: P0-B's rotated-port case failed on 2026-10-25 (§9.3) |
 | Time policy | Whether Draft or Normal accuracy is the default is decided after the Stage 1 measurements |
 | Fallback if the private-board gate fails | Keep the instant retune, labelled "relative / what-if", and offer a full verification run of the final value set (§7.6). The label is shown from the start, until the gate passes (A-4) |
 
@@ -671,7 +671,7 @@ These are not in Stage 1 or v1:
 | Band factor default (1.1× or 1.25×) and the stop presets | P0-C |
 | Timestep-floor factor (0.8), fit2d threshold (3 %) and the mask-shift tolerances | P0-A confirms them |
 | Protected-set reach (3 h), growth threshold (+20 dB) and the k ≤ 0.45 check | P0-B confirms them |
-| TX side in v1 | P0-B's rotated-port case |
+| TX side in v1 | P0-B's rotated-port case: not joined (2026-10-25) |
 | v1 time policy | The owner, after P0-C |
 | Commit author identity for the public repository | The owner, before the first push. Every existing commit is then rewritten to that identity, so neither the old identity nor earlier text is published. Until then, commits stay local, and Linux CI (P0-D) waits |
 | Publishing on PyPI, and under which account | The owner, after the first push. Until then, install from a clone |
