@@ -55,6 +55,12 @@ def test_the_readme_names_both_licence_texts():  # D-21
     first = (ROOT / "README.md").read_text(encoding="utf-8").split("\n\n")[1]
     assert "`LICENSE`" in first and "`COPYING.LESSER`" in first
 
+def test_the_readme_has_a_tutorial():  # D-21
+    readme = (ROOT / "README.md").read_text(encoding="utf-8")
+    assert "\n## Tutorial\n" in readme
+    tutorial = readme.split("\n## Tutorial\n", 1)[1].split("\n## ", 1)[0]
+    assert [c for c in ("new", "cost", "run", "retune", "verify") if f"kicad-rf-studio {c} " not in tutorial] == []
+
 def test_every_workflow_starts_with_an_spdx_header():  # D-55
     files = sorted((ROOT / ".github" / "workflows").glob("*.yml"))
     assert files and [p.name for p in files if p.read_text(encoding="utf-8").splitlines()[0] != SPDX] == []
