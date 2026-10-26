@@ -378,13 +378,18 @@ def main(argv: list[str] | None = None) -> int:
     """python tools/p0b/emerge_app.py run [--out DIR] (D-41..D-43), one background command: enters the P0 folder
     first, then the validation venv, export of B1's project, the FEM steps, the cross-check, the no-mask pair and the
     cross-check again when its verdict is "fail" (else the pair's records move aside, _supersede), then
-    harness.write. Returns 1, once the gate is written, when a FEM step raised or did not solve (a coupon solved in
-    its 10 h box counts as solved), else 0."""
+    harness.write. Exit 2 with one line, before the venv, when B1's record ran on other product code than this
+    checkout's (harness.write never mixes codes). Returns 1, once the gate is written, when a FEM step raised or did
+    not solve (a coupon solved in its 10 h box counts as solved), else 0."""
     parser = argparse.ArgumentParser(prog="emerge_app", description="P0-B's EMerge cross-check (D-41..D-44).")
     parser.add_argument("command", choices=["run"], help="run every step not yet recorded, then write the gate")
     parser.add_argument("--out", help="the P0 folder (default: kicad-rf-studio-p0 beside the per-user data folder)")
     a = parser.parse_args(argv)
     out = p0.enter(Path(a.out) if a.out else p0.default_out())
+    if (b1 := p0.records(out, ["p0b-B1"])[0]["code"]) != (code := p0.code_id()):
+        print(f"emerge_app: P0-B's records ran on product code {b1}, this checkout is {code}; run EMerge from a "
+              "checkout of that code (git rev-parse HEAD:src)", file=sys.stderr)
+        return 2
     venv(out / "emerge")
     export(harness._path(out, "B1"), out)
     failed = fem_steps(out)

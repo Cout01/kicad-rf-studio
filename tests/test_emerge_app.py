@@ -120,9 +120,11 @@ def test_a_fem_step_reruns_after_a_fix_to_its_script_or_its_requirements(p0_out,
 
 @pytest.fixture
 def fakes(p0_out, monkeypatch):
-    """emerge_app.main on fakes up to harness.write's records check: no venv, an input.json of {}, a cross-check that
-    writes emerge.json with a "pass", P0-B's own steps, measure, decide and tables empty, and a fem that leaves its
-    output. Returns `exits`: by output name, the fem's exit code instead of 0 (no output then), or what it raises."""
+    """emerge_app.main on fakes up to harness.write's records check: B1's record on this checkout's code, no venv, an
+    input.json of {}, a cross-check that writes emerge.json with a "pass", P0-B's own steps, measure, decide and tables
+    empty, and a fem that leaves its output. Returns `exits`: by output name, the fem's exit code instead of 0 (no
+    output then), or what it raises."""
+    p0.save(p0_out / "steps" / "p0b-B1.json", {"step": "p0b-B1", "code": p0.code_id()})
     monkeypatch.setattr(p0, "command_lines", lambda: [])
     monkeypatch.setattr(emerge_app, "venv", lambda e: None)
     monkeypatch.setattr(emerge_app, "export", lambda pj, out: p0.save(out / "emerge" / "input.json", {}))
@@ -143,6 +145,16 @@ def fakes(p0_out, monkeypatch):
 
     monkeypatch.setattr(emerge_app, "fem", fem)
     return exits
+
+
+def test_other_product_code_is_refused_before_any_fem_work(p0_out, fakes, monkeypatch, capsys):  # final review F8
+    p0.save(p0_out / "steps" / "p0b-B1.json", {"step": "p0b-B1", "code": "7c770a1b"})  # P0-B ran on other code
+    monkeypatch.setattr(emerge_app, "venv", lambda e: pytest.fail("venv before the code check"))
+    assert emerge_app.main(["run", "--out", str(p0_out)]) == 2
+    assert capsys.readouterr().err == ("emerge_app: P0-B's records ran on product code 7c770a1b, this checkout is "
+                                       f"{p0.code_id()}; run EMerge from a checkout of that code (git rev-parse "
+                                       "HEAD:src)\n")
+    assert not (p0_out / "emerge").exists()
 
 
 def test_records_that_no_longer_apply_move_aside_before_the_gate_is_written(p0_out, fakes):  # PF-65's folder
