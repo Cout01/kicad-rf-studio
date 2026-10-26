@@ -97,6 +97,28 @@ def test_p0c_skips_c3_when_no_next_best_reference_leaves_a_port_box(tmp_path, p0
     assert not (p0_out / "steps" / "p0c-C3.json").exists()
 
 
+def test_p0c_c3_keeps_a_ports_own_reference_on_e_port_spans_too(tmp_path, p0_out, monkeypatch, capsys):  # PF-40; F2
+    monkeypatch.setenv("KRS_FAKE", "network")
+    monkeypatch.setattr(p0, "cli", in_process)
+    real, spans = p0.model_key, [KrsError("E_PORT_SPANS", name="P1")]  # P1's next-best faces its pad on neither axis
+
+    def model_key(pj):  # only C3 asks for a model key here: its first model is refused, then the product builds it
+        if spans:
+            raise spans.pop()
+        return real(pj)
+
+    monkeypatch.setattr(p0, "model_key", model_key)
+    board = tmp_path / "lpf915.kicad_pcb"
+    board.write_bytes((p0.FIX / "lpf915.kicad_pcb").read_bytes())
+    assert p0c.main(["--board", str(board), *ARGS, "--lid-height", "2.5", "--out", str(p0_out), "--steps", "C3"]) == 0
+    assert ("p0c: C3: P1 keeps its own reference: its next-best one leaves no port box (E_PORT_SPANS)\n"
+            in capsys.readouterr().out)
+    base = p0_out / "projects" / "base" / "project.json"
+    own, best = load_project(base)["ports"], p0c.next_best(base)  # P2 stays moved
+    assert best[1] != own[1] and load_project(p0_out / "projects" / "C3" / "project.json")["ports"] == [own[0], best[1]]
+    assert (p0_out / "steps" / "p0c-C3.json").is_file()  # C3 ran
+
+
 def test_p0c_with_c1_at_draft_reads_every_criterion_as_none(tmp_path, p0_out, monkeypatch):  # PF-39
     monkeypatch.setenv("KRS_FAKE", "network")
     monkeypatch.setattr(p0, "cli", in_process)

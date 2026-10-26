@@ -190,10 +190,11 @@ def run_step(out: Path, a: argparse.Namespace, name: str) -> None:
     """The step `name` (STEPS) through p0.step (D-6). C0 is keyed by the base's model key, C1 by that and the preset,
     C2 by C1's run folder, S2P by that and the files' names and sha256, the other variants by their own model key. C3
     moves each port's reference to its next-best one (next_best); a port without one keeps its own (PF-40), and so
-    does a port whose next-best reference leaves no port box: while C3's model is refused with E_PORT_BOX naming a
-    moved port, that port's entry is put back from the base, with a line, and the model built again (PF-40 extended,
-    controller ruling). Any other refusal, or E_PORT_BOX of a port or part C3 did not move, propagates. C3 is skipped,
-    with a line, when no port has a next-best reference, or no moved port is left."""
+    does a port whose next-best reference leaves no port box: while C3's model is refused with E_PORT_BOX or
+    E_PORT_SPANS naming a moved port, that port's entry is put back from the base, with a line, and the model built
+    again (PF-40 extended, controller rulings). Any other refusal, or E_PORT_BOX or E_PORT_SPANS of a port or part C3
+    did not move, propagates. C3 is skipped, with a line, when no port has a next-best reference, or no moved port is
+    left."""
     sid, pj = f"p0c-{name}", base(out, a)
     if name == "C0":
         p0.step(out, sid, p0.model_key(pj), partial(command, pj, "cost"))
@@ -216,10 +217,10 @@ def run_step(out: Path, a: argparse.Namespace, name: str) -> None:
                 key = p0.model_key(pj)
             except KrsError as err:
                 i = next((i for i, q in enumerate(ports) if q != own[i] and q["name"] == err.params.get("name")), None)
-                if err.code != "E_PORT_BOX" or i is None:
+                if err.code not in ("E_PORT_BOX", "E_PORT_SPANS") or i is None:
                     raise
                 print(f"p0c: C3: {own[i]['name']} keeps its own reference: its next-best one leaves no port box "
-                      "(E_PORT_BOX)", flush=True)
+                      f"({err.code})", flush=True)
                 ports[i] = own[i]
                 if ports == own:
                     print("p0c: C3 skipped: no port has a next-best reference that leaves a port box", flush=True)
