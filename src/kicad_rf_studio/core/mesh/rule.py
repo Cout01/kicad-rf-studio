@@ -111,8 +111,47 @@ def xy_lines(edges: list[Edge], extent: tuple[float, float], walls: tuple[float,
       a line where it lies at least the local graded cell, min(coarse, d + (1 − 1/GROW)·its distance to the extent),
       from every other line: a vertex line nearer than that would only make the grading refine back towards d.
     - smooth_mesh_lines grades the rest up to `coarse`, and _grade holds every pair of neighbouring cells within RATIO
-      but where the larger holds an edge, which its pattern fixes. Only these lines (and the fill) are re-placed."""
-    pins = _patterns(edges, d, prefer, force, h) | dict.fromkeys(walls, 0.0)
+      but where the larger holds an edge, which its pattern fixes. Only these lines (and the fill) are re-placed.
+    - The slot depth (plan 6) holds on an axis only where its lines pass the edge lint and the d/3 merge outright;
+      elsewhere, as where its grading does not converge, the axis keeps the lines of the rule as built."""
+    if SLOT_IN is not None:  # ponytail: one failing check reverts the whole axis; per cell, if boards lose the depth so
+        try:
+            out = _axis(edges, extent, walls, free, d, coarse, prefer, force, h, True)
+            if not _faults(out[0], edges, d):
+                return out
+        except RuntimeError:  # _grade's guard
+            pass
+    return _axis(edges, extent, walls, free, d, coarse, prefer, force, h, False)
+
+
+def lint_hits(lines: np.ndarray, edges: Iterable[Edge], d: float) -> list[tuple[float, str]]:
+    """The protected copper `edges` of one axis that fail the edge lint of spec 5.5 on its `lines`, each with its
+    reason: a line on it ("on_edge"), its nearest inside line nearer than d/8 ("inside_too_close"), or its first
+    outside line no farther than that inside line ("outside_closer"): a tie ties the outer line to the metal under
+    openEMS's inclusive rule (T7). The distances go to 1e-9 mm, so that a tie on the 1e-6 mm grid compares equal
+    (float noise put either line ahead)."""
+    hits = []
+    for e, inside in edges:
+        off = np.round((lines - e) * inside, 9)  # > 0 inside the metal
+        near_in, near_out = off[off > 0].min(initial=np.inf), -off[off < 0].max(initial=-np.inf)
+        reason = ("on_edge" if (off == 0).any() else "inside_too_close" if near_in < d / 8
+                  else "outside_closer" if near_out <= near_in else None)
+        if reason:
+            hits.append((e, reason))
+    return hits
+
+
+def _faults(lines: np.ndarray, edges: list[Edge], d: float) -> bool:
+    """Whether an axis's `lines` fail the axes harness's own checks: the edge lint of its `edges`, or a cell under the
+    d/3 merge. No RATIO check: _grade returns only lines that pass it with the edges held."""
+    return bool(lint_hits(lines, edges, d)) or bool(np.diff(lines).min() < d / 3 - GRID_TOL)
+
+
+def _axis(edges: list[Edge], extent: tuple[float, float], walls: tuple[float, float], free: Iterable[float], d: float,
+          coarse: float, prefer: Collection[Edge], force: Collection[Edge], h: float,
+          slot: bool) -> tuple[np.ndarray, np.ndarray]:
+    """xy_lines' lines and the rule's own lines among them, with _patterns' slot role on (`slot`) or off."""
+    pins = _patterns(edges, d, prefer, force, h, slot) | dict.fromkeys(walls, 0.0)
     lo, hi = (round(v, 6) for v in extent)
     at = np.array(sorted(pins))
     cells = set(np.searchsorted(at, [e for e, _ in edges]).tolist())
@@ -137,7 +176,7 @@ def xy_lines(edges: list[Edge], extent: tuple[float, float], walls: tuple[float,
 
 
 def _patterns(edges: Iterable[Edge], d: float, prefer: Collection[Edge] = (), force: Collection[Edge] = (),
-              h: float = math.inf) -> dict[float, float]:
+              h: float = math.inf, slot: bool = True) -> dict[float, float]:
     """The pinned lines of protected copper `edges`, each with its rank (merge's: the distance from its nearest own
     edge), none closer than d/3 to another. Each edge gets an inside line, the nearest into its metal, and an outside
     line, placed so that it passes the edge lint of spec 5.5 (no line on it, the inside line d/8 or more in, the
@@ -165,9 +204,10 @@ def _patterns(edges: Iterable[Edge], d: float, prefer: Collection[Edge] = (), fo
       that pass it. Same-side edges with an edge of the other side between them are not a staircase but the far sides
       of a strip and of what faces it: they neither join nor share a line (verifier (A): a 0.4d strip 0.02d from the
       metal it faces failed the lint).
-    - With SLOT_IN set (plan 6), a slot edge, one that the other side's metal faces across a gap within FACE·d, has
-      its inside line SLOT_IN·d deep (at least d/8 + GRID_TOL) where `h` ≥ SLOT_GATE·d. It applies in a cell of its own
-      or, with SLOT_SERVED, in any served cell it is the deepest edge of. Its outside line stays 3d/4 out.
+    - With SLOT_IN set and `slot` (plan 6), a slot edge, one that the other side's metal faces across a gap within
+      FACE·d, has its inside line SLOT_IN·d deep (at least d/8 + GRID_TOL) where `h` ≥ SLOT_GATE·d. It applies in a
+      cell of its own or, with SLOT_SERVED, in any served cell it is the deepest edge of. Its outside line stays 3d/4
+      out.
     - Facing edges across a gap (metal below one, above the next) whose outside lines cross, or come within d/3,
       share one line in the gap, or none where the gap is too narrow for one: then each edge's outside line is the
       other's inside line. Two outside lines 3d/4 out put one of them inside the other edge's cell (copper gaps of
@@ -215,7 +255,8 @@ def _patterns(edges: Iterable[Edge], d: float, prefer: Collection[Edge] = (), fo
                         bisect_left(opp, us[k] - ALONE * d) < bisect_right(opp, us[k] + ALONE * d)
                         or any(cut) and (not cut[0] or faces)):
                     top, served, j = us[k] + deep, False, k + 1  # else d/8 in, as shallow as the lint allows
-                elif SLOT_IN is not None and h >= SLOT_GATE * d and facing(opp, us[k]) and (SLOT_SERVED or j == k + 1):
+                elif slot and SLOT_IN is not None and h >= SLOT_GATE * d and facing(opp, us[k]) and (
+                        SLOT_SERVED or j == k + 1):
                     top, slotted = us[k] + max(SLOT_IN * d, deep), True  # a slot edge's own depth (plan 6)
                 elif sum(cut) > 1:  # several cut edges: their pattern, centred between the deepest and the farthest
                     top = max(top - (us[k] - us[k + max(i for i, c in enumerate(cut) if c)]) / 2, us[k] + deep)

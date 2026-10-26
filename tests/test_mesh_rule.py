@@ -1,4 +1,5 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
+import math
 from functools import cache
 from pathlib import Path
 
@@ -857,3 +858,41 @@ def test_the_slot_gate_reads_the_boards_substrate(tmp_path, monkeypatch, thickne
     slot(monkeypatch, gate=3.0)
     geom, prot = variant(tmp_path, "coupon_gcpw", "(thickness 0.71)", f"(thickness {thickness})")
     assert np.isclose(build_mesh(geom, prot, 2).y, line, rtol=0, atol=1.5e-6).any()
+
+
+BROKEN = {  # plan 2's ratchet axes (d = 0.075) that the slot depth d/6 alone breaks (r1's ungated probe)
+    "d3": [(110.0, -1), (110.0015, 1), (110.0675, -1)],  # facing|1,44,1: a cell under d/3 at d/6 (a lint hit at d/8–5d/32)
+    "lint": [(110.0, -1), (110.009, 1), (110.03, -1), (110.069, -1)],  # stairopp|8,3,8,1: one line between two edges
+}
+ARGS = ((100.0, 120.0), (80.0, 140.0), [], 0.075, 2.36)  # extent, walls, free, d, coarse
+
+
+@pytest.mark.parametrize("edges", BROKEN.values(), ids=BROKEN)
+def test_an_axis_the_slot_depth_would_break_keeps_its_as_built_lines(monkeypatch, edges):  # Review Focus 2
+    built = rule._axis(edges, *ARGS, (), (), math.inf, False)  # the rule as built, whatever the constants say
+    slot(monkeypatch)
+    alone = rule._axis(edges, *ARGS, (), (), math.inf, True)[0]
+    assert np.diff(alone).min() < 0.075 / 3 - GRID_TOL or lint(alone, edges, 0.075)
+    on = xy_lines(edges, *ARGS)
+    assert np.array_equal(on[0], built[0]) and np.array_equal(on[1], built[1])
+
+
+def test_a_slot_pass_that_does_not_converge_keeps_the_as_built_lines(monkeypatch):  # Review Focus 2
+    built = rule._axis(PAIR, *ARGS, (), (), math.inf, False)
+    slot(monkeypatch)
+    axis = rule._axis
+
+    def stuck(*a):  # _grade's guard, on the slot pass only
+        if a[-1]:
+            raise RuntimeError("the mesh grading did not converge")
+        return axis(*a)
+
+    monkeypatch.setattr(rule, "_axis", stuck)
+    on = xy_lines(PAIR, *ARGS)
+    assert np.array_equal(on[0], built[0]) and np.array_equal(on[1], built[1])
+
+
+def test_an_axis_the_slot_depth_leaves_clean_takes_it(monkeypatch):
+    slot(monkeypatch)
+    lines, _ = xy_lines(PAIR, *ARGS)
+    assert {109.9875, 110.1625} <= set(lines.tolist())

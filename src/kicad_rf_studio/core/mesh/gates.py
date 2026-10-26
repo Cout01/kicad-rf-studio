@@ -13,6 +13,7 @@ from scipy.constants import c as C_0
 from kicad_rf_studio.core.cs2d import ShortError, solve
 from kicad_rf_studio.core.geometry.sections import cross_section
 from kicad_rf_studio.core.mesh import build_mesh
+from kicad_rf_studio.core.mesh.rule import lint_hits
 from kicad_rf_studio.core.messages import KrsError
 
 if TYPE_CHECKING:
@@ -42,20 +43,10 @@ class Fit:
 
 def edge_lint(mesh: Mesh) -> list[LintHit]:
     """The in-plane protected copper edges of `mesh` (Mesh.edges; the copper's z faces carry lines and are exempt)
-    with a line on them, their nearest inside line nearer than d/8, or their first outside line no farther than that
-    inside line: a tie ties the outer line to the metal under openEMS's inclusive rule (T7). The distances go to 1e-9
-    mm, so that a tie on the 1e-6 mm grid compares equal (float noise put either line ahead)."""
-    hits = []
-    for axis in "xy":
-        lines = getattr(mesh, axis)
-        for e, inside in mesh.edges.get(axis, ()):
-            off = np.round((lines - e) * inside, 9)  # > 0 inside the metal
-            near_in, near_out = off[off > 0].min(initial=np.inf), -off[off < 0].max(initial=-np.inf)
-            reason = ("on_edge" if (off == 0).any() else "inside_too_close" if near_in < mesh.d / 8
-                      else "outside_closer" if near_out <= near_in else None)
-            if reason:
-                hits.append(LintHit(axis, e, reason))
-    return hits
+    that fail the edge lint on their axis's lines, with rule.lint_hits' reasons: a line on them, their nearest inside
+    line nearer than d/8, or their first outside line no farther than that inside line (a tie fails)."""
+    return [LintHit(axis, e, reason) for axis in "xy"
+            for e, reason in lint_hits(getattr(mesh, axis), mesh.edges.get(axis, ()), mesh.d)]
 
 
 def mesh_with_lint(geom: Geometry, prot: Protected, n: int) -> Mesh:
