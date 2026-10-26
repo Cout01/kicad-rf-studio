@@ -13,6 +13,7 @@ from kicad_rf_studio.core import cs2d
 from kicad_rf_studio.core.geometry import build_geometry
 from kicad_rf_studio.core.kicad import classify, load_board
 from kicad_rf_studio.core.kicad.stackup import kicad_default
+from kicad_rf_studio.core.mesh.gates import fit2d
 from kicad_rf_studio.core.messages import KrsError, render
 from kicad_rf_studio.core.project import (board_hash, load_project, make_project, mesh_n, mesh_reach_h,
                                           region_expand_h, region_margin_scale, save_project)
@@ -67,6 +68,13 @@ def parse_z0s(row):
 
 def fail(*args, **kwargs):
     raise AssertionError("cost started a process")
+
+
+def half_its_error(pj: Path) -> float:
+    """Half the largest fit2d error of the project `pj`, to one significant digit: a limit its own mesh misses,
+    whatever the rule reads (plan 6)."""
+    p, board, g, _ = load(pj)
+    return float(f"{max(f.err for f in fit2d(g, build_model(p, board, g).mesh)) / 2:.1g}")
 
 
 def test_cost_prints_2d_readout(tmp_path, capsys):
@@ -277,11 +285,12 @@ def test_the_timestep_floor_names_the_limiting_node_in_kicads_frame(tmp_path, ca
 
 def test_a_failed_fit2d_still_prints_the_cost_and_exits_3(tmp_path, capsys, calibrated):  # C-22, C-10
     pj = new_project(tmp_path, "coupon_gcpw_pads", preset="draft")
-    save_project(pj, {**load_project(pj), "gates": {"fit2d_limit": 0.02, "dt_floor": 0.8}})  # it reads 2.47 %
+    limit = half_its_error(pj)
+    save_project(pj, {**load_project(pj), "gates": {"fit2d_limit": limit, "dt_floor": 0.8}})
     assert main(["cost", str(pj)]) == 3
     out = capsys.readouterr().out
     assert "misses the 2D reference on net LINE" in out and "Worst case:" in out
-    assert render("W_GATE_LIMITS", fit2d_limit="0.02", dt_floor="0.8") in out.splitlines()
+    assert render("W_GATE_LIMITS", fit2d_limit=f"{limit:g}", dt_floor="0.8") in out.splitlines()
 
 
 @pytest.mark.parametrize(("exit_code", "err"), [

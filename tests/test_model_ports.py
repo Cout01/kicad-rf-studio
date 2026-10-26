@@ -47,8 +47,8 @@ def test_port_boxes_span_the_copper_free_gap_between_their_ends():  # spec 5.6, 
     # past U1.2, J1.2 and C2.2, C2.1's RF_B copper past its pad); across: C1 drops its two outer lines, whose edges out
     # end in the pour's fingers between its pads
     assert [[*q["start"][:2], *q["stop"][:2]] for q in (p1, p2, c1, c2)] == [
-        pytest.approx([101.119184, -99.712411, 101.868219, -99.895311], abs=1e-6),  # U1.2's side, then U1.1's
-        pytest.approx([112.828045, -99.330719, 112.902421, -99.623658], abs=1e-6),  # J1.2's side, then J1.1's
+        pytest.approx([101.119184, -99.712411, 101.868219, -99.88905], abs=1e-6),  # U1.2's side, then U1.1's
+        pytest.approx([112.82744, -99.33698, 112.902421, -99.623658], abs=1e-6),  # J1.2's side, then J1.1's
         pytest.approx([103.740804, -100.219158, 103.291384, -99.779563], abs=1e-6),  # C1.2's side, then C1.1's
         pytest.approx([104.714549, -100.479893, 105.238873, -100.290607], abs=1e-6)]  # C2.2's side, then C2.1's
     for q in (p1, p2, c1, c2):

@@ -27,9 +27,10 @@ CUT_SERVE = 1 / 3  # ×d: SERVE for a cut edge's cell: from here the d/8 line sp
 ALONE = 11 / 6  # ×d: where no edge of the other side is this near; there the gap step and collisions need d/8
 FACE = 4  # ×d: a cut edge that faces the other side's metal across a gap this narrow (n·d at a section) wants d/8
 THIN = 4.2  # ×d: a substrate under this deep keeps such an edge's d/4 line: much of its field goes down, as a strip's
-SLOT_IN: float | None = None  # ×d: a slot edge's inside depth (design 2026-10-26 §5.1); None: d/4, the rule as built
+# plan 6's calibration (design §5.1, A-8)
+SLOT_IN: float | None = 1 / 6  # ×d: a slot edge's inside depth (design 2026-10-26 §5.1); None: d/4, the rule as built
 SLOT_GATE = 0.0  # ×d: the slot depth holds where the substrate h is this deep or more; 0: everywhere
-SLOT_SERVED = False  # True: also a served cell of several edges whose deepest is a slot edge; False: lone cells only
+SLOT_SERVED = True  # True: also a served cell of several edges whose deepest is a slot edge; False: lone cells only
 MAX_ROUNDS = 10_000  # _grade's guard; 3000 random axes (both passes of each) converged within 16 rounds
 
 Edge = tuple[float, int]  # a protected copper edge: its position and the sign that points into its metal

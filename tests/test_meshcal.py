@@ -7,6 +7,7 @@ from pathlib import Path
 
 import pytest
 
+import kicad_rf_studio.core.mesh.rule as rule
 import meshcal
 import p0
 
@@ -105,6 +106,11 @@ def test_the_winner_has_the_most_passes_then_the_smallest_gcpw_coupon_fit2d_then
            {"id": "d", "pass": False, "passes": 99, "gcpw_max": 0.1},
            {"id": "e", "pass": True, "passes": 11, "gcpw_max": 0.71}]
     assert meshcal.choose(res) == "c" and meshcal.choose(res[:1] + res[3:4]) == "a" and meshcal.choose(res[3:4]) is None
+
+
+def test_the_slot_role_is_plan6s_winner():  # the constants are the searched candidate's, as the grid writes them
+    c = next(c for c in meshcal.CANDIDATES if c["id"] == "1-6_none_served")
+    assert (rule.SLOT_IN, rule.SLOT_GATE, rule.SLOT_SERVED) == (c["slot_in"], c["gate"], c["served"])
 
 
 def fake_harness(tmp_path, monkeypatch):

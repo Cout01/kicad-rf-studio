@@ -19,6 +19,7 @@ from kicad_rf_studio.core.geometry.zstack import substrate_h, zstack
 from kicad_rf_studio.core.kicad import classify, load_board, trace_chain
 from kicad_rf_studio.core.kicad.tracer import Chain
 from kicad_rf_studio.core.mesh import Mesh, _edges, build_mesh
+from kicad_rf_studio.core.mesh.gates import mesh_with_lint
 from kicad_rf_studio.core.mesh.protect import protected_set
 from kicad_rf_studio.core.mesh.rule import (RATIO, _grade, _patterns, cell_size, dz0, edge_lines, merge, xy_lines,
                                             z_lines)
@@ -607,11 +608,13 @@ def test_a_pour_that_follows_the_pads_over_a_substrate_a_few_cells_deep_passes_t
     assert max(map(abs, fit2d(geom, m))) < 3 and not lint(m.x, m.edges["x"], m.d) and not lint(m.y, m.edges["y"], m.d)
 
 
-@pytest.mark.parametrize(("h", "inside"), [(None, 1 / 8), (2.0, 1 / 4), (4.1, 1 / 4), (4.3, 1 / 8), (9.5, 1 / 8)])
+@pytest.mark.parametrize(("h", "inside"), [(None, 1 / 8), (2.0, rule.SLOT_IN), (4.1, rule.SLOT_IN), (4.3, 1 / 8),
+                                           (9.5, 1 / 8)])
 def test_a_facing_cut_edge_keeps_its_d_over_4_line_over_a_substrate_under_4_2_cells(h, inside):
     # the facing rule (FACE) holds over a substrate 4.2 cells deep or more (THIN), as on coupon_gcpw_pads and lpf915
     # (h/d = 9.5): a strip's cut edge with a pad step 0.2d outside it, facing its GND edge 2d away, with the pour
-    # following the pad, gets its inside line d/4 in under 4.2 cells, d/8 from there on and without h
+    # following the pad, gets its inside line d/8 in from 4.2 cells on and without h. Under 4.2 cells, where the rule
+    # as built kept d/4, its served cell takes plan 6's slot role: SLOT_IN·d in, as h ≥ SLOT_GATE·d (SLOT_SERVED)
     d = 0.075
     edges = [(110.0, -1), (110.015, -1), (110.15, 1), (110.165, 1)]
     lines, _ = xy_lines(edges, (100.0, 120.0), (80.0, 140.0), [], d, 2.36, [(110.0, -1), (110.15, 1)],
@@ -792,12 +795,14 @@ def test_a_shallow_inside_line_wins_its_collision_as_the_nearer_edges_line():
     assert round(-100.4705 - (d / 8 + GRID_TOL), 6) in pins and not lint(np.array(sorted(pins)), edges, d)
 
 
-def test_section_edges_keep_their_lines_on_coupon_gcpw_pads():
+def test_section_edges_keep_their_slot_lines_on_coupon_gcpw_pads():
     # verifier: the pads' edges pulled the GND inside lines to the mean along the whole line, at the section's cut too:
-    # fit2d read +3.38 % (over 3 %), and +2.47 % with the GND lines kept
+    # fit2d read +3.38 % (over 3 %), and +2.47 % with the GND lines kept. Plan 6: they are lone slot edges at h/d 9.4,
+    # so every gate in the grid holds and they keep the slot role's line
     m = mesh("coupon_gcpw_pads")
     for edge in [(-100.4505, -1), (-99.5495, 1)]:  # the GND edges facing the LINE at its cut
-        assert np.isclose(m.y, edge_lines(*edge, m.d)[0], rtol=0, atol=1.5e-6).any()
+        line = round(edge[0] + edge[1] * max(rule.SLOT_IN * m.d, m.d / 8 + GRID_TOL), 6)
+        assert np.isclose(m.y, line, rtol=0, atol=1.5e-6).any()
     assert not lint(m.y, m.edges["y"], m.d)
 
 
@@ -896,3 +901,12 @@ def test_an_axis_the_slot_depth_leaves_clean_takes_it(monkeypatch):
     slot(monkeypatch)
     lines, _ = xy_lines(PAIR, *ARGS)
     assert {109.9875, 110.1625} <= set(lines.tolist())
+
+
+G1 = [(*f, n) for f in FIXTURES for n in (2, 3) if n == 2 or not f[0].startswith("lpf915")]
+
+
+@pytest.mark.parametrize(("name", "start", "end", "n"), G1)
+def test_every_fixture_section_passes_the_fit2d_gate(name, start, end, n):  # design G1: plan 6's slot role (A-8)
+    g, prot = geometry(name, start, end)  # the ratchet's own build (3 GHz, no lid, reach 6): condition 1 in tier (a)
+    assert max(map(abs, fit2d(g, mesh_with_lint(g, prot, n))), default=0.0) < 3

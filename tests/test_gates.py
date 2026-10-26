@@ -116,9 +116,10 @@ def test_remesh_failure_blocks(monkeypatch):
     assert str(e.value) == render("E_EDGE_LINT", axis="x", edge_mm=edge, reason="on edge", n=2)
 
 
-@pytest.mark.parametrize(("name", "n", "pct"), [("coupon_gcpw", 2, 2.53), ("coupon_gcpw_masked", 3, 2.79)])
+@pytest.mark.parametrize(("name", "n", "pct"), [("coupon_gcpw", 2, 0.04), ("coupon_gcpw_masked", 3, 0.91)])
 def test_fit2d_passes_on_rule_mesh(name, n, pct):
-    # R-P2-20: the cases measured under the 3 % gate; coupon_gcpw_masked reads +3.78 % at n = 2 (carried to P0-A)
+    # R-P2-20's cases under the 3 % gate (+2.53 and +2.79 %), which plan 6's slot role (A-8) moved; R-P2-20 read
+    # coupon_gcpw_masked +3.78 % at n = 2 before it
     g, prot = geom_of(name)
     fits = fit2d(g, mesh_with_lint(g, prot, n))
     assert [f.section for f in fits] == g.sections and all(f.err < 0.03 for f in fits)

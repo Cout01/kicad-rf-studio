@@ -10,7 +10,7 @@ from kicad_rf_studio import pipeline, runs
 from kicad_rf_studio.cli import main
 from kicad_rf_studio.core.messages import KrsError, render
 from kicad_rf_studio.core.project import load_project, save_project
-from test_cli_cost import fail, new_project
+from test_cli_cost import fail, half_its_error, new_project
 
 
 def test_preview_writes_the_xml_in_a_job_folder_and_opens_it(tmp_path, capsys, fake, monkeypatch):  # C-34
@@ -74,7 +74,7 @@ def test_a_blocked_gate_is_printed_and_the_model_still_opens(tmp_path, capsys, f
     monkeypatch.setattr(pipeline, "appcsxcad", lambda settings: "AppCSXCAD")
     monkeypatch.setattr(pipeline, "open_viewer", lambda exe, job: None)
     pj = new_project(tmp_path, "coupon_gcpw_pads", preset="draft")
-    save_project(pj, {**load_project(pj), "gates": {"fit2d_limit": 0.02, "dt_floor": 0.8}})  # it reads 2.47 %
+    save_project(pj, {**load_project(pj), "gates": {"fit2d_limit": half_its_error(pj), "dt_floor": 0.8}})
     assert main(["preview", str(pj)]) == 0
     out = capsys.readouterr().out
     assert "misses the 2D reference on net LINE" in out and out.splitlines()[-1].startswith("Opened ")
