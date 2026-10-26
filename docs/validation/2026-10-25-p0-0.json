@@ -1,0 +1,1 @@
+{"items": {"porting": "ok", "hooks_and_deny_list": "ok", "history_scans": "ok", "gitignore": "ok", "fixtures": "ok", "lpf915_checklist": "ok", "tier_a_and_openems": "ok", "tier_b": "push-gated", "tier_c": "push-gated", "spdx_notice_licences": "ok", "gate_gaps_fixed": "ok", "owner_items": "owner"}, "tests": {"tier_a": 1508, "openems": 16}, "elapsed_days": 3, "machine_hours": 0}
