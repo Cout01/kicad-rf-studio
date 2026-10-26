@@ -41,7 +41,7 @@ START = date(2026, 10, 22)  # the timebox counts from plan 5's start (D-4)
 MARKERS = ("kicad_rf_studio.worker", "emerge_fem", "pytest")  # in the command lines of workers, EMerge and tests
 _LOCKS = {}  # each P0 folder this process entered, resolved, with the harness.lock it holds
 LIMITS1 = {"ds21_db_f0": 0.1, "ds11_f0": 0.02, "ds_max": 0.03, "shift": 0.02}  # criterion 1 (spec 9.3, 9.4)
-TRACE_BYTES = 50_000  # a trace file's largest size (D-40)
+TRACE_BYTES = 100_000  # a trace file's largest size: D-40's about 50 KB, doubled so a six-port record fits whole (Task 19 ruling)
 
 
 def default_out() -> Path:

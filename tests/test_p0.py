@@ -164,10 +164,10 @@ def test_a_trace_round_trips_and_replays_to_its_live_cut(tmp_path, calibrated): 
     rec, k, exc, t_cut = p0.load_trace(path)
     assert sorted(np.load(path).files) == ["e", "exc", "i", "k", "t_cut", "t_i", "t_u", "te", "u"]
     assert (k, t_cut) == (0, job["t_cut"]) and stop_rule(rec, k, "normal", exc).t == job["t_cut"]
-    assert path.stat().st_size <= 50_000
+    assert path.stat().st_size <= p0.TRACE_BYTES
 
 
-def test_a_trace_thins_only_its_energy_rows_and_refuses_probes_over_50_kb(tmp_path):  # D-40, PF-12, PF-13, PF-15
+def test_a_trace_thins_only_its_energy_rows_and_refuses_probes_over_the_cap(tmp_path):  # D-40, PF-12, PF-13, PF-15
     rng = np.random.default_rng(0)
 
     def job(name, samples, rows):
@@ -186,9 +186,9 @@ def test_a_trace_thins_only_its_energy_rows_and_refuses_probes_over_50_kb(tmp_pa
     path = p0.save_trace(job("long", 100, 20_000), 1, 1e-12, 1, exc, None, tmp_path / "out" / "long.npz")
     rec, _, _, t_cut = p0.load_trace(path)
     assert len(rec.t_u) == len(rec.t_i) == 100 and 0 < len(rec.te) < 20_000 and t_cut is None  # NaN stored
-    assert path.stat().st_size <= 50_000
+    assert path.stat().st_size <= p0.TRACE_BYTES
     with pytest.raises(ValueError) as e:
-        p0.save_trace(job("dense", 4_000, 10), 1, 1e-12, 1, exc, None, tmp_path / "dense.npz")
+        p0.save_trace(job("dense", 8_000, 10), 1, 1e-12, 1, exc, None, tmp_path / "dense.npz")
     assert "dense" in str(e.value) and not (tmp_path / "dense.npz").exists()
 
 
