@@ -7,7 +7,6 @@ import pytest
 
 import p0
 import privacy_gate as gate
-from kicad_rf_studio import pipeline
 from kicad_rf_studio.core.model import spec as spec_module
 from kicad_rf_studio.core.post.chain import terminate, with_box
 from kicad_rf_studio.core.post.waves import grid
@@ -115,8 +114,6 @@ def test_p0b_on_the_fake_worker_writes_a_plain_private_free_gate_json(p0_out, mo
     monkeypatch.setenv("KRS_FAKE", "network")
     monkeypatch.setattr(p0, "cli", in_process)
     monkeypatch.setattr(spec_module, "c_box", lambda *a: 6e-16)  # verify's cells: the fake's dump is empty
-    # P0-B ran B4 (lpf915-45) before P0-A's staircase refusal landed (D-27, PF-57); the harness runs as it ran then
-    monkeypatch.setattr(pipeline, "GEOMETRY_GATES", ("E_OPEN_IN_ROI", "E_SHORT_IN_ROI"))
     p0.save(p0_out / "p0a" / "p0a.json", P0A)
     assert harness.main(["--out", str(p0_out)]) == 0  # every step, then p0b.json
     text = (p0_out / "p0b" / "p0b.json").read_text(encoding="utf-8")

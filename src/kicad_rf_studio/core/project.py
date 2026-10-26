@@ -34,7 +34,8 @@ REACH_H = 6.0  # the protected set's reach in substrate heights (spec 5.4, D-12)
 ROLES = ("port", "copper", "open", "grid", "curve_port")  # what a part is in the model (spec 5.7)
 # ponytail: provisional constants, the same for every preset; the owner sets the time policy (spec 1.1) after P0-C.
 DEFAULT_PRESET, HARMONICS, BAND_FACTOR, T_MAX_S = "normal", 3, 1.1, 40e-9
-# P0-A confirmed the fit2d limit and the floor on 2026-10-24 (docs/validation/2026-10-24-p0-a.md)
+# P0-A confirmed the fit2d limit and the floor on 2026-10-24 and again under plan 6's mesh rule on 2026-10-26
+# (docs/validation/2026-10-26-p0-a.md)
 GATES = {"fit2d_limit": 0.03, "dt_floor": 0.8}
 
 

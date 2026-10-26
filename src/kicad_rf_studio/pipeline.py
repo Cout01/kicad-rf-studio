@@ -54,7 +54,7 @@ if TYPE_CHECKING:
     from kicad_rf_studio.core.mesh import Mesh
     from kicad_rf_studio.core.post.waves import Layout
 
-GEOMETRY_GATES = ("E_OPEN_IN_ROI", "E_SHORT_IN_ROI", "E_STAIRCASED")  # the geometry's notes that block a run
+GEOMETRY_GATES = ("E_OPEN_IN_ROI", "E_SHORT_IN_ROI")  # the geometry's notes that block a run
 VERDICTS = {"converged": "I_JOB_CONVERGED", "flat": "W_JOB_FLAT", "t_max": "W_JOB_T_MAX", "diverged": "E_JOB_DIVERGED",
             "growth": "E_JOB_GROWTH", "unclassified": "W_JOB_UNCLASSIFIED", "stopped": "W_JOB_STOPPED"}  # spec 6.3
 # spec 7.6 (amendment A-4): the instant retune is labelled relative / what-if until P0-C passes; the owner sets True

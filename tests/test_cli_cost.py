@@ -7,14 +7,14 @@ from pathlib import Path
 
 import pytest
 
-from kicad_rf_studio import runs
+from kicad_rf_studio import pipeline, runs
 from kicad_rf_studio.cli import main
 from kicad_rf_studio.core import cs2d
 from kicad_rf_studio.core.geometry import build_geometry
 from kicad_rf_studio.core.kicad import classify, load_board
 from kicad_rf_studio.core.kicad.stackup import kicad_default
 from kicad_rf_studio.core.mesh.gates import fit2d
-from kicad_rf_studio.core.messages import KrsError, render
+from kicad_rf_studio.core.messages import CATALOG, KrsError, render
 from kicad_rf_studio.core.project import (board_hash, load_project, make_project, mesh_n, mesh_reach_h,
                                           region_expand_h, region_margin_scale, save_project)
 from kicad_rf_studio.pipeline import build_model, load
@@ -89,20 +89,21 @@ def test_cost_prints_2d_readout(tmp_path, capsys):
 
 
 def test_cost_on_45_degree_coupon(tmp_path, capsys):
-    # Review Focus 4: no straight, axis-aligned section prints the staircase refusal (D-27) and no row, and does not
-    # crash; the refusal is a geometry gate, so a portless project stops with exit 3
-    assert main(["cost", str(new_project(tmp_path, "coupon_gcpw_45"))]) == 3
+    # Review Focus 4: no straight, axis-aligned section prints the staircase warning and no row, and does not crash
+    assert main(["cost", str(new_project(tmp_path, "coupon_gcpw_45"))]) == 0
     out = capsys.readouterr().out
-    assert "no straight, axis-aligned sections" in out and "the run is blocked" in out
-    assert out.splitlines() == [FILLS, render("W_NO_SECTIONS"), render("E_STAIRCASED", net="LINE"), PORTLESS]
+    assert "no straight, axis-aligned sections" in out and "staircased" in out
+    assert out.splitlines() == [FILLS, render("W_NO_SECTIONS"), render("W_STAIRCASED", net="LINE"), PORTLESS]
 
 
-def test_staircased_measured_copper_is_refused_after_p0a(tmp_path, capsys, calibrated):  # D-27: P0-A's refuse branch
-    pj = new_project(tmp_path, "lpf915-45")
-    # the switch and a lid height pass E_ROTATED_PART (L1) and E_LID_HEIGHT, so only the staircase stops `cost`
-    save_project(pj, {**load_project(pj), "allow_curve_port": True, "lid_height_mm": 2.5})
-    capsys.readouterr()
-    assert main(["cost", str(pj)]) == 3 and render("E_STAIRCASED", net="RF_B") in capsys.readouterr().out.splitlines()
+def test_staircased_copper_warns_with_p0as_re_checked_error():  # D-27: the advice branch of P0-A's re-check (plan 6)
+    assert "E_STAIRCASED" not in CATALOG and pipeline.GEOMETRY_GATES == ("E_OPEN_IN_ROI", "E_SHORT_IN_ROI")
+    warning = render("W_STAIRCASED", net="RF_B")
+    assert "4.6 % off its axis-aligned twin in Z0 at mesh n 2, within the 5 % budget" in warning
+
+
+def test_the_staircase_warning_offers_the_fine_mesh():  # D-27's advice: plan 5's mesh n 3 sentence
+    assert render("W_STAIRCASED", net="RF_B").endswith('set "mesh": {"n": 3} in project.json.')
 
 
 def test_cost_starts_no_worker(tmp_path, monkeypatch):  # a project without ports stops after the 2D estimate
