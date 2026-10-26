@@ -8,7 +8,7 @@ write tests/fixtures/p0d and tests/fixtures/traces from a P0 folder's P0-A and P
 
 Dev-time only, like p0: the package never imports it. Run: python tools/p0d.py models --out DIR [--only M,…] |
 excite --spec FILE --port K --out DIR | compare --runs DIR --refs DIR --models DIR --out FILE | references --p0 DIR
---out DIR | traces --p0 DIR --out DIR."""
+--out DIR [--only M,…] | traces --p0 DIR --out DIR [--only M,…]."""
 import argparse
 import json
 import sys
@@ -31,6 +31,7 @@ MODELS = (*p0a.COUPONS, "coupon_gcpw_pads", "lpf915")
 NEW = {"coupon_gcpw_pads": p0a.PAD_NEW, "lpf915": harness.NEW}  # new's arguments, as P0-A and P0-B make them (PF-44)
 STEPS = {**{name: f"p0a-{name}-n2" for name in p0a.COUPONS}, "coupon_gcpw_pads": "p0a-pad",
          "lpf915": "p0b-B1"}  # the step whose Windows run is each model's reference (D-48)
+TRACES = ("coupon_gcpw_pads", "lpf915")  # the models whose step (STEPS) also gives trace fixtures (D-40)
 PIN = p0a.PIN  # the P0 runs' reach, the one constant P0-A's harness pins too
 FLOOR = 10 * PRESETS["draft"][1]  # the null floor, as verify derives it
 ZE_LIMIT_PCT = 0.5  # Linux's Z0 and εeff against Windows': one model at one stop level, which r7 expects within 0.1 %
@@ -115,16 +116,16 @@ def references(p0_dir: Path, out: Path, models: tuple[str, ...] = MODELS) -> lis
     return paths
 
 
-def traces(p0_dir: Path, out: Path) -> list[Path]:
-    """The trace fixtures (D-40), from the P0 folder `p0_dir`, entered first: p0.save_trace of the pad coupon's two jobs
-    (p0a-pad) and B1's six (p0b-B1), each record read on its own (PF-43), as out/coupon_gcpw_pads-k<k>.npz and
-    out/lpf915-k<k>.npz, k the job's port number, with its live t_cut. SystemExit naming every job whose live verdict
-    (p0.summary's: the stored results, else the verdict events) is not "converged", before any file is written: the
-    fixtures are the live converged branch. Returns the paths."""
+def traces(p0_dir: Path, out: Path, models: tuple[str, ...] = TRACES) -> list[Path]:
+    """The trace fixtures (D-40) of `models`, from the P0 folder `p0_dir`, entered first: p0.save_trace of the jobs of
+    each one's record (STEPS: the pad coupon's two, p0a-pad, and B1's six, p0b-B1), each record read on its own (PF-43)
+    and no other one, as out/<model>-k<k>.npz, k the job's port number, with its live t_cut. SystemExit naming every job
+    whose live verdict (p0.summary's: the stored results, else the verdict events) is not "converged", before any file
+    is written: the fixtures are the live converged branch. Returns the paths."""
     p0_dir = p0.enter(p0_dir)
     todo, bad = [], []
-    for name, sid in (("coupon_gcpw_pads", "p0a-pad"), ("lpf915", "p0b-B1")):
-        (record,) = p0.records(p0_dir, [sid])
+    for name in models:
+        (record,) = p0.records(p0_dir, [STEPS[name]])
         folder = p0.run_path(record["result"]["run_dir"])
         spec, dt = harness._read(folder / "model.json"), harness._read(folder / "job-0-setup" / "setup.json")["dt"]
         names = [q["name"] for q in spec["ports"]]
@@ -177,8 +178,9 @@ def compare_runs(runs_dir: Path, refs: Path, models_dir: Path) -> dict:
 
 def main(argv: list[str] | None = None) -> int:
     """python tools/p0d.py models|excite|compare|references|traces … (D-47, D-48). A command that runs or reads a P0
-    folder enters it first (D-7). compare writes its result to its --out and returns 1 when a model fails; the others
-    return 0."""
+    folder enters it first (D-7). The --only of models, references and traces picks among that command's models
+    (MODELS, or TRACES for traces); any other name is a parser error. compare writes its result to its --out and
+    returns 1 when a model fails; the others return 0."""
     parser = argparse.ArgumentParser(prog="p0d", description="P0-D and CI tier (b) (spec 9.5, 9.1).")
     commands = parser.add_subparsers(dest="command", required=True)
     cmd = commands.add_parser("models", help="write each model spec and matrix.json")
@@ -192,15 +194,18 @@ def main(argv: list[str] | None = None) -> int:
     for flag in ("--runs", "--refs", "--models"):
         cmd.add_argument(flag, required=True, type=Path, metavar="DIR")
     cmd.add_argument("--out", required=True, type=Path, metavar="FILE")
-    for name, text in (("references", "write the Windows references (D-48)"), ("traces", "write the traces (D-40)")):
+    for name, text, among in (("references", "write the Windows references (D-48)", MODELS),
+                              ("traces", "write the traces (D-40)", TRACES)):
         cmd = commands.add_parser(name, help=text)
         cmd.add_argument("--p0", required=True, type=Path, metavar="DIR", help="the P0 folder")
         cmd.add_argument("--out", required=True, type=Path, metavar="DIR")
+        cmd.add_argument("--only", metavar="M,...", help=f"the models, comma-separated, among {','.join(among)}")
     a = parser.parse_args(argv)
+    known = TRACES if a.command == "traces" else MODELS
+    only = a.only.split(",") if getattr(a, "only", None) else None  # excite and compare take no --only
+    if unknown := sorted(set(only or ()) - set(known)):
+        parser.error(f"unknown model: {', '.join(unknown)}")
     if a.command == "models":
-        only = a.only.split(",") if a.only else None
-        if unknown := sorted(set(only or ()) - set(MODELS)):
-            parser.error(f"unknown model: {', '.join(unknown)}")
         models(a.out, only)
     elif a.command == "excite":
         excite(a.spec, a.port, a.out)
@@ -210,7 +215,7 @@ def main(argv: list[str] | None = None) -> int:
             print(f"p0d: {name}: {'pass' if m['pass'] else 'fail'}", *m.get("missing", []), flush=True)
         return 0 if result["pass"] else 1
     else:
-        for path in (references if a.command == "references" else traces)(a.p0, a.out):
+        for path in (references if a.command == "references" else traces)(a.p0, a.out, tuple(only or known)):
             print(path, flush=True)
     return 0
 

@@ -31,11 +31,12 @@ P0A = {"rows": [{"verdict": "converged", "growth_db": 0.0}], "pad": {"jobs": [{"
        "decisions": {"dt_floor": {"min_ratio": 0.92, "stray_ratio": 0.45, "stray_trips": True}}}
 
 
-def test_the_p0b_projects_are_fresh_projects_with_their_edits(p0_out, monkeypatch):  # D-32, D-9
+def test_the_p0b_projects_are_fresh_projects_with_their_edits(p0_out, monkeypatch):  # D-32, D-9; B1-B5 at p0a.PIN (r4)
     monkeypatch.setattr(p0, "cli", in_process)
-    b5, b4, b6 = (load_project(harness.project(p0_out, r)) for r in ("B5", "B4", "B6"))
-    assert (b5["mesh"], b5["gates"]["fit2d_limit"], b5["lid_height_mm"]) == ({"n": 3, "reach_h": 6.0}, 0.05, 2.5)
-    assert b4["allow_curve_port"] is True and b6["mesh"] == {"n": 2, "reach_h": 6.0}
+    b1, b5, b4, b6 = (load_project(harness.project(p0_out, r)) for r in ("B1", "B5", "B4", "B6"))
+    assert (b5["mesh"], b5["gates"]["fit2d_limit"], b5["lid_height_mm"]) == ({"n": 3, "reach_h": 3.0}, 0.05, 2.5)
+    assert (b1["mesh"], b1["gates"]["fit2d_limit"]) == ({"n": 2, "reach_h": 3.0}, 0.03)  # 3 % under any D-29 branch
+    assert (b4["mesh"]["reach_h"], b4["allow_curve_port"], b6["mesh"]) == (3.0, True, {"n": 2, "reach_h": 6.0})
     assert (p0_out / "boards" / "lpf915-45.kicad_pcb").is_file()
     pj = harness.project(p0_out, "B5")
     d = load_project(pj)

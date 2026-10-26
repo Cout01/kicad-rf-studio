@@ -123,6 +123,14 @@ def test_references_and_traces_come_from_a_p0_folder(p0_out, tmp_path, monkeypat
     with pytest.raises(SystemExit) as e:
         p0d.traces(p0_out, tmp_path / "refused")
     assert "lpf915-k4" in str(e.value) and not (tmp_path / "refused").exists()
+    pad = tmp_path / "pad"  # --only: the pad's reference and traces, B1's record never read (plan 6's lpf915 branch)
+    assert p0d.main(["references", "--p0", str(p0_out), "--out", str(pad), "--only", "coupon_gcpw_pads"]) == 0
+    assert p0d.main(["traces", "--p0", str(p0_out), "--out", str(pad), "--only", "coupon_gcpw_pads"]) == 0
+    assert sorted(p.name for p in pad.iterdir()) == ["coupon_gcpw_pads-k1.npz", "coupon_gcpw_pads-k2.npz",
+                                                      "coupon_gcpw_pads.npz"]
+    with pytest.raises(SystemExit) as e:  # a model outside traces' own is a parser error, not a missing record
+        p0d.main(["traces", "--p0", str(p0_out), "--out", str(pad), "--only", "coupon_ms"])
+    assert e.value.code == 2
 
 
 @pytest.mark.parametrize(("run", "argv", "folder"), [

@@ -33,10 +33,17 @@ from kicad_rf_studio.stoprule import KEPT, growth_rise
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))  # tools/, for p0 when this runs as a script
 import p0  # noqa: E402
+import p0a  # noqa: E402
 
 NEW = ("--start", "U1.1", "--end", "J1.1", "--f0", "915MHz", "--lid-height", "2.5")  # D-32: 2.5 mm, as r1, r3 and r7
-VARIANTS = {"B1": ("lpf915", {}), "B4": ("lpf915-45", {"allow_curve_port": True}),
-            "B5": ("lpf915", {"mesh.n": 3, "gates.fit2d_limit": 0.05}), "B6": ("lpf915", {"mesh.reach_h": 6.0})}
+# B1 to B5 at p0a.PIN's reach 3, as P0-B ran them, since new now defaults to reach 6 (the Stage 1 exit report §5; r4):
+# B1 alone rebuilds P0-D's lpf915 reference (p0d.STEPS), B2 and B3 follow B1, and B6 keeps reach 6. B1's gate is pinned
+# at 3 %: under D-29's lower branch, new's default limit could block B1 with E_FIT2D, and gates is not in the model
+# spec, so the model hash does not move
+VARIANTS = {"B1": ("lpf915", {**p0a.PIN, "gates.fit2d_limit": 0.03}),
+            "B4": ("lpf915-45", {"allow_curve_port": True, **p0a.PIN}),
+            "B5": ("lpf915", {"mesh.n": 3, "gates.fit2d_limit": 0.05, **p0a.PIN}),
+            "B6": ("lpf915", {"mesh.reach_h": 6.0})}
 K_SWEEP = (0.35, 0.40, 0.45, 0.48, 0.50, 0.55)  # D-39
 # 185,000 steps at lpf915's 5.4e-14 s: r3 B-6 saw k 0.49 diverge only after about 52,700 steps; about 18.5 min a
 # value, 1.9 h in all, inside D-39's 2 h
