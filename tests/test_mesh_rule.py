@@ -34,15 +34,16 @@ def section(width, gap):
     return Section("LINE", "F.Cu", "x", (0.0, 0.0), (10.0, 0.0), width, gap, 10.0, (5.0, 0.0))
 
 
-def build(path, start="", end=""):
+def build(path, start="", end="", reach_h=3.0):
     """The board's geometry as build_geometry (Task 12) assembles it from Tasks 2-6 at a 3 GHz top of band, and its
-    protected set. The coupons have no pads to trace a chain between (R-P2-1), so their chain is LINE alone."""
+    protected set at `reach_h` substrate heights (build_geometry reads project.json's: 6 by default since D-37). The
+    coupons have no pads to trace a chain between (R-P2-1), so their chain is LINE alone."""
     b = load_board(path)
     chain = trace_chain(b, start, end) if start else Chain("", "", ("LINE",), (), ())
     zs = zstack(b.stackup, b.copper_layers)
     region = build_region(b, chain, [], zs, 3e9)
     pieces, notes = copper_pieces(b, region.crop, {s.copper: s.z1 - s.z0 for s in zs if s.kind == "copper"})
-    prot = protected_set(b, chain, classify(b), pieces, substrate_h(zs))
+    prot = protected_set(b, chain, classify(b), pieces, substrate_h(zs), reach_h)
     secs, more = sections(b, chain.nets, pieces)
     width = min(t.width for t in b.tracks if t.net in chain.nets)
     masks = {layer: m for layer, side in (("F.Cu", "F"), ("B.Cu", "B"))

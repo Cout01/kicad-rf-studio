@@ -37,7 +37,8 @@ if TYPE_CHECKING:
     from kicad_rf_studio.core.mesh import Mesh
 
 EPS0 = scipy.constants.epsilon_0  # F/m
-# ponytail: stable up to k 0.48 at openEMS's own dt on a uniform grid with equal edges (r3 3.6); plan 5 confirms it
+# ponytail: stable through k 0.55 on lpf915's L1 cell at a rule mesh's dielectric interface, 10 ns at openEMS's own
+# dt (P0-B, 2026-10-25)
 K_MAX = 0.45  # verify's limit on k = dt/(2·√(L·C)) of an inductor's cell (C-37)
 
 

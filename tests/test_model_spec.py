@@ -65,7 +65,7 @@ def test_the_lpf915_spec():
     assert not any(q["z"] in ([0.78, 0.79], [-0.01, 0.0]) for x in s["materials"] for q in x["solids"])  # X-3
     area = sum(Polygon(zip(q["x"], q["y"])).area for q in fcoat["solids"])
     assert area == pytest.approx(g.masks["F.Cu"].coat.area, abs=1e-3)  # C-6: the 47 openings honoured
-    assert len(s["metal"]["cylinders"]) == 21 and len(s["metal"]["curves"]) == 15  # C-40
+    assert len(s["metal"]["cylinders"]) == 26 and len(s["metal"]["curves"]) == 10  # C-40
     assert all(c["at"][0] in m.x and c["at"][1] in m.y for c in s["metal"]["curves"])
     assert s["metal"]["lid"]["plate"]["z"] == snap_lid(g.lid, m.z).z1 and s["metal"]["lid"]["plate"]["z"] in m.z  # C-39
 

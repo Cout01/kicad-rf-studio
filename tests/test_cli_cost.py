@@ -107,14 +107,14 @@ def test_cost_starts_no_worker(tmp_path, monkeypatch):  # a project without port
 def test_new_writes_region_and_mesh_defaults(tmp_path, preset, n):
     # R-P2-8: `new` needs two pads, so coupon_gcpw_pads (TP1.1 → TP2.1) stands in for the pad-less coupon_ms
     d = load_project(new_project(tmp_path, "coupon_gcpw_pads", preset=preset))
-    assert d["region"] == {"expand_h": 3.0, "margin_scale": 1.0} and d["mesh"] == {"n": n, "reach_h": 3.0}
+    assert d["region"] == {"expand_h": 3.0, "margin_scale": 1.0} and d["mesh"] == {"n": n, "reach_h": 6.0}  # D-37
 
 
 def test_a_project_without_region_or_mesh_reads_their_defaults():  # a bare dict; read_project requires both
     assert region_expand_h({}) == 3.0 and region_expand_h({"region": {"expand_h": 2}}) == 2
     assert mesh_n({"preset": "strict"}) == 3 and mesh_n({"preset": "draft"}) == 2 and mesh_n({"preset": "normal"}) == 2
     assert mesh_n({"preset": "strict", "mesh": {"n": 2}}) == 2
-    assert (mesh_reach_h({}), region_margin_scale({}), mesh_reach_h({"mesh": {"reach_h": 6}})) == (3.0, 1.0, 6)
+    assert (mesh_reach_h({}), region_margin_scale({}), mesh_reach_h({"mesh": {"reach_h": 3}})) == (6.0, 1.0, 3)
 
 
 # --- beyond the brief's tests ---------------------------------------------------------------------------------
@@ -321,10 +321,10 @@ def test_ctrl_c_during_the_setup_job_exits_130_and_leaves_no_process(tmp_path, c
 
 def test_cost_warns_when_one_job_needs_more_ram_than_is_free(tmp_path, capsys, calibrated, monkeypatch):
     # beyond the brief's tests: prepare's W_RAM branch, and the pool it cuts to one job
-    monkeypatch.setattr(runs, "free_ram_mb", lambda: 100.0)  # one job of the coupon needs about 0.5 GB
+    monkeypatch.setattr(runs, "free_ram_mb", lambda: 100.0)  # one job of the coupon needs about 0.6 GB
     assert main(["cost", str(new_project(tmp_path, "coupon_gcpw_pads", preset="draft"))]) == 0
     out = capsys.readouterr().out.splitlines()
-    assert render("W_RAM", need_gb="0.5", free_gb="0.1") in out and render("I_COST_RAM", gb="0.5", pool=1) in out
+    assert render("W_RAM", need_gb="0.6", free_gb="0.1") in out and render("I_COST_RAM", gb="0.6", pool=1) in out
 
 
 def test_the_cost_lines_count_no_more_jobs_at_once_than_runs(tmp_path, capsys, calibrated, monkeypatch):  # review M1

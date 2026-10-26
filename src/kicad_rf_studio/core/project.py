@@ -29,7 +29,7 @@ SCHEMA = 1
 EXPAND_H = 3.0  # substrate heights the ROI grows by past the chain (spec 5.1)
 MARGIN_SCALE = 1.0  # the factor on the walls' margin past the ROI, WALL_MM + WALL_CELLS·coarse (D-12)
 MESH_N = {"draft": 2, "normal": 2, "strict": 3}  # the mesh rule's n by preset (spec 5.4, plan 2 Decisions)
-REACH_H = 3.0  # the protected set's reach in substrate heights (spec 5.4, D-12)
+REACH_H = 6.0  # the protected set's reach in substrate heights (spec 5.4, D-12); P0-B raised it from 3 (D-37)
 ROLES = ("port", "copper", "open", "grid", "curve_port")  # what a part is in the model (spec 5.7)
 # ponytail: provisional constants, the same for every preset; the owner sets the time policy (spec 1.1) after P0-C.
 DEFAULT_PRESET, HARMONICS, BAND_FACTOR, T_MAX_S = "normal", 3, 1.1, 40e-9

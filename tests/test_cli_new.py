@@ -23,7 +23,7 @@ FIX = Path(__file__).parent / "fixtures"
 LPF = FIX / "lpf915.kicad_pcb"
 # spec 3.2: `new` prints every value it assumed
 DEFAULTS = ("Preset normal (provisional default), band factor 1.1, T_max 40 ns, harmonics 3, mesh n 2, "
-            "region 3 substrate heights past the chain, margin scale 1, protected reach 3 substrate heights.")
+            "region 3 substrate heights past the chain, margin scale 1, protected reach 6 substrate heights.")
 KEYS = {"schema", "board", "f0_hz", "harmonics", "preset", "band_factor", "t_max_s", "region", "mesh", "stackup",
         "lid_height_mm", "lid", "classes", "chain", "others", "ports", "gates", "allow_curve_port"}
 
@@ -138,7 +138,7 @@ def test_options_reach_the_project_and_the_summary(tmp_path, capsys):
     lines = capsys.readouterr().out.splitlines()
     assert "f0 2400 MHz, with 5 harmonics." in lines
     assert ("Preset strict (provisional default), band factor 1.1, T_max 40 ns, harmonics 5, mesh n 3, "
-            "region 3 substrate heights past the chain, margin scale 1, protected reach 3 substrate heights.") in lines
+            "region 3 substrate heights past the chain, margin scale 1, protected reach 6 substrate heights.") in lines
 
 
 def test_classes_are_the_computed_sets(tmp_path):
@@ -686,7 +686,7 @@ def test_reach_and_margin_are_optional_and_enter_the_model(tmp_path):  # D-12, R
     del d["mesh"]["reach_h"], d["region"]["margin_scale"]
     save_project(pj, d)
     assert model_hash() == base  # a project.json from plan 4 reads the defaults and keeps its hash
-    for group, key, value in (("mesh", "reach_h", 6.0), ("region", "margin_scale", 2.0)):
+    for group, key, value in (("mesh", "reach_h", 3.0), ("region", "margin_scale", 2.0)):  # 6.0 is D-37's default
         d[group][key] = value
         save_project(pj, d)
         assert model_hash() != base

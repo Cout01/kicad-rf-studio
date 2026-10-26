@@ -116,6 +116,10 @@ def test_a_rotated_part_needs_the_switch():  # C-12, C-37
     assert (e.value.code, e.value.params) == ("E_ROTATED_PART", {"ref": "L1"})
 
 
+def test_the_rotated_part_message_states_p0bs_result():  # D-34's fail branch
+    assert "P0-B measured" in render("E_ROTATED_PART", ref="L1")
+
+
 def test_a_rotated_part_becomes_a_curve_port_behind_the_switch():  # C-37, spec 5.7
     board, p = project_of("lpf915-45", "U1.1", "J1.1", "--lid-height", "2.5")
     p = {**copy.deepcopy(p), "allow_curve_port": True}

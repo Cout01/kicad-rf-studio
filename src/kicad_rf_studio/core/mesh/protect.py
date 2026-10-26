@@ -29,8 +29,8 @@ class Protected:
 
 def protected_set(board: Board, chain: Chain, classes: Classes, pieces: list[Piece], h: float,
                   reach_h: float = 3.0, boxes: tuple[Polygon, ...] = (), pads: tuple[str, ...] = ()) -> Protected:
-    """The protected set of `chain`, whose nets are the measured nets. The reach, `reach_h` substrate heights `h`
-    (provisional: P0-B checks it), is measured in plane from the measured nets' copper on every layer. The GND copper
+    """The protected set of `chain`, whose nets are the measured nets. The reach, `reach_h` substrate heights `h` (P0-B
+    raised it to 6 on 2026-10-25), is measured in plane from the measured nets' copper on every layer. The GND copper
     within it is protected, cut where the reach ends, and so is every GND via whose ring comes within it; the measured
     nets' own vias are protected wherever they are. A plated hole (a thru_hole pad) is a via whose ring is its pad.
     `pads` names ("REF.NUM") more part pads to protect as the chain parts' pads are. `area` is on the 1e-6 mm grid."""

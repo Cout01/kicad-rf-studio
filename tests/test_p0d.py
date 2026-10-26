@@ -43,7 +43,8 @@ def test_models_writes_each_spec_and_the_matrix(tmp_path, monkeypatch):  # D-47;
     assert coupon["probes"]
     assert load_project(tmp_path / "coupon_gcpw_pads" / "project.json")["mesh"]["reach_h"] == 3.0  # PIN
     monkeypatch.undo()
-    assert spec_hash(coupon) == spec_hash(p0a.coupon_model("coupon_ms", 2)[0].spec)  # PIN, on the coupons too
+    pinned = p0a.coupon_model("coupon_ms", 2, edits={"mesh.reach_h": 3.0})[0].spec  # the P0 runs' reach, not D-37's
+    assert spec_hash(coupon) == spec_hash(pinned)  # PIN, on the coupons too
 
 
 def test_excite_runs_one_port_at_draft_and_compare_judges_it(p0_out, tmp_path):  # D-47: one job per excitation
