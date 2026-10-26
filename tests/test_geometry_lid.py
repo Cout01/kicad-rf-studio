@@ -110,8 +110,12 @@ def test_the_lid_puts_lines_on_its_walls():  # Task 10's build_mesh takes the li
     geom, prot = geometry(*LPF)
     lid, _ = find_lid(*setup(*LPF), P)
     bare, lidded = build_mesh(geom, prot, 2), build_mesh(replace(geom, lid=lid), prot, 2)
-    faces = {95.825, 96.825, 116.325, 117.325}  # SH1's sides; its pads sit in the GND pour, so no copper vertex there
-    assert faces <= set(lidded.x) and not faces & set(bare.x)
+    outer, inner = {95.825, 117.325}, {96.825, 116.325}  # SH1's sides; its pads sit in the GND pour: no copper vertex
+    assert outer <= set(lidded.x) and not (outer | inner) & set(bare.x)
+    # reach 6 (D-37) stretches the protected extent past the inner faces, and xy_lines lines a free coordinate only at d
+    # or more from it: each inner face lies under d/2 from its nearest line instead (0.034 and 0.028 mm at d = 0.075 mm)
+    lo, _, hi, _ = shapely.total_bounds([*prot.area.values(), *prot.boxes])
+    assert all(lo < f < hi and 0 < np.abs(lidded.x - f).min() < lidded.d / 2 for f in inner)
 
 
 @pytest.mark.parametrize("height", [2.0, 30.0])  # 30 mm reaches past the top wall, 22.8 mm over the board at 3 GHz

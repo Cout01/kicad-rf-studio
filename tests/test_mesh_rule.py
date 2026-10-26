@@ -21,6 +21,7 @@ from kicad_rf_studio.core.mesh.protect import protected_set
 from kicad_rf_studio.core.mesh.rule import (RATIO, _grade, _patterns, cell_size, dz0, edge_lines, merge, xy_lines,
                                             z_lines)
 from kicad_rf_studio.core.mesh.smooth import smooth_mesh_lines
+from kicad_rf_studio.core.project import REACH_H
 
 FIX = Path(__file__).parent / "fixtures"
 GRID_TOL = 3e-6  # mm: the 1e-6 mm grid moves big − 1.3·small by up to 2.3e-6 mm (T9 fix ruling)
@@ -34,16 +35,16 @@ def section(width, gap):
     return Section("LINE", "F.Cu", "x", (0.0, 0.0), (10.0, 0.0), width, gap, 10.0, (5.0, 0.0))
 
 
-def build(path, start="", end="", reach_h=3.0):
+def build(path, start="", end=""):
     """The board's geometry as build_geometry (Task 12) assembles it from Tasks 2-6 at a 3 GHz top of band, and its
-    protected set at `reach_h` substrate heights (build_geometry reads project.json's: 6 by default since D-37). The
-    coupons have no pads to trace a chain between (R-P2-1), so their chain is LINE alone."""
+    protected set at project.json's default reach (REACH_H, 6 since D-37). The coupons have no pads to trace a chain
+    between (R-P2-1), so their chain is LINE alone."""
     b = load_board(path)
     chain = trace_chain(b, start, end) if start else Chain("", "", ("LINE",), (), ())
     zs = zstack(b.stackup, b.copper_layers)
     region = build_region(b, chain, [], zs, 3e9)
     pieces, notes = copper_pieces(b, region.crop, {s.copper: s.z1 - s.z0 for s in zs if s.kind == "copper"})
-    prot = protected_set(b, chain, classify(b), pieces, substrate_h(zs), reach_h)
+    prot = protected_set(b, chain, classify(b), pieces, substrate_h(zs), REACH_H)
     secs, more = sections(b, chain.nets, pieces)
     width = min(t.width for t in b.tracks if t.net in chain.nets)
     masks = {layer: m for layer, side in (("F.Cu", "F"), ("B.Cu", "B"))
@@ -286,9 +287,9 @@ def test_lines_quantised():
 
 
 def test_curve_vias_snap_to_lines():
-    geom, _ = geometry("lpf915", "U1.1", "J1.1")  # 15 curves: the RF_SMA fence (14, Task 4) and one more barrel
+    geom, _ = geometry("lpf915", "U1.1", "J1.1")  # 10 curves: the RF_SMA fence's vias past reach 6 (D-37)
     m = mesh("lpf915", "U1.1", "J1.1")
-    assert len(m.snapped_rods) == len(geom.rods) and sum(not r.solid for r in m.snapped_rods) == 15
+    assert len(m.snapped_rods) == len(geom.rods) and sum(not r.solid for r in m.snapped_rods) == 10
     assert all(r.at[0] in m.x and r.at[1] in m.y for r in m.snapped_rods if not r.solid)
     assert [r for r in m.snapped_rods if r.solid] == [r for r in geom.rods if r.solid]
     # R-P2-22: to the nearest line, not merely to one (the brief: "move to the nearest x and y lines")
@@ -346,8 +347,10 @@ def test_protected_edges_come_from_copper_outlines():
                                                                             for e in expected)
 
     m = mesh("coupon_gcpw_masked")
-    # the 10 µm simplification tilts the LINE's top edge by 1.4 µm over 20 mm (T6 ruling); it is still an edge
-    assert same(m.edges["y"], [(-100.4505, -1), (-100.3, 1), (-99.7, -1), (-99.5495, 1)], 1e-3)
+    # the 10 µm simplification tilts the LINE's top edge by 1.4 µm over 20 mm (T6 ruling); it is still an edge. Reach 6
+    # (D-37) protects the pours' outer sides too
+    assert same(m.edges["y"], [(-104.4995, 1), (-100.4505, -1), (-100.3, 1), (-99.7, -1), (-99.5495, 1),
+                               (-95.5005, -1)], 1e-3)
     assert same(m.edges["x"], [(99.5005, 1), (120.4995, -1)], 1e-3)  # the pours' ends (B.Cu's sheet ends there too)
     # the vertical cuts of the hole split are not edges: lpf915's GND pour was cut at x = 101.833481
     assert 101.833481 not in [e for e, _ in mesh("lpf915", "U1.1", "J1.1").edges["x"]]

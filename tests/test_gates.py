@@ -20,7 +20,7 @@ from kicad_rf_studio.core.mesh.gates import (Fit, LintHit, check_fit2d, dt_floor
                                              mesh_with_lint)
 from kicad_rf_studio.core.mesh.protect import protected_set
 from kicad_rf_studio.core.messages import KrsError, render
-from kicad_rf_studio.core.project import REACH_H, load_project
+from kicad_rf_studio.core.project import load_project
 from test_cli_cost import SEG, gcpw
 from test_mesh_rule import FIXTURES, build
 
@@ -212,7 +212,7 @@ def test_rule_meshes_pass_the_lint_and_never_trip_the_timestep_floor(name, start
 def test_build_geometry_assembles_tasks_2_to_6(name):
     # test_mesh_rule's builder does by hand what build_geometry does from project.json; on the coupons the
     # connectivity check and the lid add no note
-    assert geom_of(name)[0] == build(FIX / f"{name}.kicad_pcb", reach_h=REACH_H)[0]
+    assert geom_of(name)[0] == build(FIX / f"{name}.kicad_pcb")[0]
 
 
 def test_build_geometry_reads_the_chain_and_the_lid_from_new():
