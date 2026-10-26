@@ -6,6 +6,7 @@ import numpy as np
 import pytest
 import shapely
 
+import kicad_rf_studio.core.mesh.rule as rule
 from kicad_rf_studio.core.cs2d import solve
 from kicad_rf_studio.core.geometry import Geometry
 from kicad_rf_studio.core.geometry.copper import copper_pieces
@@ -804,3 +805,55 @@ def test_grading_never_splits_a_fixed_cell():
     out = _grade(lines, [1.0175, 1.0475], 2.36)
     i = np.flatnonzero(out == 1.0)[0]
     assert list(out[i:i + 3]) == [1.0, 1.035, 1.06] and not bad_pairs(out, [1.0175, 1.0475])
+
+
+PAIR = [(110.0, -1), (110.15, 1)]  # metal below 110, a 2d gap at d = 0.075, metal above 110.15: two lone slot edges
+
+
+def slot(monkeypatch, inside=1 / 6, gate=0.0, served=False):
+    """The slot role on (plan 6), with these values."""
+    for name, v in (("SLOT_IN", inside), ("SLOT_GATE", gate), ("SLOT_SERVED", served)):
+        monkeypatch.setattr(rule, name, v)
+
+
+@pytest.mark.parametrize("inside", [1 / 8, 1 / 6])  # 1/8 meets the d/8 + GRID_TOL floor
+def test_a_lone_slot_edge_gets_the_slot_depth_and_keeps_its_outside_line(monkeypatch, inside):
+    d = 0.075
+    slot(monkeypatch, inside)
+    deep = max(inside * d, d / 8 + GRID_TOL)
+    assert sorted(_patterns(PAIR, d)) == [round(110.0 - deep, 6), 110.05625, 110.09375, round(110.15 + deep, 6)]
+
+
+def test_an_open_edge_keeps_d_over_4(monkeypatch):  # a strip facing no metal has no slot edge
+    slot(monkeypatch)
+    assert sorted(_patterns([(109.0, 1), (110.0, -1)], 0.075)) == [108.94375, 109.01875, 109.98125, 110.05625]
+
+
+@pytest.mark.parametrize(("h", "gate", "inside"), [(None, 4.2, 1 / 6), (4.2, 4.2, 1 / 6), (4.1, 4.2, 1 / 4),
+                                                   (2.0, 2.0, 1 / 6), (1.9, 2.0, 1 / 4), (0.5, 0.0, 1 / 6)])
+def test_the_slot_depth_holds_from_the_gate_on(monkeypatch, h, gate, inside):  # h ≥ gate·d; no h passes every gate
+    d = 0.075
+    slot(monkeypatch, gate=gate)
+    assert round(110.0 - inside * d, 6) in _patterns(PAIR, d, **({} if h is None else {"h": h * d}))
+
+
+@pytest.mark.parametrize(("served", "pair"), [(False, 1 / 4), (True, 1 / 6)])
+def test_a_served_pair_takes_the_slot_depth_only_in_the_served_scope(monkeypatch, served, pair):
+    # a strip edge with a pad step 0.2d past it, one served cell, and its GND edge 3d away (within FACE, past ALONE)
+    d = 0.075
+    slot(monkeypatch, served=served)
+    pins = _patterns([(110.0, -1), (110.015, -1), (110.225, 1)], d)
+    assert sorted(pins) == [round(110.0 - pair * d, 6), 110.05625, 110.16875, 110.2375]  # the lone GND edge: both
+
+
+def test_a_slot_edge_the_lint_forces_keeps_the_exact_edge_lines(monkeypatch):  # spec 5.5's re-mesh
+    slot(monkeypatch)
+    assert sorted(_patterns(PAIR, 0.075, force=[(110.0, -1)])) == [109.98125, 110.05625, 110.09375, 110.1625]
+
+
+@pytest.mark.parametrize(("thickness", "line"), [("0.71", -100.463042), ("0.2", -100.469313)])
+def test_the_slot_gate_reads_the_boards_substrate(tmp_path, monkeypatch, thickness, line):  # Review Focus 3
+    # coupon_gcpw's GND edge facing LINE, at -100.4505: h/d 9.4 takes d/6 under a gate of 3; on 0.2 mm, h/d 2.7 keeps d/4
+    slot(monkeypatch, gate=3.0)
+    geom, prot = variant(tmp_path, "coupon_gcpw", "(thickness 0.71)", f"(thickness {thickness})")
+    assert np.isclose(build_mesh(geom, prot, 2).y, line, rtol=0, atol=1.5e-6).any()

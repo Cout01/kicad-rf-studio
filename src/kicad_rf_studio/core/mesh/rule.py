@@ -27,6 +27,9 @@ CUT_SERVE = 1 / 3  # ×d: SERVE for a cut edge's cell: from here the d/8 line sp
 ALONE = 11 / 6  # ×d: where no edge of the other side is this near; there the gap step and collisions need d/8
 FACE = 4  # ×d: a cut edge that faces the other side's metal across a gap this narrow (n·d at a section) wants d/8
 THIN = 4.2  # ×d: a substrate under this deep keeps such an edge's d/4 line: much of its field goes down, as a strip's
+SLOT_IN: float | None = None  # ×d: a slot edge's inside depth (design 2026-10-26 §5.1); None: d/4, the rule as built
+SLOT_GATE = 0.0  # ×d: the slot depth holds where the substrate h is this deep or more; 0: everywhere
+SLOT_SERVED = False  # True: also a served cell of several edges whose deepest is a slot edge; False: lone cells only
 MAX_ROUNDS = 10_000  # _grade's guard; 3000 random axes (both passes of each) converged within 16 rounds
 
 Edge = tuple[float, int]  # a protected copper edge: its position and the sign that points into its metal
@@ -162,6 +165,9 @@ def _patterns(edges: Iterable[Edge], d: float, prefer: Collection[Edge] = (), fo
       that pass it. Same-side edges with an edge of the other side between them are not a staircase but the far sides
       of a strip and of what faces it: they neither join nor share a line (verifier (A): a 0.4d strip 0.02d from the
       metal it faces failed the lint).
+    - With SLOT_IN set (plan 6), a slot edge, one that the other side's metal faces across a gap within FACE·d, has
+      its inside line SLOT_IN·d deep (at least d/8 + GRID_TOL) where `h` ≥ SLOT_GATE·d. It applies in a cell of its own
+      or, with SLOT_SERVED, in any served cell it is the deepest edge of. Its outside line stays 3d/4 out.
     - Facing edges across a gap (metal below one, above the next) whose outside lines cross, or come within d/3,
       share one line in the gap, or none where the gap is too narrow for one: then each edge's outside line is the
       other's inside line. Two outside lines 3d/4 out put one of them inside the other edge's cell (copper gaps of
@@ -188,23 +194,29 @@ def _patterns(edges: Iterable[Edge], d: float, prefer: Collection[Edge] = (), fo
         """No edge of the other side (`opp`, in u, sorted) lies between u and v: they are a staircase."""
         return bisect_left(opp, u) == bisect_left(opp, v)
 
+    def facing(opp: list[float], u: float) -> bool:
+        """An edge of the other side (`opp`, in u, sorted) lies within FACE·d outside u: its metal faces u's."""
+        return bisect_left(opp, u - FACE * d) < bisect_left(opp, u)
+
     for side in (-1, 1):
         us = sorted((side * e for e, s in edges if s == side), reverse=True)  # u grows into the metal: deepest first
         opp = sorted(side * e for e, s in edges if s != side)
         top, k = None, 0
         while k < len(us):
-            j, served = k + 1, False
+            j, served, slotted = k + 1, False, False
             if top is None:  # a cell of its own: d/4 in, also for the same-side edges within reach where it is alone
                 top, served = us[k] + d / 4, True
                 reach = (CUT_SERVE if (side * us[k], side) in prefer else SERVE) * d
                 while j < len(us) and us[k] - us[j] <= reach and near(opp, us[j - 1], us[j]):
                     j += 1
                 cut = [(side * u, side) in prefer for u in us[k:j]]
-                faces = h >= THIN * d and bisect_left(opp, us[k] - FACE * d) < bisect_left(opp, us[k])
+                faces = h >= THIN * d and facing(opp, us[k])
                 if j < len(us) and near(opp, us[j - 1], us[j]) and joins(top, us[j - 1], us[j]) or j > k + 1 and (
                         bisect_left(opp, us[k] - ALONE * d) < bisect_right(opp, us[k] + ALONE * d)
                         or any(cut) and (not cut[0] or faces)):
                     top, served, j = us[k] + deep, False, k + 1  # else d/8 in, as shallow as the lint allows
+                elif SLOT_IN is not None and h >= SLOT_GATE * d and facing(opp, us[k]) and (SLOT_SERVED or j == k + 1):
+                    top, slotted = us[k] + max(SLOT_IN * d, deep), True  # a slot edge's own depth (plan 6)
                 elif sum(cut) > 1:  # several cut edges: their pattern, centred between the deepest and the farthest
                     top = max(top - (us[k] - us[k + max(i for i, c in enumerate(cut) if c)]) / 2, us[k] + deep)
             cell, k = us[k:j], j
@@ -212,7 +224,8 @@ def _patterns(edges: Iterable[Edge], d: float, prefer: Collection[Edge] = (), fo
                 cell.append(us[k])  # no line fits before us[k], and the cell spans d at most
                 k += 1
             low = cell[-1]
-            bottom, shared = min(top - d if served else low - 3 * d / 4, 2 * low - top - lead), None
+            bottom, shared = min(cell[0] - 3 * d / 4 if slotted else top - d if served else low - 3 * d / 4,
+                                 2 * low - top - lead), None
             if k < len(us) and near(opp, low, us[k]) and bottom - (us[k] + d / 4) < d / 3:  # share one line with the
                 lo_w, hi_w = window(top, low, us[k])  # next cell, whose own inside line is near; empty past the cap
                 shallow = k + 1 < len(us) and near(opp, us[k], us[k + 1]) and joins(us[k] + d / 4, us[k], us[k + 1])
