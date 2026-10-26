@@ -38,7 +38,7 @@ from kicad_rf_studio.core.model.readers import read_probe
 from kicad_rf_studio.core.model.spec import model_spec, spec_hash
 from kicad_rf_studio.core.post.checks import LOSS_LIMIT, RECIP_LIMIT, SIGMA_LIMIT
 from kicad_rf_studio.core.post.waves import grid
-from kicad_rf_studio.core.project import BAND_FACTOR, HARMONICS, board_hash, make_project
+from kicad_rf_studio.core.project import BAND_FACTOR, HARMONICS, board_hash, load_project, make_project, save_project
 from kicad_rf_studio.stoprule import KEPT, growth_rise
 
 sys.path.append(str(p0.ROOT / "tests"))  # kicad_lines: KiCad's line formulas, as the tests port them
@@ -58,6 +58,7 @@ NS = (2, 3)  # the mesh.n of every coupon run (D-24)
 COUPON_STEPS = {f"p0a-{name}-n{n}": (name, n) for name in COUPONS for n in NS}
 STEPS = ("p0a-calibrate", *COUPON_STEPS, "p0a-pad", "p0a-stray")  # in the order main runs them
 PAD_NEW = ("--start", "TP1.1", "--end", "TP2.1", "--f0", "915MHz")  # new's arguments for the pad coupon (D-28)
+PIN = {"mesh.reach_h": 3.0}  # the P0 runs' reach, so that a later default (D-37) cannot change the models CI builds
 
 
 def _nearest(lines: np.ndarray, v: float) -> int:
@@ -68,13 +69,12 @@ def _nearest(lines: np.ndarray, v: float) -> int:
 def coupon_project(name: str, n: int) -> tuple[Board, dict]:
     """The board of the coupon `name` (tests/fixtures) and its project.json as `new` writes it, made by hand since `new`
     cannot trace a pad-less line (R-P2-8; tests/test_cli_cost.by_hand): the chain LINE alone, no part, no port, preset
-    normal, mesh.n `n`."""
+    normal, mesh.n `n`, mesh.reach_h pinned (PIN)."""
     path = p0.FIX / f"{name}.kicad_pcb"
     board = load_board(path)
     chain = {"start": "", "end": "", "nets": ["LINE"], "series": [], "shunt": []}
     project = make_project(path.as_posix(), board_hash(path), F0, board.stackup, classify(board), chain, [], [])
-    project["mesh"]["n"] = n
-    return board, project
+    return board, p0.edit(project, {"mesh.n": n, **PIN})
 
 
 def points(geom: Geometry, name: str) -> list[dict]:
@@ -456,8 +456,8 @@ def _calibrate() -> dict:
 def _pad(out: Path) -> tuple[str, Callable[[], dict]]:
     """The key and work of the pad coupon's step (D-28, PF-20): its project <out>/p0a/projects/coupon_gcpw_pads, made
     by `new` from the board copied into <out>/boards when it is missing (RuntimeError on a non-zero exit; new writes
-    project.json only once every refusal check passed), keyed by p0.model_key; the work runs cost, then run
-    (p0.cli_run), at the project's preset, Normal."""
+    project.json only once every refusal check passed), PIN saved, keyed by p0.model_key; the work runs cost, then
+    run (p0.cli_run), at the project's preset, Normal."""
     pj = out / "p0a" / "projects" / "coupon_gcpw_pads" / "project.json"
     if not pj.is_file():
         (out / "boards").mkdir(parents=True, exist_ok=True)
@@ -465,6 +465,7 @@ def _pad(out: Path) -> tuple[str, Callable[[], dict]]:
         code, text = p0.cli("new", str(board), *PAD_NEW, "-o", str(pj.parent))
         if code:
             raise RuntimeError(f"p0a: new exited {code}: {(text.strip().splitlines() or [''])[-1]}")
+    save_project(pj, p0.edit(load_project(pj), PIN))
 
     def work() -> dict:
         code, _ = p0.cli("cost", str(pj))

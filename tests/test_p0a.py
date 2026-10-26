@@ -9,6 +9,7 @@ import p0
 import p0a
 from kicad_rf_studio import runs
 from kicad_rf_studio.core.geometry import build_geometry
+from kicad_rf_studio.core.model.spec import spec_hash
 from kicad_rf_studio.stoprule import KEPT
 from test_p0 import in_process
 
@@ -80,6 +81,18 @@ def test_the_twins_are_measured_at_their_midpoint_on_x_normal_planes():  # D-24
     arc = p0a.points(build_geometry(*p0a.coupon_project("coupon_gcpw_arc", 2)), "coupon_gcpw_arc")
     assert [(p["label"], p["normal"], p["theta"]) for p in arc] == [("s0", "x", 0.0), ("s1", "y", 0.0),
                                                                     ("mid", "x", 45.0)]
+
+
+def test_the_harness_builds_the_models_p0a_ran(tmp_path, monkeypatch):  # final review F6: --report on this code
+    monkeypatch.setattr(p0, "cli", in_process)
+    built = {name: spec_hash(p0a.coupon_model(name, 2)[0].spec) for name in p0a.COUPONS}
+    built["coupon_gcpw_pads"] = p0a._pad(tmp_path)[0]  # new's project in tmp_path, as the harness makes it
+
+    def ran(name):  # tests/fixtures/p0d: the spec_hash of the model each P0-A step ran (D-48)
+        with np.load(p0.FIX / "p0d" / f"{name}.npz") as z:
+            return str(z["spec_hash"])
+
+    assert built == {name: ran(name) for name in built}
 
 
 @pytest.mark.parametrize(("name", "z0_ref", "eeff_ref"), [

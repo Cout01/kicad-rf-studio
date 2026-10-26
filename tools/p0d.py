@@ -31,7 +31,7 @@ MODELS = (*p0a.COUPONS, "coupon_gcpw_pads", "lpf915")
 NEW = {"coupon_gcpw_pads": p0a.PAD_NEW, "lpf915": harness.NEW}  # new's arguments, as P0-A and P0-B make them (PF-44)
 STEPS = {**{name: f"p0a-{name}-n2" for name in p0a.COUPONS}, "coupon_gcpw_pads": "p0a-pad",
          "lpf915": "p0b-B1"}  # the step whose Windows run is each model's reference (D-48)
-PIN = {"mesh.reach_h": 3.0}  # the P0 runs' reach, so that a later default (D-37) cannot change the models CI builds
+PIN = p0a.PIN  # the P0 runs' reach, the one constant P0-A's harness pins too
 FLOOR = 10 * PRESETS["draft"][1]  # the null floor, as verify derives it
 ZE_LIMIT_PCT = 0.5  # Linux's Z0 and εeff against Windows': one model at one stop level, which r7 expects within 0.1 %
 F = grid(p0a.F0, HARMONICS, BAND_FACTOR)[0]  # the co-simulation grid of every model (f0 915 MHz, 3 harmonics)
