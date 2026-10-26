@@ -36,7 +36,7 @@ from kicad_rf_studio.core.model.readers import read_stats
 from kicad_rf_studio.core.post.chain import loads, part_impedances
 from kicad_rf_studio.core.post.checks import LOSS_LIMIT, RECIP_LIMIT, SIGMA_LIMIT, loss_budget, recip_err, sigma_max
 from kicad_rf_studio.core.post.waves import grid, layout
-from kicad_rf_studio.core.project import GATES, board_file, load_project, save_project
+from kicad_rf_studio.core.project import GATES, board_file, board_hash, load_project, save_project
 from kicad_rf_studio.stoprule import PRESETS
 
 STEPS = ("C0", "C1", "C2", "C3", "C4a", "C4b", "C5", "C6", "S2P")
@@ -427,9 +427,11 @@ def write(out: Path) -> dict:
 
 def main(argv: list[str] | None = None) -> int:
     """python tools/p0c.py … (D-46): exit 2 with one line, nothing written, when --out or --board lies inside a git
-    work tree or --board is not a file. Else enters OUT, copies the board into OUT/board when it is missing, runs the
-    steps of --steps (default every step, S2P only with --s2p) in STEPS' order, printing a step that raises and going
-    on with the next, and writes the reports. Returns 1 when a step raised, else 0."""
+    work tree, --board is not a file, or OUT was made for another board or other new options: its inputs.json (the
+    board's sha256 and new's options) differs, or is missing beside a board copy or a base. Else enters OUT, writes
+    inputs.json into a fresh one, copies the board into OUT/board when it is missing, runs the steps of --steps
+    (default every step, S2P only with --s2p) in STEPS' order, printing a step that raises and going on with the next,
+    and writes the reports. Returns 1 when a step raised, else 0."""
     parser = argparse.ArgumentParser(prog="p0c", description="P0-C, the private board crop (spec 9.4).")
     parser.add_argument("--board", required=True, metavar="PATH", help="the board file, outside every git work tree")
     parser.add_argument("--start", required=True, metavar="REF.PAD", help="new's --start")
@@ -455,7 +457,16 @@ def main(argv: list[str] | None = None) -> int:
     if not board.is_file():
         print(f"p0c: {board} is not a file", file=sys.stderr)
         return 2
+    inputs = {"board_sha256": board_hash(board),
+              "new": {k: getattr(a, k) for k in ("start", "end", "f0", "harmonics", "lid_height", "stackup")}}
+    stored = out / "inputs.json"
+    old = json.loads(stored.read_text(encoding="utf-8")) if stored.is_file() else None
+    if old != inputs and (old is not None or (out / "board").exists() or (out / "projects" / "base").exists()):
+        print(f"p0c: {a.out} was made for another board or other new options; use a fresh --out", file=sys.stderr)
+        return 2
     out = p0.enter(out)
+    if old is None:
+        p0.save(out / "inputs.json", inputs)
     if not (kept := out / "board" / board.name).is_file():
         kept.parent.mkdir(exist_ok=True)
         shutil.copy2(board, kept)

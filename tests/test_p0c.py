@@ -8,7 +8,7 @@ import p0c
 from kicad_rf_studio.core.messages import KrsError
 from kicad_rf_studio.core.model import spec as spec_module
 from kicad_rf_studio.core.post.waves import grid
-from kicad_rf_studio.core.project import load_project
+from kicad_rf_studio.core.project import board_hash, load_project
 from networks import write_s2p
 from test_p0 import in_process
 
@@ -24,6 +24,28 @@ def test_p0c_refuses_paths_inside_a_git_work_tree(tmp_path):  # D-46; Review Foc
                    (board, p0.ROOT / "not-yet" / "deeper")):
         assert p0c.main(["--board", str(b), "--out", str(out), *ARGS]) == 2
     assert not any(p.exists() for p in (tmp_path / "out", p0.ROOT / "build" / "p0c", p0.ROOT / "not-yet"))
+
+
+def test_a_rerun_with_another_board_or_options_is_refused(tmp_path, p0_out, monkeypatch, capsys):  # final review F1
+    monkeypatch.setattr(p0, "cli", in_process)
+    monkeypatch.setattr(p0c, "run_step", lambda out, a, name: p0c.base(out, a))  # a step here only makes the base
+    board, kept = tmp_path / "lpf915.kicad_pcb", (p0.FIX / "lpf915.kicad_pcb").read_bytes()
+    board.write_bytes(kept)
+    argv = ["--board", str(board), *ARGS, "--lid-height", "2.5", "--out", str(p0_out), "--steps", "C0"]
+    assert p0c.main(argv) == 0
+    new = {"start": "U1.1", "end": "J1.1", "f0": "915MHz", "harmonics": None, "lid_height": "2.5", "stackup": None}
+    assert json.loads((p0_out / "inputs.json").read_text(encoding="utf-8")) == {"board_sha256": board_hash(board),
+                                                                                 "new": new}
+    made = {p: p.read_bytes() for p in p0_out.rglob("*") if p.is_file()}
+    capsys.readouterr()
+    for again, data in ((["--f0", "916MHz"], kept), ([], kept + b"\n")):  # another f0; the board one byte longer
+        board.write_bytes(data)
+        assert p0c.main([*argv, *again]) == 2
+        assert capsys.readouterr().err == (f"p0c: {p0_out} was made for another board or other new options; use a "
+                                           "fresh --out\n")
+        assert {p: p.read_bytes() for p in p0_out.rglob("*") if p.is_file()} == made
+    board.write_bytes(kept)
+    assert p0c.main(argv) == 0  # the same inputs go on
 
 
 def test_p0c_on_lpf915_with_the_fake_worker(tmp_path, p0_out, monkeypatch):  # D-46; Review Focus 4
