@@ -6,8 +6,10 @@ import numpy as np
 import pytest
 
 import p0
+import p0a
 import privacy_gate as gate
 from kicad_rf_studio.core.model import spec as spec_module
+from kicad_rf_studio.core.post import waves
 from kicad_rf_studio.core.post.chain import terminate, with_box
 from kicad_rf_studio.core.post.waves import grid
 from kicad_rf_studio.core.project import load_project, save_project
@@ -129,6 +131,31 @@ def test_p0b_on_the_fake_worker_writes_a_plain_private_free_gate_json(p0_out, mo
     b1 = data["evidence"]["B1"]
     assert b1["ok"] and all(isinstance(j[key], bool) for j in b1["jobs"] for key in ("event", "abort", "order"))
     assert [s["k"] for s in data["kmax"]] == list(harness.K_SWEEP)
+
+
+def test_a9_judges_plan6s_b1_and_the_pad_coupon(p0_out, monkeypatch):  # A-9's E1-E4 (design 5.2, E-2)
+    monkeypatch.setenv("KRS_FAKE", "tmax")  # 6 ns rings to T_max: every tail is exact, so every judge reads about 0
+    monkeypatch.setattr(p0, "cli", in_process)
+    assert p0a.main(["--out", str(p0_out), "--only", "p0a-pad"]) == 0
+    monkeypatch.setattr(p0, "code_id", lambda: "other")  # B1 ran on other product code than P0-A (PF-43)
+    assert harness.main(["--out", str(p0_out), "--only", "B1"]) == 0
+    r = harness.a9(p0_out)
+    b1 = [f"p0b-B1/{p}" for p in ("P1", "P2", "C1", "L1", "C2", "C3")]
+    assert (r["e1"]["job"], r["e1"]["cuts"], r["e3"], r["e4"]["jobs"], r["pass"]) == (
+        "P1", [13.21e-9, 16e-9, 20e-9], {"p0b-B1": [], "p0a-pad": []}, [*b1, "p0a-pad/P1", "p0a-pad/P2"], True)
+    assert max(r["e1"]["ds"], r["e2"], r["e4"]["ds"]) <= 1e-9
+    assert harness.main(["--out", str(p0_out), "--a9"]) == 0
+    saved = json.loads((p0_out / "p0b" / "a9.json").read_text(encoding="utf-8"))
+    assert {k: v for k, v in saved.items() if k != "versions"} == r
+    with pytest.raises(SystemExit):  # the judges run once
+        harness.main(["--out", str(p0_out), "--a9"])
+    monkeypatch.setattr(harness, "A9_CUTS", (50e-9,))  # no cut before the 40 ns end: E1 void
+    monkeypatch.setattr(harness, "TAIL_WINDOW_S", 1.0)  # no job in E4's domain: E4 void
+    r = harness.a9(p0_out)
+    assert (r["e1"]["cuts"], r["e1"]["ds"], r["e4"]["ds"], r["pass"]) == ([], None, None, False)
+    monkeypatch.setattr(waves, "TAIL_FIT_TOL", 0.0)  # no fit passes: every job keeps its plain DFT
+    r = harness.a9(p0_out)
+    assert r["e3"] == {"p0b-B1": ["P1", "P2", "C1", "L1", "C2", "C3"], "p0a-pad": ["P1", "P2"]} and not r["pass"]
 
 
 def test_a_step_that_raises_is_logged_and_skipped_and_the_others_still_run(p0_out, monkeypatch, capsys):  # D-6
