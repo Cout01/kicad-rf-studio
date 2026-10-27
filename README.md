@@ -54,6 +54,8 @@ RAM: about 3.2 GB (4 jobs at once).
 Main cost: 6 runs, one per port, 4 of them part ports.
 ```
 
+Plan 6's mesh rule (spec §5.4, A-8) moved lpf915's lines after P0-B; the run times below are P0-B's.
+
 That worst case comes from today's calibration, which each run refreshes. P0-B's B6 recorded a worst case of 46937 s (13.0 h) and, from its run's stop times, a prediction of 35801 s (9.9 h); after a `run`, `cost` prints that prediction too.
 
 **`run`** runs the gates, then one job per port (P1 and P2, and the part ports C1, L1, C2 and C3) under the stop rule. When every job keeps S, it records the results in `project.json` and writes `layout.s6p`, `chain.s2p`, `summary.csv` and `summary.png` to `lpf915\results`. B6's six jobs took 19714 s (5.5 h), 0.55 of that prediction, and all six converged:
