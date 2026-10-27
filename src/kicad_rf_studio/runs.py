@@ -159,30 +159,72 @@ def _alive(pid: int) -> bool:
         kernel32.CloseHandle(handle)
 
 
+def lock_file(project_path: Path) -> Path:
+    """The project lock of `project_path`: project.json.lock beside a project.json."""
+    return project_path.with_name(project_path.name + ".lock")
+
+
+def lock_holder(project_path: Path) -> dict | None:
+    """Who holds the project lock: None without one; else the lock's {"pid", "run_dir", "started"} and "alive",
+    whether that process still runs. A lock that does not parse yet (made, not yet written) is a live run's of unknown
+    folder."""
+    # ponytail: a lock left empty by a hard kill between its creation and its write reads live until deleted; E_LOCKED's
+    # advice covers it
+    try:
+        holder = json.loads(lock_file(project_path).read_text(encoding="utf-8"))
+    except FileNotFoundError:
+        return None
+    except ValueError:  # json.JSONDecodeError or UnicodeError: empty or half written
+        return {"pid": None, "run_dir": None, "started": None, "alive": True}
+    return {**holder, "alive": _alive(holder["pid"])}
+
+
+def _unlink(path: Path) -> None:
+    """path.unlink(missing_ok=True), retried every 20 ms for about 1 s on a PermissionError, then once more, letting it
+    raise."""
+    # ponytail: Windows refuses to delete a file another process has open (the GUI reads the lock every 500 ms); 1 s of
+    # retries, then the error
+    for _ in range(50):
+        try:
+            path.unlink(missing_ok=True)
+            return
+        except PermissionError:
+            time.sleep(0.02)
+    path.unlink(missing_ok=True)
+
+
 @contextlib.contextmanager
 def project_lock(project_path: Path, run_dir: Path) -> Iterator[None]:
-    """Holds <project>.lock, {"pid", "run_dir", "started"}, while a run of `project_path` into `run_dir` goes on (C-24).
-    Raises E_LOCKED while a live run holds it; reclaims a dead run's with W_STALE_LOCK. Removed on exit, exceptions
-    included, but only when this call made it: a refused second run leaves the holder's lock alone (spec 3.3)."""
+    """Holds lock_file(project_path), {"pid", "run_dir", "started"}, while a run of `project_path` into `run_dir` goes
+    on (C-24). Raises E_LOCKED while a live run holds it; reclaims a dead run's with W_STALE_LOCK. The holder is read
+    through lock_holder: a lock released meanwhile is taken, and one still being written is read again every 50 ms, 20
+    times at most, before it counts as held. Deleted through _unlink on exit, exceptions included, but only when this
+    call made it: a refused second run leaves the holder's lock alone (spec 3.3)."""
     # ponytail: one lock per project, so two projects share the CPU; a reused pid keeps a stale lock alive, and E_LOCKED
     # says to delete it
-    lock = project_path.with_name(project_path.name + ".lock")
+    lock, waits = lock_file(project_path), 0
     while True:
         try:
             fd = os.open(lock, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
             break
         except FileExistsError:
-            holder = json.loads(lock.read_text(encoding="utf-8"))
-        if _alive(holder["pid"]):
+            holder = lock_holder(project_path)
+        if holder is None:  # released meanwhile: try again
+            continue
+        if holder["pid"] is None and waits < 20:  # made, not yet written
+            waits += 1
+            time.sleep(0.05)
+            continue
+        if holder["alive"]:
             raise KrsError("E_LOCKED", lock=str(lock), run=holder["run_dir"], started=holder["started"])
         print(render("W_STALE_LOCK", lock=str(lock), run=holder["run_dir"]))
-        lock.unlink(missing_ok=True)  # missing: another run reclaimed it first
+        _unlink(lock)  # missing: another run reclaimed it first
     try:  # the write too: a lock left empty by a full disk would block every later run
         with os.fdopen(fd, "w", encoding="utf-8") as f:
             json.dump({"pid": os.getpid(), "run_dir": str(run_dir), "started": time.strftime("%Y-%m-%dT%H:%M:%S")}, f)
         yield
     finally:
-        lock.unlink(missing_ok=True)  # missing: the user deleted it, as E_LOCKED invites
+        _unlink(lock)  # missing: the user deleted it, as E_LOCKED invites
 
 
 def emit(run_dir: Path, kind: str, code: str, params: dict, job: int | None = None) -> None:

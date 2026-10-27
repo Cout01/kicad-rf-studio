@@ -8,8 +8,10 @@ every job kept S does it replace the results in project.json and write the outpu
 a retune at the same values (pipeline.verify). `preview` has a worker write the model's model.xml and opens it in
 AppCSXCAD (pipeline.preview).
 `setup-openems` installs openEMS from the official Windows package into this Python, and `calibrate` measures this
-machine's simulation speed. A command returns its exit code, None for 0. There is no help= text: every string a user
-sees is a code in core.messages, and argparse itself writes the usage line."""
+machine's simulation speed. `cost`, `run` and `verify` take `--run-dir DIR`, the run folder to use instead of a new
+one in the data folder (Stage 2's GUI gives it, design 5.2): made before the command, and refused with E_RUN_DIR when it
+cannot be made or already holds a run. A command returns its exit code, None for 0. There is no help= text: every
+string a user sees is a code in core.messages, and argparse itself writes the usage line."""
 import argparse
 import math
 import sys
@@ -144,13 +146,13 @@ def _new(a: argparse.Namespace) -> None:
 def _cost(a: argparse.Namespace) -> int:
     from kicad_rf_studio import pipeline  # here, as in `new`: the CLI adds no work at import time
 
-    return pipeline.cost(pipeline.project_path(a.project))
+    return pipeline.cost(pipeline.project_path(a.project), a.run_dir)
 
 
 def _run(a: argparse.Namespace) -> int:
     from kicad_rf_studio import pipeline
 
-    return pipeline.run(pipeline.project_path(a.project))
+    return pipeline.run(pipeline.project_path(a.project), a.run_dir)
 
 
 def _retune(a: argparse.Namespace) -> int:
@@ -162,7 +164,7 @@ def _retune(a: argparse.Namespace) -> int:
 def _verify(a: argparse.Namespace) -> int:
     from kicad_rf_studio import pipeline
 
-    return pipeline.verify(pipeline.project_path(a.project))
+    return pipeline.verify(pipeline.project_path(a.project), a.run_dir)
 
 
 def _preview(a: argparse.Namespace) -> int:
@@ -199,9 +201,11 @@ def _parser() -> argparse.ArgumentParser:
     new.set_defaults(func=_new)
     cost = commands.add_parser("cost")
     cost.add_argument("project")
+    cost.add_argument("--run-dir", type=Path, metavar="DIR")
     cost.set_defaults(func=_cost)
     run = commands.add_parser("run")
     run.add_argument("project")
+    run.add_argument("--run-dir", type=Path, metavar="DIR")
     run.set_defaults(func=_run)
     retune = commands.add_parser("retune")
     retune.add_argument("project")
@@ -209,6 +213,7 @@ def _parser() -> argparse.ArgumentParser:
     retune.set_defaults(func=_retune)
     verify = commands.add_parser("verify")
     verify.add_argument("project")
+    verify.add_argument("--run-dir", type=Path, metavar="DIR")
     verify.set_defaults(func=_verify)
     preview = commands.add_parser("preview")
     preview.add_argument("project")
@@ -226,6 +231,14 @@ def main(argv: list[str] | None = None) -> int:
             stream.reconfigure(errors="replace")
     try:
         args = _parser().parse_args(argv)
+        if getattr(args, "run_dir", None) is not None:  # cost, run and verify: made before the command
+            args.run_dir = args.run_dir.absolute()  # a relative DIR is read from the working folder
+            try:
+                args.run_dir.mkdir(parents=True, exist_ok=True)
+            except OSError as e:
+                raise KrsError("E_RUN_DIR", path=str(args.run_dir), reason=reason(e, "cannot be made")) from None
+            if (args.run_dir / "events.jsonl").exists():  # another run's folder: nothing is added to it
+                raise KrsError("E_RUN_DIR", path=str(args.run_dir), reason="already holds a run")
         return args.func(args) or 0
     except KrsError as e:
         print(e, file=sys.stderr)

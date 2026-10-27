@@ -4,6 +4,7 @@ import os
 import re
 import subprocess
 import sys
+import threading
 from pathlib import Path
 
 import pytest
@@ -189,3 +190,49 @@ def test_a_failed_run_releases_its_lock(tmp_path):  # C-24: removed on exit, exc
 
 def test_free_ram_is_read_from_the_system():  # a wrong MEMORYSTATUSEX size reads 0, and every pool would be 1
     assert 0 < runs.free_ram_mb() < 2**24  # MB: under 16 TB
+
+
+def test_the_lock_holder_and_whether_it_lives(tmp_path):  # design 5.1, 5.2 item 6
+    pj, lock = tmp_path / "project.json", tmp_path / "project.json.lock"
+    assert runs.lock_file(pj) == lock and runs.lock_holder(pj) is None
+    lock.write_text(json.dumps({"pid": os.getpid(), "run_dir": "R", "started": "S"}), encoding="utf-8")
+    assert runs.lock_holder(pj) == {"pid": os.getpid(), "run_dir": "R", "started": "S", "alive": True}
+    dead = subprocess.Popen([sys.executable, "-c", "pass"])
+    dead.wait()
+    lock.write_text(json.dumps({"pid": dead.pid, "run_dir": "R", "started": "S"}), encoding="utf-8")
+    assert runs.lock_holder(pj)["alive"] is False
+    lock.write_text("", encoding="utf-8")  # made by O_EXCL, not yet written: a run starting
+    assert runs.lock_holder(pj) == {"pid": None, "run_dir": None, "started": None, "alive": True}
+
+
+def test_a_lock_released_while_it_is_read_is_taken(tmp_path, monkeypatch):  # was E_INTERNAL (FileNotFoundError)
+    pj, lock = tmp_path / "project.json", tmp_path / "project.json.lock"
+    lock.write_text(json.dumps({"pid": os.getpid(), "run_dir": "R", "started": "S"}), encoding="utf-8")
+    real = runs.lock_holder
+
+    def released(path):  # the holder ends between this run's O_EXCL and its read
+        lock.unlink()
+        return real(path)
+
+    monkeypatch.setattr(runs, "lock_holder", released)
+    with runs.project_lock(pj, tmp_path / "new"):
+        assert json.loads(lock.read_text(encoding="utf-8"))["run_dir"] == str(tmp_path / "new")
+
+
+def test_a_lock_still_being_written_is_waited_for(tmp_path):  # never "running since None in None"
+    pj, lock = tmp_path / "project.json", tmp_path / "project.json.lock"
+    lock.write_text("", encoding="utf-8")  # made by O_EXCL, not yet written
+    holder = json.dumps({"pid": os.getpid(), "run_dir": "R", "started": "S"})
+    threading.Timer(0.1, lock.write_text, [holder], {"encoding": "utf-8"}).start()
+    with pytest.raises(KrsError) as e:
+        with runs.project_lock(pj, tmp_path / "new"):
+            pass
+    assert (e.value.code, e.value.params) == ("E_LOCKED", {"lock": str(lock), "run": "R", "started": "S"})
+
+
+def test_the_lock_is_released_though_a_reader_holds_it_a_moment(tmp_path):  # the GUI reads it every 500 ms
+    pj = tmp_path / "project.json"
+    with runs.project_lock(pj, tmp_path / "run"):
+        reader = open(runs.lock_file(pj), encoding="utf-8")  # Windows refuses to delete a file open elsewhere
+        threading.Timer(0.2, reader.close).start()
+    assert not runs.lock_file(pj).exists()

@@ -307,12 +307,12 @@ def gate_lines(gates: dict) -> list[tuple[str, dict]]:
     return [("W_GATE_LIMITS", {"fit2d_limit": f"{gates['fit2d_limit']:g}", "dt_floor": f"{gates['dt_floor']:g}"})]
 
 
-def cost(path: Path) -> int:
+def cost(path: Path, run_dir: Path | None = None) -> int:
     """`cost` on the project at `path` (spec 3.2), returning its exit code (C-22): W_FILLS_AS_SAVED, the 2D readout and
     load()'s notes, then 2 on a refusal among them; a project without ports stops there with W_NO_PORTS. Then the
-    model and its mesh gates; with a spec, prepare, the setup gate in a run folder of its own, its lines as events,
-    W_GATE_LIMITS when the gate limits are not GATES (C-10), and the cost lines. 3 if any gate blocked (geometry, mesh
-    or setup), else 0."""
+    model and its mesh gates; with a spec, prepare, the setup gate in `run_dir`, else a run folder of its own, its
+    lines as events, W_GATE_LIMITS when the gate limits are not GATES (C-10), and the cost lines. 3 if any gate
+    blocked (geometry, mesh or setup), else 0."""
     project, board, geom, notes = load(path)
     print(render("W_FILLS_AS_SAVED"))
     readout_2d(geom)
@@ -330,7 +330,7 @@ def cost(path: Path) -> int:
         return 3
     threads, pool, per_job_mcs = prepare(model, lambda code, params: print(render(code, **params)))
     # absolute: `cost .` names the run folder after the project's folder too
-    run_dir, settings = runs.run_dir_for(path.absolute().parent.name), runs.load_settings()
+    run_dir, settings = run_dir or runs.run_dir_for(path.absolute().parent.name), runs.load_settings()
     setup, blocked, warnings = setup_gate(model, project, run_dir, settings, threads)
     for code, params in blocked:
         runs.emit(run_dir, "verdict", code, params, job=0)
@@ -471,7 +471,7 @@ def write_outputs(path: Path, project: dict, command: str, *,
     return [*lines, *((code, {}) for code in LIMITS)]
 
 
-def run(path: Path) -> int:
+def run(path: Path, run_dir: Path | None = None) -> int:
     """`run` on the project at `path` (spec 6.1, C-42), returning its exit code (C-22). Raises E_NO_PORTS for a project
     without ports, and E_LOCKED while another run holds the project lock. Then, under the lock, in a fresh run folder
     whose events.jsonl gets every line, with any KrsError a message event and exit 2: W_FILLS_AS_SAVED and load()'s
@@ -484,18 +484,19 @@ def run(path: Path) -> int:
     0, or 2 after an E_ line (C-26); else W_RUN_NOT_KEPT and 4, the previous results and results/ left as they were
     (C-24, C-29). W_GATE_LIMITS follows the gate lines and each verdict when the gate limits are not GATES (C-10). STOP
     or Ctrl+C before the jobs start propagates as KeyboardInterrupt (exit 130, results untouched); once they run, it
-    stops them, and their verdicts say so."""
+    stops them, and their verdicts say so. A given `run_dir` stands in for the fresh run folder."""
     if not read_project(path)["ports"]:
         raise KrsError("E_NO_PORTS")
-    return _locked(path, _run)
+    return _locked(path, _run, run_dir)
 
 
-def _locked(path: Path, body: Callable[[Path, Path], int]) -> int:
-    """The exit code of `body(path, run_dir)` under the project lock, in a fresh run folder `run_dir` whose
-    events.jsonl gets any KrsError as a message event, then exit 2: the lock contract that run and verify share."""
-    run_dir = runs.run_dir_for(path.absolute().parent.name)  # absolute: as in cost
+def _locked(path: Path, body: Callable[[Path, Path], int], run_dir: Path | None = None) -> int:
+    """The exit code of `body(path, run_dir)` under the project lock, in `run_dir`, else a fresh run folder, made
+    either way, whose events.jsonl gets any KrsError as a message event, then exit 2: the lock contract that run and
+    verify share."""
+    run_dir = run_dir or runs.run_dir_for(path.absolute().parent.name)  # absolute: as in cost
     with runs.project_lock(path, run_dir):
-        run_dir.mkdir(parents=True)
+        run_dir.mkdir(parents=True, exist_ok=True)
         try:
             return body(path, run_dir)
         except KrsError as err:
@@ -716,7 +717,7 @@ def retune(path: Path, assignments: list[str], emit: Callable[[str, dict], None]
     return 0
 
 
-def verify(path: Path) -> int:
+def verify(path: Path, run_dir: Path | None = None) -> int:
     """`verify` on the project at `path` (spec 3.2, 7.6, C-36..C-38), returning its exit code as run does (C-22).
     Before the lock: E_VERIFY_NO_PARTS when no part is a port or a curve_port (a single trace), E_VERIFY_CURVE for the
     first curve_port, E_NO_RESULTS, E_VERIFY_PORTS for fewer than 2 external ports. Then as in run, under the lock in
@@ -732,7 +733,7 @@ def verify(path: Path) -> int:
     I_VERIFY_COMPARE, I_VERIFY_NULL or W_VERIFY_NULL_UNMATCHED for each null (I_VERIFY_NO_NULLS for none), the
     indicator lines with a 2-port's loss budget in its verify form (the parts in the grid, no part loss removed), the
     E_ lines as message events, I_OUTPUTS when verify.s{P}p was written, I_VERIFY_SCOPE and LIMITS; then 0, or 2
-    after an E_ line."""
+    after an E_ line. A given `run_dir` stands in for the fresh run folder."""
     project = read_project(path)  # before the lock, as in run
     by_ref = parts(project)
     if not any(q["role"] in (PORT, CURVE_PORT) for q in by_ref.values()):
@@ -743,7 +744,7 @@ def verify(path: Path) -> int:
         raise KrsError("E_NO_RESULTS")
     if len(project["ports"]) < 2:  # the external ports, as _split counts them; compare() reads S21 and S11
         raise KrsError("E_VERIFY_PORTS", ports=len(project["ports"]))
-    return _locked(path, _verify)
+    return _locked(path, _verify, run_dir)
 
 
 def _verify(path: Path, run_dir: Path) -> int:

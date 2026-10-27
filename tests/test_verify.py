@@ -166,3 +166,12 @@ def test_verify_reports_each_null_and_its_shift(tmp_path, calibrated, monkeypatc
     assert [(e["code"], e["params"]) for e in map(json.loads, events) if e["kind"] == "result"][2:4] == [
         ("I_VERIFY_NULL", {"f_mhz": "1830.0", "a_db": at[0], "shift_pct": "+1.23"}),
         ("W_VERIFY_NULL_UNMATCHED", {"f_mhz": "2500.0", "a_db": at[1]})]
+
+
+def test_verify_uses_the_run_folder_it_is_given(tmp_path, calibrated, monkeypatch):  # Stage 2 design 5.2 item 2
+    pj = verified(tmp_path, monkeypatch)
+    save_project(pj, {**load_project(pj), "t_max_s": 30e-9})  # T_max is in the model's excitation: stale results
+    d = tmp_path / "gui runs" / "v"
+    assert main(["verify", str(pj), "--run-dir", str(d)]) == 2
+    codes = [json.loads(line)["code"] for line in (d / "events.jsonl").read_text(encoding="utf-8").splitlines()]
+    assert codes[0] == "W_FILLS_AS_SAVED" and "E_RESULTS_STALE" in codes and not list(d.glob("job-*"))

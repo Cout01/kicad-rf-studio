@@ -86,6 +86,7 @@ CATALOG: dict[str, str] = {
     "E_PART_VALUE": "Part {ref} is in the grid but its value \"{value}\" cannot be read. Fix its value in project.json, or set its role to \"open\" or \"port\".",
     "E_GRID_KIND": "Part {ref} cannot sit in the grid: only a C or an R can. Set its role to \"port\" or \"open\" in project.json.",
     "E_LOCKED": "Another run of this project has been running since {started} in {run}. Wait for it, or create a file named STOP in that folder to stop it; if no run is going on, delete {lock}.",
+    "E_RUN_DIR": "Cannot use {path} as the run folder: {reason}. Give another --run-dir.",
     "W_STALE_LOCK": "Reclaimed {lock}: the run in {run} ended without releasing it.",
     "E_OPENEMS_DLL": "openEMS could not load its libraries (CSXCAD_INSTALL_PATH is {value}). Install it again: {command}",
     "E_SETUP_FAILED": "openEMS could not set up the model; see {log}. Look at the model with `preview`.",
