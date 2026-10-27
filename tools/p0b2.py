@@ -92,12 +92,12 @@ def coupon(out: Path) -> dict:
     `run`, keyed by p0.model_key; only when it stored its results, the closed form's ΔL of L1 (strip_dl on its run
     folder's model.json), then a10-uncomp and a10-comp, keyed by that key and a10-run's run, each L1 retuned
     (RuntimeError on a non-zero exit) then `verify`, storing project.json's verify when it stored one: a10-uncomp at
-    L_COUPON + ΔL, so that verify's grid holds L_COUPON (the uncompensated construction), a10-comp at L_COUPON. When all
-    seven jobs converged, on the project's results (SystemExit unless they hold a10-run's run): each verify pair's
-    fitted ΔL over its grid L (fit_dl), the uncompensated run's |ΔS21(f0)| (dB) against the ideal chain at L_COUPON,
-    report only, and the compensated run's stored one. Saves <out>/p0b2/a10.json with p0.versions() and returns
-    {"dl_cf_h", "band_h", "dl_fit_h": {"uncomp", "comp"}, "ds21_uncomp_db", "ds21_comp_db", "verdicts", "void",
-    "pass"} (a10's rule), each value not computed None."""
+    L_COUPON + ΔL, so that verify's grid holds L_COUPON (the uncompensated construction), a10-comp at L_COUPON. A step
+    that stores no results skips what follows. When all seven jobs converged, on the project's results (SystemExit
+    unless they hold a10-run's run): each verify pair's fitted ΔL over its grid L (fit_dl), the uncompensated run's
+    |ΔS21(f0)| (dB) against the ideal chain at L_COUPON, report only, and the compensated run's stored one. Saves
+    <out>/p0b2/a10.json with p0.versions() and returns {"dl_cf_h", "band_h", "dl_fit_h": {"uncomp", "comp"},
+    "ds21_uncomp_db", "ds21_comp_db", "verdicts", "void", "pass"} (a10's rule), each value not computed None."""
     out = p0.enter(out)
     pj = out / "p0b2" / "coupon_gcpw_l" / "project.json"
     if not pj.is_file():
@@ -124,6 +124,8 @@ def coupon(out: Path) -> dict:
         uncomp = f"{(port_value('L1', L_COUPON) + dl_cf) * 1e9:.6f}nH"  # verify's grid then holds L_COUPON
         for name, value in (("uncomp", uncomp), ("comp", L_COUPON)):
             pairs[name] = p0.step(out, f"a10-{name}", f"{key}|{run['result']['run_dir']}", partial(verify, value))
+            if pairs[name]["result"]["jobs"] is None:  # a step that stores no results skips what follows (void)
+                break
     verdicts = [job["verdict"] for rec in (run, *pairs.values()) for job in rec["result"]["jobs"] or []]
     dl_fit = ds21_uncomp = ds21_comp = None
     if verdicts == ["converged"] * 7:

@@ -67,3 +67,7 @@ def test_the_coupon_check_runs_verify_uncompensated_then_compensated(p0_out, mon
     monkeypatch.setenv("KRS_FAKE", "nan")
     r = p0b2.coupon(p0_out)
     assert (r["verdicts"], r["dl_fit_h"], r["void"], r["pass"]) == (["converged"] * 5, None, True, False)
+    for s in ("a10-uncomp", "a10-comp"):  # the uncompensated verify keeping no S: the compensated one never runs
+        (p0_out / "steps" / f"{s}.json").unlink()
+    r = p0b2.coupon(p0_out)
+    assert (r["verdicts"], r["void"], (p0_out / "steps" / "a10-comp.json").exists()) == (["converged"] * 3, True, False)
