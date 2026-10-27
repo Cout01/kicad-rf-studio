@@ -57,3 +57,87 @@ def test_cost_and_run_use_the_run_folder_they_are_given(tmp_path, calibrated):  
     assert main(["run", str(pj), "--run-dir", str(r)]) == 0  # r exists already: cli.main made it
     assert load_project(pj)["results"]["run_dir"] == str(r) and (r / "job-1-P1" / "waves.npz").is_file()
     assert not (calibrated / "runs").exists()  # no folder of their own
+
+
+def end(pj, command, exit_code):
+    return {"exit_code": exit_code, "command": command, "project": str(pj.resolve())}
+
+
+def test_cost_writes_every_line_as_an_event_in_the_folder_it_is_given(tmp_path, calibrated, capsys):  # 5.2 items 3, 4
+    pj = new_project(tmp_path, "coupon_gcpw_pads", preset="draft")
+    p = load_project(pj)
+    save_project(pj, {**p, "board": {**p["board"], "sha256": "0" * 64}})  # a load note: W_BOARD_CHANGED
+    capsys.readouterr()
+    d = tmp_path / "gui runs" / "c"
+    assert main(["cost", str(pj), "--run-dir", str(d)]) == 0
+    got = events(d)
+    assert [(e["kind"], e["code"]) for e in got[:4]] == [("message", "W_FILLS_AS_SAVED"), ("cost", "I_2D_HEADER"),
+                                                         ("cost", "I_2D_SECTION"), ("message", "W_BOARD_CHANGED")]
+    assert [e["code"] for e in got[4:9]] == ["I_COST_CELLS", "I_COST_SMALLEST", "I_COST_DT", "I_COST_TIME", "I_COST_RAM"]
+    assert got[9]["code"].startswith("I_COST_DRIVER_") and {e["kind"] for e in got[4:10]} == {"cost"}
+    assert len(got) == 11 and (got[10]["kind"], got[10]["code"], got[10]["params"]) == ("end", "I_END",
+                                                                                          end(pj, "cost", 0))
+    assert capsys.readouterr().out.splitlines() == [render(e["code"], **e["params"]) for e in got[:-1]]  # end: silent
+
+
+def test_a_refusal_before_the_lock_is_a_message_then_the_end_event(tmp_path, calibrated, capsys):  # Review Focus 2
+    pj = new_project(tmp_path, "coupon_gcpw_pads", preset="draft")
+    lock = runs.lock_file(pj)
+    lock.write_text(json.dumps({"pid": os.getpid(), "run_dir": "R", "started": "S"}), encoding="utf-8")
+    d = tmp_path / "gui runs" / "r"
+    capsys.readouterr()
+    assert main(["run", str(pj), "--run-dir", str(d)]) == 2
+    held = {"lock": str(lock), "run": "R", "started": "S"}
+    assert [(e["kind"], e["code"], e["params"]) for e in events(d)] == [
+        ("message", "E_LOCKED", held), ("end", "I_END", end(pj, "run", 2))]
+    assert capsys.readouterr() == ("", render("E_LOCKED", **held) + "\n")
+    portless, e = new_project(tmp_path, "coupon_ms"), tmp_path / "gui runs" / "e"  # by hand: no ports
+    assert main(["run", str(portless), "--run-dir", str(e)]) == 2
+    assert [x["code"] for x in events(e)] == ["E_NO_PORTS", "I_END"]
+
+
+def test_a_command_typed_without_a_run_dir_ends_the_folder_it_made(tmp_path, calibrated):  # 5.2 item 3, A-13
+    portless = new_project(tmp_path, "coupon_ms")  # by hand: no ports
+    assert main(["cost", str(portless)]) == 0 and main(["run", str(portless)]) == 2
+    assert not (calibrated / "runs").exists()  # neither made a folder, so neither left an event
+    pj = new_project(tmp_path, "coupon_gcpw_pads", preset="draft")
+    assert main(["run", str(pj)]) == 0
+    assert events(Path(load_project(pj)["results"]["run_dir"]))[-1]["params"] == end(pj, "run", 0)
+
+
+def test_a_stop_during_setup_and_a_crash_end_with_their_exit_codes(tmp_path, calibrated, monkeypatch):  # 5.2 item 3
+    pj = new_project(tmp_path, "coupon_gcpw_pads", preset="draft")
+    monkeypatch.setenv("KRS_FAKE", "hang")
+    s = tmp_path / "gui runs" / "s"
+    s.mkdir(parents=True)
+    (s / "STOP").write_text("")  # the setup job never starts
+    assert main(["run", str(pj), "--run-dir", str(s)]) == 130
+    assert events(s)[-1]["params"] == end(pj, "run", 130) and runs.lock_holder(pj) is None
+
+    def boom(*args):
+        raise RuntimeError("boom")
+
+    monkeypatch.setattr(pipeline, "simulate", boom)
+    x = tmp_path / "gui runs" / "x"
+    assert main(["run", str(pj), "--run-dir", str(x)]) == 1
+    assert [(e["code"], e["params"]) for e in events(x)][-2:] == [
+        ("E_INTERNAL", {"detail": "RuntimeError: boom"}), ("I_END", end(pj, "run", 1))]
+
+
+def test_the_first_use_calibrates_inside_the_run_folder_under_its_stop(tmp_path, fake, monkeypatch):  # 5.2 item 9
+    monkeypatch.setattr(os, "cpu_count", lambda: 2)
+    pj = new_project(tmp_path, "coupon_gcpw_pads", preset="draft")
+    d = tmp_path / "gui runs" / "c"
+    assert main(["cost", str(pj), "--run-dir", str(d)]) == 0
+    codes = [e["code"] for e in events(d)]
+    assert (codes.index("I_2D_HEADER") < codes.index("I_CALIBRATING") < codes.index("I_CALIBRATED")
+            < codes.index("I_COST_CELLS"))
+    assert (d / "calibrate" / "model.json").is_file() and not (fake / "runs").exists()  # no calibrate-* folder
+    runs.save_settings({})  # this machine uncalibrated again
+    for command in ("cost", "run"):  # run and verify calibrate through simulate's prepare
+        s = tmp_path / "gui runs" / f"s-{command}"
+        s.mkdir()
+        (s / "STOP").write_text("")
+        assert main([command, str(pj), "--run-dir", str(s)]) == 130
+        assert [e["code"] for e in events(s)][-2:] == ["I_CALIBRATING", "I_END"]
+        assert (s / "calibrate" / "model.json").is_file() and "machines" not in runs.load_settings()

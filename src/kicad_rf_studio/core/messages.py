@@ -93,6 +93,7 @@ CATALOG: dict[str, str] = {
     "E_WORKER_FAILED": "The {job} worker ended with code {exit_code}; see {log}. Report it if the log shows no cause.",
     "I_CALIBRATING": "Measuring this machine's simulation speed, once (20–30 s)…",
     "I_CALIBRATED": "Calibrated: {pool} jobs at once with {threads} threads each, {speed} MC/s in all; `kicad-rf-studio calibrate` measures again.",
+    "I_END": "The command ended with exit code {exit_code}.",
     "W_BOARD_CHANGED": "The board {path} changed since `new` wrote project.json; its chain, ports and parts may be stale. Re-create the project with `new` if you moved copper.",
     "W_OFF_TOP_LAYER": "Net {net} runs on {layer}, not on the top copper; the region, the cell size and dz0 use the top layer's substrate height (a Stage 1 limit). Check its fit2d result.",
     "E_PORT_OPEN": "Port {name}: its {end} end does not lie in its own pad's copper on the mesh. Check the port in project.json and look at it with `preview`.",
@@ -212,6 +213,13 @@ def reason(error: Exception, fallback: str = "cannot be read") -> str:
     """A short English phrase for an OSError, a UnicodeError or a JSON error met reading or writing a file; `fallback`
     for any other error."""
     return next((text for kind, text in _REASONS if isinstance(error, kind)), fallback)
+
+
+def detail(error: Exception) -> str:
+    """E_INTERNAL's detail: the class and message of `error` on one line, never its repr, which can hold a file, cut
+    to 200 characters."""
+    text = " ".join(f"{type(error).__name__}: {error}".split())
+    return text if len(text) <= 200 else text[:199] + "…"
 
 
 class KrsError(Exception):

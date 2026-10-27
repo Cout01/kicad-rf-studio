@@ -10,9 +10,12 @@ AppCSXCAD (pipeline.preview).
 `setup-openems` installs openEMS from the official Windows package into this Python, and `calibrate` measures this
 machine's simulation speed. `cost`, `run` and `verify` take `--run-dir DIR`, the run folder to use instead of a new
 one in the data folder (Stage 2's GUI gives it, design 5.2): made before the command, and refused with E_RUN_DIR when it
-cannot be made or already holds a run. A command returns its exit code, None for 0. There is no help= text: every
-string a user sees is a code in core.messages, and argparse itself writes the usage line."""
+cannot be made or already holds a run. Their run folder, once it exists, ends with an end event (I_END) however the
+command ends, after a message event for a refusal or an internal error that main caught (A-13). A command returns its
+exit code, None for 0. There is no help= text: every string a user sees is a code in core.messages, and argparse
+itself writes the usage line."""
 import argparse
+import contextlib
 import math
 import sys
 from pathlib import Path
@@ -22,7 +25,7 @@ from kicad_rf_studio.core.kicad import choose_reference, classify, load_board, t
 from kicad_rf_studio.core.kicad.stackup import preset as stackup_preset
 from kicad_rf_studio.core.kicad.tracer import signal_layer
 from kicad_rf_studio.core.kicad.values import parse_frequency
-from kicad_rf_studio.core.messages import KrsError, reason, render
+from kicad_rf_studio.core.messages import KrsError, detail, reason, render
 from kicad_rf_studio.core.project import (BAND_FACTOR, DEFAULT_PRESET, EXPAND_H, HARMONICS, MARGIN_SCALE, MESH_N,
                                           REACH_H, T_MAX_S, board_hash, make_project, relative_path, save_project,
                                           shown_reference)
@@ -225,10 +228,20 @@ def _parser() -> argparse.ArgumentParser:
     return parser
 
 
+def _event(run_dir: Path | None, kind: str, code: str, params: dict) -> None:
+    """An event of main's own, never printed, written only when `run_dir` is a folder by then; a write that fails
+    leaves the exit code as it is."""
+    with contextlib.suppress(OSError):
+        if run_dir is not None and run_dir.is_dir():
+            runs.emit(run_dir, kind, code, params, show=False)
+
+
 def main(argv: list[str] | None = None) -> int:
     for stream in (sys.stdout, sys.stderr):  # I_STACKUP's ε and I_CHAIN's → are not in cp1252
         if hasattr(stream, "reconfigure"):  # a StringIO, say, has none and needs none
             stream.reconfigure(errors="replace")
+    run_dir = command = project = None  # the end event's folder and params, once known
+    code = 1
     try:
         args = _parser().parse_args(argv)
         if getattr(args, "run_dir", None) is not None:  # cost, run and verify: made before the command
@@ -239,13 +252,25 @@ def main(argv: list[str] | None = None) -> int:
                 raise KrsError("E_RUN_DIR", path=str(args.run_dir), reason=reason(e, "cannot be made")) from None
             if (args.run_dir / "events.jsonl").exists():  # another run's folder: nothing is added to it
                 raise KrsError("E_RUN_DIR", path=str(args.run_dir), reason="already holds a run")
-        return args.func(args) or 0
+        if hasattr(args, "run_dir"):  # cost, run and verify
+            from kicad_rf_studio.pipeline import project_path  # here: the three commands load pipeline anyway
+
+            path = project_path(args.project)
+            command, project = args.command, str(path.resolve())
+            # made by the command, as before; absolute: `run .` names it after the project's folder too
+            args.run_dir = args.run_dir or runs.run_dir_for(path.absolute().parent.name)
+            run_dir = args.run_dir
+        code = args.func(args) or 0
     except KrsError as e:
         print(e, file=sys.stderr)
-        return 2
+        _event(run_dir, "message", e.code, e.params)
+        code = 2
     except KeyboardInterrupt:  # Ctrl+C, or a STOP file in the run folder (C-26)
-        return 130
+        code = 130
     except Exception as e:
-        detail = " ".join(f"{type(e).__name__}: {e}".split())  # on one line, and never the repr, which can hold a file
-        print(render("E_INTERNAL", detail=detail if len(detail) <= 200 else detail[:199] + "…"), file=sys.stderr)
-        return 1
+        print(render("E_INTERNAL", detail=detail(e)), file=sys.stderr)
+        _event(run_dir, "message", "E_INTERNAL", {"detail": detail(e)})
+        code = 1
+    finally:
+        _event(run_dir, "end", "I_END", {"exit_code": code, "command": command, "project": project})
+    return code

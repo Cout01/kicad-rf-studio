@@ -137,7 +137,7 @@ def test_a_held_file_costs_verify_only_that_file(tmp_path, calibrated, monkeypat
     (own,) = [d for d in (calibrated / "runs").iterdir() if str(d) != run_dir]  # verify's run folder
     events = [json.loads(line) for line in (own / "events.jsonl").read_text(encoding="utf-8").splitlines()]
     after = events[max(k for k, e in enumerate(events) if e["kind"] == "verdict") + 1:]  # after the last job
-    assert [e["code"] for e in after] == codes
+    assert [e["code"] for e in after] == [*codes, "I_END"]
     assert [e["kind"] for e in after if e["code"].startswith("E_")] == ["message"]
 
 

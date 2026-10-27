@@ -1,7 +1,7 @@
 # kicad-rf-studio — Stage 1 design: a validated simulation engine
 
 - **Date:** 2026-10-16
-- **Status:** design approved section by section in conversation, revised on 2026-10-19 after an independent review, and approved by the owner. On 2026-10-21 the owner confirmed one amendment to §5.4: the substrate height now counts in the cell size. On 2026-10-22, plan 5 amended §1.1, §7.6, §9.1, §9.2 and §9.6 (A-1 to A-4) as controller recommendations while the owner was unavailable; the owner reviews them. On 2026-10-24, D-45's fix amended §5.6 (A-6) and §7.6 (A-7) the same way. On 2026-10-25, P0-B's TX-side outcome amended §1.1 and §12 (A-5) the same way. On 2026-10-26, plan 6's mesh-rule calibration amended §5.4 and §12 (A-8) the same way.
+- **Status:** design approved section by section in conversation, revised on 2026-10-19 after an independent review, and approved by the owner. On 2026-10-21 the owner confirmed one amendment to §5.4: the substrate height now counts in the cell size. On 2026-10-22, plan 5 amended §1.1, §7.6, §9.1, §9.2 and §9.6 (A-1 to A-4) as controller recommendations while the owner was unavailable; the owner reviews them. On 2026-10-24, D-45's fix amended §5.6 (A-6) and §7.6 (A-7) the same way. On 2026-10-25, P0-B's TX-side outcome amended §1.1 and §12 (A-5) the same way. On 2026-10-26, plan 6's mesh-rule calibration amended §5.4 and §12 (A-8) the same way. On 2026-10-27, Stage 2's plan 1 amended §3.2, §3.3 and §6.1 (A-13, A-14) the same way.
 - **Scope:** Stage 1 of the project: the headless engine, the command-line orchestrator and the validation gates. The GUI and the KiCad toolbar button (Stage 2) get their own spec, written with Stage 1's results.
 
 ---
@@ -117,6 +117,8 @@ The users are hardware engineers who use KiCad and are not FDTD experts. The pro
 
 **Stage 1 never prompts.** Whatever this spec calls asked or confirmed comes from a `new` option or a `project.json` field, and `run` refuses while a required value is missing.
 
+**Run folders given by the caller.** `cost`, `run` and `verify` take `--run-dir DIR`: the run folder to use instead of a new one in the data folder, made at the start (a relative DIR is read from the working folder; one that cannot be made or already holds a run is refused). With it, `cost` writes every line as an event there from its first. The first-use calibration runs inside the command's run folder, in `calibrate/`, and that folder's `STOP` stops it. Stage 2's GUI starts these commands detached, with a new folder each time. (A-14, Stage 2 plan 1: controller recommendation, owner unavailable.)
+
 Stage 2's GUI calls the same functions, in the same order: `new`, then `cost`, then `run`, then `retune`. The GUI adds no run logic of its own.
 
 ### 3.3 Files and folders
@@ -138,7 +140,7 @@ Stage 2's GUI calls the same functions, in the same order: `new`, then `cost`, t
   A run folder holds the model spec, `events.jsonl`, a `STOP` file when a stop is requested, and one folder per job, because openEMS runs inside its own folder. A job folder holds `job.json`, the log, openEMS's files and `waves.npz`.
 - **Lock:** one per project, `project.json.lock` next to the project file, so two runs of one project never overlap.
 - **Settings:** a per-user `settings.json` next to the run folders holds the openEMS folder and the speed calibration.
-- **`events.jsonl`.** One JSON object per line: `{"t", "kind": progress|verdict|cost|result|message, "job", "code", "params"}`. The events carry message codes, never text, so they stay language-neutral and are translated only when displayed.
+- **`events.jsonl`.** One JSON object per line: `{"t", "kind": progress|verdict|cost|result|message|end, "job", "code", "params"}`. The events carry message codes, never text, so they stay language-neutral and are translated only when displayed. A `cost`, `run` or `verify` that has a run folder by its end, the one given with `--run-dir` (§3.2) or one it made, ends it with an `end` event however it ends, short of a hard kill: code `I_END`, with `exit_code`, `command` and `project` (the project file's resolved path), after a `message` event for any refusal or internal error it printed on stderr. So a refusal before the lock and a stop during setup leave a trace in a given folder, and a restarted GUI finds a project's last cost and runs. (A-13, Stage 2 plan 1: controller recommendation, owner unavailable.)
 - The exact fields of `job.json`, the model spec and the events, the CLI exit codes and the run-folder names are fixed in the implementation plan.
 
 ### 3.4 Dependencies and install
@@ -362,7 +364,7 @@ Roles are assigned automatically and can be edited in `project.json`.
 2. It builds the model spec once and runs the gates: the mesh gates in the orchestrator, then one setup-only worker for the timestep floor, port connectivity and unused primitives, as `cost` does. A failed gate ends the run before any job starts.
 3. It creates one job per excitation: P external ports plus M part ports.
 4. A worker pool runs the jobs, each in its own job folder as `<venv python> -I -u -m kicad_rf_studio.worker job.json`, with an explicit thread count and OPENBLAS_NUM_THREADS=1.
-5. Every event goes to `events.jsonl`, and stdout gets the same events as translated, readable lines.
+5. Every event goes to `events.jsonl`, and stdout gets the same events as translated, readable lines, except the end event, which is never printed, and the `message` event of a refusal or internal error that the command line caught, whose line goes to stderr (§3.3). (A-13, Stage 2 plan 1: controller recommendation, owner unavailable.)
 
 **Stop.** A `STOP` file in the run folder, or Ctrl+C, makes the orchestrator write `ABORT` into each job folder. openEMS reacts at the next engine chunk: 0.6–1.1 s at 2 M cells, and 30.6 s in one measured case. During setup, only a hard kill works.
 

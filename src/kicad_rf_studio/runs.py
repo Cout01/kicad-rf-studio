@@ -227,14 +227,17 @@ def project_lock(project_path: Path, run_dir: Path) -> Iterator[None]:
         _unlink(lock)  # missing: the user deleted it, as E_LOCKED invites
 
 
-def emit(run_dir: Path, kind: str, code: str, params: dict, job: int | None = None) -> None:
-    """Appends an event to events.jsonl in `run_dir` (C-21) and prints its message. `kind` is progress, verdict, cost,
-    result or message; `job` is the job's k, 0 for job-0-*, None for the whole run. The params travel as one dict, so a
-    field named kind or job cannot collide."""
-    event = {"t": round(time.time(), 3), "kind": kind, "job": job, "code": code, "params": params}
-    with open(run_dir / "events.jsonl", "a", encoding="utf-8") as f:
-        f.write(json.dumps(event) + "\n")
-    print(render(code, **params))
+def emit(run_dir: Path | None, kind: str, code: str, params: dict, job: int | None = None, *,
+         show: bool = True) -> None:
+    """Appends an event to events.jsonl in `run_dir` (C-21), none without one, and prints its message when `show`.
+    `kind` is progress, verdict, cost, result, message or end; `job` is the job's k, 0 for job-0-*, None for the whole
+    run. The params travel as one dict, so a field named kind or job cannot collide."""
+    if run_dir is not None:
+        event = {"t": round(time.time(), 3), "kind": kind, "job": job, "code": code, "params": params}
+        with open(run_dir / "events.jsonl", "a", encoding="utf-8") as f:
+            f.write(json.dumps(event) + "\n")
+    if show:
+        print(render(code, **params))
 
 
 def free_ram_mb() -> float:
@@ -379,22 +382,26 @@ def choose(single: dict[int, float], parallel: dict[int, float], cpus: int) -> t
     return cpus // pool, pool, aggregate[pool]
 
 
-def calibrate(settings: dict) -> dict:
-    """Measures this machine (spec 6.4, C-35) in a run folder of its own: one job at a time at 1, 2, 4 and N threads,
-    N being os.cpu_count(), then k jobs at once at N // k threads for k = 2 and 4 up to N, each job's speed read from
-    its openEMS_stats.txt. Stores what choose() makes of them, with the speeds and the per-job MC/s of each level it
-    timed at choose()'s threads ("levels": k jobs at once by str(k)), in settings["machines"] under machine_key(),
-    saves settings.json and returns the entry. Raises what check_job raises."""
-    n, run_dir, spec = os.cpu_count(), run_dir_for("calibrate"), calibration_spec()
+def calibrate(settings: dict, run_dir: Path | None = None) -> dict:
+    """Measures this machine (spec 6.4, C-35): one job at a time at 1, 2, 4 and N threads, N being os.cpu_count(),
+    then k jobs at once at N // k threads for k = 2 and 4 up to N, each job's speed read from its openEMS_stats.txt.
+    Stores what choose() makes of them, with the speeds and the per-job MC/s of each level it timed at choose()'s
+    threads ("levels": k jobs at once by str(k)), in settings["machines"] under machine_key(), saves settings.json and
+    returns the entry. In the calibrate/ folder of a command's `run_dir` (A-14), which it makes, whose STOP stops it and
+    whose events.jsonl gets I_CALIBRATING and I_CALIBRATED as message events, printed too; without one, in a run folder
+    of its own, the two lines printed only. Raises what check_job raises."""
+    n, spec = os.cpu_count(), calibration_spec()
+    folder = run_dir / "calibrate" if run_dir else run_dir_for("calibrate")
     number = itertools.count(1)  # the jobs' k, counted on from one group to the next
-    print(render("I_CALIBRATING"))
-    write_spec(run_dir, spec)
+    say = functools.partial(emit, run_dir, "message")  # (code, params)
+    write_spec(folder, spec)  # first: it makes run_dir too, which the events go to
+    say("I_CALIBRATING", {})
 
     def measure(k: int, threads: int, name: str) -> float:
         """The MC/s, in all, of k jobs at once of `threads` threads each, named `name`."""
-        jobs = [write_job(job_dir(run_dir, next(number), name), 1, "run", threads, spec["excitation"]["t_max"])
+        jobs = [write_job(job_dir(folder, next(number), name), 1, "run", threads, spec["excitation"]["t_max"])
                 for _ in range(k)]
-        out = run_jobs(jobs, k, run_dir, settings)
+        out = run_jobs(jobs, k, run_dir or folder, settings)
         for job in jobs:
             check_job(job, out[job], "calibration", settings)
         return sum(read_stats((job / "openEMS_stats.txt").read_text(encoding="utf-8"))["speed"] for job in jobs) / 1e6
@@ -411,13 +418,14 @@ def calibrate(settings: dict) -> dict:
              "at": time.strftime("%Y-%m-%dT%H:%M:%S")}
     settings.setdefault("machines", {})[machine_key()] = entry
     save_settings(settings)
-    print(render("I_CALIBRATED", threads=threads, pool=pool, speed=f"{aggregate:.0f}"))
+    say("I_CALIBRATED", {"threads": threads, "pool": pool, "speed": f"{aggregate:.0f}"})
     return entry
 
 
-def ensure_calibrated(settings: dict) -> dict:
-    """This machine's calibration in `settings`, measured first on a machine that has none (spec 6.4)."""
-    return settings.get("machines", {}).get(machine_key()) or calibrate(settings)
+def ensure_calibrated(settings: dict, run_dir: Path | None = None) -> dict:
+    """This machine's calibration in `settings`, measured first on a machine that has none (spec 6.4), inside the
+    command's `run_dir` when it has one (calibrate)."""
+    return settings.get("machines", {}).get(machine_key()) or calibrate(settings, run_dir)
 
 
 def sizing(entry: dict, cells: int) -> tuple[int, int]:

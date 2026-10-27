@@ -84,7 +84,7 @@ def test_run_converges_and_records_its_results(tmp_path, calibrated, monkeypatch
     assert r["model_hash"] == spec_hash(json.loads((run_dir / "model.json").read_text(encoding="utf-8")))
     assert (r["gates"], r["dt"], r["c_box"]) == ({"fit2d_limit": 0.03, "dt_floor": 0.8}, 1e-13, {})
     kinds = {json.loads(line)["kind"] for line in (run_dir / "events.jsonl").read_text(encoding="utf-8").splitlines()}
-    assert kinds == {"message", "verdict", "cost", "progress", "result"}
+    assert kinds == {"message", "verdict", "cost", "progress", "result", "end"}
     assert not (pj.parent / "project.json.lock").exists()
     entry = runs.load_settings()["machines"][runs.machine_key()]
     # the fake's 5e7 × 2 threads a job, at 2 jobs
@@ -358,7 +358,7 @@ def test_a_held_output_file_still_prints_the_results_and_the_limits(tmp_path, ca
     codes = [json.loads(line)["code"] for line in (run_dir / "events.jsonl").read_text(encoding="utf-8").splitlines()]
     assert codes[codes.index("I_RESULTS"):] == [
         "I_RESULTS", "I_BASIS", "I_MARKER", "I_MARKER", "I_HR", "I_MARKER", "I_HR", "I_PASSIVITY", "I_RECIPROCITY",
-        "W_LOSS_BUDGET", "I_WHAT_IF", "E_RESULTS_WRITE", *LIMITS]  # no I_OUTPUTS
+        "W_LOSS_BUDGET", "I_WHAT_IF", "E_RESULTS_WRITE", *LIMITS, "I_END"]  # no I_OUTPUTS
     out = capsys.readouterr().out.splitlines()
     assert render("E_RESULTS_WRITE", path=str(pj.parent / "results" / "summary.csv"), reason="permission denied",
                   command=command_line("kicad-rf-studio", "retune", str(pj))) in out

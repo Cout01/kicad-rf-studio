@@ -219,15 +219,16 @@ def cost_notes(model: Model, project: dict, setup: dict, threads: int, pool: int
             driver(mesh, n_runs, sum(q["part"] for q in ports))]
 
 
-def prepare(model: Model, emit: Callable[[str, dict], None]) -> tuple[int, int, float]:
+def prepare(model: Model, emit: Callable[[str, dict], None], run_dir: Path | None = None) -> tuple[int, int, float]:
     """What the jobs of a built `model` (one with a mesh) run with: (threads, pool, per-job MC/s), from this machine's
-    calibration, measured first on a machine that has none (spec 6.4), the pool no larger than the number of runs, so
-    that the cost lines count only jobs that run at once, and the per-job MC/s at that level (runs.per_job_mcs, D-16).
-    Calls `emit(code, params)` with check_openems()'s warnings, before any worker (C-31), and with W_RAM when one job
-    needs more RAM than is free. Raises check_openems()'s refusals and what calibrate raises."""
+    calibration, measured first on a machine that has none (spec 6.4), inside the command's `run_dir` when it has one
+    (runs.calibrate), the pool no larger than the number of runs, so that the cost lines count only jobs that run at
+    once, and the per-job MC/s at that level (runs.per_job_mcs, D-16). Calls `emit(code, params)` with
+    check_openems()'s warnings, before any worker (C-31), and with W_RAM when one job needs more RAM than is free.
+    Raises check_openems()'s refusals and what calibrate raises."""
     for code, params in runs.check_openems():
         emit(code, params)
-    entry = runs.ensure_calibrated(runs.load_settings())
+    entry = runs.ensure_calibrated(runs.load_settings(), run_dir)
     cells = len(model.mesh.x) * len(model.mesh.y) * len(model.mesh.z)
     threads, pool = runs.sizing(entry, cells)
     need = runs.MB_PER_MCELL * cells / 1e6 + runs.MB_PER_WORKER  # one job's RAM in MB, as pool_size counts it
@@ -265,21 +266,24 @@ def setup_gate(model: Model, project: dict, run_dir: Path, settings: dict, threa
     return setup, blocked, warnings
 
 
-def readout_2d(geom: Geometry) -> None:
-    """Prints the 2D readout (spec 3.2): each measured section solved on cs2d's own grid without and with the exact
-    mask of its own side (none on inner copper), in chain-net order and then by place, or W_2D_SHORT in its place
-    where other copper touches the line at its cut."""
-    print(render("I_2D_HEADER" if geom.sections else "W_NO_SECTIONS"))
+def readout_2d(geom: Geometry) -> list[tuple[str, dict]]:
+    """The lines of the 2D readout (spec 3.2): I_2D_HEADER (W_NO_SECTIONS without a measured section), then each
+    measured section solved on cs2d's own grid without and with the exact mask of its own side (none on inner copper),
+    in chain-net order and then by place, I_2D_SECTION, or W_2D_SHORT in its place where other copper touches the line
+    at its cut. It prints nothing."""
+    lines = [("I_2D_HEADER" if geom.sections else "W_NO_SECTIONS", {})]
     for s in geom.sections:
         named = {"net": s.net, "layer": s.layer, "width_mm": f"{s.width:.3f}", "length_mm": f"{s.length:.3f}"}
         try:
             bare, coated = [solve(cross_section(s, geom.pieces, geom.zs, geom.masks.get(s.layer), m))
                             for m in ("none", "exact")]
         except ShortError:  # another net's copper (E_SHORT_IN_ROI) or copper with none, which no check reports
-            print(render("W_2D_SHORT", **named))
+            lines.append(("W_2D_SHORT", named))
             continue
-        print(render("I_2D_SECTION", **named, gap_mm="none" if s.gap is None else f"{s.gap:.3f}", z0=f"{bare.z0:.2f}",
-                     eeff=f"{bare.eps_eff:.3f}", z0_mask=f"{coated.z0:.2f}", eeff_mask=f"{coated.eps_eff:.3f}"))
+        lines.append(("I_2D_SECTION", {**named, "gap_mm": "none" if s.gap is None else f"{s.gap:.3f}",
+                                       "z0": f"{bare.z0:.2f}", "eeff": f"{bare.eps_eff:.3f}",
+                                       "z0_mask": f"{coated.z0:.2f}", "eeff_mask": f"{coated.eps_eff:.3f}"}))
+    return lines
 
 
 def expected_loss(geom: Geometry, f0: float) -> float:
@@ -310,27 +314,34 @@ def gate_lines(gates: dict) -> list[tuple[str, dict]]:
 def cost(path: Path, run_dir: Path | None = None) -> int:
     """`cost` on the project at `path` (spec 3.2), returning its exit code (C-22): W_FILLS_AS_SAVED, the 2D readout and
     load()'s notes, then 2 on a refusal among them; a project without ports stops there with W_NO_PORTS. Then the
-    model and its mesh gates; with a spec, prepare, the setup gate in `run_dir`, else a run folder of its own, its
-    lines as events, W_GATE_LIMITS when the gate limits are not GATES (C-10), and the cost lines. 3 if any gate
-    blocked (geometry, mesh or setup), else 0."""
+    model and its mesh gates; with a spec, prepare (a first-use calibration inside the run folder), the setup gate in
+    `run_dir`, else a run folder of its own, its lines as events, W_GATE_LIMITS when the gate limits are not GATES
+    (C-10), and the cost lines. 3 if any gate blocked (geometry, mesh or setup), else 0. A `run_dir` that exists at the
+    start (--run-dir, A-14) gets every line as an event from the first: the readout as cost events, the mesh gates as
+    verdict events with job None, the others message events; otherwise those first lines are printed only."""
+    # absolute: `cost .` names the run folder after the project's folder too
+    run_dir = run_dir or runs.run_dir_for(path.absolute().parent.name)
+    # ponytail: a folder made first (--run-dir) gets every line; a terminal cost prints its first lines only, so the
+    # GUI's replay of it starts at its calibration or setup gate
+    say = partial(runs.emit, run_dir if run_dir.is_dir() else None)  # (kind, code, params, job=None)
     project, board, geom, notes = load(path)
-    print(render("W_FILLS_AS_SAVED"))
-    readout_2d(geom)
+    say("message", "W_FILLS_AS_SAVED", {})
+    for code, params in readout_2d(geom):
+        say("cost", code, params)
     for code, params in notes:
-        print(render(code, **params))
+        say("message", code, params)
     if stops(notes) == 2:
         return 2
     if not project["ports"]:
-        print(render("W_NO_PORTS"))
+        say("message", "W_NO_PORTS", {})
         return stops(notes)
     model = build_model(project, board, geom)
     for code, params in model.blocked:
-        print(render(code, **params))
+        say("verdict", code, params)
     if model.spec is None:  # E_EDGE_LINT left no mesh to set up
         return 3
-    threads, pool, per_job_mcs = prepare(model, lambda code, params: print(render(code, **params)))
-    # absolute: `cost .` names the run folder after the project's folder too
-    run_dir, settings = run_dir or runs.run_dir_for(path.absolute().parent.name), runs.load_settings()
+    threads, pool, per_job_mcs = prepare(model, partial(say, "message"), run_dir)
+    settings = runs.load_settings()
     setup, blocked, warnings = setup_gate(model, project, run_dir, settings, threads)
     for code, params in blocked:
         runs.emit(run_dir, "verdict", code, params, job=0)
@@ -562,7 +573,7 @@ def simulate(model: Model, project: dict, run_dir: Path) -> tuple[list[dict], di
     so."""
     emit = partial(runs.emit, run_dir)  # (kind, code, params, job=None)
     gates = project["gates"]
-    threads, pool, per_job_mcs = prepare(model, partial(emit, "message"))
+    threads, pool, per_job_mcs = prepare(model, partial(emit, "message"), run_dir)
     setup, blocked, warnings = setup_gate(model, project, run_dir, runs.load_settings(), threads)
     for code, params in blocked:
         emit("verdict", code, params, 0)
