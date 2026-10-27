@@ -610,7 +610,7 @@ def test_a_pour_that_follows_the_pads_over_a_substrate_a_few_cells_deep_passes_t
 
 @pytest.mark.parametrize(("h", "inside"), [(None, 1 / 8), (2.0, rule.SLOT_IN), (4.1, rule.SLOT_IN), (4.3, 1 / 8),
                                            (9.5, 1 / 8)])
-def test_a_facing_cut_edge_keeps_its_d_over_4_line_over_a_substrate_under_4_2_cells(h, inside):
+def test_a_facing_cut_edge_takes_the_slot_depth_over_a_substrate_under_4_2_cells(h, inside):
     # the facing rule (FACE) holds over a substrate 4.2 cells deep or more (THIN), as on coupon_gcpw_pads and lpf915
     # (h/d = 9.5): a strip's cut edge with a pad step 0.2d outside it, facing its GND edge 2d away, with the pour
     # following the pad, gets its inside line d/8 in from 4.2 cells on and without h. Under 4.2 cells, where the rule
