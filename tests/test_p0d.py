@@ -10,6 +10,7 @@ import pytest
 
 import p0
 import p0a
+import p0b2
 import p0c
 import p0d
 from kicad_rf_studio import runs
@@ -137,7 +138,8 @@ def test_references_and_traces_come_from_a_p0_folder(p0_out, tmp_path, monkeypat
     ("p0a", ["--out", "{p0}"], "p0"), ("harness", ["--out", "{p0}"], "p0"), ("emerge_app", ["run", "--out", "{p0}"], "p0"),
     ("p0c", ["--board", "{board}", "--start", "U1.1", "--end", "J1.1", "--f0", "915MHz", "--out", "{p0}"], "p0"),
     ("p0d", ["references", "--p0", "{p0}", "--out", "{out}"], "p0"), ("p0d", ["traces", "--p0", "{p0}", "--out", "{out}"], "p0"),
-    ("p0d", ["excite", "--spec", "{board}", "--port", "1", "--out", "{out}"], "out")])
+    ("p0d", ["excite", "--spec", "{board}", "--port", "1", "--out", "{out}"], "out"),
+    ("p0b2", ["coupon", "--out", "{p0}"], "p0")])
 def test_every_tool_enters_its_p0_folder_first(tmp_path, monkeypatch, run, argv, folder):  # D-7, D-46
     board = tmp_path / "lpf915.kicad_pcb"
     board.write_bytes((p0.FIX / "lpf915.kicad_pcb").read_bytes())
@@ -151,7 +153,7 @@ def test_every_tool_enters_its_p0_folder_first(tmp_path, monkeypatch, run, argv,
     monkeypatch.setattr(runs, "data_dir", lambda: pytest.fail("runs used before p0.enter"))
     paths = {"p0": tmp_path / "p0", "out": tmp_path / "out", "board": board}
     main = {"p0a": p0a.main, "harness": harness.main, "emerge_app": emerge_app.main, "p0c": p0c.main,
-            "p0d": p0d.main}[run]
+            "p0d": p0d.main, "p0b2": p0b2.main}[run]
     with pytest.raises(RuntimeError):
         main([a.format(**paths) for a in argv])
     assert seen == [paths[folder]]

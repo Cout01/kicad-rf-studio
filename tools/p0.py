@@ -296,6 +296,11 @@ def cli_run(pj: Path, command: str) -> dict:
             "wall_s": stored.get("wall_s") if ours else None}
 
 
+def holds(stored: dict, record: dict) -> bool:
+    """Whether `stored` (project.json's results or verify) holds the run of the step `record` (cli_run's)."""
+    return Path(stored.get("run_dir", "")).name == record["result"]["run_dir"]
+
+
 def save_trace(job: Path, ports: int, dt: float, k: int, exc: dict, t_cut: float | None, out: Path) -> Path:
     """Writes the records of the job folder `job` (pipeline.records, `ports` ports, timestep `dt`) to `out`, making its
     folder first, as np.savez_compressed members t_u, u, t_i, i, te, e, exc ([f1, f2, t0] of the excitation `exc`), k
