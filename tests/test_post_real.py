@@ -40,7 +40,7 @@ def run_worker(job):
 def test_the_reduction_on_real_openems_waves():  # C-41, spec 9.1 tier (a); r6 §11
     meta = json.loads((REAL / "meta.json").read_text(encoding="utf-8"))
     rec = real_records()
-    S, A = s_matrix(rec, F)
+    S, A, _ = s_matrix(rec, F)
     assert meta["band"] == pytest.approx([457.5e6, 3.0195e9]) and meta["c_box"] == pytest.approx(2.3796e-14, rel=1e-3)
     assert np.abs((rec[0][2] - rec[0][0]) / meta["dt"] - 0.5).max() <= 1e-5  # currents half a timestep late
     assert recip_err(S).max() <= 1e-5 and sigma_max(S).max() <= 1.0 and kappa_eq(A).max() <= 1.05

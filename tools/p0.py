@@ -31,7 +31,7 @@ from kicad_rf_studio.core.mesh.gates import dt_floor_reference
 from kicad_rf_studio.core.messages import KrsError, render
 from kicad_rf_studio.core.model.spec import spec_hash
 from kicad_rf_studio.core.post.chain import loads, part_impedances, terminate, z_part
-from kicad_rf_studio.core.post.waves import layout, s_matrix
+from kicad_rf_studio.core.post import waves
 from kicad_rf_studio.core.project import GATES, load_project, parts, save_project
 from kicad_rf_studio.stoprule import KEPT, Z0, Records, growth_rise, stop_rule
 
@@ -334,7 +334,8 @@ def s_of(traces: list[tuple[Records, int, dict, float | None]], f: np.ndarray, p
     """S on `f` (Hz) from job records, the one record-to-S reduction of the tools (the empty box, P0-C's per-preset
     replay, P0-D): each trace (Records, the excited port's 0-based row k, the excitation {"f1", "f2", "t0"}, t_cut)
     replayed at `preset` (stop_rule, causal) and cut at its verdict, or cut at its own t_cut when `preset` is None,
-    and taken whole without one; u and i restricted to `rows` (default every port). One trace gives its column
+    and taken whole without one; u and i restricted to `rows` (default every port). Every record takes its fitted tail
+    beyond its cut, after its excitation's 2·t0 (A-9), unless it falls back as in s_matrix. One trace gives its column
     (F, N, 1), s_jk = (U_j − Z0·I_j)/(U_k + Z0·I_k); N traces give s_matrix's S (F, N, N). Returns (S, the cut times,
     NaN for a whole record)."""
     rows = slice(None) if rows is None else rows
@@ -346,12 +347,18 @@ def s_of(traces: list[tuple[Records, int, dict, float | None]], f: np.ndarray, p
         n = len(rec.t_u) if t_cut is None else np.searchsorted(rec.t_u, t_cut, "right")
         cut.append((rec.t_u[:n], rec.u[:, :n], rec.t_i[:n], rec.i[:, :n]))
         times.append(np.nan if t_cut is None else t_cut)
+    t_free = 2 * traces[0][2]["t0"]
     if len(cut) > 1:
-        return s_matrix([(t_u, u[rows], t_i, i[rows]) for t_u, u, t_i, i in cut], f)[0], np.array(times)
+        return waves.s_matrix([(t_u, u[rows], t_i, i[rows]) for t_u, u, t_i, i in cut], f, t_free)[0], np.array(times)
     # ponytail: one excitation gives a column that carries the feeds' port parasitics, the same on both sides of a
     # comparison
     (t_u, u, t_i, i), k = cut[0], traces[0][1]
     U, I = (x @ np.exp(-2j * np.pi * np.outer(t, f)) for x, t in ((u, t_u), (i, t_i)))
+    # ponytail: s_of drops the fallen jobs; layout's fallback is the one that names them
+    if len(t_u) >= waves.TAIL_MIN_SAMPLES:
+        tail_u, tail_i = waves.tail(u, t_u, f, t_free), waves.tail(i, t_i, f, t_free)
+        if tail_u is not None and tail_i is not None:
+            U, I = U + tail_u, I + tail_i
     s = (U[rows] - Z0 * I[rows]) / (U[k] + Z0 * I[k])  # mirrors the s(at) in stoprule._converged
     return s.T[:, :, None], np.array(times)
 
@@ -367,7 +374,7 @@ def closed_chain(pj: Path, *, f: np.ndarray | None = None, ideal: bool = False, 
     run = project[key]
     if cuts is not None:
         run = {**run, "jobs": [{**job, "t_cut": t} for job, t in zip(run["jobs"], cuts, strict=True)]}
-    lay = layout(project, run, f=f)
+    lay = waves.layout(project, run, f=f)
     ext, refs = [k for k, q in enumerate(lay.ports) if not q["part"]], [q["name"] for q in lay.ports if q["part"]]
     if ideal:
         by_ref = parts(project)

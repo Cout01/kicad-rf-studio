@@ -14,6 +14,7 @@ from kicad_rf_studio import runs
 from kicad_rf_studio.cli import main
 from kicad_rf_studio.core.messages import KrsError
 from kicad_rf_studio.core.model.spec import excitation
+from kicad_rf_studio.core.post import waves
 from kicad_rf_studio.core.post.waves import grid
 from kicad_rf_studio.core.project import load_project
 from kicad_rf_studio.stoprule import stop_rule
@@ -21,6 +22,7 @@ from networks import network_trace, star, terminate_np
 from test_model_csx import TINY
 from test_post_chain import M0402
 from test_run import lpf_loads, lpf_run
+from traces import trace
 
 F, _ = grid(915e6, 3, 1.1)
 
@@ -201,6 +203,15 @@ def test_s_of_cuts_or_replays_each_record_and_reduces_it():  # D-35, D-48
     assert np.abs(whole - star(F, 2)).max() <= 1e-5 and np.isnan(cuts).all()
     three = [(network_trace(3, k, EXC40["f1"], EXC40["f2"], 1e-13, 40e-9), k, EXC40, None) for k in (0, 1)]
     assert np.abs(p0.s_of(three, F, rows=[0, 1])[0] - star(F, 3)[:, :2, :2]).max() <= 0.05  # port 3 stays loaded
+
+
+def test_s_of_adds_each_records_tail(monkeypatch):  # A-9: s_of's two branches; measured 4.4e-13 and 1.373
+    cut = [(trace("tmax", 2, k), k, EXC40, 15e-9) for k in (0, 1)]  # 6 ns rings cut at 15 ns
+    late = [(rec, k, exc, None) for rec, k, exc, _ in cut]  # the whole 40 ns record and its tail
+    tails, whole = ([p0.s_of(x[:n], F)[0] for n in (2, 1)] for x in (cut, late))  # s_matrix's branch, then a column
+    monkeypatch.setattr(waves, "TAIL_MIN_SAMPLES", 10**9)  # no record takes a tail: the plain DFT
+    plain = [p0.s_of(cut[:n], F)[0] for n in (2, 1)]
+    assert all(np.abs(t - w).max() <= 1e-9 and np.abs(p - w).max() >= 1 for t, w, p in zip(tails, whole, plain))
 
 
 def test_the_closed_chain_of_a_run_at_its_models_ideal_values_cuts_and_boxes(tmp_path, calibrated,

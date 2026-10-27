@@ -28,7 +28,7 @@ EXT = [{"name": "P1", "part": False}, {"name": "P2", "part": False}]
 
 
 def lay_of(ports, s, flipped=None):
-    return Layout(F, [71, 213, 355], s, np.full(len(F), -3.0), ports, flipped or [False] * len(ports))
+    return Layout(F, [71, 213, 355], s, np.full(len(F), -3.0), ports, flipped or [False] * len(ports), s, [])
 
 
 def test_touchstone_is_1_1_ascii_with_the_port_map_before_the_option_line(tmp_path):  # C-28

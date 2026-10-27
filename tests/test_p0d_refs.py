@@ -9,6 +9,7 @@ import p0
 import p0a
 import p0d
 from kicad_rf_studio.core.model.spec import spec_hash
+from kicad_rf_studio.core.post import waves
 
 REFS = Path(__file__).parent / "fixtures" / "p0d"
 TRACES = Path(__file__).parent / "fixtures" / "traces"
@@ -30,7 +31,9 @@ def test_the_references_are_the_models_p0d_builds_here(tmp_path):  # D-47: CI co
 
 
 @pytest.mark.parametrize("name", ["coupon_gcpw_pads", "lpf915"])
-def test_the_draft_replay_of_the_committed_traces_reproduces_the_references(name):  # D-48: exact by causality
+def test_the_draft_replay_of_the_committed_traces_reproduces_the_references(name, monkeypatch):  # D-48: exact by causality
+    # plain until plan 7's Task 14 regenerates the references with tails
+    monkeypatch.setattr(waves, "TAIL_MIN_SAMPLES", 10**9)
     traces = [p0.load_trace(p) for p in sorted(TRACES.glob(f"{name}-k*.npz"))]
     with np.load(REFS / f"{name}.npz") as ref:
         s, t_cut = p0.s_of(traces, ref["f"], "draft")

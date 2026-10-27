@@ -109,8 +109,9 @@ def evidence(record: dict) -> dict:
     (p0.summary's), "event" (an I_JOB_CONVERGED verdict event for it), "abort" (an ABORT file in its folder), "order"
     (t_cut < t_stop < the spec's t_max) and "ok" (all three); "cut_delta", the largest |S of the jobs cut at t_cut − S
     of their whole records| on the grid, evidence of the stop latency only; "trunc_2ns", the largest |S cut at t_cut −
-    S cut 2 ns earlier|, a truncation estimate (both None unless every job kept S); "ok", every job ok and cut_delta ≤
-    2e-3. Event params are never copied: I_JOB_CONVERGED's carry an absolute log path."""
+    S cut 2 ns earlier|, a truncation estimate (both None unless every job kept S); both measure the reported S, tails
+    included (E-4); "ok", every job ok and cut_delta ≤ 2e-3. Event params are never copied: I_JOB_CONVERGED's carry an
+    absolute log path."""
     res = record["result"]
     folder, jobs = p0.run_path(res["run_dir"]), p0.summary(record)["jobs"]
     traces = _traces(res["run_dir"], jobs)
