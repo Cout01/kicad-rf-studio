@@ -93,9 +93,9 @@ def excite(spec_path: Path, port: int, out: Path) -> dict:
 def references(p0_dir: Path, out: Path, models: tuple[str, ...] = MODELS) -> list[Path]:
     """The Windows references (D-48), from the P0 folder `p0_dir`, entered first (never `out`: tests/fixtures/p0d is
     inside the work tree): each model's record (STEPS), read with one p0.records call per harness, since the two may
-    have run on different product code (PF-43); its jobs' records replayed at Draft on F (p0.s_of, tails included:
-    exact, by causality), written as out/<model>.npz: f, S, t_cut, spec_hash (of its run's model.json) and, for a
-    coupon, z0 and eeff at the Draft cut (constants). Returns the paths."""
+    have run on different product code (PF-43); its jobs' records replayed at Draft on F (p0.s_of: exact, by
+    causality), written as out/<model>.npz: f, S, t_cut, spec_hash (of its run's model.json) and, for a coupon, z0 and
+    eeff at the Draft cut (constants). Returns the paths."""
     p0_dir = p0.enter(p0_dir)
     recs = {}
     for prefix in ("p0a-", "p0b-"):  # PF-43

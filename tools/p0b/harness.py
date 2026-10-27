@@ -6,7 +6,7 @@ live "converged" evidence, the twin, the common-cut reach, the bias at n = 3, th
 dt statistics; the pre-registered rules (D-33..D-39, D-30's final part, D-44); p0b.json and p0b.md.
 
 Dev-time only, like p0: the package never imports it. Run: python tools/p0b/harness.py [--out DIR]
-[--only B1,B2,B3,B4,B5,B6,kmax] [--report] [--a9]."""
+[--only B1,B2,B3,B4,B5,B6,kmax] [--report]."""
 import argparse
 import copy
 import json
@@ -27,7 +27,7 @@ from kicad_rf_studio.core.model import spec as spec_module
 from kicad_rf_studio.core.model.spec import spec_hash
 from kicad_rf_studio.core.post.chain import terminate, with_box
 from kicad_rf_studio.core.post.checks import compare
-from kicad_rf_studio.core.post.waves import TAIL_WINDOW_S, grid, layout
+from kicad_rf_studio.core.post.waves import grid, layout
 from kicad_rf_studio.core.project import BAND_FACTOR, HARMONICS, load_project, parts, save_project
 from kicad_rf_studio.stoprule import KEPT, growth_rise
 
@@ -60,9 +60,6 @@ AFTER_B1 = ("p0b-B2", "p0b-B3-A", "p0b-B3-B", *KMAX_STEPS.values())  # the steps
 # D-43's preconditions, as emerge_app words its reasons
 PRECONDITION = re.compile(r"\S+ (z0|eeff) \S+ %|(chain moved|sigma_max|reciprocity) .+")
 UNSOLVED = re.compile(r"EMerge .+ not solved")  # a missing FEM output (PF-26)
-A9_STEPS = ("p0b-B1", "p0a-pad")  # A-9's independent data: plan 6's B1 and P0-A's pad coupon (E-2)
-A9_CUTS = (13.21e-9, 16e-9, 20e-9)  # E1's cuts of the longest B1 job, those before its end
-A9_LIMIT = 2e-3  # the largest |ΔS| E1, E2 and E4 may read
 
 
 def _read(path: Path):
@@ -112,9 +109,8 @@ def evidence(record: dict) -> dict:
     (p0.summary's), "event" (an I_JOB_CONVERGED verdict event for it), "abort" (an ABORT file in its folder), "order"
     (t_cut < t_stop < the spec's t_max) and "ok" (all three); "cut_delta", the largest |S of the jobs cut at t_cut − S
     of their whole records| on the grid, evidence of the stop latency only; "trunc_2ns", the largest |S cut at t_cut −
-    S cut 2 ns earlier|, a truncation estimate (both None unless every job kept S); both measure the reported S, tails
-    included (E-4); "ok", every job ok and cut_delta ≤ 2e-3. Event params are never copied: I_JOB_CONVERGED's carry an
-    absolute log path."""
+    S cut 2 ns earlier|, a truncation estimate (both None unless every job kept S); "ok", every job ok and cut_delta ≤
+    2e-3. Event params are never copied: I_JOB_CONVERGED's carry an absolute log path."""
     res = record["result"]
     folder, jobs = p0.run_path(res["run_dir"]), p0.summary(record)["jobs"]
     traces = _traces(res["run_dir"], jobs)
@@ -135,45 +131,6 @@ def evidence(record: dict) -> dict:
         cut_delta, trunc = float(np.abs(cut - whole).max()), float(np.abs(cut - earlier).max())
     return {"jobs": rows, "cut_delta": cut_delta, "trunc_2ns": trunc,
             "ok": all(row["ok"] for row in rows) and cut_delta is not None and cut_delta <= 2e-3}
-
-
-def a9(out: Path) -> dict:
-    """A-9's judges (design 5.2, E-2; plan 7 Task 2) on the P0 folder `out`, entered, from the records of A9_STEPS,
-    each read on its own (PF-43), and the projects that hold their runs; SystemExit when one does not. "e1": the
-    longest p0b-B1 job (its end: t_cut, else t_stop), its own column with tails cut at each of A9_CUTS before its end
-    against cut at its end; "e2": B1's chain at ideal values with every job cut 2 ns before its end against as cut;
-    "e3": by step, the ports whose job fell back (layout's fallback); "e4": every job whose end less 2 ns leaves
-    TAIL_WINDOW_S after 2·t0, its column at its end against 2 ns earlier. Each value is the largest complex |ΔS| on
-    the grid. E1 with no cut before the end, or E4 with no job in its domain, is None: void. "pass": E1 and E4 not
-    void, e1, e2 and e4 at most A9_LIMIT, and e3 empty."""
-    # ponytail: single-use, A-9's one judgement; it stays as the record of how A-9 was judged
-    f, rows, e3 = grid(F0, HARMONICS, BAND_FACTOR)[0], [], {}
-    for sid, pj in zip(A9_STEPS, (_path(out, "B1"), out / "p0a" / "projects" / "coupon_gcpw_pads" / "project.json")):
-        (record,) = p0.records(out, [sid])
-        res, data = record["result"], load_project(pj)
-        if Path(data.get("results", {}).get("run_dir", "")).name != res["run_dir"]:
-            raise SystemExit(f"p0b: {pj} does not hold the run of {sid}; A-9's judges read that run only")
-        e3[sid] = layout(data, data["results"]).fallback
-        rows += [(f"{sid}/{job['port']}", tr, job["t_stop"] if job["t_cut"] is None else job["t_cut"])
-                 for job, tr in zip(res["jobs"], _traces(res["run_dir"], res["jobs"]))]
-
-    def column(tr, t):  # one excitation's own column, tails included, cut at t
-        return p0.s_of([(*tr[:3], t)], f)[0]
-
-    def ds(a, b) -> float:
-        return float(np.abs(a - b).max())
-
-    name, tr, end = max((r for r in rows if r[0].startswith("p0b-B1/")), key=lambda r: r[2])
-    cuts = [c for c in A9_CUTS if c < end]
-    e1 = max((ds(column(tr, c), column(tr, end)) for c in cuts), default=None)
-    pj = _path(out, "B1")
-    early = [(j["t_stop"] if j["t_cut"] is None else j["t_cut"]) - 2e-9 for j in load_project(pj)["results"]["jobs"]]
-    e2 = ds(p0.closed_chain(pj, ideal=True)[1], p0.closed_chain(pj, ideal=True, cuts=early)[1])
-    four = [(n, tr, t) for n, tr, t in rows if t - 2e-9 - 2 * tr[2]["t0"] >= TAIL_WINDOW_S]
-    e4 = max((ds(column(tr, t), column(tr, t - 2e-9)) for _, tr, t in four), default=None)
-    return {"e1": {"job": name.split("/")[1], "end_s": end, "cuts": cuts, "ds": e1}, "e2": e2, "e3": e3,
-            "e4": {"jobs": [n for n, _, _ in four], "ds": e4},
-            "pass": None not in (e1, e4) and max(e1, e2, e4) <= A9_LIMIT and not any(e3.values())}
 
 
 def _closures(f: np.ndarray, c: dict, refs: list[str], emptied) -> np.ndarray:
@@ -502,27 +459,19 @@ def _run(out: Path, name: str) -> None:
 
 
 def main(argv: list[str] | None = None) -> int:
-    """python tools/p0b/harness.py [--out DIR] [--only B1,B2,B3,B4,B5,B6,kmax] [--report] [--a9] (D-5, D-6): enters
-    the P0 folder first, then runs the steps of each of RUNS (or of --only), printing a step that raises and going on
-    with the next, then writes the gate when every P0-B step has its record and none raised; --report writes from the
-    records and starts no run; --a9 writes and prints p0b/a9.json, a9's judges plus the versions, once (SystemExit
-    once it exists), and starts no run. Returns 1 when a step raised, else 0."""
+    """python tools/p0b/harness.py [--out DIR] [--only B1,B2,B3,B4,B5,B6,kmax] [--report] (D-5, D-6): enters the P0
+    folder first, then runs the steps of each of RUNS (or of --only), printing a step that raises and going on with the
+    next, then writes the gate when every P0-B step has its record and none raised; --report writes from the records
+    and starts no run. Returns 1 when a step raised, else 0."""
     parser = argparse.ArgumentParser(prog="p0b", description="P0-B, the lpf915 gate (spec 9.3).")
     parser.add_argument("--out", help="the P0 folder (default: kicad-rf-studio-p0 beside the per-user data folder)")
     parser.add_argument("--only", help=f"the runs to run, comma-separated, among {','.join(RUNS)}")
     parser.add_argument("--report", action="store_true", help="write p0b.json and p0b.md from the records only")
-    parser.add_argument("--a9", action="store_true",
-                        help="write p0b/a9.json, A-9's judges on B1's and the pad's records, once, and start no run")
     a = parser.parse_args(argv)
     only = a.only.split(",") if a.only else RUNS
     if unknown := sorted(set(only) - set(RUNS)):
         parser.error(f"unknown run: {', '.join(unknown)}")
     out = p0.enter(Path(a.out) if a.out else p0.default_out())  # PF-32
-    if a.a9:
-        if (path := out / "p0b" / "a9.json").exists():
-            raise SystemExit(f"p0b: {path} exists: A-9's judges run once (plan 7)")
-        print(json.dumps(p0.save(path, {**a9(out), "versions": p0.versions()}), indent=1))
-        return 0
     if a.report:
         write(out)
         return 0

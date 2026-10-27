@@ -26,7 +26,6 @@ from networks import C_BOX, read_s, star, synth_records, terminate_np, write_s2p
 from test_cli_cost import FIX, SEG, by_hand, fail, gcpw, new_project
 from test_post_chain import LPF, M0402
 from test_post_waves import fake_run, port
-from traces import trace
 
 F, _ = grid(915e6, 3, 1.1)
 
@@ -306,44 +305,22 @@ def test_t_max_jobs_are_reduced_whole_and_flagged(tmp_path, calibrated, monkeypa
     assert main(["run", str(pj)]) == 0
     r = load_project(pj)["results"]
     assert [(j["verdict"], j["t_cut"]) for j in r["jobs"]] == [("t_max", None)] * 2
-    assert result_codes(r["run_dir"])[:6] == ["I_RESULTS", "I_BASIS", "W_JOB_T_MAX", "W_JOB_T_MAX", "W_TAIL_FALLBACK",
-                                              "W_TAIL_FALLBACK"]  # Review Focus 1: 3 ns is too short to fit
+    assert result_codes(r["run_dir"])[:4] == ["I_RESULTS", "I_BASIS", "W_JOB_T_MAX", "W_JOB_T_MAX"]
     head = (pj.parent / "results" / "layout.s2p").read_text(encoding="ascii").split("#")[0]
     assert ", preset draft: P1 t_max at " in head and ", P2 t_max at " in head
 
 
-def external(tmp_path, rec, n, t_cut=None):
-    """A project of `n` external ports and no part whose results are the records `rec` (fake_run), as write_outputs
-    reads it."""
-    results = {**fake_run(tmp_path, rec, [port(f"P{k}") for k in range(1, n + 1)], t_cut), "preset": "normal",
-               "gates": GATES, "c_box": {}, "loss_expected": 0.0}
-    ports = [{"name": f"P{k}", "signal": f"J{k}.1", "reference": {"pad": f"J{k}.2", "uuid": ""}}
-             for k in range(1, n + 1)]
-    return {"f0_hz": 915e6, "harmonics": 3, "band_factor": 1.1, "ports": ports, "others": [],
-            "chain": {"nets": ["A"], "series": [], "shunt": []}, "results": results}
-
-
 def test_three_external_ports_get_their_touchstone_and_no_two_port_summary(tmp_path):  # C-31
     rec = synth_records(lambda f: star(f, 3), 3, 457.5e6, 3.0195e9, 1.73972e-13, 10e-9)
-    lines = write_outputs(tmp_path / "p" / "project.json", external(tmp_path, rec, 3), "c")
+    results = {**fake_run(tmp_path, rec, [port("P1"), port("P2"), port("P3")]), "preset": "normal", "gates": GATES,
+               "c_box": {}, "loss_expected": 0.0}
+    ports = [{"name": f"P{k}", "signal": f"J{k}.1", "reference": {"pad": f"J{k}.2", "uuid": ""}} for k in (1, 2, 3)]
+    project = {"f0_hz": 915e6, "harmonics": 3, "band_factor": 1.1, "ports": ports, "others": [],
+               "chain": {"nets": ["A"], "series": [], "shunt": []}, "results": results}
+    lines = write_outputs(tmp_path / "p" / "project.json", project, "c")
     assert sorted(p.name for p in (tmp_path / "p" / "results").iterdir()) == ["layout.s3p"]
     assert [c for c, _ in lines] == ["I_BASIS", "I_PASSIVITY", "I_RECIPROCITY", "W_NOT_TWO_PORT", "I_OUTPUTS", *LIMITS]
     assert lines[3] == ("W_NOT_TWO_PORT", {"ports": 3})
-
-
-@pytest.mark.parametrize(("kind", "t_cut", "large"), [
-    ("tmax", 15e-9, [{"ds": "1.3731", "entry": "S11", "f_mhz": "998.8"}]),  # a 6 ns ring cut at 15 ns
-    ("converge", 10.7e-9, [])])  # the default fake's 1 ns ring: its tails move S by 5.1e-4
-def test_write_outputs_warns_once_when_the_tails_move_the_chain_by_more_than_0_02(tmp_path, kind, t_cut, large):
-    rec = [(r.t_u, r.u, r.t_i, r.i) for r in (trace(kind, 2, k) for k in (0, 1))]
-    lines = write_outputs(tmp_path / "p" / "project.json", external(tmp_path, rec, 2, t_cut), "c")
-    assert [p for c, p in lines if c == "W_TAIL_LARGE"] == large and "W_TAIL_FALLBACK" not in dict(lines)
-
-
-def test_write_outputs_names_each_job_whose_tail_fell_back_after_the_verdicts(tmp_path):  # Review Focus 1
-    rec = synth_records(lambda f: star(f, 3), 3, 457.5e6, 3.0195e9, 1.73972e-13, 10e-9)
-    lines = write_outputs(tmp_path / "p" / "project.json", external(tmp_path, rec, 3, 4e-9), "c")
-    assert lines[1:4] == [("W_TAIL_FALLBACK", {"port": f"P{k}", "t_ns": "4.00"}) for k in (1, 2, 3)]
 
 
 def test_a_narrow_band_s2p_leaves_the_layout_n_port(tmp_path, calibrated, monkeypatch, capsys):  # Review Focus 3

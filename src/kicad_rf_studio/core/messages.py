@@ -121,8 +121,6 @@ CATALOG: dict[str, str] = {
     "E_JOB_GROWTH": "{port}: the energy grew 20 dB after the pulse, at {t_ns} ns, so its S is not kept. Look at the model with `preview`.",
     "W_JOB_UNCLASSIFIED": "{port}: the worker ended before T_max without a verdict, so its S is not kept. See {log}.",
     "W_JOB_STOPPED": "{port}: stopped, so its S is not kept. Run `run` again for results.",
-    "W_TAIL_FALLBACK": "{port}: its record, cut at {t_ns} ns, takes no fitted tail (fewer than 48 samples after the pulse, a channel's last 6 ns not explained to 1 %, or a growing or slow in-band mode), so its S is the plain DFT cut there and may carry truncation error near a slowly decaying mode. For a longer record, set \"preset\" to \"strict\" in project.json and run `run` again (`verify` again for verify's own jobs).",
-    "W_TAIL_LARGE": "The fitted tails beyond the cut times move the reported S by up to {ds} ({entry} at {f_mhz} MHz): a slowly decaying mode was still ringing when the jobs stopped, so the result there rests on the tail fit. Raise t_max_s in project.json and use the strict preset for a result that rests less on it.",
     "I_RESULTS": "{kept} of {runs} jobs kept S, in {wall}; results recorded in {path}.",
     "W_RUN_NOT_KEPT": "{kept} of {runs} jobs kept S, in {wall}, so project.json keeps its previous results and results/ is unchanged. The verdicts above, also in {folder}, say why; fix that and run `run` again.",
     "I_PREVIEW": "Opened {path} in AppCSXCAD.",

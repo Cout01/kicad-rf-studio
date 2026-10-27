@@ -11,7 +11,6 @@ from kicad_rf_studio import pipeline
 from kicad_rf_studio.cli import main
 from kicad_rf_studio.core.messages import render
 from kicad_rf_studio.core.model import spec as spec_module
-from kicad_rf_studio.core.post import waves
 from kicad_rf_studio.core.post.outputs import LIMITS, grid_lines
 from kicad_rf_studio.core.post.waves import grid, layout
 from kicad_rf_studio.core.project import load_project, parts, save_project
@@ -167,25 +166,3 @@ def test_verify_reports_each_null_and_its_shift(tmp_path, calibrated, monkeypatc
     assert [(e["code"], e["params"]) for e in map(json.loads, events) if e["kind"] == "result"][2:4] == [
         ("I_VERIFY_NULL", {"f_mhz": "1830.0", "a_db": at[0], "shift_pct": "+1.23"}),
         ("W_VERIFY_NULL_UNMATCHED", {"f_mhz": "2500.0", "a_db": at[1]})]
-
-
-def test_verify_warns_when_the_tails_move_its_s(tmp_path, calibrated, monkeypatch):  # A-9 in verify
-    pj = verified(tmp_path, monkeypatch)  # the run on the network fake, whose tails move nothing
-    monkeypatch.setenv("KRS_FAKE", "tmax")  # verify's own jobs: 6 ns rings to T_max
-    assert main(["verify", str(pj)]) == 0
-    events = [json.loads(line) for line in (Path(load_project(pj)["verify"]["run_dir"]) / "events.jsonl")
-              .read_text(encoding="utf-8").splitlines()]
-    results = [(e["code"], e["params"]) for e in events if e["kind"] == "result"]
-    assert [c for c, _ in results[:3]] == ["I_VERIFY_RESULTS", "I_VERIFY_COMPARE", "W_TAIL_LARGE"]
-    assert results[2][1] == {"ds": "0.0213", "entry": "S11", "f_mhz": "998.8"}
-
-
-def test_verify_names_its_own_jobs_whose_tail_fell_back(tmp_path, calibrated, monkeypatch):  # Review Focus 1
-    pj = verified(tmp_path, monkeypatch)
-    monkeypatch.setattr(waves, "TAIL_FIT_TOL", 0.0)  # no fit passes: every job keeps its plain DFT
-    assert main(["verify", str(pj)]) == 0
-    events = [json.loads(line) for line in (Path(load_project(pj)["verify"]["run_dir"]) / "events.jsonl")
-              .read_text(encoding="utf-8").splitlines()]
-    results = [(e["code"], e["params"].get("port")) for e in events if e["kind"] == "result"]
-    assert results[:4] == [("I_VERIFY_RESULTS", None), ("I_VERIFY_COMPARE", None), ("W_TAIL_FALLBACK", "P1"),
-                           ("W_TAIL_FALLBACK", "P2")] and "W_TAIL_LARGE" not in dict(results)  # the run's fell back too

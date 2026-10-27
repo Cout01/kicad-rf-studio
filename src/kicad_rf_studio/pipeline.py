@@ -40,7 +40,7 @@ from kicad_rf_studio.core.post.chain import ideal_schematic, loads, part_impedan
 from kicad_rf_studio.core.post.checks import compare, indicator_lines, loss_budget, loss_expected
 from kicad_rf_studio.core.post.outputs import (LIMITS, OUTPUTS, VERIFY_OUTPUT, grid_lines, marker_lines, port_map,
                                                summary_csv, summary_png, touchstone, write)
-from kicad_rf_studio.core.post.waves import TAIL_WARN, layout
+from kicad_rf_studio.core.post.waves import layout
 from kicad_rf_studio.core.project import (GATES, board_file, board_hash, load_project, mesh_n, parts, read_project,
                                           relative_path, save_project)
 from kicad_rf_studio.stoprule import KEPT, PRESETS, Records, Verdict, residual_db, stop_rule
@@ -406,24 +406,6 @@ def _save(path: Path, data: dict, command: str) -> None:
                        command=command) from None
 
 
-def fallback_lines(lay: Layout, jobs: list[dict]) -> list[tuple[str, dict]]:
-    """W_TAIL_FALLBACK for each port of `lay`'s fallback, in that order, at the end of its job's S in `jobs`: the job's
-    t_cut, or t_stop when it has none (A-9)."""
-    # ponytail: one line per job, six on a six-port Draft run; one summary line if users read that as noise
-    end = {job["port"]: job["t_stop"] if job["t_cut"] is None else job["t_cut"] for job in jobs}
-    return [("W_TAIL_FALLBACK", {"port": port, "t_ns": f"{end[port] * 1e9:.2f}"}) for port in lay.fallback]
-
-
-def tail_line(f: np.ndarray, *pairs: tuple[np.ndarray, np.ndarray]) -> list[tuple[str, dict]]:
-    """W_TAIL_LARGE at the largest complex |S − S_dft| over the `pairs` (S, S_dft), each (F, N, N) on `f`, their
-    frequencies and entries, when it exceeds TAIL_WARN; else no line. At most one line (design 5.2, A-9)."""
-    ds = max((np.abs(s - s_dft) for s, s_dft in pairs), key=np.max)
-    k, i, j = np.unravel_index(ds.argmax(), ds.shape)
-    if ds[k, i, j] <= TAIL_WARN:
-        return []
-    return [("W_TAIL_LARGE", {"ds": f"{ds[k, i, j]:.4f}", "entry": f"S{i + 1}{j + 1}", "f_mhz": f"{f[k] / 1e6:.1f}"})]
-
-
 def write_outputs(path: Path, project: dict, command: str, *,
                   errors_as_lines: bool = False) -> list[tuple[str, dict]]:
     """The outputs of the run in `project`'s results (spec 3.2, 7.3, C-26..C-32), the step `run` and `retune` share:
@@ -431,13 +413,12 @@ def write_outputs(path: Path, project: dict, command: str, *,
     (C-31); all written to results/ beside `path` (write, with `command` as E_RESULTS_WRITE's advice). Until
     RETUNE_VALIDATED, closed part ports put the what-if label I_WHAT_IF, which offers `verify` (D-15), as the last
     comment line of chain.s{P}p and the second line of summary.png's title. Returns the lines to report: I_BASIS with
-    each flagged job, W_TAIL_FALLBACK for each job whose tail fell back (fallback_lines), gate_lines, the part notes,
-    W_TAIL_LARGE when the tails move the chain by more than TAIL_WARN (tail_line), the marker and indicator lines
-    (W_NOT_TWO_PORT after them), the label's line, then I_OUTPUTS and LIMITS. A part's refusal (E_PART_NO_VALUE,
-    E_S2P_*, E_CBOX) and write's E_RESULTS_WRITE are raised, or, with `errors_as_lines`, each becomes a line: a part's
-    refusal in the place of the chain's lines and files, so that the layout N-port is still written (C-26);
-    E_RESULTS_WRITE in the place of I_OUTPUTS, so that the lines already computed and LIMITS are still reported (spec
-    7.5). Raises layout's refusals and E_S_SINGULAR."""
+    each flagged job, gate_lines, the part notes, the marker and indicator lines (W_NOT_TWO_PORT after them), the
+    label's line, then I_OUTPUTS and LIMITS. A part's refusal (E_PART_NO_VALUE, E_S2P_*, E_CBOX) and write's
+    E_RESULTS_WRITE are raised, or, with `errors_as_lines`, each becomes a line: a part's refusal in the place of the
+    chain's lines and files, so that the layout N-port is still written (C-26); E_RESULTS_WRITE in the place of
+    I_OUTPUTS, so that the lines already computed and LIMITS are still reported (spec 7.5). Raises layout's refusals
+    and E_S_SINGULAR."""
     results = project["results"]
     lay = layout(project, results)
     ext, refs = _split(lay)
@@ -451,7 +432,6 @@ def write_outputs(path: Path, project: dict, command: str, *,
     lines += [(VERDICTS[job["verdict"]], {"port": job["port"], "t_ns": f"{job[end[job['verdict']]] * 1e9:.2f}",
                                           "residual_db": f"{job['residual_db']:.1f}"})
               for job in results["jobs"] if job["verdict"] in end]
-    lines += fallback_lines(lay, results["jobs"])
     lines += gate_lines(results["gates"])
     try:
         zparts, notes = part_impedances(project, path.parent, refs, lay.f)
@@ -463,7 +443,6 @@ def write_outputs(path: Path, project: dict, command: str, *,
         lines.append((err.code, err.params))
     else:
         chain = terminate(lay.s, ext, zk, lay.f)
-        lines += tail_line(lay.f, (chain, terminate(lay.s_dft, ext, zk, lay.f)))
         what_if = {"command": command_line("kicad-rf-studio", "verify", str(path))}
         label = render("I_WHAT_IF", **what_if) if refs and not RETUNE_VALIDATED else None
         if refs:
@@ -750,11 +729,10 @@ def verify(path: Path) -> int:
     run's and the project's presets setting the null floor; the comparison goes to project.json's verify (its results
     kept), then verify.s{P}p to results/ with its port map and grid lines, a refusal of either an E_ line, so that a
     held file costs only that file. The lines follow: I_VERIFY_RESULTS when the comparison was stored,
-    I_VERIFY_COMPARE, W_TAIL_FALLBACK for each of verify's own jobs whose tail fell back, W_TAIL_LARGE when the tails
-    move verify's S or the run's closed chain by more than TAIL_WARN, I_VERIFY_NULL or W_VERIFY_NULL_UNMATCHED for
-    each null (I_VERIFY_NO_NULLS for none), the indicator lines with a 2-port's loss budget in its verify form (the
-    parts in the grid, no part loss removed), the E_ lines as message events, I_OUTPUTS when verify.s{P}p was written,
-    I_VERIFY_SCOPE and LIMITS; then 0, or 2 after an E_ line."""
+    I_VERIFY_COMPARE, I_VERIFY_NULL or W_VERIFY_NULL_UNMATCHED for each null (I_VERIFY_NO_NULLS for none), the
+    indicator lines with a 2-port's loss budget in its verify form (the parts in the grid, no part loss removed), the
+    E_ lines as message events, I_OUTPUTS when verify.s{P}p was written, I_VERIFY_SCOPE and LIMITS; then 0, or 2
+    after an E_ line."""
     project = read_project(path)  # before the lock, as in run
     by_ref = parts(project)
     if not any(q["role"] in (PORT, CURVE_PORT) for q in by_ref.values()):
@@ -794,8 +772,7 @@ def _verify(path: Path, run_dir: Path) -> int:
     k0, p = lay.markers[0], len(own.ports)
     # 10 × the S tolerance of the noisier preset, the run's or verify's own
     floor = 10 * max(PRESETS[results["preset"]][1], PRESETS[project["preset"]][1])
-    closed = terminate(lay.s, ext, zk, lay.f)
-    cmp = compare(own.s, closed, lay.f, k0, floor)
+    cmp = compare(own.s, terminate(lay.s, ext, zk, lay.f), lay.f, k0, floor)
     command = command_line("kicad-rf-studio", "verify", str(path))
     # the comparison is stored first, then verify.s{P}p written; a refusal of either is a line, so the comparison is
     # still printed and a held file costs only that file
@@ -822,8 +799,6 @@ def _verify(path: Path, run_dir: Path) -> int:
     lines.append(("I_VERIFY_COMPARE", {"f0_mhz": f"{own.f[k0] / 1e6:g}", "a_db": f"{own.a_db[k0]:.1f}",
                                        "ds21_db": f"{cmp['ds21_db_f0']:.3f}", "ds11": f"{cmp['ds11_f0']:.4f}",
                                        "ds_max": f"{cmp['ds_max']:.4f}"}))
-    lines += [*fallback_lines(own, done),
-              *tail_line(own.f, (own.s, own.s_dft), (closed, terminate(lay.s_dft, ext, zk, lay.f)))]
     for null in cmp["nulls"]:
         k = np.abs(own.f - null["f_hz"]).argmin()  # the grid point nearest the null
         at = {"f_mhz": f"{null['f_hz'] / 1e6:.1f}", "a_db": f"{own.a_db[k]:.1f}"}
