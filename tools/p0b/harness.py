@@ -207,9 +207,9 @@ def _b1_run(out: Path) -> str:
 def kmax_sweep(out: Path) -> None:
     """The K_MAX sweep (D-39): B1's model rebuilt from its project, RuntimeError unless its hash is its results'; the L1
     cell's C read from verify_spec's grid entry at the as-built values; then per k of K_SWEEP the step p0b-kmax-<k>:
-    verify's model with L1 at kmax_values' L, uncompensated (A-10), built with spec.K_MAX lifted to 1.0, run on P1
-    alone at Strict to KMAX_T_MAX, keyed by its spec_hash and B1's run. Strict, because its −70 dB level cannot stop
-    lpf915 before about 18 ns (r4 §2.5), so every value runs its 10 ns unless it grows."""
+    verify's model with L1 at kmax_values' L, built with spec.K_MAX lifted to 1.0, run on P1 alone at Strict to
+    KMAX_T_MAX, keyed by its spec_hash and B1's run. Strict, because its −70 dB level cannot stop lpf915 before about
+    18 ns (r4 §2.5), so every value runs its 10 ns unless it grows."""
     run, pj = _b1_run(out), project(out, "B1")
     data, board, geom, _ = pipeline.load(pj)
     spec, results = pipeline.build_model(data, board, geom).spec, data["results"]
@@ -223,8 +223,7 @@ def kmax_sweep(out: Path) -> None:
         # ponytail: patches the module's K_MAX for this process while verify_spec builds the sweep's spec
         k_max, spec_module.K_MAX = spec_module.K_MAX, 1.0
         try:
-            # the sweep sets the grid L itself (A-10)
-            vspec = spec_module.verify_spec(spec, swept, dump, dt, compensate=False)
+            vspec = spec_module.verify_spec(spec, swept, dump, dt)
         finally:
             spec_module.K_MAX = k_max
         sid = KMAX_STEPS[k]

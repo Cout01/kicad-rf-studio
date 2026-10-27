@@ -15,8 +15,7 @@ from kicad_rf_studio.core.mesh.gates import mesh_with_lint
 from kicad_rf_studio.core.messages import KrsError
 from kicad_rf_studio.core.model.ports import place
 from kicad_rf_studio.core.model.readers import c_box
-from kicad_rf_studio.core.model.spec import (K_MAX, excitation, grid_entry, kappa, model_spec, spec_hash, strip_dl,
-                                             verify_spec)
+from kicad_rf_studio.core.model.spec import K_MAX, excitation, grid_entry, kappa, model_spec, spec_hash, verify_spec
 from test_cli_cost import SEG
 from test_gates import mini, project_of
 from test_geometry_sections import four_layer, plane
@@ -161,8 +160,8 @@ def test_verify_moves_every_part_port_into_the_grid():  # spec 7.6, C-36, D-45
     assert c1_cell == pytest.approx(1.4886e-14, rel=1e-3, abs=0)
     assert (r3["start"], r3["stop"], r3["R"], r3["C"]) == ([-2.5, 1.0, 0.5], [-2.25, 2.0, 0.535], 50.0, None)
     assert "L" not in c1 and "L" not in r3
-    assert (l1["dir"], l1["start"], l1["stop"], l1["R"], l1["L"]) == (
-        "x", [0.0, 1.0, 0.5], [0.25, 1.25, 0.535], None, pytest.approx(15e-9 - 4.823420e-10, rel=1e-6, abs=0))
+    assert (l1["dir"], l1["start"], l1["stop"], l1["R"], l1["L"]) == ("x", [0.0, 1.0, 0.5], [0.25, 1.25, 0.535], None,
+                                                                      15e-9)
     assert l1["C"] == pytest.approx(cell, rel=1e-12, abs=0) and cell == pytest.approx(5.954e-15, rel=1e-3, abs=0)
     assert v["metal"]["copper"][-6:] == FILLS[:2] + STRIPS + FILLS[2:]
     turned = {**VSPEC, "ports": [*VPORTS[:2], {**VPORTS[2], "start": [1.0, 0.5, 0.5], "stop": [-1.0, 1.5, 0.535]},
@@ -170,22 +169,11 @@ def test_verify_moves_every_part_port_into_the_grid():  # spec 7.6, C-36, D-45
     t = verify_spec(turned, VPARTS, dump, DT)
     assert (t["grid"][1]["start"], t["grid"][1]["stop"], t["metal"]["copper"][-4:-2]) == (
         [0.0, 1.0, 0.5], [0.25, 1.25, 0.535], STRIPS)
-    u = verify_spec(VSPEC, VPARTS, dump, DT, compensate=False)  # the K_MAX sweep's construction (A-10)
-    assert u["grid"][1]["L"] == 15e-9 and u["metal"] == v["metal"]
-    assert [g for g in u["grid"] if g["name"] != "L1"] == [g for g in v["grid"] if g["name"] != "L1"]
-
-
-def test_the_strips_partial_inductance():  # A-10: Ruehli's bar at the cell's width less the bar at the box's width
-    lines = [VSPEC["mesh"][a] for a in "xyz"]  # L1's box: 2.0 mm along x, 1.0 mm wide, its cell 0.25 mm, 0.035 mm thick
-    assert strip_dl(VPORTS[2], lines) == pytest.approx(4.82342e-10, rel=1e-5, abs=0)
-    assert strip_dl(VPORTS[2], [lines[0], [0.5, 1.5], lines[2]]) == 0  # a cell as wide as its box: no strip term
 
 
 def test_verify_refuses_what_it_cannot_put_in_the_grid(tmp_path):  # C-36, C-37 (owner-confirmed: K_MAX 0.45)
     dump = DUMPS / "operator_dump.vtr"
     cases = [((VSPEC, {**VPARTS, "L1": {"ref": "L1", "value": "1pH"}}, dump),
-              ("E_VERIFY_STRIPS", {"ref": "L1", "value": "1pH", "dl": "0.482"})),
-             ((VSPEC, {**VPARTS, "L1": {"ref": "L1", "value": "483.342pH"}}, dump),  # its grid L is 0.99999 pH
               ("E_VERIFY_K", {"ref": "L1", "k": "1.13", "limit": "0.45"})),
              ((VSPEC, {**VPARTS, "R3": {"ref": "R3", "value": "x"}}, dump),
               ("E_VERIFY_VALUE", {"ref": "R3", "value": "x"})),
@@ -196,7 +184,4 @@ def test_verify_refuses_what_it_cannot_put_in_the_grid(tmp_path):  # C-36, C-37 
         with pytest.raises(KrsError) as e:
             verify_spec(*args, DT)
         assert (e.value.code, e.value.params) == expected
-    with pytest.raises(KrsError) as e:  # Review Focus 3: the sweep's uncompensated path keeps the k check
-        verify_spec(VSPEC, {**VPARTS, "L1": {"ref": "L1", "value": "1pH"}}, dump, DT, compensate=False)
-    assert (e.value.code, e.value.params) == ("E_VERIFY_K", {"ref": "L1", "k": "1.13", "limit": "0.45"})
     assert K_MAX == 0.45
