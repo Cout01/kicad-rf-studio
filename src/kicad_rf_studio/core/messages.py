@@ -174,6 +174,7 @@ CATALOG: dict[str, str] = {
     "E_VERIFY_VALUE": "verify puts each part in the grid at its value, but {ref} has \"{value}\": verify can place only a C, L or R whose value reads (a C above 0). Set {ref}'s \"value\" in project.json, which keeps its S2P file, then run verify again; `retune PROJECT {ref}=VALUE` sets it too but drops the S2P file.",
     "E_VERIFY_DUMP": "verify sizes each part's cell from the last run's operator dump {path}, which is missing. Run `run` again.",
     "E_VERIFY_K": "Part {ref}: its inductor in the grid resonates too fast for the time step (k {k}, limit {limit}), and the run would diverge. Check its value in project.json; a real inductor reads k near 0.01.",
+    "E_VERIFY_STRIPS": "Part {ref}: verify joins its inductor cell to the pads by strips that add about {dl} nH, which verify takes off the value; \"{value}\" is not above that, so verify cannot place {ref}. Check its value in project.json.",
     "E_VERIFY_NO_PARTS": "This project has no part ports (a single trace), so verify has nothing to put in the grid: `run` is already its full simulation.",
     "E_VERIFY_CURVE": "Part {ref} is rotated (a CurvePort), and verify cannot put a rotated part in the grid. Rotate it in KiCad to a multiple of 90° to verify this chain.",
     "E_VERIFY_PORTS": "verify compares S21 and S11, so it needs at least 2 external ports; this project has {ports}. Keep two ports in project.json.",

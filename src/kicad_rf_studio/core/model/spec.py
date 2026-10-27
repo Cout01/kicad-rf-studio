@@ -37,6 +37,7 @@ if TYPE_CHECKING:
     from kicad_rf_studio.core.mesh import Mesh
 
 EPS0 = scipy.constants.epsilon_0  # F/m
+MU0 = scipy.constants.mu_0  # H/m
 # ponytail: stable through k 0.55 on lpf915's L1 cell at a rule mesh's dielectric interface, 10 ns at openEMS's own
 # dt (P0-B, 2026-10-25)
 K_MAX = 0.45  # verify's limit on k = dt/(2·√(L·C)) of an inductor's cell (C-37)
@@ -154,15 +155,30 @@ def _cell(lines: list[float], lo: float, hi: float) -> tuple[float, float]:
     return lines[i], lines[i + 1]
 
 
-def verify_spec(spec: dict, parts: dict[str, dict], dump: Path, dt: float) -> dict:
+def strip_dl(port: dict, lines: list[list[float]]) -> float:
+    """The partial inductance (H) that verify's one-cell L adds over the box of `port` on `lines` (A-10): Ruehli's bar
+    of the box's length ℓ at the width w_cell of verify's cell (_cell) less the same bar at the box's width w_box, both
+    t thick, t the box's z extent, in mm: μ0·ℓ/(2π)·[ln((w_box + t)/(w_cell + t)) + 0.2235·((w_cell + t) −
+    (w_box + t))/ℓ]; good to about ±30 %, since it assumes ℓ ≫ w + t."""
+    lo, hi = ([f(a, b) for a, b in zip(port["start"], port["stop"])] for f in (min, max))
+    p = "xyz".index(port["dir"])
+    q = 1 - p  # the box's width axis
+    w = _cell(lines[q], lo[q], hi[q])
+    a, b, length = hi[q] - lo[q] + hi[2] - lo[2], w[1] - w[0] + hi[2] - lo[2], hi[p] - lo[p]
+    return MU0 / (2 * math.pi) * length * 1e-3 * (math.log(a / b) + 0.2235 * (b - a) / length)
+
+
+def verify_spec(spec: dict, parts: dict[str, dict], dump: Path, dt: float, *, compensate: bool = True) -> dict:
     """verify's model (spec 7.6, C-36, C-37, D-45): a copy of the run's `spec` whose part ports, all lumped, leave
     `ports` for `grid`, after the run's own grid parts, each at its value in `parts` (project.json's parts by ref), on
     the same lines: in one cell of its box along the box's axis, at its middle and in its copper slab, a C or an R
     across the box's whole width and an L one cell wide, joined to the box's two ends by PEC fill of the cell's width
-    in `metal.copper`. The cell's own capacitance, from the operator dump `dump` at the time step `dt` (s), is added to
-    a C (a grid C replaces it) and is an L's explicit C (without one, openEMS 0.37 lowers it); an R keeps it. Raises,
-    part by part in port order, E_VERIFY_VALUE for a part that is not a C, L or R whose value reads, E_VERIFY_DUMP
-    when `dump` is missing, then for an L E_VERIFY_K when k = dt/(2·√(L·C)) is above K_MAX."""
+    in `metal.copper`. An L sits at its value less strip_dl (A-10), E_VERIFY_STRIPS when that is not above 0;
+    `compensate` False, the K_MAX sweep's, keeps the value. The cell's own capacitance, from the operator dump `dump`
+    at the time step `dt` (s), is added to a C (a grid C replaces it) and is an L's explicit C (without one, openEMS
+    0.37 lowers it); an R keeps it. Raises, part by part in port order, E_VERIFY_VALUE for a part that is not a C, L
+    or R whose value reads, E_VERIFY_DUMP when `dump` is missing, then for an L E_VERIFY_STRIPS before E_VERIFY_K
+    when k = dt/(2·√(L·C)), at the L it sits at, is above K_MAX."""
     out = copy.deepcopy(spec)
     lines, copper = [out["mesh"][a] for a in "xyz"], out["metal"]["copper"]
     moved, out["ports"] = [q for q in out["ports"] if q["part"]], [q for q in out["ports"] if not q["part"]]
@@ -180,6 +196,11 @@ def verify_spec(spec: dict, parts: dict[str, dict], dump: Path, dt: float) -> di
         for n in (0, 1) if kind == "L" else (p,):  # D-45: a C or an R spans its box's width, an L one cell
             cell[n] = _cell(lines[n], lo[n], hi[n])
         start, stop = [e[0] for e in cell], [e[1] for e in cell]
+        if kind == "L" and compensate:  # A-10: the grid L is the value less the strips' partial inductance
+            dl = strip_dl(port, lines)
+            if value <= dl:
+                raise KrsError("E_VERIFY_STRIPS", ref=ref, value=text, dl=f"{dl * 1e9:.3g}")
+            value -= dl
         c = c_box(dump, lines, start, stop, p, dt)
         k = dt / (2 * math.sqrt(value * c)) if value * c > 0 else math.inf  # a C (or an L) of 0 reads as k inf
         if kind == "L" and k > K_MAX:

@@ -44,12 +44,13 @@ def test_verify_runs_the_parts_in_the_grid_and_compares(tmp_path, calibrated, mo
     assert [g["name"] for g in model["grid"]] == ["C1", "L1", "C2", "C3"] and [q["name"] for q in model["ports"]] == [
         "P1", "P2"]
     assert (model["grid"][0]["C"], model["grid"][1]["L"], model["grid"][1]["C"]) == (
-        pytest.approx(100e-12 + 6e-16, rel=1e-12, abs=0), 15e-9, 6e-16)  # value + the cell's C
+        pytest.approx(100e-12 + 6e-16, rel=1e-12, abs=0),  # value + the cell's C
+        pytest.approx(1.4875188e-08, rel=1e-6, abs=0), 6e-16)  # 15 nH less its strips' 0.124812 nH (A-10)
     retuned = terminate_np(star(F, 6), [0, 1], lpf_loads(None))  # ideal values ∥ C_box (C-38)
     assert v["compare"]["ds_max"] == pytest.approx(np.abs(star(F, 2) - retuned).max(), abs=1e-4)
     file = pj.parent / "results" / "verify.s2p"
     assert np.abs(read_s(file) - star(F, 2)).max() <= 1e-5
-    assert b"in grid: L1 15nH as L 1.5e-08 H with the cell's C 6e-16 F" in file.read_bytes()
+    assert b"in grid: L1 15nH as L 1.48752e-08 H with the cell's C 6e-16 F" in file.read_bytes()
     assert result_codes(v["run_dir"]) == ["I_VERIFY_RESULTS", "I_VERIFY_COMPARE", "I_VERIFY_NO_NULLS", "I_PASSIVITY",
                                           "I_RECIPROCITY", "W_VERIFY_LOSS_BUDGET", "I_OUTPUTS", "I_VERIFY_SCOPE",
                                           *LIMITS]
