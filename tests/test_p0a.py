@@ -83,7 +83,6 @@ def test_the_twins_are_measured_at_their_midpoint_on_x_normal_planes():  # D-24
                                                                     ("mid", "x", 45.0)]
 
 
-@pytest.mark.xfail(strict=True, reason="plan 6's slot role moved the P0 models; Task 10 regenerates tests/fixtures/p0d")
 def test_the_harness_builds_the_models_p0a_ran(tmp_path, monkeypatch):  # final review F6: --report on this code
     monkeypatch.setattr(p0, "cli", in_process)
     built = {name: spec_hash(p0a.coupon_model(name, 2)[0].spec) for name in p0a.COUPONS}

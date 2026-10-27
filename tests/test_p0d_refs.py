@@ -21,7 +21,6 @@ def test_the_windows_references_are_committed_with_generic_members():  # D-48
             assert set(z.files) == {"f", "S", "t_cut", "spec_hash"} | extra, name
 
 
-@pytest.mark.xfail(strict=True, reason="plan 6's slot role moved the P0 models; Task 10 regenerates tests/fixtures/p0d")
 def test_the_references_are_the_models_p0d_builds_here(tmp_path):  # D-47: CI compares the same models
     p0d.models(tmp_path)
     for name in p0d.MODELS:
