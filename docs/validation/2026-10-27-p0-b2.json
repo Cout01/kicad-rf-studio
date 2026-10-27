@@ -1,0 +1,84 @@
+{
+ "a9": {
+  "e1": {
+   "job": "P2",
+   "end_s": 2.9205088979e-08,
+   "cuts": [
+    1.321e-08,
+    1.6e-08,
+    2e-08
+   ],
+   "ds": 1.3296840387770937e-05
+  },
+  "e2": 1.2711857836446091e-05,
+  "e3": {
+   "p0b-B1": [],
+   "p0a-pad": [
+    "P1",
+    "P2"
+   ]
+  },
+  "e4": {
+   "jobs": [
+    "p0b-B1/P1",
+    "p0b-B1/P2",
+    "p0b-B1/C1",
+    "p0b-B1/L1",
+    "p0b-B1/C2",
+    "p0b-B1/C3"
+   ],
+   "ds": 1.8506986622983896e-05
+  },
+  "pass": false,
+  "versions": {
+   "commit": "efb1192",
+   "code": "805a707ed37b6c611b9ada3814f25124dc9bbed1",
+   "python": "3.14.2",
+   "openems": "0.37.0",
+   "csxcad": "0.7.0",
+   "os": "Windows-11-10.0.26200-SP0",
+   "cpus": 16
+  }
+ },
+ "a10": {
+  "dl_cf_h": 1.2428328159732765e-10,
+  "band_h": [
+   8.7e-11,
+   1.616e-10
+  ],
+  "dl_fit_h": {
+   "uncomp": 1.8795847602356127e-10,
+   "comp": 1.8599998630764572e-10
+  },
+  "ds21_uncomp_db": 0.17983630927052374,
+  "ds21_comp_db": 0.09354458858063497,
+  "verdicts": [
+   "converged",
+   "converged",
+   "converged",
+   "converged",
+   "converged",
+   "converged",
+   "converged"
+  ],
+  "void": false,
+  "pass": false,
+  "versions": {
+   "commit": "60ad2fc",
+   "code": "0f7561a1a0ea24ea9e3fdcd85f34507dda8408f8",
+   "python": "3.14.2",
+   "openems": "0.37.0",
+   "csxcad": "0.7.0",
+   "os": "Windows-11-10.0.26200-SP0",
+   "cpus": 16
+  }
+ },
+ "predict": null,
+ "p0b2": null,
+ "machine": {
+  "steps": 3,
+  "machine_hours": 0.6046712109722365,
+  "loaded": [],
+  "elapsed_days": 5
+ }
+}
