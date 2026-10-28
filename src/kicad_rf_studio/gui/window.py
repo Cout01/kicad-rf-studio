@@ -5,7 +5,8 @@ last run and shows its results, which its parts' rows retune in this process (Re
 CLI's retune and Verify checks; Advanced edits project.json's fields and saves them under the project lock
 (AdvancedView); all driven by one 500 ms timer (`tick`). The project is read, a board's pads listed, new run and retune
 waited for on a pool thread (control.open_project, control.pads, cli.new, control.apply); cost, run and verify start as
-a detached orchestrator (control.start), so this process never reaches runs.run_jobs."""
+a detached orchestrator (control.start), so this process never reaches runs.run_jobs. Its Help menu shows About
+(control.about) and Qt's About."""
 import json
 import subprocess
 from concurrent.futures import Future, ThreadPoolExecutor
@@ -375,6 +376,11 @@ class MainWindow(QMainWindow):
         self.tabs.addTab(self.results, render("G_TAB_RESULTS"))
         self.tabs.addTab(self.advanced, render("G_TAB_ADVANCED"))
         self.setCentralWidget(self.tabs)
+        menu = self.menuBar().addMenu(render("G_MENU_HELP"))
+        self.about_action = menu.addAction(render("G_ABOUT"))
+        self.about_qt_action = menu.addAction(render("G_ABOUT_QT"))
+        self.about_action.triggered.connect(self.about)
+        self.about_qt_action.triggered.connect(self.about_qt)
         form = self.new_form
         for button, slot in ((self.open_button, self.browse), (self.cost_button, self.estimate),
                              (self.run_button, self.run), (self.stop_button, self.stop),
@@ -783,6 +789,14 @@ class MainWindow(QMainWindow):
         f.notes.clear()
         f.notes.addItems([control.text(code, params) for code, params in notes])
         self.open_project(path)
+
+    def about(self) -> None:
+        """Help's About: the version, the licence notices and the runtime dependencies (control.about)."""
+        QMessageBox.about(self, render("G_ABOUT"), control.about())
+
+    def about_qt(self) -> None:
+        """Help's About Qt: Qt's own box, with Qt's version and licence."""
+        QMessageBox.aboutQt(self)
 
     def closeEvent(self, event: QCloseEvent) -> None:
         """Closing the window stops its timer and drops the pool's work not yet begun (project reads, a pad list, a

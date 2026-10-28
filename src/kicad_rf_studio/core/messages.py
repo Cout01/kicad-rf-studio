@@ -292,6 +292,12 @@ CATALOG: dict[str, str] = {
     "G_UNIT_HENRY": "H",
     "G_UNIT_OHM": "Ω",
     "G_UNIT_FARAD": "F",
+    "G_MENU_HELP": "Help",
+    "G_ABOUT": "About kicad-rf-studio",
+    "G_ABOUT_QT": "About Qt",
+    "G_ABOUT_DEPENDENCY": "{name} {version}: {licence}",
+    "G_NOT_INSTALLED": "not installed",
+    "G_ABOUT_TEXT": "kicad-rf-studio {version}: simulates the RF parts of a KiCad board with openEMS.\n\nCopyright (C) 2026 the kicad-rf-studio contributors.\n\nThis program is free software: you can redistribute it and/or modify it under the terms of the GNU General Public License as published by the Free Software Foundation, either version 3 of the License, or (at your option) any later version. This program comes with ABSOLUTELY NO WARRANTY. It includes a copy of CSXCAD's SmoothMeshLines under the GNU Lesser General Public License, version 3 or later. Both licences are at https://www.gnu.org/licenses/.\n\nRuntime dependencies (installed by pip, or by you for openEMS and CSXCAD; not included):\n{dependencies}",
 }
 
 _translation = gettext.translation(

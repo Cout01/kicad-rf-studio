@@ -1,8 +1,8 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """The GUI's Qt-free logic (Stage 2 design 5.1, 5.3): the detached start, Apply's retune run to its end, the events
 tail, re-attach through the lock and the end events, the project read off the GUI thread, the retune session (an update
-of a project read's chain from the parts' rows), Verify's stale indicator and comparison, New's pad list, and
-Advanced's fields of project.json and their edit. Never imports Qt or matplotlib."""
+of a project read's chain from the parts' rows), Verify's stale indicator and comparison, New's pad list,
+Advanced's fields of project.json and their edit, and About's text. Never imports Qt or matplotlib."""
 import contextlib
 import copy
 import json
@@ -14,9 +14,10 @@ import subprocess
 import sys
 from dataclasses import dataclass, field, replace
 from functools import partial, reduce
+from importlib import metadata
 from pathlib import Path
 
-from kicad_rf_studio import pipeline, runs
+from kicad_rf_studio import __version__, pipeline, runs
 from kicad_rf_studio.core.kicad import load_board
 from kicad_rf_studio.core.kicad.values import part_kind, port_value, snap, value_text
 from kicad_rf_studio.core.messages import KrsError, detail, render
@@ -444,3 +445,26 @@ def edited(data: dict, edits: dict[tuple, str]) -> dict:
             value = typed
         reduce(operator.getitem, path[:-1], new)[path[-1]] = value
     return new
+
+
+# the runtime dependencies with their main licences (design 5.3 About): pyproject.toml's core dependencies, shiboken6
+# and pandas, which PySide6-Essentials and scikit-rf bring, and openEMS and CSXCAD, which pip does not install
+DEPENDENCIES = (("PySide6-Essentials", "LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only"),
+                ("shiboken6", "LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only"),
+                ("matplotlib", "Matplotlib License (PSF-based)"), ("numpy", "BSD-3-Clause"), ("scipy", "BSD-3-Clause"),
+                ("h5py", "BSD-3-Clause"), ("shapely", "BSD-3-Clause"), ("scikit-rf", "BSD-3-Clause"),
+                ("pandas", "BSD-3-Clause"), ("openEMS", "GPL-3.0-or-later"), ("CSXCAD", "LGPL-3.0-or-later"))
+
+
+def about() -> str:
+    """About's text (design 5.3): G_ABOUT_TEXT with this version and one G_ABOUT_DEPENDENCY line per entry of
+    DEPENDENCIES, in order, each with its installed version (metadata.version, which reads the distribution's metadata
+    and imports nothing, so no openEMS DLL loads) or G_NOT_INSTALLED."""
+    lines = []
+    for name, licence in DEPENDENCIES:
+        try:
+            version = metadata.version(name)
+        except metadata.PackageNotFoundError:
+            version = render("G_NOT_INSTALLED")
+        lines.append(render("G_ABOUT_DEPENDENCY", name=name, version=version, licence=licence))
+    return render("G_ABOUT_TEXT", version=__version__, dependencies="\n".join(lines))

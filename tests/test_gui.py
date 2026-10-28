@@ -14,7 +14,7 @@ from pathlib import Path
 import numpy as np
 import pytest
 from PySide6.QtCore import QTimer
-from PySide6.QtWidgets import QFileDialog
+from PySide6.QtWidgets import QFileDialog, QMessageBox
 
 from kicad_rf_studio import gui, pipeline, runs
 from kicad_rf_studio.cli import main
@@ -753,3 +753,14 @@ def test_advanced_saves_project_json_under_the_lock_and_a_model_change_marks_the
     w.tick()
     assert not a.table.isEnabled() and not a.save_button.isEnabled()  # disabled while the lock is held
     lock.unlink()
+
+
+def test_the_help_menu_shows_about_and_qts_about(window, monkeypatch):  # design 5.3 About
+    seen = []
+    monkeypatch.setattr(QMessageBox, "about", lambda parent, title, text: seen.append((title, text)))
+    monkeypatch.setattr(QMessageBox, "aboutQt", lambda parent, title="": seen.append("Qt"))
+    w = window()
+    assert [a.text() for a in w.menuBar().actions()] == [render("G_MENU_HELP")]
+    w.about_action.trigger()
+    w.about_qt_action.trigger()
+    assert seen == [(render("G_ABOUT"), control.about()), "Qt"]

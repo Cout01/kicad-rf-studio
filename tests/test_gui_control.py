@@ -8,7 +8,9 @@ import string
 import subprocess
 import sys
 import time
+import tomllib
 from dataclasses import replace
+from importlib import metadata
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -16,7 +18,7 @@ import numpy as np
 import pytest
 import skrf as rf
 
-from kicad_rf_studio import pipeline, runs
+from kicad_rf_studio import __version__, pipeline, runs
 from kicad_rf_studio.cli import main
 from kicad_rf_studio.core.messages import CATALOG, KrsError, render
 from kicad_rf_studio.core.model.spec import spec_hash
@@ -363,3 +365,24 @@ def test_open_project_keeps_project_json_as_stored_for_advanced(tmp_path, fake):
     broken = control.open_project(pj)
     assert broken.problem[0] == "E_PROJECT_FIELD" and broken.project is None and broken.stored["harmonics"] == 0
     assert control.open_project(tmp_path / "nope.json").stored is None
+
+
+def test_about_names_the_version_the_licence_notices_and_each_runtime_dependency(monkeypatch):  # design 5.3 About
+    real = metadata.version
+
+    def version(name):
+        if name in ("openEMS", "CSXCAD"):  # installed apart from pip, if at all
+            raise metadata.PackageNotFoundError(name)
+        return real(name)
+
+    monkeypatch.setattr(metadata, "version", version)
+    text = control.about()
+    assert text.startswith(f"kicad-rf-studio {__version__}: ") and "ABSOLUTELY NO WARRANTY" in text
+    assert "Copyright" in text and "GNU General Public License" in text  # GPL-3.0's appropriate legal notices
+    assert "https://www.gnu.org/licenses/" in text  # GPL-3.0 §5(d)
+    for name, licence in control.DEPENDENCIES:
+        shown = render("G_NOT_INSTALLED") if name in ("openEMS", "CSXCAD") else real(name)
+        assert render("G_ABOUT_DEPENDENCY", name=name, version=shown, licence=licence) in text.splitlines()
+    pyproject = tomllib.loads((Path(__file__).resolve().parents[1] / "pyproject.toml").read_text(encoding="utf-8"))
+    declared = {re.split(r"[<>=!~;\[ ]", d, maxsplit=1)[0].lower() for d in pyproject["project"]["dependencies"]}
+    assert declared <= {name.lower() for name, _ in control.DEPENDENCIES}  # every core dependency is named
