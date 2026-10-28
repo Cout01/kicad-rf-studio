@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """The GUI (Stage 2 design 5): its dependency and entry point, the import rules, and the main window offscreen on
 the fake CLI."""
+import json
 import os
 import re
 import subprocess
@@ -170,3 +171,96 @@ def test_the_gui_entry_opens_the_project_it_is_given(qapp, tmp_path, calibrated)
     w = next(w for w in seen if isinstance(w, MainWindow) and w.path == pj)  # `seen` keeps it alive past main
     w.close()
     w.pool.shutdown(wait=True)  # its read, before the fake data folder goes
+
+
+def costed(pj):
+    """A cost of pj's model ended in a run folder of its own, as the GUI starts one (in-process: quicker; before the
+    test's first window, which makes runs.run_jobs fail)."""
+    d = runs.run_dir_for(pj.parent.name)
+    assert main(["cost", str(pj), "--run-dir", str(d)]) == 0
+    return d
+
+
+def test_a_window_closed_mid_run_leaves_it_running_and_a_new_one_attaches_with_stop(window, tmp_path, monkeypatch):
+    monkeypatch.setenv("KRS_FAKE", "slow")  # Review Focus 1
+    pj = new_project(tmp_path, "coupon_gcpw_pads", preset="draft").resolve()
+    costed(pj)
+    first = window()
+    first.open_project(pj)
+    opened(first)
+    monkeypatch.setattr(first, "ask", lambda text: True)
+    first.run_button.click()
+    until(lambda: first.tick() or first.jobs.rowCount() > 0)
+    first.close()
+    assert first.proc.poll() is None  # the run goes on without its window
+    second = window()
+    second.open_project(pj)
+    second.tick()
+    holder = runs.lock_holder(pj)
+    assert second.run_dir == first.run_dir and second.proc is None and second.jobs.rowCount() > 0  # replayed
+    assert second.banner.text() == render("G_LOCKED", lock=str(runs.lock_file(pj)), run=holder["run_dir"],
+                                          started=holder["started"]) and not second.banner.isHidden()
+    assert (second.stop_button.isEnabled(), second.run_button.isEnabled(), second.cost_button.isEnabled()) == (
+        True, False, False)
+    grab(second, "run-attached")
+    second.stop_button.click()
+    assert (first.run_dir / "STOP").exists()
+    until(lambda: second.tick() or second.run_status.text() == render("G_END_NOT_KEPT", exit_code=4))
+    assert any(x.endswith("stopped, so its S is not kept. Run `run` again for results.") for x in items(second.log))
+    third = window()  # the run ended while no window watched it
+    third.open_project(pj)
+    opened(third)
+    assert third.run_dir == first.run_dir and third.run_status.text() == render("G_END_NOT_KEPT", exit_code=4)
+
+
+def test_a_killed_run_reads_lost_and_its_stale_lock_does_not_block_the_next(window, tmp_path, monkeypatch):
+    pj = new_project(tmp_path, "coupon_gcpw_pads", preset="draft").resolve()  # Review Focus 4
+    costed(pj)
+    w = window()
+    w.open_project(pj)
+    opened(w)
+    monkeypatch.setattr(w, "ask", lambda text: True)
+    monkeypatch.setenv("KRS_FAKE", "hang")
+    w.run_button.click()
+    until(lambda: (runs.lock_holder(pj) or {}).get("pid"))  # written, not only made
+    w.proc.kill()  # Task Manager, say: its workers die with it
+    w.proc.wait()
+    until(lambda: runs.lock_holder(pj)["alive"] is False)  # Windows: the venv launcher's job ends it a moment later
+    w.tick()
+    exited = {"folder": str(w.run_dir), "exit_code": w.proc.returncode, "log": str(w.run_dir / "cli.log")}
+    assert w.run_status.text() == render("G_END_EXITED", **exited) and w.run_button.isEnabled()
+    again = window()  # the lock stays behind, stale
+    again.open_project(pj)
+    assert again.run_dir == w.run_dir and again.run_status.text() == render("G_END_LOST", folder=str(w.run_dir))
+    grab(again, "run-lost")
+    monkeypatch.delenv("KRS_FAKE")
+    again.cost_button.click()  # a cost meanwhile keeps its tab: a dead lock is attached only on open
+    until(lambda: again.tick() or again.cost_status.text() == render("G_END_DONE", exit_code=0))
+    assert again.command == "cost" and again.tabs.currentIndex() == 1
+    monkeypatch.setattr(again, "ask", lambda text: True)
+    opened(again)
+    again.run_button.click()
+    until(lambda: again.tick() or again.run_status.text() == render("G_END_DONE", exit_code=0))
+
+
+def test_another_runs_lock_disables_cost_and_run_until_it_goes(window, tmp_path):  # design 5.1, 5.3
+    pj = new_project(tmp_path, "coupon_gcpw_pads", preset="draft").resolve()
+    cost, lock = costed(pj), runs.lock_file(pj)
+    lock.write_text(json.dumps({"pid": os.getpid(), "run_dir": str(pj.parent / "results"), "started": "S"}),
+                    encoding="utf-8")  # a retune holds it
+    w = window()
+    w.open_project(pj)
+    opened(w)
+    assert w.run_dir is None and w.banner.isHidden()  # a retune is waited for, never watched (r2 §1)
+    assert (w.cost_button.isEnabled(), w.run_button.isEnabled(), w.stop_button.isEnabled()) == (False, False, False)
+    assert w.cost == cost and w.cost_status.text() == render("G_COST_REUSED", folder=cost.name)  # reused: same model
+    assert items(w.cost_lines)[0] == render("W_FILLS_AS_SAVED")
+    other = tmp_path / "other run"
+    lock.write_text(json.dumps({"pid": os.getpid(), "run_dir": str(other), "started": "S"}), encoding="utf-8")
+    w.tick()
+    assert w.run_dir == other and w.run_status.text() == render("G_RUNNING", folder=str(other))
+    assert (w.cost_button.isEnabled(), w.run_button.isEnabled(), w.stop_button.isEnabled()) == (False, False, True)
+    lock.unlink()
+    w.tick()
+    assert w.run_status.text() == render("G_ENDED", folder=str(other)) and w.banner.isHidden()
+    assert (w.cost_button.isEnabled(), w.run_button.isEnabled(), w.stop_button.isEnabled()) == (True, True, False)

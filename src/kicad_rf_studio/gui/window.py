@@ -1,12 +1,14 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
-"""The main window (Stage 2 design 5.1, 5.3): it opens a project, shows its cost, and starts, follows and stops a run
-of its own, driven by one 500 ms timer (`tick`). The project is read on a pool thread (control.open_project); cost
-and run start as a detached orchestrator (control.start), so this process never reaches runs.run_jobs."""
+"""The main window (Stage 2 design 5.1, 5.3): it opens a project, shows its cost, and starts, follows and stops a run,
+its own or one it re-attaches through the project lock, and replays the project's last run, driven by one 500 ms
+timer (`tick`). The project is read on a pool thread (control.open_project); cost and run start as a detached
+orchestrator (control.start), so this process never reaches runs.run_jobs."""
 import subprocess
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 from PySide6.QtCore import Qt, QTimer
+from PySide6.QtGui import QCloseEvent
 from PySide6.QtWidgets import (QFileDialog, QLabel, QListWidget, QMainWindow, QMessageBox, QPushButton, QTableWidget,
                                QTableWidgetItem, QTabWidget, QVBoxLayout, QWidget)
 
@@ -103,12 +105,27 @@ class MainWindow(QMainWindow):
         self.loading = self.pool.submit(control.open_project, self.path)
 
     def tick(self) -> None:
-        """The window's one driver, every 500 ms (design 5.1), in this order: a project read that finished, shown (a
-        display that fails shows E_INTERNAL, and the tick goes on); the watched folder's new events, then its state
-        (control.run_state); a read when project.json's st_mtime_ns changed; the buttons: Cost while nothing watched
-        goes on, Run… also only with a cost of this model, Stop only while it goes on."""
+        """The window's one driver, every 500 ms (design 5.1), in this order: the project lock's holder
+        (runs.lock_holder), through which a run this window did not start is attached (below); a project read that
+        finished, shown (a display that fails shows E_INTERNAL, and the tick goes on); the watched folder's new events,
+        then its state (control.run_state, given that holder); the G_LOCKED banner while another's live run holds the
+        lock and this window watches no process of its own; a read when project.json's st_mtime_ns changed; the
+        buttons: Cost while nothing watched goes on and no run holds the lock, Run… also only with a cost of this
+        model, Stop only while the watch goes on. A holder whose run folder is the project's results/ is a retune
+        (pipeline.retune, r2 §1): waited for, never watched or bannered. Any other holder's run folder, when it names
+        one other than the watched one, is watched when this window's own process is not running and the holder
+        lives, or when the holder is dead and nothing is watched (on open), so a cost meanwhile keeps its tab."""
         if self.path is None:
             return
+        holder = runs.lock_holder(self.path)
+        held = holder is not None and holder["alive"]  # any run's, a retune's included
+        # ponytail: a retune typed with a relative project path locks a relative results/ and reads as a run here;
+        # pipeline.retune locking path.absolute()'s results/ if it matters
+        if holder and holder["run_dir"] and Path(holder["run_dir"]) == self.path.parent / "results":
+            holder = None
+        if holder and holder["run_dir"] and Path(holder["run_dir"]) != self.run_dir and (
+                self.command is None or (holder["alive"] and (self.proc is None or self.proc.poll() is not None))):
+            self.watch("run", Path(holder["run_dir"]))
         if self.loading is not None and self.loading.done():
             done, self.loading = self.loading, None
             try:
@@ -122,13 +139,19 @@ class MainWindow(QMainWindow):
             returncode = None if self.proc is None else self.proc.poll()
             for event in control.latest(self.tail.read()):
                 self.show_event(event)
-            code, params = control.run_state(self.run_dir, self.end, None, self.proc is not None, returncode)
+            code, params = control.run_state(self.run_dir, self.end, holder, self.proc is not None, returncode)
             (self.cost_status if self.command == "cost" else self.run_status).setText(render(code, **params))
             self.live = code == "G_RUNNING"
+        if holder and holder["alive"] and holder["run_dir"] and self.proc is None:
+            self.banner.setText(control.text("E_LOCKED", {"lock": str(runs.lock_file(self.path)),
+                                                          "run": holder["run_dir"], "started": holder["started"]}))
+            self.banner.show()
+        else:
+            self.banner.hide()
         if mtime_ns(self.path) != self.mtime:
             self.load()
-        self.cost_button.setEnabled(not self.live)
-        self.run_button.setEnabled(not self.live and self.cost is not None)
+        self.cost_button.setEnabled(not (self.live or held))
+        self.run_button.setEnabled(not (self.live or held) and self.cost is not None)
         self.stop_button.setEnabled(self.live)
 
     def show_event(self, event: dict) -> None:
@@ -203,14 +226,17 @@ class MainWindow(QMainWindow):
         (self.run_dir / "STOP").touch()
 
     def show_project(self, opened: control.Opened) -> None:
-        """A project read: its line (G_PROJECT), or its refusal when there is no project, and its cost. Unless a cost
-        is watched, live or ended, the Cost tab replays the last cost of this model (G_COST_REUSED), or says there is
-        none (G_NO_COST)."""
+        """A project read: its line (G_PROJECT), or its refusal when there is no project, and its cost; while nothing
+        is watched and the project has no lock, its newest run or verify that ended (opened.last) is watched, which
+        replays it. Unless a cost is watched, live or ended, the Cost tab replays the last cost of this model
+        (G_COST_REUSED), or says there is none (G_NO_COST)."""
         p = opened.project
         self.project_status.setText(control.text(*opened.problem) if p is None else render(
             "G_PROJECT", path=str(self.path), f0_mhz=f"{p['f0_hz'] / 1e6:g}", harmonics=p["harmonics"],
             preset=p["preset"]))
         self.cost = opened.cost
+        if self.command is None and opened.last and runs.lock_holder(self.path) is None:
+            self.watch("run", opened.last)
         if self.command == "cost":
             return
         # ponytail: a cost still running when the window opened is not re-attached (cost takes no lock), and a second
@@ -222,3 +248,10 @@ class MainWindow(QMainWindow):
         self.cost_lines.addItems([control.text(e["code"], e["params"])
                                   for e in control.Tail(self.cost / "events.jsonl").read() if e["kind"] != "end"])
         self.cost_status.setText(render("G_COST_REUSED", folder=self.cost.name))
+
+    def closeEvent(self, event: QCloseEvent) -> None:
+        """Closing the window stops its timer and drops the project reads not yet begun; what it started goes on
+        (design 5.1: a run outlives its window, and the next window re-attaches it)."""
+        self.timer.stop()
+        self.pool.shutdown(wait=False, cancel_futures=True)
+        super().closeEvent(event)
