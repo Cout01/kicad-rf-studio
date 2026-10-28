@@ -17,10 +17,10 @@ from kicad_rf_studio import gui, pipeline, runs
 from kicad_rf_studio.cli import main
 from kicad_rf_studio.core.messages import render
 from kicad_rf_studio.core.post.outputs import LIMITS
-from kicad_rf_studio.core.project import load_project, save_project
+from kicad_rf_studio.core.project import board_file, load_project, save_project
 from kicad_rf_studio.gui import control
 from kicad_rf_studio.gui.window import MainWindow
-from test_cli_cost import fail, new_project
+from test_cli_cost import FIX, fail, new_project
 from test_gui_control import FAKE_PREFIX, until
 from test_run import lpf_run
 
@@ -343,3 +343,27 @@ def test_a_single_trace_has_no_what_if_label(window, tmp_path, calibrated):  # d
     assert w.results.what_if.isHidden() and len(fig.axes) == 3
     assert fig.get_suptitle() == render("I_PLOT_TITLE", name="coupon_gcpw_pads")
     assert "openEMS" not in sys.modules and "CSXCAD" not in sys.modules  # this process read and drew it (design 4)
+
+
+def test_an_open_window_reads_its_board_again_when_it_is_saved(window, tmp_path):  # Review Focus 5
+    board = tmp_path / "coupon_gcpw_pads.kicad_pcb"  # final review F3: a copy, which the test re-saves
+    board.write_bytes((FIX / "coupon_gcpw_pads.kicad_pcb").read_bytes())
+    assert main(["new", str(board), "--start", "TP1.1", "--end", "TP2.1", "--f0", "915MHz", "--preset", "draft",
+                 "-o", str(tmp_path / "coupon_gcpw_pads")]) == 0
+    pj = (tmp_path / "coupon_gcpw_pads" / "project.json").resolve()
+    assert main(["run", str(pj)]) == 0
+    w = window()
+    w.open_project(pj)
+    opened(w)
+    assert len(w.results.canvas.figure.axes) == 3
+    saved = board_file(pj, load_project(pj))
+    assert saved == board.resolve()  # the copy under tmp_path, never the repo's fixture
+    saved.write_bytes(saved.read_bytes().replace(b"(width 0.6)", b"(width 0.5)"))  # saved in KiCad, other copper
+    assert control.open_project(pj).problem == ("E_RESULTS_STALE", {})  # the edit changed the model
+    w.tick()
+    assert w.loading is not None  # the save started a read
+    opened(w)
+    w.tick()
+    assert w.loading is None  # read once per save
+    assert w.results.canvas.figure.axes == [] and w.results.problem.text() == render("G_RESULTS_STALE")
+    assert w.cost is None and not w.run_button.isEnabled()

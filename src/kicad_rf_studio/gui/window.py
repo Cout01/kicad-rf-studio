@@ -18,6 +18,7 @@ from matplotlib.figure import Figure
 from kicad_rf_studio import pipeline, runs
 from kicad_rf_studio.core.messages import detail, reason, render
 from kicad_rf_studio.core.post.outputs import LIMITS, draw_summary
+from kicad_rf_studio.core.project import board_file
 from kicad_rf_studio.gui import control
 
 COLUMNS = ("G_COL_PORT", "G_COL_TIME", "G_COL_RESIDUAL", "G_COL_SPEED", "G_COL_VERDICT")
@@ -81,9 +82,10 @@ class MainWindow(QMainWindow):
     Its state: `path`, the resolved project file; `opened`, its last read (control.Opened) and `loading`, the read
     going on (a Future); `cost`, the folder of this model's last cost, which Run… confirms on; the watch: `command`,
     `run_dir`, its events' `tail`, its `end` event and `proc`, only a process this window started; `live`, whether
-    the watched process goes on; `mtime`, project.json's st_mtime_ns at the last read; and `started`, every process
-    this window started, polled every tick, so that none is left a zombie on Linux. Every slot is a bound method: a
-    lambda or partial slot would keep a closed window alive (probed on PySide6 6.12)."""
+    the watched process goes on; `mtime`, project.json's and the board file's st_mtime_ns at the last read (stamp);
+    and `started`, every process this window started, polled every tick, so that none is left a zombie on Linux.
+    Every slot is a bound method: a lambda or partial slot would keep a closed window alive (probed on PySide6
+    6.12)."""
 
     def __init__(self, prefix: list[str] | None = None):
         super().__init__()
@@ -139,10 +141,16 @@ class MainWindow(QMainWindow):
         self.load()
         self.tick()
 
+    def stamp(self) -> tuple[int | None, int | None]:
+        """The st_mtime_ns of project.json and of its board file (mtime_ns), the board's None while the last read has
+        no project."""
+        p = None if self.opened is None else self.opened.project
+        return mtime_ns(self.path), None if p is None else mtime_ns(board_file(self.path, p))
+
     def load(self) -> None:
-        """Reads the project off the GUI thread (control.open_project on the pool, as `loading`), project.json's
-        st_mtime_ns stamped first, so that a save is read once."""
-        self.mtime = mtime_ns(self.path)
+        """Reads the project off the GUI thread (control.open_project on the pool, as `loading`), its stamp taken
+        first, so that a save is read once."""
+        self.mtime = self.stamp()
         self.project_status.setText(render("G_LOADING"))
         self.loading = self.pool.submit(control.open_project, self.path)
 
@@ -151,11 +159,11 @@ class MainWindow(QMainWindow):
         (runs.lock_holder), through which a run this window did not start is attached (below); a project read that
         finished, shown (a display that fails shows E_INTERNAL, and the tick goes on); the watched folder's new events,
         then its state (control.run_state, given that holder); the G_LOCKED banner while another's live run holds the
-        lock and this window watches no process of its own; a read when project.json's st_mtime_ns changed; the
-        buttons: Cost while nothing watched goes on and no run holds the lock, Run… also only with a cost of this
-        model, Stop only while the watch goes on. A holder whose run folder is the project's results/ is a retune
-        (pipeline.retune, r2 §1): waited for, never watched or bannered. Any other holder's run folder, when it names
-        one other than the watched one, is watched when this window's own process was not running at the last tick
+        lock and this window watches no process of its own; a read when the stamp changed (a save of project.json or of
+        the board file); the buttons: Cost while nothing watched goes on and no run holds the lock, Run… also only with
+        a cost of this model, Stop only while the watch goes on. A holder whose run folder is the project's results/ is
+        a retune (pipeline.retune, r2 §1): waited for, never watched or bannered. Any other holder's run folder, when it
+        names one other than the watched one, is watched when this window's own process was not running at the last tick
         (`live`) and the holder lives, or when the holder is dead and nothing is watched (on open), so a cost meanwhile
         keeps its tab."""
         self.started = [p for p in self.started if p.poll() is None]  # poll() reaps one that ended
@@ -174,6 +182,9 @@ class MainWindow(QMainWindow):
             done, self.loading = self.loading, None
             try:
                 self.opened = done.result()
+                if self.mtime[1] is None:  # its board, now known: stamped alone, so a project.json saved since counts
+                    # ponytail: a board saved during that first read is seen at its next save
+                    self.mtime = (self.mtime[0], self.stamp()[1])
                 self.show_project(self.opened)
             except Exception as e:  # a display that fails: this tick goes on, and so do the next ones
                 self.project_status.setText(control.text("E_INTERNAL", {"detail": detail(e)}))
@@ -192,7 +203,7 @@ class MainWindow(QMainWindow):
             self.banner.show()
         else:
             self.banner.hide()
-        if mtime_ns(self.path) != self.mtime:
+        if self.stamp() != self.mtime:
             self.load()
         self.cost_button.setEnabled(not (self.live or held))
         self.run_button.setEnabled(not (self.live or held) and self.cost is not None)

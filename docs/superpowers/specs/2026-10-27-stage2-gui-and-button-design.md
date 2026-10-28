@@ -130,8 +130,10 @@ Stage 1's results shape it:
   - on a worker thread: `new`, loading results, and building the retune session;
   - on the GUI thread: the instant retune's chain update, which takes milliseconds, and the redraws.
 
-**Tailing.** A 500 ms `QTimer` reads `events.jsonl` from a saved byte offset and holds back a partial last line. The same
-tick checks `project.json`'s modification time and the lock. No `QFileSystemWatcher` (r2 §1).
+**Tailing.** A 500 ms `QTimer` reads `events.jsonl` from a saved byte offset and holds back a partial last line. The
+same tick checks the lock and the modification times of `project.json` and of the board file, so that a board saved in
+KiCad is read again (plan 1's final review; controller recommendation, owner unavailable). No `QFileSystemWatcher`
+(r2 §1).
 
 **Re-attach.**
 1. On start, the GUI reads the project's lock, which holds `{pid, run_dir, started}`.
