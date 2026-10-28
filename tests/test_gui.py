@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """The GUI (Stage 2 design 5): its dependency and entry point, the import rules, and the main window offscreen on
 the fake CLI."""
+import gc
 import json
 import os
 import re
@@ -67,11 +68,22 @@ def items(widget):
     return [widget.item(i).text() for i in range(widget.count())]
 
 
+@pytest.fixture(autouse=True)
+def collected():
+    """Each test's garbage collected at its end, on this thread, the GUI's: a window left in a reference cycle (the
+    bound method that monkeypatch's undo sets back on an instance makes one) would otherwise be freed wherever the
+    collector runs next, a window's pool thread included, which deletes Qt widgets off the GUI thread (probed: an abort
+    or an access violation in a later test). Autouse, it is torn down after monkeypatch's undo."""
+    yield
+    gc.collect()
+
+
 @pytest.fixture
 def window(qapp, calibrated, monkeypatch):
     """MainWindow on the fake CLI, shown offscreen, with runs.run_jobs and runs.ensure_calibrated failing in this
     process from the first window on (design 5.1: a test's own engine calls come before it); what it started is
-    killed and its project reads awaited at teardown."""
+    killed, its project reads awaited and the windows dropped at teardown (pytest holds `make` a while longer), so
+    that collected() frees them."""
     monkeypatch.setenv("KRS_FAKE_DATA", str(calibrated))
     made = []
 
@@ -90,6 +102,7 @@ def window(qapp, calibrated, monkeypatch):
                 proc.wait()
         w.close()
         w.pool.shutdown(wait=True)  # a read still going would outlive the fake data folder
+    made.clear()
 
 
 def opened(w):
@@ -416,3 +429,52 @@ def test_an_open_window_reads_its_board_again_after_a_save_that_broke_it(window,
     assert w.project_status.text() == refusal
     w.tick()
     assert w.loading is None
+
+
+def test_new_from_a_board_lists_its_pads_writes_the_project_and_opens_it(window, tmp_path, monkeypatch):
+    board = tmp_path / "lpf915.kicad_pcb"  # design 5.3 Project; a copy, so the default folder is made beside it
+    board.write_bytes((FIX / "lpf915.kicad_pcb").read_bytes())
+    monkeypatch.setattr(QFileDialog, "getOpenFileName", lambda *a, **k: (str(board), ""))
+    w = window()
+    f = w.new_form
+    assert (f.harmonics.value(), f.preset.currentText(), f.stackup.currentData(), f.lid.value(), f.lid.text()) == (
+        3, "normal", None, 0.0, render("G_NONE"))  # new's defaults
+    f.board_button.click()
+    assert f.folder.text() == str(tmp_path / "lpf915")  # the README's `-o lpf915`, beside the board
+    w.pads_read.result(timeout=60)
+    w.tick()  # no project yet: the tick takes the pads all the same
+    assert [f.start.itemText(i) for i in range(f.start.count())] == control.pads(board) and f.start.currentText() == ""
+    grab(w, "new")
+    f.f0.setText("lots")
+    f.create_button.click()
+    assert w.creating is None and f.status.text() == render("E_BAD_FREQUENCY", text="lots")
+    f.f0.setText("915MHz")
+    f.folder.setText("")
+    f.board.editingFinished.emit()  # focus left the board field: the same board, so the folder typed stays
+    f.create_button.click()
+    assert (w.creating, f.folder.text(), f.status.text()) == (None, "", render("G_NEW_NO_FOLDER"))
+    f.folder.setText(str(tmp_path / "lpf915"))
+    f.start.setCurrentText("U1.1")
+    f.end.setCurrentText("J1.1")
+    f.harmonics.setValue(2)
+    f.preset.setCurrentText("draft")
+    f.stackup.setCurrentIndex(f.stackup.findData("jlcpcb-2l"))
+    f.lid.setValue(2.5)
+    f.create_button.click()
+    assert f.status.text() == render("G_CREATING") and not f.create_button.isEnabled()
+    path, notes = w.creating.result(timeout=120)
+    w.tick()
+    pj = tmp_path / "lpf915" / "project.json"
+    d = load_project(pj)
+    assert path == pj and w.path == pj.resolve()
+    assert (d["harmonics"], d["preset"], d["stackup"]["source"], d["lid_height_mm"]) == (2, "draft", "jlcpcb-2l", 2.5)
+    assert items(f.notes) == [control.text(c, p) for c, p in notes] and items(f.notes)[-1] == render("I_WROTE", path=pj)
+    opened(w)
+    assert w.project_status.text() == render("G_PROJECT", path=str(pj.resolve()), f0_mhz="915", harmonics=2,
+                                             preset="draft") and f.create_button.isEnabled()
+    f.create_button.click()  # the same folder again: new refuses, in the window's words
+    w.creating.exception(timeout=120)
+    w.tick()
+    assert f.status.text() == render("G_PROJECT_EXISTS", path=str(pj))
+    assert board.read_bytes() == (FIX / "lpf915.kicad_pcb").read_bytes()  # never written (anti-goal)
+    assert "openEMS" not in sys.modules and "CSXCAD" not in sys.modules  # design 4: new ran in this process

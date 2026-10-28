@@ -1,10 +1,11 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """The GUI's Qt-free logic (Stage 2 design 5.1, 5.3): the detached start, the events tail, re-attach through the lock
-and the end events, the project read off the GUI thread, and the retune session (an update of a project read's chain
-from the parts' rows). Never imports Qt or matplotlib."""
+and the end events, the project read off the GUI thread, the retune session (an update of a project read's chain
+from the parts' rows), and New's pad list. Never imports Qt or matplotlib."""
 import json
 import math
 import os
+import re
 import subprocess
 import sys
 from dataclasses import dataclass, replace
@@ -12,6 +13,7 @@ from functools import partial
 from pathlib import Path
 
 from kicad_rf_studio import pipeline, runs
+from kicad_rf_studio.core.kicad import load_board
 from kicad_rf_studio.core.kicad.values import part_kind, port_value, snap, value_text
 from kicad_rf_studio.core.messages import KrsError, detail, render
 from kicad_rf_studio.core.model import spec
@@ -20,7 +22,10 @@ from kicad_rf_studio.core.project import board_file, load_project, parts
 END = {0: "G_END_DONE", 2: "G_END_REFUSED", 3: "G_END_BLOCKED", 4: "G_END_NOT_KEPT", 130: "G_END_STOPPED"}
 # the CLI's lines that the GUI words its own way, with the same params (design 5.3)
 GUI = {"E_LOCKED": "G_LOCKED", "I_RUN_START": "G_RUN_START", "I_WHAT_IF": "G_WHAT_IF", "E_NO_RESULTS": "G_NO_RESULTS",
-       "E_RESULTS_STALE": "G_RESULTS_STALE"}
+       "E_RESULTS_STALE": "G_RESULTS_STALE", "E_PROJECT_EXISTS": "G_PROJECT_EXISTS", "E_OUTPUT_PATH": "G_OUTPUT_PATH",
+       "E_NO_STACKUP": "G_NO_STACKUP", "E_STACKUP_LAYERS": "G_STACKUP_LAYERS",
+       "W_LID_HEIGHT_MISSING": "G_LID_HEIGHT_MISSING", "I_PART_NO_MODEL": "G_PART_NO_MODEL",
+       "W_NO_REFERENCE": "G_NO_REFERENCE"}
 
 
 def orchestrator() -> list[str]:
@@ -193,8 +198,8 @@ def run_state(run_dir: Path, end: dict | None, holder: dict | None, own: bool,
 
 
 def text(code: str, params: dict) -> str:
-    """The line the GUI shows for the CLI's `code` with `params`: the GUI's own words (GUI) for the five lines whose
-    advice is a terminal's, else the CLI's line."""
+    """The line the GUI shows for the CLI's `code` with `params`: the GUI's own words (GUI) for the lines whose advice
+    is a terminal's, else the CLI's line."""
     return render(GUI.get(code, code), **params)
 
 
@@ -276,3 +281,20 @@ def retuned(path: Path, project: dict, stored: pipeline.ChainResults, rows: list
     except Exception as e:  # E_INTERNAL, as cli.main reports it
         line = ("E_INTERNAL", {"detail": detail(e)})
     return replace(stored, chain=None, ideal=None, p_layout=None, what_if=False, lines=[line])
+
+
+def pads(board: Path) -> list[str]:
+    """New's pad picker (design 5.3): the names REF.PAD of the pads with copper of the board file `board` (load_board,
+    Pad.layers), each once, in natural order (U1.9 before U1.10), file order between names that read alike. Raises
+    load_board's refusals."""
+    # ponytail: every pad with copper, GND's too; new refuses a GND or netless end with its own message
+    names = dict.fromkeys(p.name for p in load_board(board).all_pads() if p.layers)
+    return sorted(names, key=lambda name: [int(t) if t.isdigit() else t for t in re.split(r"(\d+)", name)])
+
+
+def message(error: Exception) -> str:
+    """The window's line for `error`: a KrsError's in the GUI's words (text), any other E_INTERNAL, as cli.main
+    reports it."""
+    if isinstance(error, KrsError):
+        return text(error.code, error.params)
+    return text("E_INTERNAL", {"detail": detail(error)})

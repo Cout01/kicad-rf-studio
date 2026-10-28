@@ -3,6 +3,8 @@
 lock and the end events, the project read off the GUI thread, and the retune session. Detached runs go through
 tests/fake_cli.py."""
 import json
+import re
+import string
 import subprocess
 import sys
 import time
@@ -16,13 +18,13 @@ import skrf as rf
 
 from kicad_rf_studio import pipeline, runs
 from kicad_rf_studio.cli import main
-from kicad_rf_studio.core.messages import render
+from kicad_rf_studio.core.messages import CATALOG, KrsError, render
 from kicad_rf_studio.core.model.spec import spec_hash
 from kicad_rf_studio.core.post.waves import grid
 from kicad_rf_studio.core.project import board_file, load_project, parts, save_project
 from kicad_rf_studio.gui import control
 from networks import star, terminate_np
-from test_cli_cost import new_project
+from test_cli_cost import FIX, new_project
 from test_post_chain import M0402, lpf
 from test_run import lpf_loads, lpf_run
 
@@ -150,6 +152,29 @@ def test_the_gui_words_the_cli_advice_its_own_way():  # design 5.3, 5.7
     held = {"lock": "L", "run": "R", "started": "S"}
     assert control.text("E_LOCKED", held) == render("G_LOCKED", **held)
     assert control.text("I_GATES_PASSED", {"dt": "1"}) == render("I_GATES_PASSED", dt="1")
+
+
+def test_the_pad_picker_lists_each_pad_with_copper_once_in_natural_order():  # design 5.3 Project
+    assert control.pads(FIX / "coupon_gcpw_pads.kicad_pcb") == ["TP1.1", "TP2.1"]
+    names = control.pads(FIX / "lpf915.kicad_pcb")
+    assert len(names) == 36 and names[:4] == ["C1.1", "C1.2", "C2.1", "C2.2"] and names[-9:-7] == ["U1.9", "U1.10"]
+    assert control.pads(FIX / "coupon_ms.kicad_pcb") == []  # a pad-less coupon
+    with pytest.raises(KrsError) as e:
+        control.pads(FIX / "nope.kicad_pcb")
+    assert (e.value.code, e.value.params["reason"]) == ("E_BOARD_UNREADABLE", "file not found")
+
+
+def test_every_gui_wording_keeps_its_cli_params_and_drops_terminal_syntax():  # design 5.3, 5.7
+    def fields(code):
+        return {name for _, name, _, _ in string.Formatter().parse(CATALOG[code]) if name}
+
+    for cli_code, gui_code in control.GUI.items():  # later tasks' entries too
+        assert fields(gui_code) <= fields(cli_code), gui_code  # rendered with the CLI line's own params
+        assert not re.search(r"`|--[a-z]|-o |PROJECT", CATALOG[gui_code]), gui_code
+    assert control.text("E_PROJECT_EXISTS", {"path": "P"}) == render("G_PROJECT_EXISTS", path="P")
+    assert control.message(KrsError("E_NO_STACKUP")) == render("G_NO_STACKUP")
+    assert control.message(ZeroDivisionError("division by zero")) == render(
+        "E_INTERNAL", detail="ZeroDivisionError: division by zero")
 
 
 def test_open_project_reads_results_only_while_they_apply(tmp_path, calibrated, monkeypatch):  # Review Focus 1, 5

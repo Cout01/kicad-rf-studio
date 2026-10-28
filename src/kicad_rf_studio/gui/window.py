@@ -1,23 +1,28 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
-"""The main window (Stage 2 design 5.1, 5.3, 5.4): it opens a project, shows its cost, starts, follows and stops a run,
-its own or one it re-attaches through the project lock, replays the project's last run and shows its results
-(ResultsView), driven by one 500 ms timer (`tick`). The project is read on a pool thread (control.open_project); cost
-and run start as a detached orchestrator (control.start), so this process never reaches runs.run_jobs."""
+"""The main window (Stage 2 design 5.1, 5.3, 5.4): it creates a project from a board (NewForm) or opens one, shows its
+cost, starts, follows and stops a run, its own or one it re-attaches through the project lock, replays the project's
+last run and shows its results (ResultsView), driven by one 500 ms timer (`tick`). The project is read, a board's pads
+listed and new run on a pool thread (control.open_project, control.pads, cli.new); cost and run start as a detached
+orchestrator (control.start), so this process never reaches runs.run_jobs."""
 import subprocess
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import Future, ThreadPoolExecutor
 from pathlib import Path
 
-from PySide6.QtCore import Qt, QTimer
+from PySide6.QtCore import QLocale, Qt, QTimer
 from PySide6.QtGui import QCloseEvent
-from PySide6.QtWidgets import (QFileDialog, QLabel, QListWidget, QMainWindow, QMessageBox, QPushButton, QTableWidget,
+from PySide6.QtWidgets import (QComboBox, QDoubleSpinBox, QFileDialog, QFormLayout, QGroupBox, QHBoxLayout, QLabel,
+                               QLineEdit, QListWidget, QMainWindow, QMessageBox, QPushButton, QSpinBox, QTableWidget,
                                QTableWidgetItem, QTabWidget, QVBoxLayout, QWidget)
 # after PySide6: matplotlib's Qt backend then wraps the binding already loaded, never another one installed beside it
 from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg
 from matplotlib.figure import Figure
 
-from kicad_rf_studio import pipeline, runs
-from kicad_rf_studio.core.messages import detail, reason, render
+from kicad_rf_studio import cli, pipeline, runs
+from kicad_rf_studio.core.kicad.stackup import PRESETS as STACKUPS
+from kicad_rf_studio.core.kicad.values import parse_frequency
+from kicad_rf_studio.core.messages import KrsError, detail, reason, render
 from kicad_rf_studio.core.post.outputs import LIMITS, draw_summary
+from kicad_rf_studio.core.project import DEFAULT_PRESET, HARMONICS
 from kicad_rf_studio.gui import control
 
 COLUMNS = ("G_COL_PORT", "G_COL_TIME", "G_COL_RESIDUAL", "G_COL_SPEED", "G_COL_VERDICT")
@@ -39,6 +44,14 @@ def page(*widgets: QWidget) -> QWidget:
     for widget in widgets:
         layout.addWidget(widget)
     return holder
+
+
+def beside(*widgets: QWidget) -> QHBoxLayout:
+    """A form's field: `widgets` in a row."""
+    layout = QHBoxLayout()
+    for widget in widgets:
+        layout.addWidget(widget)
+    return layout
 
 
 class ResultsView(QWidget):
@@ -76,13 +89,47 @@ class ResultsView(QWidget):
         self.canvas.draw_idle()
 
 
+class NewForm(QGroupBox):
+    """New from a board (Stage 2 design 5.3): the board and the project folder, each with its Browse…; the start and
+    end pads, picked from the board's pads or typed; f0; new's options at new's defaults (the board's own stackup, and
+    a lid height of 0 for none); Create, its status line and new's notes. `chosen` is the board text whose pads were
+    last read."""
+
+    def __init__(self):
+        super().__init__(render("G_NEW"))
+        self.board, self.board_button = QLineEdit(), QPushButton(render("G_BROWSE"))
+        self.start, self.end, self.f0 = QComboBox(editable=True), QComboBox(editable=True), QLineEdit()
+        self.harmonics = QSpinBox(minimum=1, maximum=99, value=HARMONICS)
+        self.preset, self.stackup = QComboBox(), QComboBox()
+        self.preset.addItems(cli.PRESETS)
+        self.preset.setCurrentText(DEFAULT_PRESET)
+        self.stackup.addItem(render("G_STACKUP_BOARD"), None)
+        for name in STACKUPS:
+            self.stackup.addItem(name, name)
+        # the C locale: project.json and the CLI write 2.5, and the system's locale may show 2,50
+        self.lid = QDoubleSpinBox(maximum=100, decimals=2, locale=QLocale.c(), specialValueText=render("G_NONE"))
+        self.folder, self.folder_button = QLineEdit(), QPushButton(render("G_BROWSE"))
+        self.create_button, self.status, self.notes = QPushButton(render("G_CREATE")), QLabel(), QListWidget()
+        self.status.setWordWrap(True)  # a refusal names a path, which would otherwise widen the window
+        self.chosen = ""
+        form = QFormLayout(self)
+        for code, field in (("G_NEW_BOARD", beside(self.board, self.board_button)), ("G_NEW_START", self.start),
+                            ("G_NEW_END", self.end), ("G_NEW_F0", self.f0), ("G_NEW_HARMONICS", self.harmonics),
+                            ("G_NEW_PRESET", self.preset), ("G_NEW_STACKUP", self.stackup), ("G_NEW_LID", self.lid),
+                            ("G_NEW_FOLDER", beside(self.folder, self.folder_button))):
+            form.addRow(render(code), field)
+        for widget in (self.create_button, self.status, self.notes):
+            form.addRow(widget)
+
+
 class MainWindow(QMainWindow):
     """The main window; `prefix` is the command that starts the orchestrator (control.orchestrator() by default).
     Its state: `path`, the resolved project file; `opened`, its last read (control.Opened) and `loading`, the read
     going on (a Future); `cost`, the folder of this model's last cost, which Run… confirms on; the watch: `command`,
     `run_dir`, its events' `tail`, its `end` event and `proc`, only a process this window started; `live`, whether
     the watched process goes on; `mtime`, project.json's and the board file's st_mtime_ns at the last read (stamp);
-    and `started`, every process this window started, polled every tick, so that none is left a zombie on Linux.
+    `started`, every process this window started, polled every tick, so that none is left a zombie on Linux; and the
+    New form's work going on (Futures): `pads_read`, the chosen board's pads, and `creating`, new.
     Every slot is a bound method: a lambda or partial slot would keep a closed window alive (probed on PySide6
     6.12)."""
 
@@ -91,11 +138,11 @@ class MainWindow(QMainWindow):
         self.setWindowTitle(render("G_APP"))
         self.resize(1200, 800)
         self.prefix = prefix or control.orchestrator()
-        self.path = self.opened = self.loading = self.cost = self.mtime = None
+        self.path = self.opened = self.loading = self.cost = self.mtime = self.pads_read = self.creating = None
         self.command = self.run_dir = self.tail = self.end = self.proc = None
         self.live, self.started = False, []
         self.pool = ThreadPoolExecutor(1)
-        self.open_button, self.project_status = QPushButton(render("G_OPEN")), QLabel()
+        self.open_button, self.project_status, self.new_form = QPushButton(render("G_OPEN")), QLabel(), NewForm()
         self.cost_lines, self.cost_status = QListWidget(), QLabel()
         self.cost_button, self.run_button = QPushButton(render("G_COST")), QPushButton(render("G_RUN"))
         self.banner, self.jobs, self.log = QLabel(), QTableWidget(0, len(COLUMNS)), QListWidget()
@@ -107,16 +154,20 @@ class MainWindow(QMainWindow):
         self.jobs.setHorizontalHeaderLabels([render(code) for code in COLUMNS])
         self.jobs.horizontalHeader().setStretchLastSection(True)  # the verdict, the longest cell
         self.tabs = QTabWidget()
-        for code, widgets in (("G_TAB_PROJECT", (self.open_button, self.project_status)),
+        for code, widgets in (("G_TAB_PROJECT", (self.open_button, self.project_status, self.new_form)),
                               ("G_TAB_COST", (self.cost_lines, self.cost_status, self.cost_button, self.run_button)),
                               ("G_TAB_RUN", (self.banner, self.jobs, self.log, self.run_status, self.stop_button))):
             self.tabs.addTab(page(*widgets), render(code))
         self.results = ResultsView()
         self.tabs.addTab(self.results, render("G_TAB_RESULTS"))
         self.setCentralWidget(self.tabs)
+        form = self.new_form
         for button, slot in ((self.open_button, self.browse), (self.cost_button, self.estimate),
-                             (self.run_button, self.run), (self.stop_button, self.stop)):
+                             (self.run_button, self.run), (self.stop_button, self.stop),
+                             (form.board_button, self.pick_board), (form.folder_button, self.pick_folder),
+                             (form.create_button, self.create_project)):
             button.clicked.connect(slot)
+        form.board.editingFinished.connect(self.board_chosen)
         for button in (self.cost_button, self.run_button, self.stop_button):  # no project yet
             button.setEnabled(False)
         self.timer = QTimer(self)
@@ -165,8 +216,15 @@ class MainWindow(QMainWindow):
         a retune (pipeline.retune, r2 §1): waited for, never watched or bannered. Any other holder's run folder, when it
         names one other than the watched one, is watched when this window's own process was not running at the last tick
         (`live`) and the holder lives, or when the holder is dead and nothing is watched (on open), so a cost meanwhile
-        keeps its tab."""
+        keeps its tab. Before all that, with or without a project, New's pad list and new itself when done (show_pads,
+        created, which opens the project new wrote, whose own tick runs inside this one)."""
         self.started = [p for p in self.started if p.poll() is None]  # poll() reaps one that ended
+        if self.pads_read is not None and self.pads_read.done():
+            done, self.pads_read = self.pads_read, None
+            self.show_pads(done)
+        if self.creating is not None and self.creating.done():
+            done, self.creating = self.creating, None
+            self.created(done)
         if self.path is None:
             return
         holder = runs.lock_holder(self.path)
@@ -304,9 +362,83 @@ class MainWindow(QMainWindow):
                 self.cost_status.setText(render("G_COST_REUSED", folder=self.cost.name))
         self.results.display(opened, self.path.parent.name)
 
+    def pick_board(self) -> None:
+        """New's board Browse…: the board file picked in the dialog, then board_chosen(); nothing on Cancel."""
+        name, _ = QFileDialog.getOpenFileName(self, render("G_NEW_BOARD"), "", render("G_BOARD_FILTER"))
+        if name:
+            self.new_form.board.setText(name)
+            self.board_chosen()
+
+    def board_chosen(self) -> None:
+        """A board picked, or typed and left (the board field's editingFinished): for a board text, stripped, that is
+        not the one whose pads were last read (`chosen`), the project folder beside it, named after it (the README's
+        `-o lpf915`), and its pads read on the pool (`pads_read`). The same board again keeps a folder the user
+        typed."""
+        f = self.new_form
+        text = f.board.text().strip()
+        if text and text != f.chosen:
+            f.chosen = text
+            f.folder.setText(str(Path(text).with_suffix("")))
+            self.pads_read = self.pool.submit(control.pads, Path(text))
+
+    def pick_folder(self) -> None:
+        """New's project folder Browse…: the folder picked in the dialog; nothing on Cancel."""
+        name = QFileDialog.getExistingDirectory(self, render("G_NEW_FOLDER"))
+        if name:
+            self.new_form.folder.setText(name)
+
+    def create_project(self) -> None:
+        """Create the project: f0 read here, on the GUI thread, then new on the pool with the form's fields
+        (`creating`), the status line saying so and Create disabled until it ends (created). A frequency that does not
+        read, or no project folder (new's own default, the working folder, means nothing to a GUI), goes to the status
+        line, and nothing starts."""
+        f = self.new_form
+        try:
+            f0 = parse_frequency(f.f0.text())
+        except KrsError as e:
+            f.status.setText(control.message(e))
+            return
+        if not f.folder.text().strip():
+            f.status.setText(render("G_NEW_NO_FOLDER"))
+            return
+        f.status.setText(render("G_CREATING"))
+        f.create_button.setEnabled(False)
+        self.creating = self.pool.submit(
+            cli.new, f.board.text(), f.start.currentText().strip(), f.end.currentText().strip(), f0,
+            harmonics=f.harmonics.value(), preset=f.preset.currentText(), stackup=f.stackup.currentData(),
+            lid_height=f.lid.value() or None, output=f.folder.text())  # a lid height of 0: none, new's default
+
+    def show_pads(self, done: Future) -> None:
+        """The board's pads (`done`, control.pads) in the start and end pickers, none picked for the user; on a
+        refusal (load_board's, else E_INTERNAL), the pickers left empty and the refusal in the status line. The
+        exception is taken, never raised again: its traceback would then hold this frame, and so the window, in a
+        cycle with the Future that only the garbage collector frees, maybe on a pool thread (probed)."""
+        f, error = self.new_form, done.exception()
+        if error is not None:
+            f.status.setText(control.message(error))
+        for box in (f.start, f.end):
+            box.clear()
+            box.addItems([] if error is not None else done.result())
+            box.setCurrentIndex(-1)
+
+    def created(self, done: Future) -> None:
+        """new's end (`done`): Create enabled again; on success the status line cleared, new's notes listed in the
+        window's words and the project it wrote opened; on a refusal (new's, else E_INTERNAL), the refusal in the
+        status line, the exception taken as show_pads takes it."""
+        f, error = self.new_form, done.exception()
+        f.create_button.setEnabled(True)
+        if error is not None:
+            f.status.setText(control.message(error))
+            return
+        path, notes = done.result()
+        f.status.clear()
+        f.notes.clear()
+        f.notes.addItems([control.text(code, params) for code, params in notes])
+        self.open_project(path)
+
     def closeEvent(self, event: QCloseEvent) -> None:
-        """Closing the window stops its timer and drops the project reads not yet begun; what it started goes on
-        (design 5.1: a run outlives its window, and the next window re-attaches it)."""
+        """Closing the window stops its timer and drops the pool's work not yet begun (project reads, a pad list, a
+        New); what it started goes on (design 5.1: a run outlives its window, and the next window re-attaches it)."""
         self.timer.stop()
         self.pool.shutdown(wait=False, cancel_futures=True)
         super().closeEvent(event)
