@@ -317,6 +317,11 @@ CATALOG: dict[str, str] = {
     "G_SWAP": "Swap start and end",
     "G_HANDOFF_UNSAVED": "{board} as saved lacks a pad or a part selected in KiCad, which holds edits not yet saved: save the board in KiCad and press the button again.",
     "G_HANDOFF_PADS": "{count} pads are selected in KiCad. Select only the chain's two end pads and press the button again, or pick start and end here.",
+    "G_REFILL": "Refill zones and save in KiCad",
+    "G_REFILL_CONFIRM": "Refill every zone of {board} in KiCad, then save the board there? The save also writes every edit not yet saved in KiCad.",
+    "G_REFILLING": "KiCad is refilling the zones and saving the board…",
+    "G_REFILLED": "KiCad refilled the zones and saved {board}.",
+    "E_KICAD_OTHER_BOARD": "KiCad has {open} open, not {board}, so nothing was refilled or saved. Open {board} in KiCad and press the kicad-rf-studio button again.",
 }
 
 _translation = gettext.translation(

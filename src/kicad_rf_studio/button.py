@@ -1,8 +1,8 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """The KiCad toolbar button (Stage 2 design 5.5): the helper KiCad's exec action runs (main), which reads the board and
-the selection through kicad-python and hands them to the GUI, and its installer (install), which writes the exec
-plugin into KiCad's plugin folders. Qt-free; kicad-python is imported only inside the functions that call KiCad, so
-importing this module loads none."""
+the selection through kicad-python and hands them to the GUI; the GUI's Refill zones and save in KiCad (refill); and
+its installer (install), which writes the exec plugin into KiCad's plugin folders. Qt-free; kicad-python is imported
+only inside the functions that call KiCad, so importing this module loads none."""
 import contextlib
 import ctypes
 import json
@@ -123,6 +123,38 @@ def start_gui(command: list[str], folder: Path) -> subprocess.Popen:
     with open(folder / "gui.log", "ab") as log:
         return subprocess.Popen(command, cwd=folder, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=log,
                                 **detach)
+
+
+FILL_WAIT_S = 120.0  # Refill's wait for KiCad's fill and save, and its client's timeout
+
+
+def refill(socket: str, token: str, board: Path) -> Path:
+    """Refill zones and save in KiCad (design 5.5 Refill), the GUI's only way to save the board (design 7): in the
+    KiCad at `socket` with `token`, every zone of `board` refilled, then the board saved; returns `board`. The board
+    KiCad's PCB editor has open is read first, within BUSY_S on AS_BUSY: E_KICAD_UNSUPPORTED there (AS_UNHANDLED: the
+    PCB editor was closed since the press, so no handler answers) is E_KICAD_NO_BOARD, and a board other than `board`
+    E_KICAD_OTHER_BOARD, with nothing sent further. Not refill_zones(block=True): in kipy 0.8.0 that polls forever
+    while KiCad answers AS_BUSY (its counter never grows) and raises on a timed-out Ping (it catches IOError, which
+    kipy's ConnectionError is not). KiCad only queues the fill, and answers from its main thread, which the fill holds:
+    the save, BUSY_WAIT_S later, is asked again while KiCad answers AS_BUSY and waited for while it holds the fill, for
+    up to FILL_WAIT_S, on a client whose timeout is FILL_WAIT_S, as the helper's 1 s would read a large board's save
+    as an unreachable KiCad. Raises the errors of _call and _board_path too."""
+    # ponytail: a fill or a save longer than FILL_WAIT_S, or a KiCad closed mid-refill, ends in E_KICAD_UNREACHABLE
+    # after up to FILL_WAIT_S; each refill's kipy client is closed by the garbage collector
+    kicad = _kicad(socket, token, int(FILL_WAIT_S * 1000))
+    until = time.monotonic() + BUSY_S
+    try:
+        pcb = _call(kicad.get_board, until)
+    except KrsError as e:
+        if e.code == "E_KICAD_UNSUPPORTED":
+            raise KrsError("E_KICAD_NO_BOARD") from None
+        raise
+    if (path := _board_path(pcb)) != board:
+        raise KrsError("E_KICAD_OTHER_BOARD", board=str(board), open=str(path))
+    _call(lambda: pcb.refill_zones(block=False), until)
+    time.sleep(BUSY_WAIT_S)  # KiCad only queues the fill
+    _call(pcb.save, time.monotonic() + FILL_WAIT_S)
+    return board
 
 
 def main() -> int:

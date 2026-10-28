@@ -1,7 +1,7 @@
 # kicad-rf-studio — Stage 1 design: a validated simulation engine
 
 - **Date:** 2026-10-16
-- **Status:** design approved section by section in conversation, revised on 2026-10-19 after an independent review, and approved by the owner. On 2026-10-21 the owner confirmed one amendment to §5.4: the substrate height now counts in the cell size. On 2026-10-22, plan 5 amended §1.1, §7.6, §9.1, §9.2 and §9.6 (A-1 to A-4) as controller recommendations while the owner was unavailable; the owner reviews them. On 2026-10-24, D-45's fix amended §5.6 (A-6) and §7.6 (A-7) the same way. On 2026-10-25, P0-B's TX-side outcome amended §1.1 and §12 (A-5) the same way. On 2026-10-26, plan 6's mesh-rule calibration amended §5.4 and §12 (A-8) the same way. On 2026-10-27, Stage 2's plan 1 amended §3.2, §3.3, §3.4 and §6.1 (A-13 to A-15) the same way. On 2026-10-28, Stage 2's plan 3 amended §3.2 and §3.4 (A-16 and A-17) the same way.
+- **Status:** design approved section by section in conversation, revised on 2026-10-19 after an independent review, and approved by the owner. On 2026-10-21 the owner confirmed one amendment to §5.4: the substrate height now counts in the cell size. On 2026-10-22, plan 5 amended §1.1, §7.6, §9.1, §9.2 and §9.6 (A-1 to A-4) as controller recommendations while the owner was unavailable; the owner reviews them. On 2026-10-24, D-45's fix amended §5.6 (A-6) and §7.6 (A-7) the same way. On 2026-10-25, P0-B's TX-side outcome amended §1.1 and §12 (A-5) the same way. On 2026-10-26, plan 6's mesh-rule calibration amended §5.4 and §12 (A-8) the same way. On 2026-10-27, Stage 2's plan 1 amended §3.2, §3.3, §3.4 and §6.1 (A-13 to A-15) the same way. On 2026-10-28, Stage 2's plan 3 amended §3.2, §3.4, §4.3 and §10 (A-16 to A-18) the same way.
 - **Scope:** Stage 1 of the project: the headless engine, the command-line orchestrator and the validation gates. The GUI and the KiCad toolbar button (Stage 2) get their own spec, written with Stage 1's results.
 
 ---
@@ -200,7 +200,7 @@ From each pad's mask expansion, the board's `pad_to_mask_clearance`, the F.Mask/
 - **Default:** the fills are used as saved.
   - A zone with no fill raises a warning.
   - A banner says: "Fills as saved — refill (B) in KiCad and save if you changed copper."
-- **Live refill** through kicad-python is Stage 2.
+- **Live refill** is the KiCad button's action "Refill zones and save in KiCad" (Stage 2): after a confirmation, since the save also writes every unsaved edit, it refills every zone and saves the board through kicad-python, and the board is read again. (A-18, Stage 2 plan 3: controller recommendation, owner unavailable.)
 - The product contains no pcbnew/SWIG code.
 
 ### 4.4 Stackup
@@ -627,7 +627,7 @@ These are not in Stage 1 or v1:
 - complex targets at IC pins, unless the TX side joins v1 (§7.7);
 - automatic matching of vendor S2P files by MPN or value;
 - an RF switch inside the chain (in Stage 1 a switch is always a chain end);
-- zone refill through `kicad-cli` (Stage 1 shows the banner);
+- zone refill through `kicad-cli`: the KiCad button's "Refill zones and save in KiCad" action (§4.3) takes its place (Stage 1 shows the banner); (A-18, Stage 2 plan 3: controller recommendation, owner unavailable.)
 - live attach to Flatpak KiCad (Flatpak users import the file);
 - a weekly canary build against openEMS master;
 - 3-port switch-state assembly;

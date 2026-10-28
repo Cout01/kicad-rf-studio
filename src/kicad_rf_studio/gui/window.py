@@ -4,9 +4,10 @@ cost, starts, follows and stops a run, its own or one it re-attaches through the
 last run and shows its results, which its parts' rows retune in this process (ResultsView), Apply stores through the
 CLI's retune and Verify checks; Advanced edits project.json's fields and saves them under the project lock
 (AdvancedView); all driven by one 500 ms timer (`tick`). The project is read, a board's pads listed, a KiCad button
-press read, new run and retune waited for on a pool thread (control.open_project, control.pads, control.handed, cli.new,
-control.apply); cost, run and verify start as a detached orchestrator (control.start), so this process never reaches
-runs.run_jobs. Its Help menu shows About (control.about) and Qt's About."""
+press read, the board refilled and saved in KiCad, new run and retune waited for on a pool thread (control.open_project,
+control.pads, control.handed, button.refill, cli.new, control.apply); cost, run and verify start as a detached
+orchestrator (control.start), so this process never reaches runs.run_jobs. Its Help menu shows About (control.about)
+and Qt's About."""
 import json
 import subprocess
 from concurrent.futures import Future, ThreadPoolExecutor
@@ -23,7 +24,7 @@ from PySide6.QtWidgets import (QAbstractScrollArea, QComboBox, QDoubleSpinBox, Q
 from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg
 from matplotlib.figure import Figure
 
-from kicad_rf_studio import cli, pipeline, runs
+from kicad_rf_studio import button, cli, pipeline, runs
 from kicad_rf_studio.core.kicad.stackup import PRESETS as STACKUPS
 from kicad_rf_studio.core.kicad.values import parse_frequency
 from kicad_rf_studio.core.messages import KrsError, detail, reason, render
@@ -260,14 +261,17 @@ class ResultsView(QWidget):
 
 
 class NewForm(QGroupBox):
-    """New from a board (Stage 2 design 5.3, 5.5): the board and the project folder, each with its Browse…; the start
-    and end pads, picked from the board's pads or typed, and Swap beside the end; f0; new's options at new's defaults
-    (the board's own stackup, and a lid height of 0 for none); Create, its status line and new's notes. `chosen` is the
+    """New from a board (Stage 2 design 5.3, 5.5): the board and the project folder, each with its Browse…, and Refill
+    zones and save in KiCad after the board's (`refill_button`, disabled until the window enables it); the start and
+    end pads, picked from the board's pads or typed, and Swap beside the end; f0; new's options at new's defaults (the
+    board's own stackup, and a lid height of 0 for none); Create, its status line and new's notes. `chosen` is the
     board text whose pads were last read."""
 
     def __init__(self):
         super().__init__(render("G_NEW"))
         self.board, self.board_button = QLineEdit(), QPushButton(render("G_BROWSE"))
+        self.refill_button = QPushButton(render("G_REFILL"))
+        self.refill_button.setEnabled(False)  # until a press gives a KiCad to ask
         self.start, self.end, self.f0 = QComboBox(editable=True), QComboBox(editable=True), QLineEdit()
         self.swap_button = QPushButton(render("G_SWAP"))
         self.harmonics = QSpinBox(minimum=1, maximum=99, value=HARMONICS)
@@ -285,7 +289,8 @@ class NewForm(QGroupBox):
         self.chosen = ""
         form, end_row = QFormLayout(self), beside(self.end, self.swap_button)
         end_row.setStretch(0, 1)  # the end picker takes the row's width, as the start one does, and Swap keeps its own
-        for code, field in (("G_NEW_BOARD", beside(self.board, self.board_button)), ("G_NEW_START", self.start),
+        for code, field in (("G_NEW_BOARD", beside(self.board, self.board_button, self.refill_button)),
+                            ("G_NEW_START", self.start),
                             ("G_NEW_END", end_row), ("G_NEW_F0", self.f0), ("G_NEW_HARMONICS", self.harmonics),
                             ("G_NEW_PRESET", self.preset), ("G_NEW_STACKUP", self.stackup), ("G_NEW_LID", self.lid),
                             ("G_NEW_FOLDER", beside(self.folder, self.folder_button))):
@@ -358,9 +363,10 @@ class MainWindow(QMainWindow):
     file's st_mtime_ns at the last read (stamp); `started`, every process this window started, polled every tick, so
     that none is left a zombie on Linux; the New form's work going on (Futures): `pads_read`, the chosen board's
     pads, or a press (take_handoff), and `creating`, new; and the KiCad button's presses: `handoff`, the handoff file of
-    the last press taken, and `handed`, the last press shown (control.Handed), each None before the first; one window
-    per user (gui.main, serve): `server`, the local server that takes a second start's request, and `lock`, gui.lock,
-    both None in a window main did not make.
+    the last press taken, and `handed`, the last press shown (control.Handed), each None before the first, and
+    `refilling`, Refill's refill and save in KiCad going on (a Future); one window per user (gui.main, serve):
+    `server`, the local server that takes a second start's request, and `lock`, gui.lock, both None in a window main
+    did not make.
     Every slot is a bound method: a lambda or partial slot would keep a closed window alive (probed on PySide6
     6.12)."""
 
@@ -370,7 +376,7 @@ class MainWindow(QMainWindow):
         self.resize(1200, 800)
         self.prefix = prefix or control.orchestrator()
         self.path = self.opened = self.loading = self.applying = self.cost = self.mtime = None
-        self.pads_read = self.creating = self.handoff = self.handed = self.server = self.lock = None
+        self.pads_read = self.creating = self.handoff = self.handed = self.refilling = self.server = self.lock = None
         self.command = self.run_dir = self.tail = self.end = self.proc = None
         self.live, self.started, self.verify_next = False, [], False
         self.pool = ThreadPoolExecutor(1)
@@ -400,18 +406,19 @@ class MainWindow(QMainWindow):
         self.about_action.triggered.connect(self.about)
         self.about_qt_action.triggered.connect(self.about_qt)
         form = self.new_form
-        for button, slot in ((self.open_button, self.browse), (self.cost_button, self.estimate),
+        for widget, slot in ((self.open_button, self.browse), (self.cost_button, self.estimate),
                              (self.run_button, self.run), (self.stop_button, self.stop),
-                             (form.board_button, self.pick_board), (form.folder_button, self.pick_folder),
+                             (form.board_button, self.pick_board), (form.refill_button, self.refill),
+                             (form.folder_button, self.pick_folder),
                              (form.create_button, self.create_project), (self.results.revert_button, self.revert),
                              (self.results.apply_button, self.apply), (self.results.verify_button, self.verify),
                              (self.advanced.save_button, self.save)):
-            button.clicked.connect(slot)
+            widget.clicked.connect(slot)
         self.results.edited.connect(self.retune)
         form.board.editingFinished.connect(self.board_chosen)
-        for button in (self.cost_button, self.run_button, self.stop_button, self.results.apply_button,
+        for widget in (self.cost_button, self.run_button, self.stop_button, self.results.apply_button,
                        self.results.verify_button):  # no project
-            button.setEnabled(False)
+            widget.setEnabled(False)
         self.timer = QTimer(self)
         self.timer.timeout.connect(self.tick)
         self.timer.start(500)
@@ -471,8 +478,9 @@ class MainWindow(QMainWindow):
         bannered. Any other holder's run folder, when it names one other than the watched one, is watched when this
         window's own process was not running at the last tick (`live`) and the holder lives, or when the holder is dead
         and nothing is watched (on open), so a cost meanwhile keeps its tab. Before all that, with or without a
-        project, New's pad list and new itself when done (show_pads, created, which opens the project new wrote, whose
-        own tick runs inside this one)."""
+        project, New's pad list, new itself and Refill when done (show_pads; created, which opens the project new
+        wrote, whose own tick runs inside this one; refilled), then Refill enabled while a press gave a KiCad to ask
+        (`handed`) and no refill goes on."""
         self.started = [p for p in self.started if p.poll() is None]  # poll() reaps one that ended
         if self.pads_read is not None and self.pads_read.done():
             done, self.pads_read = self.pads_read, None
@@ -480,6 +488,10 @@ class MainWindow(QMainWindow):
         if self.creating is not None and self.creating.done():
             done, self.creating = self.creating, None
             self.created(done)
+        if self.refilling is not None and self.refilling.done():
+            done, self.refilling = self.refilling, None
+            self.refilled(done)
+        self.new_form.refill_button.setEnabled(self.handed is not None and self.refilling is None)
         if self.path is None:
             return
         holder = runs.lock_holder(self.path)
@@ -534,8 +546,8 @@ class MainWindow(QMainWindow):
         self.stop_button.setEnabled(self.live)
         self.results.retune_box.setEnabled(idle)  # r2: the last read's layout may be a gone model's
         ready = idle and not (self.live or held) and self.opened is not None and self.opened.results is not None
-        for button in (self.results.apply_button, self.results.verify_button):
-            button.setEnabled(ready)
+        for widget in (self.results.apply_button, self.results.verify_button):
+            widget.setEnabled(ready)
         self.advanced.table.setEnabled(not held)
         self.advanced.save_button.setEnabled(idle and not held and bool(self.advanced.edits))
 
@@ -606,9 +618,10 @@ class MainWindow(QMainWindow):
         if self.ask("\n".join([render("G_CONFIRM_RUN"), "", *lines])):
             self.start("run")
 
-    def ask(self, text: str) -> bool:
-        """Whether the user answers Yes to `text`; tests replace it on the instance (a modal dialog would block)."""
-        return QMessageBox.question(self, render("G_CONFIRM_TITLE"), text) == QMessageBox.StandardButton.Yes
+    def ask(self, text: str, title: str = "G_CONFIRM_TITLE") -> bool:
+        """Whether the user answers Yes to `text`, in a box titled with `title`'s text; tests replace it on the
+        instance, or QMessageBox.question so that it runs (a modal dialog would block)."""
+        return QMessageBox.question(self, render(title), text) == QMessageBox.StandardButton.Yes
 
     def stop(self) -> None:
         """Stop: an empty STOP file in the watched run folder, which stops the run as Ctrl+C does."""
@@ -755,12 +768,14 @@ class MainWindow(QMainWindow):
 
     def take_handoff(self, path: Path) -> None:
         """A press of the KiCad button, in the handoff file `path` (design 5.3, 5.5): kept as `handoff`, the Project
-        tab shown and New's status line cleared, then the press read on the pool (control.handed) as New's read,
-        `pads_read`, which show_pads shows. It replaces a read in flight, so a slower read of another board never
-        overwrites it, and a board picked after the press wins over it."""
+        tab shown and New's status line cleared, unless a refill goes on (`refilling`), whose G_REFILLING stays; then
+        the press read on the pool (control.handed) as New's read, `pads_read`, which show_pads shows. It replaces a
+        read in flight, so a slower read of another board never overwrites it, and a board picked after the press wins
+        over it."""
         self.handoff = path
         self.tabs.setCurrentIndex(0)  # the Project tab, New's
-        self.new_form.status.clear()
+        if self.refilling is None:
+            self.new_form.status.clear()
         self.pads_read = self.pool.submit(control.handed, path)
 
     def pick_folder(self) -> None:
@@ -816,6 +831,34 @@ class MainWindow(QMainWindow):
             box.clear()
             box.addItems(names)
             box.setCurrentIndex(box.findText(pick))  # -1, none picked, for "": no pad's name is empty
+
+    def refill(self) -> None:
+        """Refill zones and save in KiCad (design 5.5 Refill, 7): asks G_REFILL_CONFIRM on the board of the last press
+        shown (`handed`), under the title G_REFILL. That press is bound before the question: the box is modal, but its
+        event loop runs the tick and the local server, so a press can land while it is open and change `handed`, never
+        the board confirmed. No sends nothing to KiCad. Yes: button.refill in that press's KiCad on the pool
+        (`refilling`), G_REFILLING in New's status line and Refill disabled at once, until its end (refilled)."""
+        # ponytail: the pool's one thread waits for the refill (seconds; FILL_WAIT_S at most), so a press or a project
+        # read meanwhile waits too; a second executor for KiCad's calls if users meet it
+        h = self.handed
+        if not self.ask(render("G_REFILL_CONFIRM", board=str(h.board)), "G_REFILL"):
+            return
+        self.refilling = self.pool.submit(button.refill, h.socket, h.token, h.board)
+        self.new_form.status.setText(render("G_REFILLING"))
+        self.new_form.refill_button.setEnabled(False)
+
+    def refilled(self, done: Future) -> None:
+        """Refill's end (`done`, button.refill): a refusal (button.refill's, else E_INTERNAL) in New's status line, the
+        exception taken as show_pads takes it. Else G_REFILLED there, and the press read again on the pool
+        (control.handed, as `pads_read`), so that what the save wrote pre-fills New, its status line left as it is
+        unless that read has a problem. An open project of that board reads itself again through the tick's board
+        stamp."""
+        f, error = self.new_form, done.exception()
+        if error is not None:
+            f.status.setText(control.message(error))
+            return
+        f.status.setText(render("G_REFILLED", board=str(done.result())))
+        self.pads_read = self.pool.submit(control.handed, self.handoff)
 
     def created(self, done: Future) -> None:
         """new's end (`done`): Create enabled again and the last New's notes cleared; on success the status line

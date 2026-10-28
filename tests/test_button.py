@@ -309,3 +309,25 @@ def test_a_python_path_launch_cmd_cannot_hold_is_refused(tmp_path, monkeypatch):
         button.install("9.0")
     assert (e.value.code, e.value.params) == ("E_PLUGIN_PYTHON", {"python": python})
     assert not (tmp_path / SEGMENT / "9.0" / "plugins" / "kicad-rf-studio").exists()  # nothing written
+
+
+def test_refill_refills_then_saves_only_the_board_the_button_sent(kicad, tmp_path):  # design 5.5 Refill, 7; RF 4
+    board = tmp_path / "lpf915.kicad_pcb"
+    board.write_bytes(LPF.read_bytes())
+    k = kicad(board, save=b"(kicad_pcb)", errors={"SaveDocument": ["AS_BUSY", "AS_BUSY", "SLOW"]})
+    assert button.refill(k.url, k.token, board) == board  # busy while KiCad fills, then answered past the helper's 1 s
+    assert k.seen == ["GetOpenDocuments", "RefillZones", "SaveDocument", "SaveDocument", "SaveDocument"]
+    assert board.read_bytes() == b"(kicad_pcb)"  # what KiCad's save wrote
+    other = kicad(tmp_path / "other.kicad_pcb", save=b"x")
+    with pytest.raises(KrsError) as e:
+        button.refill(other.url, other.token, board)
+    assert (e.value.code, e.value.params) == ("E_KICAD_OTHER_BOARD", {"board": str(board),
+                                                                      "open": str(tmp_path / "other.kicad_pcb")})
+    assert other.seen == ["GetOpenDocuments"]  # nothing refilled, nothing saved
+    closed = kicad(board, errors={"GetOpenDocuments": ["AS_UNHANDLED"]})  # KiCad's PCB editor closed since the press
+    with pytest.raises(KrsError) as e:
+        button.refill(closed.url, closed.token, board)
+    assert (e.value.code, closed.seen) == ("E_KICAD_NO_BOARD", ["GetOpenDocuments"])
+    with pytest.raises(KrsError) as e:
+        button.refill(k.url, "another KiCad's", board)
+    assert e.value.code == "E_KICAD_UNREACHABLE"

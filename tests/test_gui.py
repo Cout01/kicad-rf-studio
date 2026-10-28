@@ -19,6 +19,7 @@ from PySide6.QtWidgets import QFileDialog, QMessageBox
 
 from kicad_rf_studio import button, gui, pipeline, runs
 from kicad_rf_studio.cli import main
+from kicad_rf_studio.core.kicad import load_board
 from kicad_rf_studio.core.messages import render
 from kicad_rf_studio.core.post.chain import with_box, z_part
 from kicad_rf_studio.core.post.outputs import LIMITS
@@ -624,6 +625,62 @@ def test_a_socket_file_left_by_a_killed_window_does_not_stop_the_next(qapp, fake
     assert w.server.isListening()  # with an access option Qt binds beside the name and renames over the stale file
     w.close()
     w.pool.shutdown(wait=True)
+
+
+def test_refill_asks_first_then_kicad_refills_and_saves_and_new_reads_the_board_again(window, kicad, tmp_path,
+                                                                                      monkeypatch):
+    lpf = (FIX / "lpf915.kicad_pcb").read_bytes()  # design 5.5 Refill, 3, 7; Review Focus 2
+    kiid = {p.name: p.uuid for p in load_board(FIX / "lpf915.kicad_pcb").all_pads()}
+    board = tmp_path / "lpf915.kicad_pcb"
+    board.write_bytes(lpf.replace(kiid["U1.1"].encode(), b"00000000-0000-0000-0000-000000000002"))  # U1 placed anew
+    k = kicad(board, save=lpf, errors={"SaveDocument": ["AS_BUSY"]})  # KiCad's save writes the edit it holds
+    elsewhere, late = kicad(tmp_path / "other.kicad_pcb"), kicad(board)  # another board open; another KiCad's press
+    selected = [kiid["U1.1"], kiid["J1.1"]]
+    w = window()
+    f = w.new_form
+    assert not f.refill_button.isEnabled()  # no press yet: no KiCad to ask
+    w.take_handoff(press(board, selected, socket=elsewhere.url, token=elsewhere.token))
+    w.pads_read.result(timeout=60)
+    w.tick()
+    assert f.status.text() == render("G_HANDOFF_UNSAVED", board=str(board)) and f.start.currentText() == ""
+    assert f.refill_button.isEnabled()
+    asked = []
+    answers = (QMessageBox.StandardButton.No, QMessageBox.StandardButton.Yes, QMessageBox.StandardButton.Yes)
+
+    def question(parent, title, text, *rest):  # ask's own code runs, and no modal box opens
+        asked.append((title, text))
+        if len(asked) == 3:  # a press from another KiCad while the question is open (design 3: no unasked edits)
+            parent.take_handoff(press(board, selected, socket=late.url, token=late.token))
+            parent.pads_read.result(timeout=60)
+            parent.tick()
+        return answers[len(asked) - 1]
+
+    monkeypatch.setattr(QMessageBox, "question", question)
+    f.refill_button.click()  # No: nothing reaches KiCad
+    assert asked == [(render("G_REFILL"), render("G_REFILL_CONFIRM", board=str(board)))] and w.refilling is None
+    assert elsewhere.seen == []
+    f.refill_button.click()  # Yes, but that KiCad has another board open: nothing refilled or saved
+    w.refilling.exception(timeout=60)
+    w.tick()
+    assert f.status.text() == render("E_KICAD_OTHER_BOARD", board=str(board), open=str(tmp_path / "other.kicad_pcb"))
+    assert (elsewhere.seen, w.pads_read, f.refill_button.isEnabled()) == (["GetOpenDocuments"], None, True)
+    w.take_handoff(press(board, selected, socket=k.url, token=k.token))
+    w.pads_read.result(timeout=60)
+    w.tick()
+    f.refill_button.click()  # Yes to this board in this KiCad, though another press came while it was asked
+    assert f.status.text() == render("G_REFILLING") and not f.refill_button.isEnabled()
+    w.take_handoff(w.handoff)  # a press while KiCad refills: the status keeps saying so
+    assert f.status.text() == render("G_REFILLING")
+    w.refilling.result(timeout=60)
+    w.tick()
+    assert f.status.text() == render("G_REFILLED", board=str(board)) and f.refill_button.isEnabled()
+    assert k.seen == ["GetOpenDocuments", "RefillZones", "SaveDocument", "SaveDocument"] and late.seen == []
+    assert board.read_bytes() == lpf and asked == [asked[0]] * 3  # each question names the board, under its title
+    w.pads_read.result(timeout=60)
+    w.tick()  # the press read again: the selection is in the saved file now
+    assert (f.start.currentText(), f.end.currentText(), w.handed.socket) == ("U1.1", "J1.1", late.url)
+    assert f.status.text() == render("G_REFILLED", board=str(board))
+    grab(w, "refill")
 
 
 def column(table, c):
