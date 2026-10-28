@@ -1,16 +1,19 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """The GUI's Qt-free logic (Stage 2 design 5.1, 5.3): the detached start, Apply's retune run to its end, the events
 tail, re-attach through the lock and the end events, the project read off the GUI thread, the retune session (an update
-of a project read's chain from the parts' rows), Verify's stale indicator and comparison, and New's pad list. Never
-imports Qt or matplotlib."""
+of a project read's chain from the parts' rows), Verify's stale indicator and comparison, New's pad list, and
+Advanced's fields of project.json and their edit. Never imports Qt or matplotlib."""
+import contextlib
+import copy
 import json
 import math
+import operator
 import os
 import re
 import subprocess
 import sys
 from dataclasses import dataclass, field, replace
-from functools import partial
+from functools import partial, reduce
 from pathlib import Path
 
 from kicad_rf_studio import pipeline, runs
@@ -18,7 +21,8 @@ from kicad_rf_studio.core.kicad import load_board
 from kicad_rf_studio.core.kicad.values import part_kind, port_value, snap, value_text
 from kicad_rf_studio.core.messages import KrsError, detail, render
 from kicad_rf_studio.core.model import spec
-from kicad_rf_studio.core.project import board_file, load_project, parts
+from kicad_rf_studio.core.project import (BAND_FACTOR, DEFAULT_PRESET, EXPAND_H, GATES, HARMONICS, MARGIN_SCALE, MESH_N,
+                                          REACH_H, T_MAX_S, board_file, load_project, parts)
 
 END = {0: "G_END_DONE", 2: "G_END_REFUSED", 3: "G_END_BLOCKED", 4: "G_END_NOT_KEPT", 130: "G_END_STOPPED"}
 # the CLI's lines that the GUI words its own way, with the same params (design 5.3)
@@ -28,7 +32,7 @@ GUI = {"E_LOCKED": "G_LOCKED", "I_RUN_START": "G_RUN_START", "I_WHAT_IF": "G_WHA
        "W_LID_HEIGHT_MISSING": "G_LID_HEIGHT_MISSING", "I_PART_NO_MODEL": "G_PART_NO_MODEL",
        "W_NO_REFERENCE": "G_NO_REFERENCE", "E_RETUNE_VALUE": "G_RETUNE_VALUE", "E_PART_NO_VALUE": "G_PART_NO_VALUE",
        "E_S2P_MISSING": "G_S2P_MISSING", "E_S2P_UNREADABLE": "G_S2P_UNREADABLE", "E_S2P_BAND": "G_S2P_BAND",
-       "W_S2P_FIXTURE": "G_S2P_FIXTURE", "E_VERIFY_VALUE": "G_VERIFY_VALUE"}
+       "W_S2P_FIXTURE": "G_S2P_FIXTURE", "E_VERIFY_VALUE": "G_VERIFY_VALUE", "E_PROJECT_FIELD": "G_PROJECT_FIELD"}
 
 
 def orchestrator() -> list[str]:
@@ -175,8 +179,9 @@ class Opened:
     """A project as open_project reads it: project.json, its model's spec_hash and the chain results while they apply,
     each None when not read; the first refusal met, as (code, params); the last cost of this model (last_cost) and the
     newest run or verify that ended; each None without one; the board file that project.json names
-    (core.project.board_file), None when project.json cannot be read or names no board; and the last verify's
-    comparison (verify_lines), [] without one."""
+    (core.project.board_file), None when project.json cannot be read or names no board; the last verify's
+    comparison (verify_lines), [] without one; and project.json as load_project reads it (`stored`), unchecked, so that
+    Advanced can fix a field the checks refuse, None when it cannot be read."""
     project: dict | None
     spec_hash: str | None
     results: pipeline.ChainResults | None
@@ -185,15 +190,17 @@ class Opened:
     last: Path | None
     board: Path | None = None
     verified: list[tuple[str, dict]] = field(default_factory=list)
+    stored: dict | None = None
 
 
 def open_project(path: Path) -> Opened:
     """The project file `path`, which the caller resolves, read off the GUI thread (design 5.1): pipeline.load, its
     model, the model's spec_hash (None without a spec), results_of and chain_results with errors as lines, the first
-    KrsError stopping there as `problem`, any other exception E_INTERNAL; then the board file, from the project read
-    when pipeline.load succeeded, else from load_project alone (a board that fails to load still has a path), None
-    when that raises too; then last_cost, the newest of ended() that is a run or a verify, and verify_lines. Never
-    raises; starts nothing."""
+    KrsError stopping there as `problem`, any other exception E_INTERNAL; then `stored`, the project read when
+    pipeline.load succeeded, else load_project alone, unchecked (a project the checks refuse, or whose board fails to
+    load, still reads), and the board file it names, each None when it raises, `stored` kept when only the board file
+    does; then last_cost, the newest of ended() that is a run or a verify, and verify_lines. Never raises; starts
+    nothing."""
     project = model_hash = results = problem = None
     try:
         project, board, geom, _ = pipeline.load(path)
@@ -205,13 +212,14 @@ def open_project(path: Path) -> Opened:
         problem = (e.code, e.params)
     except Exception as e:  # E_INTERNAL, as cli.main reports it
         problem = ("E_INTERNAL", {"detail": detail(e)})
-    try:  # ponytail: a failed read reads project.json a second time, for its board's path
-        file = board_file(path, project if project is not None else load_project(path))
-    except Exception:  # project.json unreadable, or naming no board
-        file = None
+    stored = file = None
+    # ponytail: a failed read reads project.json a second time, for Advanced and its board's path
+    with contextlib.suppress(Exception):  # project.json unreadable, or naming no board
+        stored = project if project is not None else load_project(path)
+        file = board_file(path, stored)
     last = next((d for d, end in ended(path) if end["params"]["command"] in ("run", "verify")), None)
     return Opened(project, model_hash, results, problem, last_cost(path, model_hash), last, file,
-                  verify_lines(project))
+                  verify_lines(project), stored)
 
 
 def run_state(run_dir: Path, end: dict | None, holder: dict | None, own: bool,
@@ -374,3 +382,65 @@ def message(error: Exception) -> str:
     if isinstance(error, KrsError):
         return text(error.code, error.params)
     return text("E_INTERNAL", {"detail": detail(error)})
+
+
+@dataclass(frozen=True)
+class Field:
+    """A leaf of project.json as Advanced shows it (design 5.3): its dotted `name` (region.expand_h,
+    chain.series[2].role), its `path` of keys and indices down to it, its `value`, its `default` as JSON text ("" for
+    none) and its `unit`, a G_UNIT_ code (None for none)."""
+    name: str
+    path: tuple
+    value: object
+    default: str
+    unit: str | None
+
+
+# a field's unit by its last two keys, an index between them written as [], so every part's model has its units
+UNITS = {"f0_hz": "G_UNIT_HZ", "t_max_s": "G_UNIT_S", "region.expand_h": "G_UNIT_SUBSTRATE",
+         "mesh.reach_h": "G_UNIT_SUBSTRATE", "lid_height_mm": "G_UNIT_MM", "layers[].thickness_mm": "G_UNIT_MM",
+         "reference.point": "G_UNIT_MM", "model.esl_h": "G_UNIT_HENRY", "model.esr_ohm": "G_UNIT_OHM",
+         "model.cp_f": "G_UNIT_FARAD"}
+
+
+def _leaves(value, path: tuple):
+    """The (path, value) of each leaf under `value`, at `path`, in order: a dict is walked, and so is a non-empty list
+    whose items are all dicts; any other value is a leaf."""
+    if isinstance(value, dict) or (isinstance(value, list) and value and all(isinstance(x, dict) for x in value)):
+        for key, sub in value.items() if isinstance(value, dict) else enumerate(value):
+            yield from _leaves(sub, (*path, key))
+    else:
+        yield path, value
+
+
+def fields(data: dict) -> list[Field]:
+    """Advanced's fields of project.json `data` (design 5.3): every leaf (_leaves) in file order, but those under
+    schema, results and verify (records, not settings), each with the default that `new` writes when it has one. The
+    preset is read through str(), so a hand-edited one that is not text (a list) cannot raise: unchecked data is what
+    Advanced is there to fix."""
+    # ponytail: a list of objects can be edited but not grown, and a reference cannot switch between pad and point
+    # here; a text editor does both
+    defaults = {"harmonics": HARMONICS, "preset": DEFAULT_PRESET, "band_factor": BAND_FACTOR, "t_max_s": T_MAX_S,
+                "region.expand_h": EXPAND_H, "region.margin_scale": MARGIN_SCALE,
+                "mesh.n": MESH_N.get(str(data.get("preset")), MESH_N[DEFAULT_PRESET]), "mesh.reach_h": REACH_H,
+                "lid_height_mm": None, "lid": None, "gates.fit2d_limit": GATES["fit2d_limit"],
+                "gates.dt_floor": GATES["dt_floor"], "allow_curve_port": False}
+    found = []
+    for path, value in _leaves({k: v for k, v in data.items() if k not in ("schema", "results", "verify")}, ()):
+        name = "".join(f"[{k}]" if isinstance(k, int) else f".{k}" for k in path)[1:]
+        unit = UNITS.get(".".join(re.sub(r"\[\d+\]", "[]", name).split(".")[-2:]))
+        found.append(Field(name, path, value, json.dumps(defaults[name]) if name in defaults else "", unit))
+    return found
+
+
+def edited(data: dict, edits: dict[tuple, str]) -> dict:
+    """A deep copy of project.json `data` with the leaf at each path of `edits` (Field.path) set to its text read as
+    JSON; a text that is not JSON stays the text itself, so draft needs no quotes."""
+    new = copy.deepcopy(data)
+    for path, typed in edits.items():
+        try:
+            value = json.loads(typed)
+        except ValueError:  # json.JSONDecodeError
+            value = typed
+        reduce(operator.getitem, path[:-1], new)[path[-1]] = value
+    return new

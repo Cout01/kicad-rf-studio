@@ -712,3 +712,44 @@ def test_verify_asks_to_apply_first_runs_detached_and_shows_its_comparison(windo
     old.result(timeout=120)
     opened(w)
     assert (w.applying, w.verify_next, w.command) == (None, False, None)  # no verify of the project now open
+
+
+def test_advanced_saves_project_json_under_the_lock_and_a_model_change_marks_the_results_stale(
+        window, tmp_path, monkeypatch):
+    pj = lpf_run(tmp_path, monkeypatch).resolve()  # design 5.1, 5.3 Advanced; Review Focus 5
+    w = window()
+    w.open_project(pj)
+    opened(w)
+    a, lock = w.advanced, runs.lock_file(pj)
+    row = {a.table.item(k, 0).text(): k for k in range(a.table.rowCount())}
+    assert [a.table.item(row["t_max_s"], c).text() for c in range(4)] == ["t_max_s", "4e-08", "4e-08",
+                                                                          render("G_UNIT_S")]
+    assert "results.run_dir" not in row and not a.save_button.isEnabled()
+    w.tabs.setCurrentWidget(a)
+    grab(w, "advanced")
+    a.table.item(row["harmonics"], 1).setText("0")
+    w.tick()
+    a.save_button.click()  # the project's own checks refuse it; nothing is written
+    assert a.status.text() == render("G_PROJECT_FIELD", path=str(pj), field="harmonics",
+                                     expected="a whole number above 0") and load_project(pj)["harmonics"] == 3
+    a.table.item(row["harmonics"], 1).setText("3")
+    a.table.item(row["t_max_s"], 1).setText("3e-08")  # T_max is in the model's excitation
+    w.tick()
+    d = load_project(pj)
+    parts(d)["C3"]["value"] = "3.9pF"  # a terminal's retune after the last read: Save keeps it
+    save_project(pj, d)
+    a.save_button.click()
+    assert (load_project(pj)["t_max_s"], parts(load_project(pj))["C3"]["value"]) == (3e-08, "3.9pF")
+    assert a.status.text() == render("I_WROTE", path=pj)
+    opened(w)  # the new mtime read the project again: its model changed, so its results are stale
+    assert w.results.problem.text() == render("G_RESULTS_STALE") and w.results.retune_box.isHidden()
+    assert w.results.canvas.figure.axes == [] and a.edits == {}
+    a.table.item(row["t_max_s"], 1).setText("4e-08")
+    w.tick()
+    lock.write_text(json.dumps({"pid": os.getpid(), "run_dir": "R", "started": "S"}), encoding="utf-8")
+    a.save_button.click()  # a run took the lock after the last tick: Save refuses, as the engine's writers do
+    assert a.status.text() == render("G_LOCKED", lock=str(lock), run="R", started="S")
+    assert load_project(pj)["t_max_s"] == 3e-08
+    w.tick()
+    assert not a.table.isEnabled() and not a.save_button.isEnabled()  # disabled while the lock is held
+    lock.unlink()

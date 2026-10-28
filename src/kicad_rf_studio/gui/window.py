@@ -2,9 +2,11 @@
 """The main window (Stage 2 design 5.1, 5.3, 5.4): it creates a project from a board (NewForm) or opens one, shows its
 cost, starts, follows and stops a run, its own or one it re-attaches through the project lock, replays the project's
 last run and shows its results, which its parts' rows retune in this process (ResultsView), Apply stores through the
-CLI's retune and Verify checks, driven by one 500 ms timer (`tick`). The project is read, a board's pads listed, new
-run and retune waited for on a pool thread (control.open_project, control.pads, cli.new, control.apply); cost, run and
-verify start as a detached orchestrator (control.start), so this process never reaches runs.run_jobs."""
+CLI's retune and Verify checks; Advanced edits project.json's fields and saves them under the project lock
+(AdvancedView); all driven by one 500 ms timer (`tick`). The project is read, a board's pads listed, new run and retune
+waited for on a pool thread (control.open_project, control.pads, cli.new, control.apply); cost, run and verify start as
+a detached orchestrator (control.start), so this process never reaches runs.run_jobs."""
+import json
 import subprocess
 from concurrent.futures import Future, ThreadPoolExecutor
 from pathlib import Path
@@ -23,13 +25,14 @@ from kicad_rf_studio.core.kicad.stackup import PRESETS as STACKUPS
 from kicad_rf_studio.core.kicad.values import parse_frequency
 from kicad_rf_studio.core.messages import KrsError, detail, reason, render
 from kicad_rf_studio.core.post.outputs import LIMITS, draw_summary, retrace_summary
-from kicad_rf_studio.core.project import DEFAULT_PRESET, HARMONICS
+from kicad_rf_studio.core.project import DEFAULT_PRESET, HARMONICS, check_project, load_project, save_project
 from kicad_rf_studio.gui import control
 
 COLUMNS = ("G_COL_PORT", "G_COL_TIME", "G_COL_RESIDUAL", "G_COL_SPEED", "G_COL_VERDICT")
 PROGRESS = ("port", "t_ns", "residual_db", "speed_mcs")  # a progress event's params, in the first four columns
 PART, VALUE, SNAP, S2P, FIXTURE = range(5)  # the parts table's columns
 PART_COLUMNS = ("G_COL_PART", "G_COL_VALUE", "G_COL_SNAP", "G_COL_S2P", "G_COL_FIXTURE")
+FIELD_COLUMNS = ("G_COL_FIELD", "G_COL_VALUE", "G_COL_DEFAULT", "G_COL_UNIT")  # Advanced's table; Value alone edited
 SNAPPING = tuple(zip(control.SERIES, ("G_SNAP_OFF", "G_SNAP_E12", "G_SNAP_E24")))  # a Snapping combo's (data, code)
 FIXTURES = (("series", "G_FIXTURE_SERIES"), ("shunt", "G_FIXTURE_SHUNT"))  # an S2P fixture combo's (data, code)
 
@@ -282,6 +285,53 @@ class NewForm(QGroupBox):
             form.addRow(widget)
 
 
+class AdvancedView(QWidget):
+    """The Advanced tab (Stage 2 design 5.3): project.json's fields (control.fields) in `table`, a row each with its
+    name, its value as JSON, the one cell that can be edited, its default and its unit; then the row of Save
+    (`save_button`, which the window enables) and its status line (`status`). `edits` holds the text of each edited
+    value by its field's path, and `paths` each row's path."""
+
+    def __init__(self):
+        super().__init__()
+        self.table, self.save_button = QTableWidget(0, len(FIELD_COLUMNS)), QPushButton(render("G_SAVE"))
+        self.status, self.edits, self.paths = QLabel(), {}, []
+        self.table.setHorizontalHeaderLabels([render(code) for code in FIELD_COLUMNS])
+        header = self.table.horizontalHeader()
+        header.setSectionResizeMode(QHeaderView.ResizeMode.ResizeToContents)  # a name, a default or a unit unclipped
+        header.setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)  # the value: a list, or a path
+        self.save_button.setEnabled(False)  # until an edit
+        self.status.setWordWrap(True)  # a refusal names a path, which would otherwise widen the window
+        buttons = beside(self.save_button, self.status)
+        buttons.setStretch(1, 1)  # the status line takes the row's width, and Save keeps its own
+        layout = QVBoxLayout(self)
+        layout.addWidget(self.table)
+        layout.addLayout(buttons)
+        self.table.itemChanged.connect(self.item_changed)
+
+    def display(self, stored: dict | None) -> None:
+        """project.json as stored (control.Opened.stored; None for none, an empty table) in the table, its signals
+        blocked: Field, Default and Unit read-only, Value as json.dumps writes it, non-ASCII text as it is; then `edits`
+        cleared. Never touches `status`."""
+        # ponytail: a re-read refills the table and drops unsaved edits; carry them per field, as the retune's rows are,
+        # if users lose work
+        fields = [] if stored is None else control.fields(stored)
+        with QSignalBlocker(self.table):
+            self.table.setRowCount(len(fields))
+            for k, f in enumerate(fields):
+                unit = "" if f.unit is None else render(f.unit)
+                for column, text in enumerate((f.name, json.dumps(f.value, ensure_ascii=False), f.default, unit)):
+                    item = QTableWidgetItem(text)
+                    if column != 1:  # Value alone is edited
+                        item.setFlags(item.flags() & ~Qt.ItemFlag.ItemIsEditable)
+                    self.table.setItem(k, column, item)
+        self.paths = [f.path for f in fields]
+        self.edits.clear()
+
+    def item_changed(self, item: QTableWidgetItem) -> None:
+        """A value edited (itemChanged): its text kept in `edits` under its row's path."""
+        self.edits[self.paths[item.row()]] = item.text()
+
+
 class MainWindow(QMainWindow):
     """The main window; `prefix` is the command that starts the orchestrator (control.orchestrator() by default).
     Its state: `path`, the resolved project file; `opened`, its last read (control.Opened) and `loading`, the read
@@ -321,15 +371,17 @@ class MainWindow(QMainWindow):
                               ("G_TAB_COST", (self.cost_lines, self.cost_status, self.cost_button, self.run_button)),
                               ("G_TAB_RUN", (self.banner, self.jobs, self.log, self.run_status, self.stop_button))):
             self.tabs.addTab(page(*widgets), render(code))
-        self.results = ResultsView()
+        self.results, self.advanced = ResultsView(), AdvancedView()
         self.tabs.addTab(self.results, render("G_TAB_RESULTS"))
+        self.tabs.addTab(self.advanced, render("G_TAB_ADVANCED"))
         self.setCentralWidget(self.tabs)
         form = self.new_form
         for button, slot in ((self.open_button, self.browse), (self.cost_button, self.estimate),
                              (self.run_button, self.run), (self.stop_button, self.stop),
                              (form.board_button, self.pick_board), (form.folder_button, self.pick_folder),
                              (form.create_button, self.create_project), (self.results.revert_button, self.revert),
-                             (self.results.apply_button, self.apply), (self.results.verify_button, self.verify)):
+                             (self.results.apply_button, self.apply), (self.results.verify_button, self.verify),
+                             (self.advanced.save_button, self.save)):
             button.clicked.connect(slot)
         self.results.edited.connect(self.retune)
         form.board.editingFinished.connect(self.board_chosen)
@@ -354,13 +406,14 @@ class MainWindow(QMainWindow):
         self.path = pipeline.project_path(str(path)).resolve()
         self.command = self.run_dir = self.tail = self.end = self.proc = self.cost = self.opened = self.applying = None
         self.verify_next = False
-        for view in (self.cost_lines, self.cost_status, self.log, self.run_status):
+        for view in (self.cost_lines, self.cost_status, self.log, self.run_status, self.advanced.status):
             view.clear()
         self.jobs.setRowCount(0)
         self.results.display(control.Opened(None, None, None, None, None, None), None)  # no plot, lines, labels or rows
         self.results.retune_status.clear()
         self.results.series.clear()  # the Snapping choices are the open project's
         self.show_stale()  # no rows: hidden
+        self.advanced.display(None)  # no fields, and no edits of the previous project
         self.load()
         self.tick()
 
@@ -388,12 +441,14 @@ class MainWindow(QMainWindow):
         while nothing watched goes on and no run holds the lock, Run… also only with a cost of this model and no Apply
         going on, Stop only while the watch goes on, the retune box while no read and no Apply goes on, so that its
         table and buttons wait for Apply's re-read, and Apply and Verify also only while nothing watched goes on, no
-        run holds the lock and the last read has results. A holder whose run folder is the project's results/ is a
-        retune (pipeline.retune, r2 §1): waited for, never watched or bannered. Any other holder's run folder, when it
-        names one other than the watched one, is watched when this window's own process was not running at the last
-        tick (`live`) and the holder lives, or when the holder is dead and nothing is watched (on open), so a cost
-        meanwhile keeps its tab. Before all that, with or without a project, New's pad list and new itself when done
-        (show_pads, created, which opens the project new wrote, whose own tick runs inside this one)."""
+        run holds the lock and the last read has results; Advanced's table while no holder lives (design 5.1: no model
+        edit under the lock), and its Save also only while no read and no Apply goes on and there are edits. A holder
+        whose run folder is the project's results/ is a retune (pipeline.retune, r2 §1): waited for, never watched or
+        bannered. Any other holder's run folder, when it names one other than the watched one, is watched when this
+        window's own process was not running at the last tick (`live`) and the holder lives, or when the holder is dead
+        and nothing is watched (on open), so a cost meanwhile keeps its tab. Before all that, with or without a
+        project, New's pad list and new itself when done (show_pads, created, which opens the project new wrote, whose
+        own tick runs inside this one)."""
         self.started = [p for p in self.started if p.poll() is None]  # poll() reaps one that ended
         if self.pads_read is not None and self.pads_read.done():
             done, self.pads_read = self.pads_read, None
@@ -457,6 +512,8 @@ class MainWindow(QMainWindow):
         ready = idle and not (self.live or held) and self.opened is not None and self.opened.results is not None
         for button in (self.results.apply_button, self.results.verify_button):
             button.setEnabled(ready)
+        self.advanced.table.setEnabled(not held)
+        self.advanced.save_button.setEnabled(idle and not held and bool(self.advanced.edits))
 
     def show_event(self, event: dict) -> None:
         """One event of the watched folder: an end sets `end` and is never listed, and a cost that ended with exit
@@ -538,7 +595,7 @@ class MainWindow(QMainWindow):
         is watched and the project has no lock, its newest run or verify that ended (opened.last) is watched, which
         replays it. Unless a cost is watched, live or ended, the Cost tab replays the last cost of this model
         (G_COST_REUSED), or says there is none (G_NO_COST). Last, the Results tab shows the read (ResultsView) and its
-        stale indicator (show_stale)."""
+        stale indicator (show_stale), and Advanced project.json as stored (AdvancedView), which drops unsaved edits."""
         p = opened.project
         self.project_status.setText(control.text(*opened.problem) if p is None else render(
             "G_PROJECT", path=str(self.path), f0_mhz=f"{p['f0_hz'] / 1e6:g}", harmonics=p["harmonics"],
@@ -558,6 +615,7 @@ class MainWindow(QMainWindow):
                 self.cost_status.setText(render("G_COST_REUSED", folder=self.cost.name))
         self.results.display(opened, self.path.parent)
         self.show_stale()
+        self.advanced.display(opened.stored)
 
     def retune(self) -> None:
         """A row edited (results.edited): the retune's status line cleared, then the chain of the table's rows on the
@@ -630,6 +688,27 @@ class MainWindow(QMainWindow):
         elif self.ask(render("G_APPLY_FIRST")):
             self.verify_next = True
             self.apply()
+
+    def save(self) -> None:
+        """Advanced's Save: under the project lock, results/ its run folder as a retune's, project.json read afresh
+        (load_project), as run, verify and retune read it, so a save never writes back a stale snapshot and no engine
+        writer runs meanwhile; the edits applied to it (control.edited), checked (check_project) and written
+        (save_project). Then I_WROTE in Advanced's status line and a tick, whose stamp check reads the project again,
+        which marks the results stale when the model changed. An OSError shows G_SAVE_FAILED, and any other exception
+        control.message's line (E_LOCKED as G_LOCKED, E_PROJECT_FIELD as G_PROJECT_FIELD); nothing is written then."""
+        status = self.advanced.status
+        try:
+            with runs.project_lock(self.path, self.path.parent / "results"):
+                data = control.edited(load_project(self.path), self.advanced.edits)
+                save_project(self.path, check_project(data, self.path))
+        except OSError as e:
+            status.setText(render("G_SAVE_FAILED", path=str(self.path), reason=reason(e, "cannot be written")))
+            return
+        except Exception as e:
+            status.setText(control.message(e))
+            return
+        status.setText(render("I_WROTE", path=self.path))
+        self.tick()
 
     def pick_board(self) -> None:
         """New's board Browse…: the board file picked in the dialog, then board_chosen(); nothing on Cancel."""

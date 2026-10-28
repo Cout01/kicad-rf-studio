@@ -333,3 +333,33 @@ def test_verify_is_stale_until_it_ran_these_values_on_this_model(tmp_path):  # d
         json.dumps({"t": 0, "kind": k, "job": None, "code": c, "params": p}) + "\n" for k, c, p in events),
         encoding="utf-8")
     assert control.verify_lines(project) == [("I_VERIFY_COMPARE", {"x": 1}), ("I_VERIFY_SCOPE", {})]
+
+
+def test_the_advanced_fields_are_project_jsons_leaves_with_their_defaults_and_units():  # design 5.3 Advanced
+    project = {**lpf(), "results": {"run_dir": "R"}, "verify": {"values": {}}}
+    by = {f.name: f for f in control.fields(project)}
+    assert list(by)[:5] == ["board.path", "board.sha256", "f0_hz", "harmonics", "preset"]
+    assert not [name for name in by if name.startswith(("schema", "results", "verify"))]  # records, not settings
+    assert (by["t_max_s"].value, by["t_max_s"].default, by["t_max_s"].unit) == (4e-08, "4e-08", "G_UNIT_S")
+    assert (by["mesh.n"].default, by["lid_height_mm"].default, by["f0_hz"].default, by["f0_hz"].unit) == (
+        "2", "null", "", "G_UNIT_HZ")
+    assert (by["chain.series[0].model.esl_h"].unit, by["stackup.layers[0].thickness_mm"].unit) == (
+        "G_UNIT_HENRY", "G_UNIT_MM")
+    role = by["chain.series[2].role"]
+    assert (role.path, role.value) == (("chain", "series", 2, "role"), "copper")
+    assert by["classes.gnd_nets"].value == ["GND"]
+    broken = {f.name: f for f in control.fields({**project, "preset": ["draft"]})}  # a hand edit to fix here
+    assert broken["mesh.n"].default == "2"
+    new = control.edited(project, {("preset",): "draft", ("t_max_s",): "3e-08", ("lid",): "false",
+                                   ("classes", "gnd_nets"): '["GND", "AGND"]'})
+    assert (new["preset"], new["t_max_s"], new["lid"], new["classes"]["gnd_nets"]) == ("draft", 3e-08, False,
+                                                                                         ["GND", "AGND"])
+    assert project["preset"] == "normal"  # a copy: nothing is saved until Save
+
+
+def test_open_project_keeps_project_json_as_stored_for_advanced(tmp_path, fake):  # design 5.3 Advanced
+    pj = new_project(tmp_path, "coupon_gcpw_pads", preset="draft").resolve()
+    save_project(pj, {**load_project(pj), "harmonics": 0})  # a hand edit the project's checks refuse
+    broken = control.open_project(pj)
+    assert broken.problem[0] == "E_PROJECT_FIELD" and broken.project is None and broken.stored["harmonics"] == 0
+    assert control.open_project(tmp_path / "nope.json").stored is None
