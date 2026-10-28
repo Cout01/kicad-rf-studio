@@ -732,7 +732,7 @@ class MainWindow(QMainWindow):
         """A board picked, or typed and left (the board field's editingFinished): for a board text, stripped, that is
         not the one whose pads were last read (`chosen`), the project folder beside it, named after it (the README's
         `-o lpf915`), and its pads read on the pool (`pads_read`). The same board again keeps a folder the user
-        typed."""
+        typed, unless its read was refused (show_pads then clears `chosen`)."""
         f = self.new_form
         text = f.board.text().strip()
         if text and text != f.chosen:

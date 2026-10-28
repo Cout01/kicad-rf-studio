@@ -462,7 +462,7 @@ def test_new_from_a_board_lists_its_pads_writes_the_project_and_opens_it(window,
     f.create_button.click()
     assert (w.creating, f.folder.text(), f.status.text()) == (None, "", render("G_NEW_NO_FOLDER"))
     f.folder.setText(f" {tmp_path / 'lpf915'} ")  # pasted with spaces around it: new gets it stripped
-    f.board.setText(f"{board} ")  # a trailing space, and no editingFinished: stripped too
+    f.board.setText(f" {board} ")  # spaces around it (Windows drops a trailing one), no editingFinished: stripped too
     f.start.setCurrentText("U1.1")
     f.end.setCurrentText("J1.1")
     f.harmonics.setValue(2)

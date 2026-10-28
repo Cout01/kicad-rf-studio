@@ -296,7 +296,7 @@ def test_a_read_keeps_the_unapplied_rows_whose_part_it_did_not_change(tmp_path):
     assert control.carried(before, mine, folder, edited, mine_rows) == (mine_rows, True)
     assert control.carried(before, None, folder, edited, []) == ([], True)  # a read that failed, or results gone stale
     assert control.carried(before, lpf(), folder, edited, []) == ([], True)  # results gone stale: no row to keep it in
-    assert control.carried(before, applied, folder, edited, []) == ([], False)  # stale, but project.json stores the value
+    assert control.carried(before, applied, folder, edited, []) == ([], False)  # stale, but project.json stores it
     assert control.carried(None, before, folder, [], rows) == (rows, False)  # the first read
 
 
