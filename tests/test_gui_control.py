@@ -221,9 +221,12 @@ def test_a_run_going_on_is_found_through_its_lock_and_stops_by_its_stop_file(tmp
 
 @pytest.mark.parametrize(("ref", "text", "series", "shown"), [
     ("C2", "5pF", "E24", "5.1pF"), ("C2", "5pF", "E12", "4.7pF"), ("C2", "5pF", "off", "5pF"),
-    ("L1", "4.0nH", "E24", "3.9nH"), ("C2", "4p7", "E24", "4.7pF"), ("C2", "3,9pF", "off", "3,9pF"),
+    ("L1", "4.0nH", "E24", "3.9nH"), ("C2", "4p7", "E24", "4p7"), ("C2", "3,9pF", "off", "3,9pF"),
     ("C2", "abc", "E24", "abc"), ("C2", "0", "E24", "0"), ("R1", "0R", "E24", "0R"),
-    ("C2", "9" * 400 + "pF", "E24", "9" * 400 + "pF")])  # reads as inf, which snap cannot take
+    ("C2", "9" * 400 + "pF", "E24", "9" * 400 + "pF"),  # reads as inf, which snap cannot take
+    ("C1", "100pF/50V", "E24", "100pF/50V"),  # on the series: kept as typed, its rating too
+    ("C2", "0.0000125pF", "E24", "0.0000125pF"), ("R1", "5000000000G", "E24", "5000000000G"),  # outside p to G
+    ("C2", "0." + "0" * 311 + "5p", "E24", "0." + "0" * 311 + "5p")])  # subnormal: snap cannot take it
 def test_snapping_writes_back_the_nearest_value_as_port_value_reads_it(ref, text, series, shown):  # design 5.3, 7
     assert control.snapped(ref, text, series) == shown
     assert [control.default_series(r) for r in ("C2", "L1", "R1", "FB1")] == ["E24", "E24", "off", "off"]

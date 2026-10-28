@@ -270,11 +270,19 @@ def default_series(ref: str) -> str:
 def snapped(ref: str, text: str, series: str) -> str:
     """The value text `text` of the part `ref` snapped to `series` (design 5.3): the nearest E12 or E24 value (snap)
     written as port_value reads it (value_text). `text` unchanged when series is off, or when port_value gives None, 0
-    or a value that is not finite for it (a 400-digit value reads as inf, which snap cannot take)."""
+    or a value that is not finite for it (a 400-digit value reads as inf, which snap cannot take). `text` is also
+    unchanged when its value already lies on the series (a rating written after it, as in 100pF/50V, stays, and the
+    row does not change), and when the snapped value would not read back (outside p to G) or snap cannot take it. A
+    value off the series is written back without what followed it (125pF/50V gives 130pF)."""
     value = port_value(ref, text)
     if series == "off" or not value or not math.isfinite(value):
         return text
-    return value_text(snap(value, series), part_kind(ref))
+    try:
+        near = snap(value, series)
+    except (ValueError, OverflowError):  # a subnormal value, whose lower candidates round to 0, or a huge one
+        return text
+    out = value_text(near, part_kind(ref))
+    return text if math.isclose(near, value, rel_tol=1e-9) or not port_value(ref, out) else out
 
 
 def _s2p(part: dict, folder: Path) -> tuple[str, str]:
