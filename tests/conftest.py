@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 import json
+import os
 import subprocess
 import sys
 import time
@@ -9,6 +10,8 @@ import pytest
 
 from kicad_rf_studio import runs
 from kicad_rf_studio.core.kicad import load_board
+
+os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")  # before any QApplication: Qt tests open no window
 
 FAKE = Path(__file__).parent / "fake_worker.py"
 MINI = ('(kicad_pcb (version {version}) (generator "test") (general (thickness 0.8)) '
@@ -82,6 +85,13 @@ def ctrl_c_on_third_poll(monkeypatch):
     monkeypatch.setattr(subprocess, "Popen", popen)
     monkeypatch.setattr(time, "sleep", sleep)
     return started
+
+
+@pytest.fixture(scope="session")
+def qapp():
+    """The session's one QApplication, on the offscreen platform set above."""
+    from PySide6.QtWidgets import QApplication
+    return QApplication.instance() or QApplication([])
 
 
 def pytest_collection_modifyitems(config, items):

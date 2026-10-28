@@ -189,6 +189,7 @@ CATALOG: dict[str, str] = {
     "W_VERIFY_LOSS_BUDGET": "Loss budget flagged: {layout_pct} % unaccounted at {f_mhz} MHz (|a| {a_db} dB) is more than {limit_pct} points above the {expected_pct} % expected dielectric loss, with the parts in the grid. A resistor in the chain adds its own loss here; otherwise radiation or power coupled into cut nets is the usual cause; look at the model with `preview`.",
     "I_VERIFY_SCOPE": "verify checks the layout reduction, not the vendor part data: each part sat in the grid at its ideal value, against a retune at the same values. Its loss budget counts a resistor's loss in the grid as layout loss.",
     "E_INTERNAL": "Internal error: {detail}. Please report it.",
+    "G_APP": "kicad-rf-studio",
 }
 
 _translation = gettext.translation(

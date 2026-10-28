@@ -9,13 +9,16 @@ description = "Simulate the RF parts of a KiCad board with openEMS"
 readme = "README.md"
 license = "GPL-3.0-or-later AND LGPL-3.0-or-later"
 requires-python = ">=3.11"
-dependencies = ["shapely>=2.0", "numpy>=2", "scipy", "h5py", "matplotlib", "scikit-rf>=2.2"]
+dependencies = ["shapely>=2.0", "numpy>=2", "scipy", "h5py", "matplotlib", "scikit-rf>=2.2", "PySide6-Essentials>=6.10.1,<7"]
 
 [project.optional-dependencies]
 dev = ["pytest>=8"]
 
 [project.scripts]
 kicad-rf-studio = "kicad_rf_studio.cli:main"
+
+[project.gui-scripts]
+kicad-rf-studio-gui = "kicad_rf_studio.gui:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
