@@ -458,12 +458,14 @@ def edited(data: dict, edits: dict[tuple, str]) -> dict:
 
 
 # the runtime dependencies with their main licences (design 5.3 About): pyproject.toml's core dependencies, shiboken6
-# and pandas, which PySide6-Essentials and scikit-rf bring, and openEMS and CSXCAD, which pip does not install
+# and pandas, which PySide6-Essentials and scikit-rf bring, protobuf, pynng and jsonschema, which kicad-python brings,
+# and openEMS and CSXCAD, which pip does not install
 DEPENDENCIES = (("PySide6-Essentials", "LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only"),
                 ("shiboken6", "LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only"),
                 ("matplotlib", "Matplotlib License (PSF-based)"), ("numpy", "BSD-3-Clause"), ("scipy", "BSD-3-Clause"),
                 ("h5py", "BSD-3-Clause"), ("shapely", "BSD-3-Clause"), ("scikit-rf", "BSD-3-Clause"),
-                ("pandas", "BSD-3-Clause"), ("openEMS", "GPL-3.0-or-later"), ("CSXCAD", "LGPL-3.0-or-later"))
+                ("pandas", "BSD-3-Clause"), ("kicad-python", "MIT"), ("protobuf", "BSD-3-Clause"), ("pynng", "MIT"),
+                ("jsonschema", "MIT"), ("openEMS", "GPL-3.0-or-later"), ("CSXCAD", "LGPL-3.0-or-later"))
 
 
 def about() -> str:

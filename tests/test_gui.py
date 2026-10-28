@@ -9,6 +9,7 @@ import subprocess
 import sys
 import time
 import tomllib
+from importlib import metadata
 from pathlib import Path
 
 import numpy as np
@@ -45,6 +46,15 @@ def test_pyside6_essentials_is_a_core_dependency_with_the_gui_entry():  # design
     names = {re.split(r"[<>=!~;\[ ]", d, maxsplit=1)[0].lower()
              for d in project["dependencies"] + project["optional-dependencies"]["dev"]}
     assert not names & {"pyside6", "pyside6-addons", "pytest-qt"}  # Essentials only (design 4, 5.8)
+
+
+def test_kicad_python_is_a_core_dependency_and_imports():  # design 5.6; A-16
+    project = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))["project"]
+    assert "kicad-python>=0.8,<0.9" in project["dependencies"]  # 0.8: the first line that installs on Python 3.14
+    assert metadata.version("kicad-python").startswith("0.8.")
+    out = subprocess.run([sys.executable, "-I", "-c", "import kipy.board_types, kipy.packaging.validate"],
+                         capture_output=True, text=True)
+    assert out.returncode == 0, out.stderr  # installed is not importable: its protos refuse an older protobuf
 
 
 def test_the_engine_the_cli_and_the_gui_package_load_no_qt_kicad_python_or_matplotlib():  # design 4, 5.6, 5.8; C-5
