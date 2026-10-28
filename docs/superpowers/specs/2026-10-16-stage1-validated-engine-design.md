@@ -1,7 +1,7 @@
 # kicad-rf-studio — Stage 1 design: a validated simulation engine
 
 - **Date:** 2026-10-16
-- **Status:** design approved section by section in conversation, revised on 2026-10-19 after an independent review, and approved by the owner. On 2026-10-21 the owner confirmed one amendment to §5.4: the substrate height now counts in the cell size. On 2026-10-22, plan 5 amended §1.1, §7.6, §9.1, §9.2 and §9.6 (A-1 to A-4) as controller recommendations while the owner was unavailable; the owner reviews them. On 2026-10-24, D-45's fix amended §5.6 (A-6) and §7.6 (A-7) the same way. On 2026-10-25, P0-B's TX-side outcome amended §1.1 and §12 (A-5) the same way. On 2026-10-26, plan 6's mesh-rule calibration amended §5.4 and §12 (A-8) the same way. On 2026-10-27, Stage 2's plan 1 amended §3.2, §3.3, §3.4 and §6.1 (A-13 to A-15) the same way. On 2026-10-28, Stage 2's plan 3 amended §3.4 (A-16) the same way.
+- **Status:** design approved section by section in conversation, revised on 2026-10-19 after an independent review, and approved by the owner. On 2026-10-21 the owner confirmed one amendment to §5.4: the substrate height now counts in the cell size. On 2026-10-22, plan 5 amended §1.1, §7.6, §9.1, §9.2 and §9.6 (A-1 to A-4) as controller recommendations while the owner was unavailable; the owner reviews them. On 2026-10-24, D-45's fix amended §5.6 (A-6) and §7.6 (A-7) the same way. On 2026-10-25, P0-B's TX-side outcome amended §1.1 and §12 (A-5) the same way. On 2026-10-26, plan 6's mesh-rule calibration amended §5.4 and §12 (A-8) the same way. On 2026-10-27, Stage 2's plan 1 amended §3.2, §3.3, §3.4 and §6.1 (A-13 to A-15) the same way. On 2026-10-28, Stage 2's plan 3 amended §3.2 and §3.4 (A-16 and A-17) the same way.
 - **Scope:** Stage 1 of the project: the headless engine, the command-line orchestrator and the validation gates. The GUI and the KiCad toolbar button (Stage 2) get their own spec, written with Stage 1's results.
 
 ---
@@ -114,6 +114,7 @@ The users are hardware engineers who use KiCad and are not FDTD experts. The pro
 | `kicad-rf-studio preview PROJECT` | Has the worker write `model.xml` without building the operator, then opens it in AppCSXCAD |
 | `kicad-rf-studio setup-openems DIR` | Windows only: installs the openEMS and CSXCAD wheels from the official package into the app's environment and records CSXCAD_INSTALL_PATH |
 | `kicad-rf-studio calibrate` | Re-runs the speed calibration. It also runs automatically before the first `cost` or `run` |
+| `kicad-rf-studio install-kicad-plugin [--kicad 9.0\|10.0] [--remove]` | Writes the KiCad toolbar button, an exec plugin (`plugin.json`, a launcher holding this environment's Python, and its icons), into `plugins/kicad-rf-studio` of each KiCad 9.0 and 10.0 documents folder that exists, honouring KICAD_DOCUMENTS_HOME, or of the one named; `--remove` deletes it. It never edits KiCad's settings, and prints the one step left: turn on the KiCad API under Preferences › Plugins, then restart KiCad. (A-17, Stage 2 plan 3: controller recommendation, owner unavailable.) |
 
 **Stage 1 never prompts.** Whatever this spec calls asked or confirmed comes from a `new` option or a `project.json` field, and `run` refuses while a required value is missing.
 

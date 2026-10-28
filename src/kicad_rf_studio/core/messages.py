@@ -305,6 +305,15 @@ CATALOG: dict[str, str] = {
     "E_KICAD_NO_BOARD": "KiCad's PCB editor has no saved board open. Open or save the board in KiCad's PCB editor, then press the kicad-rf-studio button again.",
     "E_HANDOFF_WRITE": "Cannot write {path}: {reason}. Check that this folder can be written, then press the kicad-rf-studio button again.",
     "E_GUI_START": "Cannot start {program}: {reason}. Install kicad-rf-studio again, then run kicad-rf-studio install-kicad-plugin.",
+    "G_BUTTON_PLUGIN": "Simulates the RF parts of a KiCad board with openEMS.",
+    "G_BUTTON_ACTION": "Opens kicad-rf-studio on this board, with the selected pads as the chain's start and end.",
+    "I_PLUGIN_INSTALLED": "Installed the kicad-rf-studio button in {folder}.",
+    "I_PLUGIN_NEXT": "One step is left, in KiCad: Preferences › Plugins › Enable KiCad API, then restart KiCad. The button then shows in the PCB editor's toolbar.",
+    "I_PLUGIN_REMOVED": "Removed the kicad-rf-studio button from {folder}.",
+    "I_PLUGIN_NONE": "There is no kicad-rf-studio button to remove under {folder}.",
+    "E_NO_KICAD_FOLDER": "No KiCad 9.0 or 10.0 folder in {folder}: start KiCad once, so that it makes its folder there, or name the version with --kicad 9.0 or --kicad 10.0.",
+    "E_PLUGIN_WRITE": "Cannot write or remove the kicad-rf-studio button in {path}: {reason}. Check that this folder can be written (Windows' Controlled folder access can block it), then run install-kicad-plugin again.",
+    "E_PLUGIN_PYTHON": "This Python's path, {python}, has a character that launch.cmd cannot hold in the console's code page. Install kicad-rf-studio in a folder whose path has none, then run install-kicad-plugin again.",
 }
 
 _translation = gettext.translation(

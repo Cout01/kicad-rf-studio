@@ -8,7 +8,8 @@ every job kept S does it replace the results in project.json and write the outpu
 a retune at the same values (pipeline.verify). `preview` has a worker write the model's model.xml and opens it in
 AppCSXCAD (pipeline.preview).
 `setup-openems` installs openEMS from the official Windows package into this Python, and `calibrate` measures this
-machine's simulation speed. `cost`, `run` and `verify` take `--run-dir DIR`, the run folder to use instead of a new
+machine's simulation speed. `install-kicad-plugin` writes the KiCad toolbar button (button.install) into KiCad's
+plugin folders, or removes it. `cost`, `run` and `verify` take `--run-dir DIR`, the run folder to use instead of a new
 one in the data folder (Stage 2's GUI gives it, design 5.2): made before the command, and refused with E_RUN_DIR when it
 cannot be made or already holds a run. Their run folder, once it exists, ends with an end event (I_END) however the
 command ends, after a message event for a refusal or an internal error that main caught (A-13). A command returns its
@@ -198,6 +199,13 @@ def _calibrate(a: argparse.Namespace) -> None:
     runs.calibrate(runs.load_settings())
 
 
+def _install_kicad_plugin(a: argparse.Namespace) -> None:
+    from kicad_rf_studio import button  # here, as in `cost`: the CLI adds no work at import time
+
+    for code, params in button.install(a.kicad, a.remove):
+        print(render(code, **params))
+
+
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="kicad-rf-studio")
     commands = parser.add_subparsers(dest="command", required=True)
@@ -235,6 +243,10 @@ def _parser() -> argparse.ArgumentParser:
     setup.add_argument("folder", type=Path, metavar="DIR")
     setup.set_defaults(func=_setup_openems)
     commands.add_parser("calibrate").set_defaults(func=_calibrate)
+    plugin = commands.add_parser("install-kicad-plugin")
+    plugin.add_argument("--kicad", choices=("9.0", "10.0"))
+    plugin.add_argument("--remove", action="store_true")
+    plugin.set_defaults(func=_install_kicad_plugin)
     return parser
 
 

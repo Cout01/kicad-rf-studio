@@ -1,15 +1,21 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """The KiCad toolbar button (Stage 2 design 5.5): the helper KiCad's exec action runs (main), which reads the board and
-the selection through kicad-python and hands them to the GUI. Qt-free; kicad-python is imported only inside the
-functions that call KiCad, so importing this module loads none."""
+the selection through kicad-python and hands them to the GUI, and its installer (install), which writes the exec
+plugin into KiCad's plugin folders. Qt-free; kicad-python is imported only inside the functions that call KiCad, so
+importing this module loads none."""
 import contextlib
 import ctypes
+import json
+import math
 import os
+import shutil
+import struct
 import subprocess
 import sys
 import sysconfig
 import time
 import warnings
+import zlib
 from pathlib import Path
 
 from kicad_rf_studio import runs
@@ -146,6 +152,112 @@ def main() -> int:
             with open(runs.data_dir() / "button.log", "a", encoding="utf-8") as log:
                 log.write(f"{time.strftime('%Y-%m-%dT%H:%M:%S')} {line}\n")
         return 1
+
+
+IDENTIFIER = "org.kicadrfstudio.app"  # design 7's default; the owner's final one is tied to the account
+FOLDER = "kicad-rf-studio"  # the plugin's folder in KiCad's plugins folder, ours by name
+VERSIONS = ("9.0", "10.0")  # KiCad's major.minor folders
+SIZES = (24, 48)  # the icons' sizes, in px
+ICONS = {"light": (0x33, 0x33, 0x33), "dark": (0xDD, 0xDD, 0xDD)}  # the glyph's colour by theme
+KICAD = "KiCad" if sys.platform == "win32" else "kicad"  # KiCad's own folder in its documents base (paths.cpp)
+
+
+def documents() -> Path:
+    """KiCad's documents base, as its getUserDocumentPath reads it: KICAD_DOCUMENTS_HOME when set; else on Windows the
+    shell's Documents folder (CSIDL_PERSONAL, which follows a OneDrive redirect), elsewhere XDG_DATA_HOME, else
+    ~/.local/share. Raises OSError when the shell names no Documents folder."""
+    if home := os.environ.get("KICAD_DOCUMENTS_HOME"):
+        return Path(home)
+    if sys.platform == "win32":
+        buffer = ctypes.create_unicode_buffer(260)
+        if result := ctypes.windll.shell32.SHGetFolderPathW(None, 5, None, 0, buffer):  # an HRESULT, S_OK = 0
+            raise ctypes.WinError(result)
+        return Path(buffer.value)
+    return Path(os.environ.get("XDG_DATA_HOME") or "~/.local/share").expanduser()
+
+
+def plugin_folders(version: str | None) -> list[Path]:
+    """The plugin's folder in KiCad's `version` folder, or in each of VERSIONS whose folder exists (KiCad makes it at
+    its first start)."""
+    home = documents() / KICAD
+    versions = [version] if version else [v for v in VERSIONS if (home / v).is_dir()]
+    return [home / v / "plugins" / FOLDER for v in versions]
+
+
+def plugin_json(entrypoint: str) -> dict:
+    """The exec plugin's plugin.json (design 5.5): one action, a PCB editor toolbar button that runs `entrypoint`, the
+    launcher beside it, with the icons install writes."""
+    icons = {f"icons-{theme}": [f"icon-{theme}-{size}.png" for size in SIZES] for theme in ICONS}
+    return {"$schema": "https://go.kicad.org/api/schemas/v1", "identifier": IDENTIFIER, "name": render("G_APP"),
+            "description": render("G_BUTTON_PLUGIN"), "runtime": {"type": "exec"},
+            "actions": [{"identifier": "open", "name": render("G_APP"), "description": render("G_BUTTON_ACTION"),
+                         "show-button": True, "scopes": ["pcb"], "entrypoint": entrypoint, **icons}]}
+
+
+def launcher(python: str, windows: bool) -> str:
+    """The launcher's text, launch.cmd's (`windows`) or launch.sh's, with \\n line ends: it runs the helper on
+    `python`, quoted for its shell, with KiCad's arguments, and ends with the helper's exit code."""
+    if windows:  # a batch file expands % even inside quotes, and a registry-set DelayedExpansion would eat a !
+        return ('@echo off\nsetlocal DisableDelayedExpansion\n"' + python.replace("%", "%%")
+                + '" -X utf8 -I -m kicad_rf_studio.button %*\n')
+    return "#!/bin/sh\nexec '" + python.replace("'", "'\\''") + "' -X utf8 -I -m kicad_rf_studio.button \"$@\"\n"
+
+
+def _png(size: int, rgb: tuple[int, int, int]) -> bytes:
+    """The button's icon as an RGBA PNG, `size` px square: a ring and its horizontal diameter (a Smith chart's
+    outline) in opaque `rgb` on a transparent ground."""
+    c, r, half = (size - 1) / 2, 0.42 * size, size / 24  # the centre, the radius and half the stroke, size / 12
+    ink, ground = bytes((*rgb, 255)), bytes(4)
+    rows = b"".join(b"\0" + b"".join(  # each row: its filter type, 0 (none), then its pixels
+        ink if abs(math.hypot(x - c, y - c) - r) <= half or (abs(y - c) <= half and abs(x - c) <= r) else ground
+        for x in range(size)) for y in range(size))
+    chunks = ((b"IHDR", struct.pack(">IIBBBBB", size, size, 8, 6, 0, 0, 0)),  # 8-bit RGBA, not interlaced
+              (b"IDAT", zlib.compress(rows)), (b"IEND", b""))
+    return b"\x89PNG\r\n\x1a\n" + b"".join(
+        struct.pack(">I", len(data)) + kind + data + struct.pack(">I", zlib.crc32(kind + data)) for kind, data in chunks)
+
+
+def install(version: str | None = None, remove: bool = False) -> list[tuple[str, dict]]:
+    """install-kicad-plugin (design 5.5 Install, A-17): writes the exec plugin (plugin.json, the launcher, which runs
+    the helper on this environment's Python, and the icons) into each of plugin_folders(version), made with their
+    parents; with `remove`, deletes each of them that exists, and nothing else. Never touches KiCad's settings.
+    Returns the notes the CLI prints. Raises E_NO_KICAD_FOLDER, E_PLUGIN_PYTHON and E_PLUGIN_WRITE."""
+    # ponytail: KiCad's 9.0 and 10.0 folders only; a KiCad 10.1 makes a 10.1 folder, which VERSIONS then needs.
+    # --remove leaves the version and plugins folders, which KiCad makes anyway
+    folders = plugin_folders(version)
+    if remove:
+        notes = []
+        for folder in [f for f in folders if f.exists()]:
+            try:
+                shutil.rmtree(folder)
+            except OSError as e:
+                raise KrsError("E_PLUGIN_WRITE", path=str(folder), reason=reason(e, "cannot be written")) from None
+            notes.append(("I_PLUGIN_REMOVED", {"folder": str(folder)}))
+        return notes or [("I_PLUGIN_NONE", {"folder": str(documents() / KICAD)})]
+    if not folders:
+        raise KrsError("E_NO_KICAD_FOLDER", folder=str(documents() / KICAD))
+    windows = sys.platform == "win32"
+    entry = "launch.cmd" if windows else "launch.sh"
+    python = os.path.abspath(sys.executable)  # never resolved: a Linux venv's python is a symlink out of the venv
+    text = launcher(python, windows)
+    # ponytail: a Python path outside the console's code page is refused; its 8.3 short path (GetShortPathNameW) if
+    # users meet it
+    try:  # launch.cmd in the OEM code page, which cmd.exe reads a batch file in; made before anything is written
+        script = text.replace("\n", "\r\n").encode("oem") if windows else text.encode("utf-8")
+    except UnicodeEncodeError:
+        raise KrsError("E_PLUGIN_PYTHON", python=python) from None
+    files = {"plugin.json": (json.dumps(plugin_json(entry), indent=2) + "\n").encode("utf-8"), entry: script,
+             **{f"icon-{theme}-{size}.png": _png(size, rgb) for theme, rgb in ICONS.items() for size in SIZES}}
+    for folder in folders:
+        try:
+            folder.mkdir(parents=True, exist_ok=True)
+            for name, data in files.items():
+                (folder / name).write_bytes(data)
+            if not windows:
+                (folder / entry).chmod(0o755)
+        except OSError as e:
+            raise KrsError("E_PLUGIN_WRITE", path=str(folder), reason=reason(e, "cannot be written")) from None
+    return [("I_PLUGIN_INSTALLED", {"folder": str(folder)}) for folder in folders] + [("I_PLUGIN_NEXT", {})]
 
 
 if __name__ == "__main__":

@@ -6,7 +6,10 @@ import contextlib
 import ctypes
 import json
 import os
+import re
+import shutil
 import signal
+import stat
 import subprocess
 import sys
 import sysconfig
@@ -16,8 +19,9 @@ from pathlib import Path
 import pytest
 
 from kicad_rf_studio import button, runs
+from kicad_rf_studio.cli import main
 from kicad_rf_studio.core.kicad import load_board
-from kicad_rf_studio.core.messages import CATALOG, render
+from kicad_rf_studio.core.messages import CATALOG, KrsError, render
 from test_cli_cost import FIX
 from test_gui_control import recorder, until
 
@@ -174,3 +178,134 @@ def test_a_run_the_gui_starts_inside_a_kicad_job_that_kills_on_close_outlives_it
     finally:
         with contextlib.suppress(OSError):
             os.kill(pid, signal.SIGTERM)
+
+
+SEGMENT = "KiCad" if sys.platform == "win32" else "kicad"  # KiCad's own name for its documents folder
+LAUNCHER = "launch.cmd" if sys.platform == "win32" else "launch.sh"
+FILES = sorted(["plugin.json", LAUNCHER, "icon-dark-24.png", "icon-dark-48.png", "icon-light-24.png",
+                "icon-light-48.png"])
+
+
+def test_install_kicad_plugin_writes_each_kicad_folder_and_nothing_else(tmp_path, monkeypatch, capsys):
+    docs = tmp_path / "Documentos do Zé"  # design 3, 5.5; A-17; a space and an accent, as a Documents path may have
+    home, config = docs / SEGMENT, tmp_path / "config"
+    monkeypatch.setenv("KICAD_DOCUMENTS_HOME", str(docs))
+    for name in ("KICAD_CONFIG_HOME", "APPDATA", "XDG_CONFIG_HOME"):  # every place KiCad 9 and 10 read settings from
+        monkeypatch.setenv(name, str(config))
+    assert main(["install-kicad-plugin"]) == 2  # no KiCad started here yet
+    assert capsys.readouterr().err == render("E_NO_KICAD_FOLDER", folder=str(home)) + "\n"
+    settings = [config / v / "kicad_common.json" for v in ("9.0", "10.0")] + [
+        config / "kicad" / v / "kicad_common.json" for v in ("9.0", "10.0")]  # KICAD_CONFIG_HOME's; APPDATA's, XDG's
+    for f, text in [(s, '{"api": {"enable_server": false}}') for s in settings] + [
+            (home / "9.0" / "plugins" / "other" / "plugin.json", "{}"), (home / "10.0" / "fp-lib-table", "()")]:
+        f.parent.mkdir(parents=True, exist_ok=True)
+        f.write_text(text, encoding="utf-8")
+    before = {p: p.read_bytes() for p in tmp_path.rglob("*") if p.is_file()}
+    assert main(["install-kicad-plugin"]) == 0
+    folders = [home / v / "plugins" / "kicad-rf-studio" for v in ("9.0", "10.0")]
+    assert capsys.readouterr().out.splitlines() == [render("I_PLUGIN_INSTALLED", folder=str(f)) for f in folders] + [
+        render("I_PLUGIN_NEXT")]
+    assert [sorted(p.name for p in f.iterdir()) for f in folders] == [FILES, FILES]
+    after = {p: p.read_bytes() for p in tmp_path.rglob("*") if p.is_file()}
+    assert {p: after[p] for p in before} == before  # KiCad's settings and other plugins untouched
+    assert {p.parent for p in after.keys() - before.keys()} == set(folders)  # only its own folders written
+    assert main(["install-kicad-plugin", "--remove"]) == 0  # every version's
+    assert capsys.readouterr().out.splitlines() == [render("I_PLUGIN_REMOVED", folder=str(f)) for f in folders]
+    assert not any(f.exists() for f in folders) and (home / "9.0" / "plugins" / "other").is_dir()
+    assert main(["install-kicad-plugin", "--remove", "--kicad", "9.0"]) == 0
+    assert capsys.readouterr().out.splitlines() == [render("I_PLUGIN_NONE", folder=str(home))]
+    folders[1].write_text("")  # a file where the plugin's folder goes
+    assert main(["install-kicad-plugin", "--kicad", "10.0"]) == 2
+    assert capsys.readouterr().err == render("E_PLUGIN_WRITE", path=str(folders[1]),
+                                             reason="already exists as a file") + "\n"
+    folders[1].unlink()
+    shutil.rmtree(home / "10.0")
+    assert main(["install-kicad-plugin", "--kicad", "10.0"]) == 0  # a version named is written, its folder made
+    assert sorted(p.name for p in folders[1].iterdir()) == FILES and not folders[0].exists()
+
+
+def test_the_plugin_passes_kicads_schema_and_both_identifier_rules_and_its_icons_are_pngs(tmp_path, monkeypatch,
+                                                                                         qapp):  # design 5.5, 5.8
+    from kipy.packaging.validate import validate_plugin
+    from PySide6.QtGui import QColor, QImage
+    monkeypatch.setenv("KICAD_DOCUMENTS_HOME", str(tmp_path))
+    folder = tmp_path / SEGMENT / "10.0" / "plugins" / "kicad-rf-studio"
+    assert button.install("10.0") == [("I_PLUGIN_INSTALLED", {"folder": str(folder)}), ("I_PLUGIN_NEXT", {})]
+    assert validate_plugin(folder).errors == []  # kipy's bundled schema, $schema, the entrypoint and the icons
+    assert json.loads((folder / "plugin.json").read_text(encoding="utf-8")) == button.plugin_json(LAUNCHER) == {
+        "$schema": "https://go.kicad.org/api/schemas/v1", "identifier": "org.kicadrfstudio.app",
+        "name": "kicad-rf-studio", "description": render("G_BUTTON_PLUGIN"), "runtime": {"type": "exec"},
+        "actions": [{"identifier": "open", "name": "kicad-rf-studio", "description": render("G_BUTTON_ACTION"),
+                     "show-button": True, "scopes": ["pcb"], "entrypoint": LAUNCHER,
+                     "icons-light": ["icon-light-24.png", "icon-light-48.png"],
+                     "icons-dark": ["icon-dark-24.png", "icon-dark-48.png"]}]}
+    nine = r"[\w\d]{2,}\.[\w\d]+\.[\w\d]+"  # KiCad 9.0.7's IsValidIdentifier, unanchored
+    ten = r"[a-zA-Z]{2,}(\.([a-zA-Z0-9][a-zA-Z0-9-]*[a-zA-Z0-9]|[a-zA-Z0-9])){2,}"  # 10.0.7's, anchored
+    assert re.search(nine, button.IDENTIFIER) and re.fullmatch(ten, button.IDENTIFIER)
+    assert re.fullmatch(r"[A-Za-z]+(\.[A-Za-z0-9]+){2,}", button.IDENTIFIER)  # design 5.5's own rule, the owner's too
+    for theme, rgb in button.ICONS.items():
+        for size in button.SIZES:
+            image = QImage(str(folder / f"icon-{theme}-{size}.png"))
+            assert (image.width(), image.height()) == (size, size)
+            assert image.pixelColor(0, 0).alpha() == 0 and image.pixelColor(size // 2, size // 4).alpha() == 0
+            assert image.pixelColor(size // 2, size // 2) == QColor(*rgb)  # on the diameter, opaque
+
+
+def test_kicads_documents_folder_is_its_own_choice_a_onedrive_redirect_included(tmp_path, monkeypatch):
+    monkeypatch.setenv("KICAD_DOCUMENTS_HOME", str(tmp_path))  # design 5.5 Install; Review Focus 5
+    assert button.documents() == tmp_path
+    monkeypatch.delenv("KICAD_DOCUMENTS_HOME")
+    if sys.platform == "win32":  # the shell's Documents folder, as .NET reads it: its path only, never the folder
+        shell = subprocess.run(["powershell", "-NoProfile", "-Command", "[Console]::OutputEncoding = "
+                                "[Text.Encoding]::UTF8; [Environment]::GetFolderPath('MyDocuments')"],
+                               capture_output=True, encoding="utf-8", timeout=60)
+        assert button.documents() == Path(shell.stdout.strip())
+    else:
+        monkeypatch.setenv("XDG_DATA_HOME", str(tmp_path / "xdg"))
+        assert button.documents() == tmp_path / "xdg"
+        monkeypatch.delenv("XDG_DATA_HOME")
+        assert button.documents() == Path("~/.local/share").expanduser()
+
+
+def test_the_launcher_quotes_this_pythons_absolute_path_for_its_shell():  # design 5.5 Launcher; Review Focus 5
+    assert button.launcher("Zé Silva/100%/hi!/python.exe", windows=True) == (
+        '@echo off\nsetlocal DisableDelayedExpansion\n"Zé Silva/100%%/hi!/python.exe" -X utf8 -I -m '
+        'kicad_rf_studio.button %*\n')
+    assert button.launcher("venvs/o'neil/bin/python", windows=False) == (
+        "#!/bin/sh\nexec 'venvs/o'\\''neil/bin/python' -X utf8 -I -m kicad_rf_studio.button \"$@\"\n")
+
+
+def test_the_installed_launcher_runs_the_helper_and_passes_its_line_and_exit_code(tmp_path, monkeypatch):
+    docs = tmp_path / "Documentos do Zé"  # design 5.5, 5.11 item 3: KiCad runs the entrypoint in its folder
+    monkeypatch.setenv("KICAD_DOCUMENTS_HOME", str(docs))
+    install = ("import sys; from kicad_rf_studio.cli import main; rc = main(['install-kicad-plugin', '--kicad', "
+               "'10.0']); assert not {'PySide6', 'shiboken6', 'kipy'} & {m.split('.')[0] for m in sys.modules}; "
+               "sys.exit(rc)")
+    out = subprocess.run([sys.executable, "-I", "-c", install], capture_output=True, text=True, timeout=60)
+    assert out.returncode == 0, out.stderr  # design 4: install-kicad-plugin, run, loads neither Qt nor kicad-python
+    folder = docs / SEGMENT / "10.0" / "plugins" / "kicad-rf-studio"
+    text = button.launcher(os.path.abspath(sys.executable), sys.platform == "win32")
+    if sys.platform == "win32":
+        assert (folder / LAUNCHER).read_bytes() == text.replace("\n", "\r\n").encode("oem")
+    else:
+        assert (folder / LAUNCHER).read_text(encoding="utf-8") == text
+        assert stat.S_IMODE((folder / LAUNCHER).stat().st_mode) == 0o755
+    local = tmp_path / "local"
+    env = {**os.environ, "KICAD_API_SOCKET": f"ipc://{tmp_path / 'none.sock'}", "KICAD_API_TOKEN": "",
+           "LOCALAPPDATA": str(local), "XDG_DATA_HOME": str(local)}
+    out = subprocess.run([str(folder / LAUNCHER)], cwd=folder, env=env, capture_output=True, timeout=60)
+    assert (out.returncode, out.stdout) == (1, b"")
+    assert out.stderr.decode("utf-8").splitlines() == [render("E_KICAD_UNREACHABLE")]  # the helper's, through cmd or sh
+    assert (local / "kicad-rf-studio" / "button.log").read_text(encoding="utf-8").endswith(
+        " " + render("E_KICAD_UNREACHABLE") + "\n")
+
+
+@pytest.mark.skipif(sys.platform != "win32", reason="cmd.exe reads launch.cmd in the console's code page")
+def test_a_python_path_launch_cmd_cannot_hold_is_refused(tmp_path, monkeypatch):  # Review Focus 5
+    monkeypatch.setenv("KICAD_DOCUMENTS_HOME", str(tmp_path))
+    python = str(tmp_path / "venv\U0001F642" / "Scripts" / "python.exe")  # in no code page
+    monkeypatch.setattr(sys, "executable", python)
+    with pytest.raises(KrsError) as e:
+        button.install("9.0")
+    assert (e.value.code, e.value.params) == ("E_PLUGIN_PYTHON", {"python": python})
+    assert not (tmp_path / SEGMENT / "9.0" / "plugins" / "kicad-rf-studio").exists()  # nothing written
