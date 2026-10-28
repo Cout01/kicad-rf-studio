@@ -14,7 +14,7 @@ from kicad_rf_studio import pipeline, runs
 from kicad_rf_studio.cli import main
 from kicad_rf_studio.core.messages import render
 from kicad_rf_studio.core.model.spec import spec_hash
-from kicad_rf_studio.core.project import load_project, save_project
+from kicad_rf_studio.core.project import board_file, load_project, save_project
 from kicad_rf_studio.gui import control
 from test_cli_cost import new_project
 
@@ -155,7 +155,9 @@ def test_open_project_reads_results_only_while_they_apply(tmp_path, calibrated, 
     save_project(pj, {**load_project(pj), "t_max_s": 30e-9})  # a hand edit: T_max is in the model's excitation
     stale = control.open_project(pj)
     assert (stale.results, stale.problem, stale.cost) == (None, ("E_RESULTS_STALE", {}), None)
-    assert control.open_project(tmp_path / "nope.json").problem[0] == "E_PROJECT_UNREADABLE"
+    assert fresh.board == ran.board == stale.board == board_file(pj, load_project(pj))  # final review F9
+    nope = control.open_project(tmp_path / "nope.json")
+    assert nope.problem[0] == "E_PROJECT_UNREADABLE" and nope.board is None
     monkeypatch.setattr(pipeline, "load", lambda path: 1 / 0)
     assert control.open_project(pj).problem == ("E_INTERNAL", {"detail": "ZeroDivisionError: division by zero"})
 

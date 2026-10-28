@@ -12,6 +12,7 @@ from pathlib import Path
 from kicad_rf_studio import pipeline, runs
 from kicad_rf_studio.core.messages import KrsError, detail, render
 from kicad_rf_studio.core.model import spec
+from kicad_rf_studio.core.project import board_file, load_project
 
 END = {0: "G_END_DONE", 2: "G_END_REFUSED", 3: "G_END_BLOCKED", 4: "G_END_NOT_KEPT", 130: "G_END_STOPPED"}
 # the CLI's lines that the GUI words its own way, with the same params (design 5.3)
@@ -131,20 +132,24 @@ def last_cost(project: Path, spec_hash: str | None) -> Path | None:
 class Opened:
     """A project as open_project reads it: project.json, its model's spec_hash and the chain results while they apply,
     each None when not read; the first refusal met, as (code, params); the last cost of this model (last_cost) and the
-    newest run or verify that ended; each None without one."""
+    newest run or verify that ended; each None without one; the board file that project.json names
+    (core.project.board_file), None when project.json cannot be read or names no board."""
     project: dict | None
     spec_hash: str | None
     results: pipeline.ChainResults | None
     problem: tuple[str, dict] | None
     cost: Path | None
     last: Path | None
+    board: Path | None = None
 
 
 def open_project(path: Path) -> Opened:
     """The project file `path`, which the caller resolves, read off the GUI thread (design 5.1): pipeline.load, its
     model, the model's spec_hash (None without a spec), results_of and chain_results with errors as lines, the first
-    KrsError stopping there as `problem`, any other exception E_INTERNAL; then last_cost and the newest of ended() that
-    is a run or a verify. Never raises; starts nothing."""
+    KrsError stopping there as `problem`, any other exception E_INTERNAL; then the board file, from the project read
+    when pipeline.load succeeded, else from load_project alone (a board that fails to load still has a path), None
+    when that raises too; then last_cost and the newest of ended() that is a run or a verify. Never raises; starts
+    nothing."""
     project = model_hash = results = problem = None
     try:
         project, board, geom, _ = pipeline.load(path)
@@ -156,8 +161,12 @@ def open_project(path: Path) -> Opened:
         problem = (e.code, e.params)
     except Exception as e:  # E_INTERNAL, as cli.main reports it
         problem = ("E_INTERNAL", {"detail": detail(e)})
+    try:  # ponytail: a failed read reads project.json a second time, for its board's path
+        file = board_file(path, project if project is not None else load_project(path))
+    except Exception:  # project.json unreadable, or naming no board
+        file = None
     last = next((d for d, end in ended(path) if end["params"]["command"] in ("run", "verify")), None)
-    return Opened(project, model_hash, results, problem, last_cost(path, model_hash), last)
+    return Opened(project, model_hash, results, problem, last_cost(path, model_hash), last, file)
 
 
 def run_state(run_dir: Path, end: dict | None, holder: dict | None, own: bool,

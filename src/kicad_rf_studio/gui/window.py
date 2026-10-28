@@ -18,7 +18,6 @@ from matplotlib.figure import Figure
 from kicad_rf_studio import pipeline, runs
 from kicad_rf_studio.core.messages import detail, reason, render
 from kicad_rf_studio.core.post.outputs import LIMITS, draw_summary
-from kicad_rf_studio.core.project import board_file
 from kicad_rf_studio.gui import control
 
 COLUMNS = ("G_COL_PORT", "G_COL_TIME", "G_COL_RESIDUAL", "G_COL_SPEED", "G_COL_VERDICT")
@@ -143,10 +142,10 @@ class MainWindow(QMainWindow):
         self.tick()
 
     def stamp(self) -> tuple[int | None, int | None]:
-        """The st_mtime_ns of project.json and of its board file (mtime_ns), the board's None while the last read has
-        no project."""
-        p = None if self.opened is None else self.opened.project
-        return mtime_ns(self.path), None if p is None else mtime_ns(board_file(self.path, p))
+        """The st_mtime_ns of project.json and of the board file that the last read names (mtime_ns, Opened.board),
+        the board's None while that read names none, so a board that failed to load is read again when it is saved."""
+        board = None if self.opened is None else self.opened.board
+        return mtime_ns(self.path), None if board is None else mtime_ns(board)
 
     def load(self) -> None:
         """Reads the project off the GUI thread (control.open_project on the pool, as `loading`), its stamp taken

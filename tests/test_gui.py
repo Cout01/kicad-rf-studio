@@ -374,3 +374,32 @@ def test_an_open_window_reads_its_board_again_when_it_is_saved(window, tmp_path)
     assert w.loading is None  # read once per save
     assert w.results.canvas.figure.axes == [] and w.results.problem.text() == render("G_RESULTS_STALE")
     assert w.cost is None and not w.run_button.isEnabled()
+
+
+def test_an_open_window_reads_its_board_again_after_a_save_that_broke_it(window, tmp_path):  # final review F9
+    board, text = tmp_path / "coupon_gcpw_pads.kicad_pcb", (FIX / "coupon_gcpw_pads.kicad_pcb").read_bytes()
+    board.write_bytes(text)  # a copy, which the test re-saves, as in F3's test
+    assert main(["new", str(board), "--start", "TP1.1", "--end", "TP2.1", "--f0", "915MHz", "--preset", "draft",
+                 "-o", str(tmp_path / "coupon_gcpw_pads")]) == 0
+    pj = (tmp_path / "coupon_gcpw_pads" / "project.json").resolve()
+    broken = text[:text.rindex(b")")]  # its last closing parenthesis gone, which load_board refuses
+    board.write_bytes(broken)  # saved broken before the window opens
+    w = window()
+    w.open_project(pj)
+    opened(w)
+    refusal = control.text(*w.opened.problem)
+    assert w.opened.problem[0] == "E_PARSE_UNBALANCED" and w.project_status.text() == refusal
+    w.tick()
+    assert w.loading is None  # no redundant read
+    board.write_bytes(text)  # fixed and saved again
+    w.tick()
+    assert w.loading is not None  # read again, though the last read had no project
+    opened(w)
+    assert w.project_status.text() == render("G_PROJECT", path=str(pj), f0_mhz="915", harmonics=3, preset="draft")
+    board.write_bytes(broken)  # saved broken again
+    w.tick()
+    assert w.loading is not None
+    opened(w)
+    assert w.project_status.text() == refusal
+    w.tick()
+    assert w.loading is None
