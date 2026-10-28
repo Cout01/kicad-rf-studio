@@ -461,7 +461,8 @@ def test_new_from_a_board_lists_its_pads_writes_the_project_and_opens_it(window,
     f.board.editingFinished.emit()  # focus left the board field: the same board, so the folder typed stays
     f.create_button.click()
     assert (w.creating, f.folder.text(), f.status.text()) == (None, "", render("G_NEW_NO_FOLDER"))
-    f.folder.setText(str(tmp_path / "lpf915"))
+    f.folder.setText(f" {tmp_path / 'lpf915'} ")  # pasted with spaces around it: new gets it stripped
+    f.board.setText(f"{board} ")  # a trailing space, and no editingFinished: stripped too
     f.start.setCurrentText("U1.1")
     f.end.setCurrentText("J1.1")
     f.harmonics.setValue(2)
@@ -484,8 +485,23 @@ def test_new_from_a_board_lists_its_pads_writes_the_project_and_opens_it(window,
     w.creating.exception(timeout=120)
     w.tick()
     assert f.status.text() == render("G_PROJECT_EXISTS", path=str(pj))
+    assert items(f.notes) == []  # the last New's notes go with a refusal
     assert board.read_bytes() == (FIX / "lpf915.kicad_pcb").read_bytes()  # never written (anti-goal)
     assert "openEMS" not in sys.modules and "CSXCAD" not in sys.modules  # design 4: new ran in this process
+    bad, text = tmp_path / "bad.kicad_pcb", (FIX / "lpf915.kicad_pcb").read_bytes()
+    bad.write_bytes(text[:text.rindex(b")")])  # its last closing parenthesis gone, which load_board refuses
+    f.board.setText(str(bad))
+    w.board_chosen()
+    error = w.pads_read.exception(timeout=60)
+    w.tick()
+    assert error.code == "E_PARSE_UNBALANCED" and f.status.text() == control.message(error)
+    assert f.start.count() == f.end.count() == 0  # the pickers left empty
+    bad.write_bytes(text)  # fixed on disk and picked again: read again
+    w.board_chosen()
+    assert w.pads_read is not None
+    w.pads_read.result(timeout=60)
+    w.tick()
+    assert [f.start.itemText(i) for i in range(f.start.count())] == control.pads(bad)
 
 
 def column(table, c):

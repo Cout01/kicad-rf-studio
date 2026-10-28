@@ -742,10 +742,10 @@ class MainWindow(QMainWindow):
             self.new_form.folder.setText(name)
 
     def create_project(self) -> None:
-        """Create the project: f0 read here, on the GUI thread, then new on the pool with the form's fields
-        (`creating`), the status line saying so and Create disabled until it ends (created). A frequency that does not
-        read, or no project folder (new's own default, the working folder, means nothing to a GUI), goes to the status
-        line, and nothing starts."""
+        """Create the project: f0 read here, on the GUI thread, then new on the pool with the form's fields, the board
+        and the folder stripped (`creating`), the status line saying so and Create disabled until it ends (created). A
+        frequency that does not read, or no project folder (new's own default, the working folder, means nothing to a
+        GUI), goes to the status line, and nothing starts."""
         f = self.new_form
         try:
             f0 = parse_frequency(f.f0.text())
@@ -758,35 +758,37 @@ class MainWindow(QMainWindow):
         f.status.setText(render("G_CREATING"))
         f.create_button.setEnabled(False)
         self.creating = self.pool.submit(
-            cli.new, f.board.text(), f.start.currentText().strip(), f.end.currentText().strip(), f0,
+            cli.new, f.board.text().strip(), f.start.currentText().strip(), f.end.currentText().strip(), f0,
             harmonics=f.harmonics.value(), preset=f.preset.currentText(), stackup=f.stackup.currentData(),
-            lid_height=f.lid.value() or None, output=f.folder.text())  # a lid height of 0: none, new's default
+            lid_height=f.lid.value() or None, output=f.folder.text().strip())  # a lid height of 0: none, new's default
 
     def show_pads(self, done: Future) -> None:
         """The board's pads (`done`, control.pads) in the start and end pickers, none picked for the user; on a
-        refusal (load_board's, else E_INTERNAL), the pickers left empty and the refusal in the status line. The
-        exception is taken, never raised again: its traceback would then hold this frame, and so the window, in a
-        cycle with the Future that only the garbage collector frees, maybe on a pool thread (probed)."""
+        refusal (load_board's, else E_INTERNAL), the pickers left empty, the refusal in the status line and `chosen`
+        cleared, so that the same board, fixed and picked again, is read again. The exception is taken, never raised
+        again: its traceback would then hold this frame, and so the window, in a cycle with the Future that only the
+        garbage collector frees, maybe on a pool thread (probed)."""
         f, error = self.new_form, done.exception()
         if error is not None:
             f.status.setText(control.message(error))
+            f.chosen = ""
         for box in (f.start, f.end):
             box.clear()
             box.addItems([] if error is not None else done.result())
             box.setCurrentIndex(-1)
 
     def created(self, done: Future) -> None:
-        """new's end (`done`): Create enabled again; on success the status line cleared, new's notes listed in the
-        window's words and the project it wrote opened; on a refusal (new's, else E_INTERNAL), the refusal in the
-        status line, the exception taken as show_pads takes it."""
+        """new's end (`done`): Create enabled again and the last New's notes cleared; on success the status line
+        cleared, new's notes listed in the window's words and the project it wrote opened; on a refusal (new's, else
+        E_INTERNAL), the refusal in the status line, the exception taken as show_pads takes it."""
         f, error = self.new_form, done.exception()
         f.create_button.setEnabled(True)
+        f.notes.clear()
         if error is not None:
             f.status.setText(control.message(error))
             return
         path, notes = done.result()
         f.status.clear()
-        f.notes.clear()
         f.notes.addItems([control.text(code, params) for code, params in notes])
         self.open_project(path)
 
