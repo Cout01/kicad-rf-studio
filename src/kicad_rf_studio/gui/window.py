@@ -623,8 +623,12 @@ class MainWindow(QMainWindow):
 
     def ask(self, text: str, title: str = "G_CONFIRM_TITLE") -> bool:
         """Whether the user answers Yes to `text`, in a box titled with `title`'s text; tests replace it on the
-        instance, or QMessageBox.question so that it runs (a modal dialog would block)."""
-        return QMessageBox.question(self, render(title), text) == QMessageBox.StandardButton.Yes
+        instance, or QMessageBox.question so that it runs (a modal dialog would block). No is the default button, so
+        Enter or Space never starts a run, an Apply or KiCad's save (design 5.5: the save writes every edit KiCad
+        holds)."""
+        return QMessageBox.question(self, render(title), text,
+                                    QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                                    QMessageBox.StandardButton.No) == QMessageBox.StandardButton.Yes
 
     def stop(self) -> None:
         """Stop: an empty STOP file in the watched run folder, which stops the run as Ctrl+C does."""

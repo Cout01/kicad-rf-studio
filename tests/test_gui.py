@@ -646,9 +646,10 @@ def test_refill_asks_first_then_kicad_refills_and_saves_and_new_reads_the_board_
     assert f.refill_button.isEnabled()
     asked = []
     answers = (QMessageBox.StandardButton.No, QMessageBox.StandardButton.Yes, QMessageBox.StandardButton.Yes)
+    buttons = (QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No, QMessageBox.StandardButton.No)
 
     def question(parent, title, text, *rest):  # ask's own code runs, and no modal box opens
-        asked.append((title, text))
+        asked.append((title, text, rest))
         if len(asked) == 3:  # a press from another KiCad while the question is open (design 3: no unasked edits)
             parent.take_handoff(press(board, selected, socket=late.url, token=late.token))
             parent.pads_read.result(timeout=60)
@@ -657,8 +658,8 @@ def test_refill_asks_first_then_kicad_refills_and_saves_and_new_reads_the_board_
 
     monkeypatch.setattr(QMessageBox, "question", question)
     f.refill_button.click()  # No: nothing reaches KiCad
-    assert asked == [(render("G_REFILL"), render("G_REFILL_CONFIRM", board=str(board)))] and w.refilling is None
-    assert elsewhere.seen == []
+    assert asked == [(render("G_REFILL"), render("G_REFILL_CONFIRM", board=str(board)), buttons)]  # No the default
+    assert w.refilling is None and elsewhere.seen == []
     f.refill_button.click()  # Yes, but that KiCad has another board open: nothing refilled or saved
     w.refilling.exception(timeout=60)
     w.tick()
@@ -675,7 +676,7 @@ def test_refill_asks_first_then_kicad_refills_and_saves_and_new_reads_the_board_
     w.tick()
     assert f.status.text() == render("G_REFILLED", board=str(board)) and f.refill_button.isEnabled()
     assert k.seen == ["GetOpenDocuments", "RefillZones", "SaveDocument", "SaveDocument"] and late.seen == []
-    assert board.read_bytes() == lpf and asked == [asked[0]] * 3  # each question names the board, under its title
+    assert board.read_bytes() == lpf and asked == [asked[0]] * 3  # all three: the board, its title, No the default
     w.pads_read.result(timeout=60)
     w.tick()  # the press read again: the selection is in the saved file now
     assert (f.start.currentText(), f.end.currentText(), w.handed.socket) == ("U1.1", "J1.1", late.url)
