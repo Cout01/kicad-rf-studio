@@ -190,6 +190,21 @@ CATALOG: dict[str, str] = {
     "I_VERIFY_SCOPE": "verify checks the layout reduction, not the vendor part data: each part sat in the grid at its ideal value, against a retune at the same values. Its loss budget counts a resistor's loss in the grid as layout loss.",
     "E_INTERNAL": "Internal error: {detail}. Please report it.",
     "G_APP": "kicad-rf-studio",
+    "G_RUNNING": "Running in {folder}…",
+    "G_END_DONE": "Finished (exit code {exit_code}).",
+    "G_END_REFUSED": "Refused (exit code {exit_code}): the message above says why and what to do.",
+    "G_END_BLOCKED": "A gate blocked it (exit code {exit_code}): the verdicts above say which and what to change.",
+    "G_END_NOT_KEPT": "Not every job kept S (exit code {exit_code}), so the previous results stay; the verdicts above say why.",
+    "G_END_STOPPED": "Stopped (exit code {exit_code}).",
+    "G_END_FAILED": "Failed (exit code {exit_code}): the message above says what happened. Please report it.",
+    "G_END_EXITED": "The process in {folder} exited with code {exit_code} without recording how it ended: it was killed, or it failed at its start ({log} says why). Start it again; the next run reclaims any lock it left.",
+    "G_END_LOST": "The process of {folder} ended without recording how (it was killed, or the PC restarted). Start it again; the next run reclaims any lock it left.",
+    "G_ENDED": "The run in {folder}, started from another window or a terminal, has ended. Its verdicts are above, and the results it kept show in Results.",
+    "G_LOCKED": "A run of this project, started at {started} from another window or a terminal, is going on in {run}. Stop stops it. If no run is going on (its process was killed and its number reused), delete {lock}.",
+    "G_RUN_START": "Running {runs} jobs, {pool} at once, in {folder}. Stop stops them.",
+    "G_WHAT_IF": "Relative / what-if: the instant retune is not yet validated against a full simulation of a real board (spec 7.6), so read these chain results as relative. Check the final values with Verify.",
+    "G_NO_RESULTS": "No results yet: estimate the cost, then run.",
+    "G_RESULTS_STALE": "The model changed since the last run (a board re-saved in KiCad can change it too), or that run is older than this version, so its results no longer apply. Estimate the cost and run again.",
 }
 
 _translation = gettext.translation(
