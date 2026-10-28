@@ -1,8 +1,8 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
-"""The main window (Stage 2 design 5.1, 5.3): it opens a project, shows its cost, and starts, follows and stops a run,
-its own or one it re-attaches through the project lock, and replays the project's last run, driven by one 500 ms
-timer (`tick`). The project is read on a pool thread (control.open_project); cost and run start as a detached
-orchestrator (control.start), so this process never reaches runs.run_jobs."""
+"""The main window (Stage 2 design 5.1, 5.3, 5.4): it opens a project, shows its cost, starts, follows and stops a run,
+its own or one it re-attaches through the project lock, replays the project's last run and shows its results
+(ResultsView), driven by one 500 ms timer (`tick`). The project is read on a pool thread (control.open_project); cost
+and run start as a detached orchestrator (control.start), so this process never reaches runs.run_jobs."""
 import subprocess
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
@@ -11,9 +11,13 @@ from PySide6.QtCore import Qt, QTimer
 from PySide6.QtGui import QCloseEvent
 from PySide6.QtWidgets import (QFileDialog, QLabel, QListWidget, QMainWindow, QMessageBox, QPushButton, QTableWidget,
                                QTableWidgetItem, QTabWidget, QVBoxLayout, QWidget)
+# after PySide6: matplotlib's Qt backend then wraps the binding already loaded, never another one installed beside it
+from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg
+from matplotlib.figure import Figure
 
 from kicad_rf_studio import pipeline, runs
 from kicad_rf_studio.core.messages import detail, reason, render
+from kicad_rf_studio.core.post.outputs import LIMITS, draw_summary
 from kicad_rf_studio.gui import control
 
 COLUMNS = ("G_COL_PORT", "G_COL_TIME", "G_COL_RESIDUAL", "G_COL_SPEED", "G_COL_VERDICT")
@@ -35,6 +39,41 @@ def page(*widgets: QWidget) -> QWidget:
     for widget in widgets:
         layout.addWidget(widget)
     return holder
+
+
+class ResultsView(QWidget):
+    """The Results tab (Stage 2 design 5.3, 5.4): summary.png's drawing on a FigureCanvasQTAgg, the what-if label over
+    it while RETUNE_VALIDATED is False, and the result's lines and stated limits; or why there is none."""
+
+    def __init__(self):
+        super().__init__()
+        self.what_if, self.problem, self.lines = QLabel(control.text("I_WHAT_IF", {})), QLabel(), QListWidget()
+        self.canvas = FigureCanvasQTAgg(Figure(layout="constrained"))
+        for label in (self.what_if, self.problem):
+            label.setWordWrap(True)  # its sentence, some 200 characters, would otherwise set the window's minimum width
+            label.hide()  # until a read shows it
+        layout = QVBoxLayout(self)
+        for widget in (self.what_if, self.problem, self.canvas, self.lines):
+            layout.addWidget(widget)
+
+    def display(self, opened: control.Opened, name: str) -> None:
+        """Shows the project read `opened`, `name` being the project folder's name, which summary.png's title shows:
+        the figure and the lines cleared; the what-if label only when the results carry what_if, and the problem's
+        line only with one; with results whose chain is closed on 2 external ports, summary.png's plots (draw_summary)
+        with the label as their title's second line; with any results, plot or not, their lines, then LIMITS (C-32).
+        Qt redraws the canvas once its event loop runs (draw_idle)."""
+        res, fig = opened.results, self.canvas.figure
+        fig.clear()
+        self.lines.clear()
+        label = self.what_if.text() if res is not None and res.what_if else None
+        self.what_if.setVisible(label is not None)
+        self.problem.setText("" if opened.problem is None else control.text(*opened.problem))
+        self.problem.setVisible(opened.problem is not None)
+        if res is not None:
+            if res.chain is not None and len(res.ext) == 2:
+                draw_summary(fig, res.lay, res.chain, res.ideal, name, label)
+            self.lines.addItems([control.text(c, p) for c, p in res.lines] + [render(c) for c in LIMITS])
+        self.canvas.draw_idle()
 
 
 class MainWindow(QMainWindow):
@@ -70,6 +109,8 @@ class MainWindow(QMainWindow):
                               ("G_TAB_COST", (self.cost_lines, self.cost_status, self.cost_button, self.run_button)),
                               ("G_TAB_RUN", (self.banner, self.jobs, self.log, self.run_status, self.stop_button))):
             self.tabs.addTab(page(*widgets), render(code))
+        self.results = ResultsView()
+        self.tabs.addTab(self.results, render("G_TAB_RESULTS"))
         self.setCentralWidget(self.tabs)
         for button, slot in ((self.open_button, self.browse), (self.cost_button, self.estimate),
                              (self.run_button, self.run), (self.stop_button, self.stop)):
@@ -229,7 +270,7 @@ class MainWindow(QMainWindow):
         """A project read: its line (G_PROJECT), or its refusal when there is no project, and its cost; while nothing
         is watched and the project has no lock, its newest run or verify that ended (opened.last) is watched, which
         replays it. Unless a cost is watched, live or ended, the Cost tab replays the last cost of this model
-        (G_COST_REUSED), or says there is none (G_NO_COST)."""
+        (G_COST_REUSED), or says there is none (G_NO_COST). Last, the Results tab shows the read (ResultsView)."""
         p = opened.project
         self.project_status.setText(control.text(*opened.problem) if p is None else render(
             "G_PROJECT", path=str(self.path), f0_mhz=f"{p['f0_hz'] / 1e6:g}", harmonics=p["harmonics"],
@@ -237,17 +278,17 @@ class MainWindow(QMainWindow):
         self.cost = opened.cost
         if self.command is None and opened.last and runs.lock_holder(self.path) is None:
             self.watch("run", opened.last)
-        if self.command == "cost":
-            return
-        # ponytail: a cost still running when the window opened is not re-attached (cost takes no lock), and a second
-        # one may start beside it; a lock for cost if that matters
-        self.cost_lines.clear()
-        if self.cost is None:
-            self.cost_status.setText(render("G_NO_COST"))
-            return
-        self.cost_lines.addItems([control.text(e["code"], e["params"])
-                                  for e in control.Tail(self.cost / "events.jsonl").read() if e["kind"] != "end"])
-        self.cost_status.setText(render("G_COST_REUSED", folder=self.cost.name))
+        if self.command != "cost":
+            # ponytail: a cost still running when the window opened is not re-attached (cost takes no lock), and a
+            # second one may start beside it; a lock for cost if that matters
+            self.cost_lines.clear()
+            if self.cost is None:
+                self.cost_status.setText(render("G_NO_COST"))
+            else:
+                self.cost_lines.addItems([control.text(e["code"], e["params"]) for e in
+                                          control.Tail(self.cost / "events.jsonl").read() if e["kind"] != "end"])
+                self.cost_status.setText(render("G_COST_REUSED", folder=self.cost.name))
+        self.results.display(opened, self.path.parent.name)
 
     def closeEvent(self, event: QCloseEvent) -> None:
         """Closing the window stops its timer and drops the project reads not yet begun; what it started goes on

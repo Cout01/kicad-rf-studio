@@ -208,6 +208,7 @@ CATALOG: dict[str, str] = {
     "G_TAB_PROJECT": "Project",
     "G_TAB_COST": "Cost",
     "G_TAB_RUN": "Run",
+    "G_TAB_RESULTS": "Results",
     "G_OPEN": "Open a project…",
     "G_OPEN_FILTER": "Projects (*.json)",
     "G_COST": "Estimate the cost",

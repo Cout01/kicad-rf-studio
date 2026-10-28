@@ -13,14 +13,16 @@ import pytest
 from PySide6.QtCore import QTimer
 from PySide6.QtWidgets import QFileDialog
 
-from kicad_rf_studio import gui, runs
+from kicad_rf_studio import gui, pipeline, runs
 from kicad_rf_studio.cli import main
 from kicad_rf_studio.core.messages import render
-from kicad_rf_studio.core.project import load_project
+from kicad_rf_studio.core.post.outputs import LIMITS
+from kicad_rf_studio.core.project import load_project, save_project
 from kicad_rf_studio.gui import control
 from kicad_rf_studio.gui.window import MainWindow
 from test_cli_cost import fail, new_project
 from test_gui_control import FAKE_PREFIX, until
+from test_run import lpf_run
 
 ROOT = Path(__file__).resolve().parents[1]
 QT_FREE = ("kicad_rf_studio.cli", "kicad_rf_studio.worker", "kicad_rf_studio.pipeline", "kicad_rf_studio.runs",
@@ -264,3 +266,41 @@ def test_another_runs_lock_disables_cost_and_run_until_it_goes(window, tmp_path)
     w.tick()
     assert w.run_status.text() == render("G_ENDED", folder=str(other)) and w.banner.isHidden()
     assert (w.cost_button.isEnabled(), w.run_button.isEnabled(), w.stop_button.isEnabled()) == (True, True, False)
+
+
+def test_results_show_the_chain_under_the_what_if_label_and_go_when_stale(window, tmp_path, monkeypatch):
+    pj = lpf_run(tmp_path, monkeypatch).resolve()  # tests/test_run.py: lpf915 on the network fake; Review Focus 5
+    w = window()
+    w.open_project(pj)
+    opened(w)
+    res, fig, label = w.opened.results, w.results.canvas.figure, render("G_WHAT_IF")
+    assert w.results.what_if.text() == label and not w.results.what_if.isHidden()  # design 5.3: 4 part ports
+    assert len(fig.axes) == 3 and fig.get_suptitle() == render("I_PLOT_TITLE", name="lpf915") + "\n" + label
+    assert items(w.results.lines) == [control.text(c, p) for c, p in res.lines] + [render(c) for c in LIMITS]
+    assert items(w.results.lines)[0].startswith("Results of the run in ")
+    w.results.canvas.draw()  # the Qt canvas renders it: draw_idle waits for an event loop the tests do not run
+    w.tabs.setCurrentWidget(w.results)
+    grab(w, "results")
+    monkeypatch.setattr(pipeline, "RETUNE_VALIDATED", True)  # the owner's switch after P0-C
+    w.load()
+    opened(w)
+    assert w.results.what_if.isHidden() and fig.get_suptitle() == render("I_PLOT_TITLE", name="lpf915")
+    save_project(pj, {**load_project(pj), "t_max_s": 30e-9})  # a hand edit: T_max is in the model's excitation
+    w.tick()  # project.json's mtime: read again
+    opened(w)
+    w.tick()
+    assert w.loading is None  # read once: load() stamped the new mtime (Review Focus 3)
+    assert fig.axes == [] and items(w.results.lines) == [] and w.results.problem.text() == render("G_RESULTS_STALE")
+    grab(w, "results-stale")
+
+
+def test_a_single_trace_has_no_what_if_label(window, tmp_path, calibrated):  # design 5.3
+    pj = new_project(tmp_path, "coupon_gcpw_pads", preset="draft").resolve()
+    assert main(["run", str(pj)]) == 0
+    w = window()
+    w.open_project(pj)
+    opened(w)
+    fig = w.results.canvas.figure
+    assert w.results.what_if.isHidden() and len(fig.axes) == 3
+    assert fig.get_suptitle() == render("I_PLOT_TITLE", name="coupon_gcpw_pads")
+    assert "openEMS" not in sys.modules and "CSXCAD" not in sys.modules  # this process read and drew it (design 4)
