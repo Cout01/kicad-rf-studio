@@ -171,8 +171,6 @@ class MainWindow(QMainWindow):
             return
         holder = runs.lock_holder(self.path)
         held = holder is not None and holder["alive"]  # any run's, a retune's included
-        # ponytail: a retune typed with a relative project path locks a relative results/ and reads as a run here;
-        # pipeline.retune locking path.absolute()'s results/ if it matters
         if holder and holder["run_dir"] and Path(holder["run_dir"]) == self.path.parent / "results":
             holder = None
         if holder and holder["run_dir"] and Path(holder["run_dir"]) != self.run_dir and (

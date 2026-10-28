@@ -740,7 +740,7 @@ def retune(path: Path, assignments: list[str], emit: Callable[[str, dict], None]
     one raises before anything is stored (C-20)."""
     read_project(path)  # before the lock, as in run: its file needs the project's folder, which a typo lacks
     # ponytail: results/ stands in for the lock's run folder, so E_LOCKED names results/ while a retune holds the lock
-    with runs.project_lock(path, path.parent / "results"):
+    with runs.project_lock(path, path.resolve().parent / "results"):
         project = read_project(path)  # again under the lock: a run may have saved new results since
         if assignments and not any(q["role"] in (PORT, CURVE_PORT) for q in parts(project).values()):
             raise KrsError("E_RETUNE_NO_PARTS")

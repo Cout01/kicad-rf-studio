@@ -10,6 +10,7 @@ from pathlib import Path
 import numpy as np
 import pytest
 
+from kicad_rf_studio import runs
 from kicad_rf_studio.cli import main
 from kicad_rf_studio.core.messages import KrsError, render
 from kicad_rf_studio.core.post.chain import with_box, z_part
@@ -200,3 +201,12 @@ def test_a_project_in_a_missing_folder_is_a_refusal(tmp_path, capsys):  # exit 2
     pj = tmp_path / "missing" / "project.json"  # the lock file, project.json.lock, has no folder to go in
     assert main(["retune", str(pj), "C2=4.7pF"]) == 2
     assert capsys.readouterr().err == render("E_PROJECT_UNREADABLE", path=str(pj), reason="file not found") + "\n"
+
+
+def test_a_retune_given_a_relative_path_locks_its_absolute_results_folder(tmp_path, calibrated, monkeypatch):
+    pj = lpf_run(tmp_path, monkeypatch)  # final review F7: an open window reads the lock's run folder
+    seen, real = [], runs.project_lock
+    monkeypatch.setattr(runs, "project_lock", lambda path, run_dir: seen.append(str(run_dir)) or real(path, run_dir))
+    monkeypatch.chdir(pj.parent.parent)
+    assert main(["retune", str(Path(pj.parent.name) / "project.json")]) == 0
+    assert seen == [str(pj.resolve().parent / "results")]
