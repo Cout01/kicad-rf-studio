@@ -931,8 +931,9 @@ class MainWindow(QMainWindow):
     def closeEvent(self, event: QCloseEvent) -> None:
         """Closing the window first closes its server and unlocks gui.lock (serve), so that a later start serves itself
         instead of waiting on a closing window whose pool may still run; it then stops its timer and drops the pool's
-        work not yet begun (project reads, a pad list, a New, an Apply); what it started goes on (design 5.1: a run
-        outlives its window, and the next window re-attaches it), an Apply's retune included."""
+        work not yet begun (project reads, a pad list, a New, an Apply, a refill); what it started goes on (design 5.1:
+        a run outlives its window, and the next window re-attaches it), an Apply's retune included, and so does a
+        refill already begun, which ends when KiCad answers, within FILL_WAIT_S, as an Apply's retune does."""
         if self.server is not None:  # serve keeps both
             self.server.close()
             self.lock.unlock()
