@@ -185,6 +185,8 @@ def test_a_handoff_joins_the_selection_to_the_saved_boards_pads(fake, tmp_path):
 
     assert read(["J1.1", "U1.1"]) == control.Handed(board, "ipc://s", "T", every, "U1.1", "J1.1", None)  # J1: end
     assert (read(["C2.1", "C3.1"]).start, read(["C2.1", "C3.1"]).end) == ("C2.1", "C3.1")  # no connector: as sent
+    both = read(["J2.1", "J1.1"])  # both connectors' pads: as sent, never swapped
+    assert (both.start, both.end, both.problem) == ("J2.1", "J1.1", None)
     one, none = read(["C3.1"]), read()
     assert (one.start, one.end, none.start, none.end, none.pads, none.problem) == ("C3.1", "", "", "", every, None)
     narrowed = read(["U1.1"], ["C1", "J1"])  # a footprint narrows the pickers to its pads and the selected ones
