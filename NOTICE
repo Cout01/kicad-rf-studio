@@ -1,5 +1,5 @@
 kicad-rf-studio is free software under the GNU General Public License v3.0 or later (GPL-3.0-or-later); see LICENSE.
-It includes the third-party pieces below, each under the licence given.
+It includes the third-party pieces below, each under the licence given, but for the runtime dependencies listed last.
 
 
 CSXCAD SmoothMeshLines
@@ -20,3 +20,27 @@ KiCad line-calculator formulas
   Licence:   GNU General Public License v2.0 or later (GPL-2.0-or-later), used here under GPL-3.0-or-later
   Here:      tests/kicad_lines.py, the microstrip and grounded coplanar waveguide formulas ported to Python, for the
              tests only (not installed with the package)
+
+
+Runtime dependencies (not included)
+  kicad-rf-studio includes none of these: pip installs them with it from PyPI, and its setup-openems command installs
+  openEMS and CSXCAD from openEMS's official Windows package (on Linux, you build them). Each is under its own
+  licence, as the GUI's About box lists them:
+  - PySide6-Essentials (LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only)
+  - shiboken6 (LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only)
+  - matplotlib (Matplotlib License (PSF-based))
+  - numpy (BSD-3-Clause)
+  - scipy (BSD-3-Clause)
+  - h5py (BSD-3-Clause)
+  - shapely (BSD-3-Clause)
+  - scikit-rf (BSD-3-Clause)
+  - pandas (BSD-3-Clause)
+  - kicad-python (MIT)
+  - protobuf (BSD-3-Clause)
+  - pynng (MIT)
+  - jsonschema (MIT)
+  - openEMS (GPL-3.0-or-later)
+  - CSXCAD (LGPL-3.0-or-later)
+  pip also installs the packages these depend on, each under its own licence, which pip show <name> names in the
+  venv. kicad-rf-studio conveys none of them, Qt included, so the LGPL's conveying duties (its text, a way to replace
+  the library, an offer of its source) start only with a build that bundles them, which is deferred.

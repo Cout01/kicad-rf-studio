@@ -430,3 +430,10 @@ def test_about_names_the_version_the_licence_notices_and_each_runtime_dependency
     pyproject = tomllib.loads((Path(__file__).resolve().parents[1] / "pyproject.toml").read_text(encoding="utf-8"))
     declared = {re.split(r"[<>=!~;\[ ]", d, maxsplit=1)[0].lower() for d in pyproject["project"]["dependencies"]}
     assert declared <= {name.lower() for name, _ in control.DEPENDENCIES}  # every core dependency is named
+
+
+def test_notice_names_each_runtime_dependency_with_its_licence_as_about_does():  # design 5.6 Licensing; A-19
+    notice = (Path(__file__).resolve().parents[1] / "NOTICE").read_text(encoding="utf-8")
+    entry = next(e for e in notice.split("\n\n\n") if e.startswith("Runtime dependencies (not included)\n"))
+    assert re.findall(r"^  - (\S+) \((.+)\)$", entry, re.M) == list(control.DEPENDENCIES)  # one list for both
+    assert "start only with a build that bundles them, which is deferred." in " ".join(entry.split())  # design 5.6
