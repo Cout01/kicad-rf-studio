@@ -536,7 +536,7 @@ def _locked(path: Path, body: Callable[[Path, Path], int], run_dir: Path | None 
     either way, whose events.jsonl gets any KrsError as a message event, then exit 2: the lock contract that run and
     verify share."""
     run_dir = run_dir or runs.run_dir_for(path.absolute().parent.name)  # absolute: as in cost
-    with runs.project_lock(path, run_dir):
+    with runs.project_lock(path, run_dir, events=True):
         run_dir.mkdir(parents=True, exist_ok=True)
         try:
             return body(path, run_dir)

@@ -198,13 +198,14 @@ def _unlink(path: Path) -> None:
 
 
 @contextlib.contextmanager
-def project_lock(project_path: Path, run_dir: Path) -> Iterator[None]:
+def project_lock(project_path: Path, run_dir: Path, *, events: bool = False) -> Iterator[None]:
     """Holds lock_file(project_path), {"pid", "run_dir", "started"}, while a run of `project_path` into `run_dir` goes
-    on (C-24). Raises E_LOCKED while a live run holds it; reclaims a dead run's with W_STALE_LOCK, printed and, when
-    `run_dir` exists, a message event there (emit). The holder is read through lock_holder: a lock released meanwhile
-    is taken, and one still being written is read again every 50 ms, 20 times at most, before it counts as held.
-    Deleted through _unlink on exit, exceptions included, but only when this call made it: a refused second run leaves
-    the holder's lock alone (spec 3.3)."""
+    on (C-24). Raises E_LOCKED while a live run holds it; reclaims a dead run's with W_STALE_LOCK, printed and, with
+    `events` (run and verify, whose `run_dir` is a run folder) and an existing `run_dir`, a message event there (emit);
+    a retune's results/ and the P0 harness's folder get none. The holder is read through lock_holder: a lock released
+    meanwhile is taken, and one still being written is read again every 50 ms, 20 times at most, before it counts as
+    held. Deleted through _unlink on exit, exceptions included, but only when this call made it: a refused second run
+    leaves the holder's lock alone (spec 3.3)."""
     # ponytail: one lock per project, so two projects share the CPU; a reused pid keeps a stale lock alive, and E_LOCKED
     # says to delete it
     lock, waits = lock_file(project_path), 0
@@ -222,7 +223,7 @@ def project_lock(project_path: Path, run_dir: Path) -> Iterator[None]:
             continue
         if holder["alive"]:
             raise KrsError("E_LOCKED", lock=str(lock), run=holder["run_dir"], started=holder["started"])
-        emit(run_dir if run_dir.is_dir() else None, "message", "W_STALE_LOCK",
+        emit(run_dir if events and run_dir.is_dir() else None, "message", "W_STALE_LOCK",
              {"lock": str(lock), "run": holder["run_dir"]})
         _unlink(lock)  # missing: another run reclaimed it first
     try:  # the write too: a lock left empty by a full disk would block every later run
