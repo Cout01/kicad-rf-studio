@@ -25,7 +25,9 @@ GUI = {"E_LOCKED": "G_LOCKED", "I_RUN_START": "G_RUN_START", "I_WHAT_IF": "G_WHA
        "E_RESULTS_STALE": "G_RESULTS_STALE", "E_PROJECT_EXISTS": "G_PROJECT_EXISTS", "E_OUTPUT_PATH": "G_OUTPUT_PATH",
        "E_NO_STACKUP": "G_NO_STACKUP", "E_STACKUP_LAYERS": "G_STACKUP_LAYERS",
        "W_LID_HEIGHT_MISSING": "G_LID_HEIGHT_MISSING", "I_PART_NO_MODEL": "G_PART_NO_MODEL",
-       "W_NO_REFERENCE": "G_NO_REFERENCE"}
+       "W_NO_REFERENCE": "G_NO_REFERENCE", "E_RETUNE_VALUE": "G_RETUNE_VALUE", "E_PART_NO_VALUE": "G_PART_NO_VALUE",
+       "E_S2P_MISSING": "G_S2P_MISSING", "E_S2P_UNREADABLE": "G_S2P_UNREADABLE", "E_S2P_BAND": "G_S2P_BAND",
+       "W_S2P_FIXTURE": "G_S2P_FIXTURE"}
 
 
 def orchestrator() -> list[str]:
@@ -281,6 +283,29 @@ def retuned(path: Path, project: dict, stored: pipeline.ChainResults, rows: list
     except Exception as e:  # E_INTERNAL, as cli.main reports it
         line = ("E_INTERNAL", {"detail": detail(e)})
     return replace(stored, chain=None, ideal=None, p_layout=None, what_if=False, lines=[line])
+
+
+def carried(before: dict | None, after: dict | None, folder: Path, rows: list[Row],
+            fresh: list[Row]) -> tuple[list[Row], bool]:
+    """A new read's rows `fresh` with the user's `rows` carried over it (design 5.3): each row that differs from
+    `before`, the last read's project (changed, against `folder`, project.json's), put back in its part's place when
+    `after`, the new read's, holds that part exactly as `before` did (parts); and whether any such row was lost: its
+    part changed or gone, or no `after`, unless `after` now stores the row as it is (Apply's re-read). Nothing is
+    carried without `before`."""
+    # ponytail: a row whose part project.json changed takes the stored row (G_DROPPED); a per-field merge if users lose
+    # work that way
+    if before is None:
+        return fresh, False
+    old, new = parts(before), {} if after is None else parts(after)
+    kept, lost = {row.ref: row for row in fresh}, False
+    for row in rows:
+        if not changed(before, folder, [row]):
+            continue
+        if new.get(row.ref) == old[row.ref]:
+            kept[row.ref] = row
+        elif row.ref not in new or changed(after, folder, [row]):
+            lost = True
+    return [kept[row.ref] for row in fresh], lost
 
 
 def pads(board: Path) -> list[str]:

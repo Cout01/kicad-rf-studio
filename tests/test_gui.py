@@ -10,6 +10,7 @@ import sys
 import tomllib
 from pathlib import Path
 
+import numpy as np
 import pytest
 from PySide6.QtCore import QTimer
 from PySide6.QtWidgets import QFileDialog
@@ -17,14 +18,19 @@ from PySide6.QtWidgets import QFileDialog
 from kicad_rf_studio import gui, pipeline, runs
 from kicad_rf_studio.cli import main
 from kicad_rf_studio.core.messages import render
+from kicad_rf_studio.core.post.chain import with_box, z_part
 from kicad_rf_studio.core.post.outputs import LIMITS
-from kicad_rf_studio.core.project import board_file, load_project, save_project
+from kicad_rf_studio.core.post.waves import grid
+from kicad_rf_studio.core.project import board_file, load_project, parts, save_project
 from kicad_rf_studio.gui import control
-from kicad_rf_studio.gui.window import MainWindow
+from kicad_rf_studio.gui.window import FIXTURE, PART, S2P, SNAP, VALUE, MainWindow
+from networks import C_BOX, star, terminate_np, write_s2p
 from test_cli_cost import FIX, fail, new_project
 from test_gui_control import FAKE_PREFIX, until
-from test_run import lpf_run
+from test_post_chain import M0402
+from test_run import lpf_loads, lpf_run
 
+F, _ = grid(915e6, 3, 1.1)
 ROOT = Path(__file__).resolve().parents[1]
 QT_FREE = ("kicad_rf_studio.cli", "kicad_rf_studio.worker", "kicad_rf_studio.pipeline", "kicad_rf_studio.runs",
            "kicad_rf_studio.gui", "kicad_rf_studio.gui.control")
@@ -478,3 +484,96 @@ def test_new_from_a_board_lists_its_pads_writes_the_project_and_opens_it(window,
     assert f.status.text() == render("G_PROJECT_EXISTS", path=str(pj))
     assert board.read_bytes() == (FIX / "lpf915.kicad_pcb").read_bytes()  # never written (anti-goal)
     assert "openEMS" not in sys.modules and "CSXCAD" not in sys.modules  # design 4: new ran in this process
+
+
+def column(table, c):
+    return [table.item(k, c).text() for k in range(table.rowCount())]
+
+
+def test_the_retune_table_snaps_takes_s2p_parts_and_draws_under_the_what_if_label(window, tmp_path, monkeypatch):
+    pj = lpf_run(tmp_path, monkeypatch).resolve()  # design 5.3 Retune, What-if; Review Focus 1, 2
+    (tmp_path / "parts").mkdir()
+    l1 = write_s2p(tmp_path / "parts" / "l1.s2p", z_part("L", 18e-9, None, F), "series", F)
+    c3 = write_s2p(tmp_path / "parts" / "c3.s2p", z_part("C", 3.9e-12, None, F), "shunt", F)  # measured shunt
+    missing = tmp_path / "parts" / "none.s2p"
+    w = window()
+    w.open_project(pj)
+    opened(w)
+    r, fig, label = w.results, w.results.canvas.figure, "\n" + render("G_WHAT_IF")
+    stored = ["100pF", "15nH", "3.3pF", "3.3pF"]
+    assert column(r.parts, PART) == ["C1", "L1", "C2", "C3"] and column(r.parts, VALUE) == stored
+    assert [r.parts.cellWidget(k, SNAP).currentData() for k in range(4)] == ["E24"] * 4  # design 7: E24 for L and C
+    assert w.tabs.tabText(3) == render("G_TAB_RESULTS") and not r.retune_box.isHidden()
+    r.parts.item(2, VALUE).setText("5pF")  # typed, then snapped to E24
+    res = control.retuned(pj, w.opened.project, w.opened.results, r.rows())
+    assert r.parts.item(2, VALUE).text() == "5.1pF"
+    assert np.array_equal(fig.axes[0].lines[0].get_ydata(), 20 * np.log10(np.abs(res.chain[:, 1, 0])))
+    assert fig.get_suptitle().endswith(label) and not r.what_if.isHidden()  # the retuned plot, under the label
+    assert items(r.lines) == [control.text(c, p) for c, p in res.lines] + [render(c) for c in LIMITS]
+    w.tabs.setCurrentWidget(r)
+    grab(w, "retune")
+    r.parts.cellWidget(3, SNAP).setCurrentIndex(control.SERIES.index("off"))
+    r.parts.item(3, VALUE).setText("5pF")
+    r.parts.setCurrentCell(2, VALUE)  # another row current: a Snapping combo snaps its own row
+    r.parts.cellWidget(3, SNAP).setCurrentIndex(control.SERIES.index("E12"))
+    assert column(r.parts, VALUE) == ["100pF", "15nH", "5.1pF", "4.7pF"]
+    r.parts.cellWidget(2, SNAP).setCurrentIndex(control.SERIES.index("off"))
+    r.parts.item(2, VALUE).setText("4p7")
+    assert r.parts.item(2, VALUE).text() == "4p7"  # free text, kept as typed
+    r.parts.item(2, VALUE).setText("15nH")  # Review Focus 1: a value the engine cannot read
+    assert items(r.lines)[0] == render("G_RETUNE_VALUE", ref="C2", value="15nH")
+    assert fig.axes == [] and r.what_if.isHidden()  # no curve of values that do not read
+    r.parts.item(2, VALUE).setText("3.3pF")
+    monkeypatch.setattr(QFileDialog, "getOpenFileName", lambda *a, **k: (str(missing), ""))
+    r.parts.setCurrentCell(1, S2P)
+    r.s2p_button.click()  # Review Focus 2: a file that is not there
+    assert render("G_S2P_MISSING", ref="L1", path=str(missing.resolve())) in items(r.lines) and fig.axes == []
+    monkeypatch.setattr(QFileDialog, "getOpenFileName", lambda *a, **k: (str(l1), ""))
+    r.s2p_button.click()
+    zk = lpf_loads(M0402, C3=4.7e-12)
+    zk[:, 1] = with_box(z_part("L", 18e-9, None, F), F, C_BOX)
+    res = control.retuned(pj, w.opened.project, w.opened.results, r.rows())
+    assert np.abs(res.chain - terminate_np(star(F, 6), [0, 1], zk)).max() <= 1e-5 and len(fig.axes) == 3
+    assert fig.get_suptitle().endswith(label) and not r.what_if.isHidden()  # drawn again, under the label
+    monkeypatch.setattr(QFileDialog, "getOpenFileName", lambda *a, **k: (str(c3), ""))
+    r.parts.setCurrentCell(3, S2P)
+    r.s2p_button.click()  # its fixture still series: retune's own warning, in the window's words
+    assert render("G_S2P_FIXTURE", ref="C3", path=str(c3.resolve()), named="series", fits="shunt") in items(r.lines)
+    r.parts.cellWidget(3, FIXTURE).setCurrentIndex(1)  # shunt
+    zk[:, 3] = with_box(z_part("C", 3.9e-12, None, F), F, C_BOX)
+    res = control.retuned(pj, w.opened.project, w.opened.results, r.rows())
+    assert r.rows()[3].connection == "shunt" and np.abs(res.chain - terminate_np(star(F, 6), [0, 1], zk)).max() <= 1e-5
+    r.revert_button.click()
+    assert column(r.parts, VALUE) == stored and column(r.parts, S2P) == [""] * 4
+    assert np.array_equal(fig.axes[0].lines[0].get_ydata(), 20 * np.log10(np.abs(w.opened.results.chain[:, 1, 0])))
+    assert fig.get_suptitle().endswith(label) and not r.what_if.isHidden()
+    assert "openEMS" not in sys.modules and "CSXCAD" not in sys.modules  # design 4: the session ran in this process
+
+
+def test_a_read_keeps_the_unapplied_values_unless_project_json_changed_their_part(window, tmp_path, monkeypatch):
+    pj = lpf_run(tmp_path, monkeypatch).resolve()  # design 5.3: rebuilt when the results change; Review Focus 5
+    w = window()
+    w.open_project(pj)
+    opened(w)
+    r, fig = w.results, w.results.canvas.figure
+    r.parts.cellWidget(2, SNAP).setCurrentIndex(control.SERIES.index("off"))
+    r.parts.item(2, VALUE).setText("4.7pF")
+    save_project(pj, load_project(pj))  # no part changed: as a cost's, a run's or a verify's end reads it again
+    w.tick()
+    assert w.loading is not None and not r.retune_box.isEnabled()  # busy while the read goes on
+    opened(w)
+    res = control.retuned(pj, w.opened.project, w.opened.results, r.rows())
+    assert column(r.parts, VALUE)[2] == "4.7pF" and r.retune_status.text() == "" and r.retune_box.isEnabled()
+    assert r.parts.cellWidget(2, SNAP).currentData() == "off"  # set per part (design 7)
+    assert np.array_equal(fig.axes[0].lines[0].get_ydata(), 20 * np.log10(np.abs(res.chain[:, 1, 0])))
+    d = load_project(pj)
+    parts(d)["C3"]["value"] = "3.9pF"  # a hand edit of another part (values are not in the model)
+    save_project(pj, d)
+    w.tick()
+    opened(w)
+    assert column(r.parts, VALUE) == ["100pF", "15nH", "4.7pF", "3.9pF"] and r.retune_status.text() == ""
+    parts(d)["C2"]["value"] = "3.9pF"  # a hand edit, or a terminal's retune, of the part being retuned
+    save_project(pj, d)
+    w.tick()
+    opened(w)
+    assert column(r.parts, VALUE)[2] == "3.9pF" and r.retune_status.text() == render("G_DROPPED")

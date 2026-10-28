@@ -272,3 +272,21 @@ def test_the_retune_session_gives_retunes_own_numbers_in_milliseconds_and_writes
     monkeypatch.setattr(pipeline, "chain_results", lambda *a, **k: 1 / 0)  # any other failure: a line, never a raise
     assert control.retuned(pj, opened.project, opened.results, rows).lines == [
         ("E_INTERNAL", {"detail": "ZeroDivisionError: division by zero"})]
+
+
+def test_a_read_keeps_the_unapplied_rows_whose_part_it_did_not_change(tmp_path):  # design 5.3; Review Focus 5
+    before, folder, refs = lpf(), tmp_path / "lpf915", ["C1", "L1", "C2", "C3"]
+    rows = control.rows(before, folder, refs)
+    edited = [*rows[:2], replace(rows[2], value="4.7pF"), rows[3]]
+    applied, other, mine = lpf(), lpf(), lpf()
+    parts(applied)["C2"]["value"] = "4.7pF"  # Apply stored it
+    parts(other)["C3"]["value"] = "3.9pF"  # a hand edit, or a terminal's retune, of another part
+    parts(mine)["C2"]["value"] = "3.9pF"  # ... of the part being retuned
+    assert control.carried(before, lpf(), folder, edited, rows) == (edited, False)  # a cost's or a run's read
+    assert control.carried(before, applied, folder, edited, control.rows(applied, folder, refs)) == (edited, False)
+    other_rows = control.rows(other, folder, refs)
+    assert control.carried(before, other, folder, edited, other_rows) == ([*edited[:3], other_rows[3]], False)
+    mine_rows = control.rows(mine, folder, refs)
+    assert control.carried(before, mine, folder, edited, mine_rows) == (mine_rows, True)
+    assert control.carried(before, None, folder, edited, []) == ([], True)  # a read that failed, or results gone stale
+    assert control.carried(None, before, folder, [], rows) == (rows, False)  # the first read

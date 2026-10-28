@@ -1,18 +1,19 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """The main window (Stage 2 design 5.1, 5.3, 5.4): it creates a project from a board (NewForm) or opens one, shows its
 cost, starts, follows and stops a run, its own or one it re-attaches through the project lock, replays the project's
-last run and shows its results (ResultsView), driven by one 500 ms timer (`tick`). The project is read, a board's pads
-listed and new run on a pool thread (control.open_project, control.pads, cli.new); cost and run start as a detached
-orchestrator (control.start), so this process never reaches runs.run_jobs."""
+last run and shows its results, which its parts' rows retune in this process (ResultsView), driven by one 500 ms timer
+(`tick`). The project is read, a board's pads listed and new run on a pool thread (control.open_project, control.pads,
+cli.new); cost and run start as a detached orchestrator (control.start), so this process never reaches
+runs.run_jobs."""
 import subprocess
 from concurrent.futures import Future, ThreadPoolExecutor
 from pathlib import Path
 
-from PySide6.QtCore import QLocale, Qt, QTimer
+from PySide6.QtCore import QLocale, QSignalBlocker, Qt, QTimer, Signal
 from PySide6.QtGui import QCloseEvent
-from PySide6.QtWidgets import (QComboBox, QDoubleSpinBox, QFileDialog, QFormLayout, QGroupBox, QHBoxLayout, QLabel,
-                               QLineEdit, QListWidget, QMainWindow, QMessageBox, QPushButton, QSpinBox, QTableWidget,
-                               QTableWidgetItem, QTabWidget, QVBoxLayout, QWidget)
+from PySide6.QtWidgets import (QComboBox, QDoubleSpinBox, QFileDialog, QFormLayout, QGroupBox, QHBoxLayout, QHeaderView,
+                               QLabel, QLineEdit, QListWidget, QMainWindow, QMessageBox, QPushButton, QSpinBox,
+                               QTableWidget, QTableWidgetItem, QTabWidget, QVBoxLayout, QWidget)
 # after PySide6: matplotlib's Qt backend then wraps the binding already loaded, never another one installed beside it
 from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg
 from matplotlib.figure import Figure
@@ -27,6 +28,10 @@ from kicad_rf_studio.gui import control
 
 COLUMNS = ("G_COL_PORT", "G_COL_TIME", "G_COL_RESIDUAL", "G_COL_SPEED", "G_COL_VERDICT")
 PROGRESS = ("port", "t_ns", "residual_db", "speed_mcs")  # a progress event's params, in the first four columns
+PART, VALUE, SNAP, S2P, FIXTURE = range(5)  # the parts table's columns
+PART_COLUMNS = ("G_COL_PART", "G_COL_VALUE", "G_COL_SNAP", "G_COL_S2P", "G_COL_FIXTURE")
+SNAPPING = tuple(zip(control.SERIES, ("G_SNAP_OFF", "G_SNAP_E12", "G_SNAP_E24")))  # a Snapping combo's (data, code)
+FIXTURES = (("series", "G_FIXTURE_SERIES"), ("shunt", "G_FIXTURE_SHUNT"))  # an S2P fixture combo's (data, code)
 
 
 def mtime_ns(path: Path) -> int | None:
@@ -54,34 +59,136 @@ def beside(*widgets: QWidget) -> QHBoxLayout:
     return layout
 
 
+def combo(choices: tuple, current: str, slot) -> QComboBox:
+    """A table cell's combo box of `choices`, (data, code) pairs shown as their code's text, `current`'s selected and
+    only then its currentIndexChanged connected to `slot`, so that filling it emits nothing."""
+    box = QComboBox()
+    for data, code in choices:
+        box.addItem(render(code), data)
+    box.setCurrentIndex(box.findData(current))
+    box.currentIndexChanged.connect(slot)
+    return box
+
+
 class ResultsView(QWidget):
-    """The Results tab (Stage 2 design 5.3, 5.4): summary.png's drawing on a FigureCanvasQTAgg, the what-if label over
-    it while RETUNE_VALIDATED is False, and the result's lines and stated limits; or why there is none."""
+    """The Results and retune tab (Stage 2 design 5.3, 5.4): the what-if label while RETUNE_VALIDATED is False, or why
+    there are no results; the retune box, shown only with part ports: the parts table (`parts`), a row per part port
+    with its value, its Snapping, its S2P file and that file's fixture, then the row (`buttons`) of S2P file…, Revert
+    and the retune's status line; summary.png's drawing on a FigureCanvasQTAgg; and the result's lines and stated
+    limits. `series` holds each part's Snapping as the user set it. A row's edit emits `edited`; the window answers it
+    with the chain of the rows (show_chain)."""
+
+    edited = Signal()
 
     def __init__(self):
         super().__init__()
         self.what_if, self.problem, self.lines = QLabel(control.text("I_WHAT_IF", {})), QLabel(), QListWidget()
         self.canvas = FigureCanvasQTAgg(Figure(layout="constrained"))
-        for label in (self.what_if, self.problem):
+        self.parts, self.retune_box, self.buttons = QTableWidget(0, len(PART_COLUMNS)), QWidget(), QHBoxLayout()
+        self.s2p_button, self.revert_button = QPushButton(render("G_CHOOSE_S2P")), QPushButton(render("G_REVERT"))
+        self.retune_status, self.series = QLabel(), {}
+        for label in (self.what_if, self.problem, self.retune_status):
             label.setWordWrap(True)  # its sentence, some 200 characters, would otherwise set the window's minimum width
-            label.hide()  # until a read shows it
+        for widget in (self.what_if, self.problem, self.retune_box):
+            widget.hide()  # until a read shows it
+        self.parts.setHorizontalHeaderLabels([render(code) for code in PART_COLUMNS])
+        self.parts.horizontalHeader().setSectionResizeMode(S2P, QHeaderView.ResizeMode.Stretch)  # a file's path
+        for widget in (self.s2p_button, self.revert_button, self.retune_status):
+            self.buttons.addWidget(widget)
+        box = QVBoxLayout(self.retune_box)
+        box.setContentsMargins(0, 0, 0, 0)  # aligned with the tab's other widgets
+        box.addWidget(self.parts)
+        box.addLayout(self.buttons)
         layout = QVBoxLayout(self)
-        for widget in (self.what_if, self.problem, self.canvas, self.lines):
+        for widget in (self.what_if, self.problem, self.retune_box, self.canvas, self.lines):
             layout.addWidget(widget)
+        self.parts.itemChanged.connect(self.item_changed)
+        self.s2p_button.clicked.connect(self.choose_s2p)
 
-    def display(self, opened: control.Opened, name: str) -> None:
-        """Shows the project read `opened`, `name` being the project folder's name, which summary.png's title shows:
-        the figure and the lines cleared; the what-if label only when the results carry what_if, and the problem's
-        line only with one; with results whose chain is closed on 2 external ports, summary.png's plots (draw_summary)
-        with the label as their title's second line; with any results, plot or not, their lines, then LIMITS (C-32).
-        Qt redraws the canvas once its event loop runs (draw_idle)."""
-        res, fig = opened.results, self.canvas.figure
+    def display(self, opened: control.Opened, folder: Path | None) -> None:
+        """Shows the project read `opened` of the project folder `folder` (None for none): the problem's line only
+        with one; the rows of the results' part ports as project.json stores them (control.rows, S2P files against
+        `folder`), none without part ports; then the results' chain (show_chain), under the folder's name. Never
+        touches retune_status."""
+        res = opened.results
+        self.problem.setText("" if opened.problem is None else control.text(*opened.problem))
+        self.problem.setVisible(opened.problem is not None)
+        self.show_rows(control.rows(opened.project, folder, res.refs) if res is not None and res.refs else [])
+        self.show_chain(res, folder.name if folder else "")
+
+    def show_rows(self, rows: list[control.Row]) -> None:
+        """`rows` in the parts table, its signals blocked: Part read-only; Value and S2P file editable; Snapping the
+        part's series as the user set it (`series`), else its default (control.default_series); S2P fixture the row's
+        connection. The retune box shows only with rows."""
+        with QSignalBlocker(self.parts):
+            self.parts.setRowCount(len(rows))
+            for k, row in enumerate(rows):
+                part = QTableWidgetItem(row.ref)
+                part.setFlags(part.flags() & ~Qt.ItemFlag.ItemIsEditable)
+                for column, item in ((PART, part), (VALUE, QTableWidgetItem(row.value)),
+                                     (S2P, QTableWidgetItem(row.s2p))):
+                    self.parts.setItem(k, column, item)
+                series = self.series.get(row.ref, control.default_series(row.ref))
+                self.parts.setCellWidget(k, SNAP, combo(SNAPPING, series, self.snapping_changed))
+                self.parts.setCellWidget(k, FIXTURE, combo(FIXTURES, row.connection, self.fixture_changed))
+        self.retune_box.setVisible(bool(rows))
+
+    def rows(self) -> list[control.Row]:
+        """The table's rows: each part's ref, its value as typed, its S2P file (stripped) and its fixture's
+        connection."""
+        t = self.parts
+        return [control.Row(t.item(k, PART).text(), t.item(k, VALUE).text(), t.item(k, S2P).text().strip(),
+                            t.cellWidget(k, FIXTURE).currentData()) for k in range(t.rowCount())]
+
+    def snap_row(self, k: int) -> None:
+        """Row k's value snapped to its Snapping (control.snapped), written back with the table's signals blocked when
+        it differs."""
+        item, series = self.parts.item(k, VALUE), self.parts.cellWidget(k, SNAP).currentData()
+        text = control.snapped(self.parts.item(k, PART).text(), item.text(), series)
+        if text != item.text():
+            with QSignalBlocker(self.parts):
+                item.setText(text)
+
+    def item_changed(self, item: QTableWidgetItem) -> None:
+        """A cell edited (itemChanged): a value snapped (snap_row), then `edited` emitted."""
+        if item.column() == VALUE:
+            self.snap_row(item.row())
+        self.edited.emit()
+
+    def snapping_changed(self, index: int) -> None:
+        """A row's Snapping set: its row, the one whose Snapping combo sent it, keeps that series in `series` and has
+        its value snapped to it; then `edited` emitted."""
+        box = self.sender()
+        k = next(k for k in range(self.parts.rowCount()) if self.parts.cellWidget(k, SNAP) is box)
+        self.series[self.parts.item(k, PART).text()] = box.currentData()
+        self.snap_row(k)
+        self.edited.emit()
+
+    def fixture_changed(self, index: int) -> None:
+        """A row's S2P fixture set: `edited` emitted."""
+        self.edited.emit()
+
+    def choose_s2p(self) -> None:
+        """S2P file…: the file picked in the dialog into the current row's S2P file cell, whose itemChanged emits
+        `edited`; nothing without a current row, or on Cancel."""
+        k = self.parts.currentRow()
+        if k < 0:
+            return
+        name, _ = QFileDialog.getOpenFileName(self, render("G_CHOOSE_S2P"), "", render("G_S2P_FILTER"))
+        if name:
+            self.parts.item(k, S2P).setText(str(Path(name)))  # the system's separators, as a stored file's row shows
+
+    def show_chain(self, res: pipeline.ChainResults | None, name: str) -> None:
+        """Shows the chain results `res` (None for none), `name` being the project folder's name, which summary.png's
+        title shows: the figure and the lines cleared; the what-if label only when `res` carries what_if; with a chain
+        closed on 2 external ports, summary.png's plots (draw_summary) with the label as their title's second line;
+        with any results, plot or not, their lines, then LIMITS (C-32). Qt redraws the canvas once its event loop runs
+        (draw_idle)."""
+        fig = self.canvas.figure
         fig.clear()
         self.lines.clear()
         label = self.what_if.text() if res is not None and res.what_if else None
         self.what_if.setVisible(label is not None)
-        self.problem.setText("" if opened.problem is None else control.text(*opened.problem))
-        self.problem.setVisible(opened.problem is not None)
         if res is not None:
             if res.chain is not None and len(res.ext) == 2:
                 draw_summary(fig, res.lay, res.chain, res.ideal, name, label)
@@ -165,8 +272,9 @@ class MainWindow(QMainWindow):
         for button, slot in ((self.open_button, self.browse), (self.cost_button, self.estimate),
                              (self.run_button, self.run), (self.stop_button, self.stop),
                              (form.board_button, self.pick_board), (form.folder_button, self.pick_folder),
-                             (form.create_button, self.create_project)):
+                             (form.create_button, self.create_project), (self.results.revert_button, self.revert)):
             button.clicked.connect(slot)
+        self.results.edited.connect(self.retune)
         form.board.editingFinished.connect(self.board_chosen)
         for button in (self.cost_button, self.run_button, self.stop_button):  # no project yet
             button.setEnabled(False)
@@ -188,7 +296,9 @@ class MainWindow(QMainWindow):
         for view in (self.cost_lines, self.cost_status, self.log, self.run_status):
             view.clear()
         self.jobs.setRowCount(0)
-        self.results.display(control.Opened(None, None, None, None, None, None), "")  # no plot, no lines, no labels
+        self.results.display(control.Opened(None, None, None, None, None, None), None)  # no plot, lines, labels or rows
+        self.results.retune_status.clear()
+        self.results.series.clear()  # the Snapping choices are the open project's
         self.load()
         self.tick()
 
@@ -208,16 +318,18 @@ class MainWindow(QMainWindow):
     def tick(self) -> None:
         """The window's one driver, every 500 ms (design 5.1), in this order: the project lock's holder
         (runs.lock_holder), through which a run this window did not start is attached (below); a project read that
-        finished, shown (a display that fails shows E_INTERNAL, and the tick goes on); the watched folder's new events,
-        then its state (control.run_state, given that holder); the G_LOCKED banner while another's live run holds the
-        lock and this window watches no process of its own; a read when the stamp changed (a save of project.json or of
-        the board file); the buttons: Cost while nothing watched goes on and no run holds the lock, Run… also only with
-        a cost of this model, Stop only while the watch goes on. A holder whose run folder is the project's results/ is
-        a retune (pipeline.retune, r2 §1): waited for, never watched or bannered. Any other holder's run folder, when it
-        names one other than the watched one, is watched when this window's own process was not running at the last tick
-        (`live`) and the holder lives, or when the holder is dead and nothing is watched (on open), so a cost meanwhile
-        keeps its tab. Before all that, with or without a project, New's pad list and new itself when done (show_pads,
-        created, which opens the project new wrote, whose own tick runs inside this one)."""
+        finished, shown (a display that fails shows E_INTERNAL, and the tick goes on), with the user's unapplied rows
+        carried over it (control.carried) and retuned on its layout, and G_DROPPED when one was lost; the watched
+        folder's new events, then its state (control.run_state, given that holder); the G_LOCKED banner while another's
+        live run holds the lock and this window watches no process of its own; a read when the stamp changed (a save of
+        project.json or of the board file); the buttons: Cost while nothing watched goes on and no run holds the lock,
+        Run… also only with a cost of this model, Stop only while the watch goes on, and the retune box while no read
+        goes on. A holder whose run folder is the project's results/ is a retune (pipeline.retune, r2 §1): waited for,
+        never watched or bannered. Any other holder's run folder, when it names one other than the watched one, is
+        watched when this window's own process was not running at the last tick (`live`) and the holder lives, or when
+        the holder is dead and nothing is watched (on open), so a cost meanwhile keeps its tab. Before all that, with
+        or without a project, New's pad list and new itself when done (show_pads, created, which opens the project new
+        wrote, whose own tick runs inside this one)."""
         self.started = [p for p in self.started if p.poll() is None]  # poll() reaps one that ended
         if self.pads_read is not None and self.pads_read.done():
             done, self.pads_read = self.pads_read, None
@@ -237,11 +349,20 @@ class MainWindow(QMainWindow):
         if self.loading is not None and self.loading.done():
             done, self.loading = self.loading, None
             try:
+                before, rows = self.opened, self.results.rows()
                 self.opened = done.result()
                 if self.mtime[1] is None:  # its board, now known: stamped alone, so a project.json saved since counts
                     # ponytail: a board saved during that first read is seen at its next save
                     self.mtime = (self.mtime[0], self.stamp()[1])
                 self.show_project(self.opened)
+                fresh = self.results.rows()
+                kept, lost = control.carried(before and before.project, self.opened.project, self.path.parent, rows,
+                                             fresh)
+                if kept != fresh:  # the unapplied rows, computed again on the new read's layout
+                    self.results.show_rows(kept)
+                    self.retune()
+                if lost:
+                    self.results.retune_status.setText(render("G_DROPPED"))
             except Exception as e:  # a display that fails: this tick goes on, and so do the next ones
                 self.project_status.setText(control.text("E_INTERNAL", {"detail": detail(e)}))
         self.live = False
@@ -264,6 +385,7 @@ class MainWindow(QMainWindow):
         self.cost_button.setEnabled(not (self.live or held))
         self.run_button.setEnabled(not (self.live or held) and self.cost is not None)
         self.stop_button.setEnabled(self.live)
+        self.results.retune_box.setEnabled(self.loading is None)  # r2: the last read's layout may be a gone model's
 
     def show_event(self, event: dict) -> None:
         """One event of the watched folder: an end sets `end` and is never listed, and a cost that ended with exit
@@ -360,7 +482,20 @@ class MainWindow(QMainWindow):
                 self.cost_lines.addItems([control.text(e["code"], e["params"]) for e in
                                           control.Tail(self.cost / "events.jsonl").read() if e["kind"] != "end"])
                 self.cost_status.setText(render("G_COST_REUSED", folder=self.cost.name))
-        self.results.display(opened, self.path.parent.name)
+        self.results.display(opened, self.path.parent)
+
+    def retune(self) -> None:
+        """A row edited (results.edited): the retune's status line cleared, then the chain of the table's rows on the
+        last read's layout (control.retuned, which never raises), shown under the what-if label (show_chain)."""
+        self.results.retune_status.clear()
+        self.results.show_chain(control.retuned(self.path, self.opened.project, self.opened.results,
+                                                self.results.rows()), self.path.parent.name)
+
+    def revert(self) -> None:
+        """Revert: the retune's status line cleared, then the last read shown again (display): the rows at their stored
+        values, drawn in full."""
+        self.results.retune_status.clear()
+        self.results.display(self.opened, self.path.parent)
 
     def pick_board(self) -> None:
         """New's board Browse…: the board file picked in the dialog, then board_chosen(); nothing on Cancel."""
