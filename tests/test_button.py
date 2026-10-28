@@ -314,9 +314,10 @@ def test_a_python_path_launch_cmd_cannot_hold_is_refused(tmp_path, monkeypatch):
 def test_refill_refills_then_saves_only_the_board_the_button_sent(kicad, tmp_path):  # design 5.5 Refill, 7; RF 4
     board = tmp_path / "lpf915.kicad_pcb"
     board.write_bytes(LPF.read_bytes())
-    k = kicad(board, save=b"(kicad_pcb)", errors={"SaveDocument": ["AS_BUSY", "AS_BUSY", "SLOW"]})
+    # busy past the press's BUSY_S: the save waits up to FILL_WAIT_S
+    k = kicad(board, save=b"(kicad_pcb)", errors={"SaveDocument": ["AS_BUSY"] * 6 + ["SLOW"]})
     assert button.refill(k.url, k.token, board) == board  # busy while KiCad fills, then answered past the helper's 1 s
-    assert k.seen == ["GetOpenDocuments", "RefillZones", "SaveDocument", "SaveDocument", "SaveDocument"]
+    assert k.seen == ["GetOpenDocuments", "RefillZones"] + ["SaveDocument"] * 7
     assert board.read_bytes() == b"(kicad_pcb)"  # what KiCad's save wrote
     other = kicad(tmp_path / "other.kicad_pcb", save=b"x")
     with pytest.raises(KrsError) as e:
