@@ -149,8 +149,8 @@ class MainWindow(QMainWindow):
 
     def load(self) -> None:
         """Reads the project off the GUI thread (control.open_project on the pool, as `loading`), its stamp taken
-        first, so that a save is read once."""
-        self.mtime = self.stamp()
+        first, so that a save is read once, and `cost` cleared, so that Run… waits for the read."""
+        self.mtime, self.cost = self.stamp(), None
         self.project_status.setText(render("G_LOADING"))
         self.loading = self.pool.submit(control.open_project, self.path)
 

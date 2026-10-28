@@ -117,6 +117,11 @@ def test_the_window_costs_then_runs_after_the_confirmation(window, tmp_path, mon
     opened(w)  # the cost's end read the project again, which found it as this model's cost
     assert w.cost == w.run_dir and w.run_button.isEnabled() and w.cost_status.text() == render("G_END_DONE",
                                                                                                exit_code=0)
+    save_project(pj, load_project(pj))  # the same model, a new mtime (final review F4)
+    w.tick()
+    assert w.loading is not None and not w.run_button.isEnabled()  # Run… waits for the re-read
+    opened(w)
+    assert w.cost == w.run_dir and w.run_button.isEnabled()  # the read found the same cost again
     grab(w, "cost")
     asked = []
     monkeypatch.setattr(w, "ask", lambda text: asked.append(text) or len(asked) > 1)  # No, then Yes
