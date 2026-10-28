@@ -818,11 +818,12 @@ class MainWindow(QMainWindow):
         """New's read (`done`): the board's pads (control.pads) in the start and end pickers, none picked for the user;
         or a press (control.handed), kept as `handed`: its board in the board field and as `chosen` ("" when the press
         has no pads, a refusal, so that the board, fixed and picked again, is read again), the project folder beside it
-        as board_chosen sets it, its pads in the pickers with its start and end picked, and its problem in the status
-        line, which is otherwise left as it is. On a refusal (load_board's, else E_INTERNAL), the pickers left empty,
-        the refusal in the status line and `chosen` cleared, so that the same board, fixed and picked again, is read
-        again. The exception is taken, never raised again: its traceback would then hold this frame, and so the window,
-        in a cycle with the Future that only the garbage collector frees, maybe on a pool thread (probed)."""
+        as board_chosen sets it, and kept, as there, when the board is `chosen` already, its pads in the pickers with
+        its start and end picked, and its problem in the status line, which is otherwise left as it is. On a refusal
+        (load_board's, else E_INTERNAL), the pickers left empty, the refusal in the status line and `chosen` cleared,
+        so that the same board, fixed and picked again, is read again. The exception is taken, never raised again: its
+        traceback would then hold this frame, and so the window, in a cycle with the Future that only the garbage
+        collector frees, maybe on a pool thread (probed)."""
         f, error = self.new_form, done.exception()
         if error is not None:
             f.status.setText(control.message(error))
@@ -832,8 +833,9 @@ class MainWindow(QMainWindow):
         if isinstance(read, control.Handed):
             self.handed, names, start, end = read, read.pads, read.start, read.end
             f.board.setText(str(read.board))
+            if str(read.board) != f.chosen:
+                f.folder.setText(str(read.board.with_suffix("")))
             f.chosen = str(read.board) if read.pads else ""
-            f.folder.setText(str(read.board.with_suffix("")))
             if read.problem:
                 f.status.setText(control.text(*read.problem))
         for box, pick in ((f.start, start), (f.end, end)):

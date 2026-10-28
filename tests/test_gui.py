@@ -540,11 +540,13 @@ def test_a_button_press_pre_fills_new_and_swap_swaps_start_and_end(window, tmp_p
     assert (f.start.currentText(), f.end.currentText()) == ("J1.1", "U1.1")
     f.board.editingFinished.emit()  # focus leaving the board KiCad sent: not read again
     assert w.pads_read is None
+    f.folder.setText(str(tmp_path / "mine"))  # a folder the user typed
     w.take_handoff(press(board, ["C2.1"], ["C1", "J1"]))
     w.pads_read.result(timeout=60)
     w.tick()
     assert [f.end.itemText(i) for i in range(f.end.count())] == ["C1.1", "C1.2", "C2.1", "J1.1", "J1.2"]
     assert (f.start.currentText(), f.end.currentText(), f.status.text()) == ("C2.1", "", "")
+    assert f.folder.text() == str(tmp_path / "mine")  # the board last read: the folder typed stays, as board_chosen's
     w.take_handoff(press(board, ["C1.1", "C2.1", "C3.1"]))
     w.pads_read.result(timeout=60)
     w.tick()
@@ -555,6 +557,7 @@ def test_a_button_press_pre_fills_new_and_swap_swaps_start_and_end(window, tmp_p
     w.pads_read.result(timeout=60)
     w.tick()
     assert (f.board.text(), f.chosen, f.start.count()) == (str(later), "", 0)  # plan 2's F4 rule, for a press too
+    assert f.folder.text() == str(tmp_path / "later")  # another board: the folder beside it
     assert f.status.text() == render("E_BOARD_UNREADABLE", path=str(later), reason="file not found")
     later.write_bytes(board.read_bytes())
     w.board_chosen()
