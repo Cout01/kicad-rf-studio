@@ -17,7 +17,7 @@ import pytest
 from PySide6.QtCore import QTimer
 from PySide6.QtWidgets import QFileDialog, QMessageBox
 
-from kicad_rf_studio import gui, pipeline, runs
+from kicad_rf_studio import button, gui, pipeline, runs
 from kicad_rf_studio.cli import main
 from kicad_rf_studio.core.messages import render
 from kicad_rf_studio.core.post.chain import with_box, z_part
@@ -28,7 +28,7 @@ from kicad_rf_studio.gui import control
 from kicad_rf_studio.gui.window import FIXTURE, PART, S2P, SNAP, VALUE, MainWindow
 from networks import C_BOX, star, terminate_np, write_s2p
 from test_cli_cost import FIX, fail, new_project
-from test_gui_control import FAKE_PREFIX, until
+from test_gui_control import FAKE_PREFIX, press, until
 from test_post_chain import M0402
 from test_run import lpf_loads, lpf_run
 from test_verify import verified
@@ -512,6 +512,61 @@ def test_new_from_a_board_lists_its_pads_writes_the_project_and_opens_it(window,
     w.pads_read.result(timeout=60)
     w.tick()
     assert [f.start.itemText(i) for i in range(f.start.count())] == control.pads(bad)
+
+
+def test_a_button_press_pre_fills_new_and_swap_swaps_start_and_end(window, tmp_path):  # design 5.3, 5.5; RF 2
+    board = tmp_path / "lpf915.kicad_pcb"  # a copy: New's default folder is made beside it
+    board.write_bytes((FIX / "lpf915.kicad_pcb").read_bytes())
+    w = window()
+    f = w.new_form
+    f.board.setText(str(tmp_path / "other.kicad_pcb"))
+    w.board_chosen()  # a pad list read in flight when the press comes
+    stale = w.pads_read
+    w.tabs.setCurrentIndex(3)
+    f.status.setText(render("G_HANDOFF_PADS", count=3))  # the last press's line
+    handoff = press(board, ["J1.1", "U1.1"])
+    w.take_handoff(handoff)
+    assert (w.tabs.currentIndex(), w.handoff, f.status.text()) == (0, handoff, "")
+    assert w.pads_read not in (None, stale)  # the press is New's read now: the slower read of another board loses
+    w.pads_read.result(timeout=60)
+    w.tick()
+    assert (f.board.text(), f.chosen, f.folder.text()) == (str(board), str(board), str(tmp_path / "lpf915"))
+    assert [f.start.itemText(i) for i in range(f.start.count())] == control.pads(board)
+    assert (f.start.currentText(), f.end.currentText()) == ("U1.1", "J1.1")  # the connector's pad is the end
+    assert (w.handed.socket, w.handed.token, w.handed.board) == ("ipc://s", "T", board)
+    grab(w, "handoff")
+    f.swap_button.click()
+    assert (f.start.currentText(), f.end.currentText()) == ("J1.1", "U1.1")
+    f.board.editingFinished.emit()  # focus leaving the board KiCad sent: not read again
+    assert w.pads_read is None
+    w.take_handoff(press(board, ["C2.1"], ["C1", "J1"]))
+    w.pads_read.result(timeout=60)
+    w.tick()
+    assert [f.end.itemText(i) for i in range(f.end.count())] == ["C1.1", "C1.2", "C2.1", "J1.1", "J1.2"]
+    assert (f.start.currentText(), f.end.currentText(), f.status.text()) == ("C2.1", "", "")
+    w.take_handoff(press(board, ["C1.1", "C2.1", "C3.1"]))
+    w.pads_read.result(timeout=60)
+    w.tick()
+    assert (f.start.currentText(), f.status.text()) == ("", render("G_HANDOFF_PADS", count=3))
+    later = tmp_path / "later.kicad_pcb"  # a board not on disk yet: refused, so picking it once it is reads it
+    w.take_handoff(button.write_handoff({"board": str(later), "pads": [], "footprints": [], "kicad": "9.0.7",
+                                         "socket": "ipc://s", "token": "T"}))
+    w.pads_read.result(timeout=60)
+    w.tick()
+    assert (f.board.text(), f.chosen, f.start.count()) == (str(later), "", 0)  # plan 2's F4 rule, for a press too
+    assert f.status.text() == render("E_BOARD_UNREADABLE", path=str(later), reason="file not found")
+    later.write_bytes(board.read_bytes())
+    w.board_chosen()
+    assert w.pads_read is not None
+    w.pads_read.result(timeout=60)
+    w.tick()
+    bad = tmp_path / "bad.json"
+    bad.write_text("{", encoding="utf-8")  # a handoff file that does not parse
+    w.take_handoff(bad)
+    error = w.pads_read.exception(timeout=60)
+    w.tick()
+    assert f.status.text() == control.message(error)
+    assert board.read_bytes() == (FIX / "lpf915.kicad_pcb").read_bytes()  # never written (anti-goal)
 
 
 def column(table, c):

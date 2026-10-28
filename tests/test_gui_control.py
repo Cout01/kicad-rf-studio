@@ -18,8 +18,9 @@ import numpy as np
 import pytest
 import skrf as rf
 
-from kicad_rf_studio import __version__, pipeline, runs
+from kicad_rf_studio import __version__, button, pipeline, runs
 from kicad_rf_studio.cli import main
+from kicad_rf_studio.core.kicad import load_board
 from kicad_rf_studio.core.messages import CATALOG, KrsError, render
 from kicad_rf_studio.core.model.spec import spec_hash
 from kicad_rf_studio.core.post.outputs import LIMITS
@@ -165,6 +166,41 @@ def test_the_pad_picker_lists_each_pad_with_copper_once_in_natural_order():  # d
     with pytest.raises(KrsError) as e:
         control.pads(FIX / "nope.kicad_pcb")
     assert (e.value.code, e.value.params["reason"]) == ("E_BOARD_UNREADABLE", "file not found")
+
+
+def press(board, pads=(), footprints=(), socket="ipc://s", token="T"):
+    """A button press's handoff file (button.write_handoff) for `board`: the pads named REF.PAD by their KIIDs in
+    the file (a name the file lacks passes as it is, as a KIID) and the footprints by reference."""
+    kiid = {p.name: p.uuid for p in load_board(board).all_pads()}
+    return button.write_handoff({"board": str(board), "pads": [kiid.get(n, n) for n in pads],
+                                 "footprints": list(footprints), "kicad": "9.0.7", "socket": socket, "token": token})
+
+
+def test_a_handoff_joins_the_selection_to_the_saved_boards_pads(fake, tmp_path):  # design 5.5; Review Focus 2
+    board = FIX / "lpf915.kicad_pcb"
+    every = control.pads(board)
+
+    def read(pads=(), footprints=()):
+        return control.handed(press(board, pads, footprints))
+
+    assert read(["J1.1", "U1.1"]) == control.Handed(board, "ipc://s", "T", every, "U1.1", "J1.1", None)  # J1: end
+    assert (read(["C2.1", "C3.1"]).start, read(["C2.1", "C3.1"]).end) == ("C2.1", "C3.1")  # no connector: as sent
+    one, none = read(["C3.1"]), read()
+    assert (one.start, one.end, none.start, none.end, none.pads, none.problem) == ("C3.1", "", "", "", every, None)
+    narrowed = read(["U1.1"], ["C1", "J1"])  # a footprint narrows the pickers to its pads and the selected ones
+    assert (narrowed.pads, narrowed.start, narrowed.problem) == (["C1.1", "C1.2", "J1.1", "J1.2", "U1.1"], "U1.1", None)
+    three = read(["C1.1", "C2.1", "C3.1"])
+    assert (three.start, three.end, three.problem) == ("", "", ("G_HANDOFF_PADS", {"count": 3}))
+    for unsaved in (read(["U1.1", "00000000-0000-0000-0000-000000000001"]), read(footprints=["C9"])):
+        assert (unsaved.pads, unsaved.start, unsaved.problem) == (every, "", ("G_HANDOFF_UNSAVED",
+                                                                              {"board": str(board)}))
+    paste = next(p.uuid for p in load_board(board).all_pads() if not p.layers)  # one of U1's paste-only pads
+    assert (read([paste, "C3.1"]).start, read([paste, "C3.1"]).problem) == ("C3.1", None)  # never an end
+    nope = tmp_path / "nope.kicad_pcb"
+    gone = control.handed(button.write_handoff({"board": str(nope), "pads": [], "footprints": [], "kicad": "9.0.7",
+                                                "socket": "ipc://s", "token": "T"}))
+    assert (gone.board, gone.pads, gone.problem) == (nope, [], ("E_BOARD_UNREADABLE", {
+        "path": str(nope), "reason": "file not found"}))
 
 
 def test_every_gui_wording_keeps_its_cli_params_and_drops_terminal_syntax():  # design 5.3, 5.7

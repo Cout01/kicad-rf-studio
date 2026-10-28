@@ -1,8 +1,8 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
-"""The GUI's Qt-free logic (Stage 2 design 5.1, 5.3): the detached start, Apply's retune run to its end, the events
+"""The GUI's Qt-free logic (Stage 2 design 5.1, 5.3, 5.5): the detached start, Apply's retune run to its end, the events
 tail, re-attach through the lock and the end events, the project read off the GUI thread, the retune session (an update
-of a project read's chain from the parts' rows), Verify's stale indicator and comparison, New's pad list,
-Advanced's fields of project.json and their edit, and About's text. Never imports Qt or matplotlib."""
+of a project read's chain from the parts' rows), Verify's stale indicator and comparison, New's pad list and a button
+press's pre-fill, Advanced's fields of project.json and their edit, and About's text. Never imports Qt or matplotlib."""
 import contextlib
 import copy
 import json
@@ -18,7 +18,7 @@ from importlib import metadata
 from pathlib import Path
 
 from kicad_rf_studio import __version__, pipeline, runs
-from kicad_rf_studio.core.kicad import load_board
+from kicad_rf_studio.core.kicad import classify, load_board
 from kicad_rf_studio.core.kicad.values import part_kind, port_value, snap, value_text
 from kicad_rf_studio.core.messages import KrsError, detail, render
 from kicad_rf_studio.core.model import spec
@@ -379,12 +379,65 @@ def verify_stale(project: dict, rows: list[Row]) -> str | None:
 
 
 def pads(board: Path) -> list[str]:
-    """New's pad picker (design 5.3): the names REF.PAD of the pads with copper of the board file `board` (load_board,
-    Pad.layers), each once, in natural order (U1.9 before U1.10), file order between names that read alike. Raises
-    load_board's refusals."""
+    """New's pad picker (design 5.3): the pads with copper of the board file `board` (load_board) as _names lists
+    them. Raises load_board's refusals."""
+    return _names(load_board(board).all_pads())
+
+
+def _names(pads) -> list[str]:
+    """The names REF.PAD of the pads with copper (Pad.layers) among `pads`, each once, in natural order (U1.9 before
+    U1.10), the order of `pads` between names that read alike."""
     # ponytail: every pad with copper, GND's too; new refuses a GND or netless end with its own message
-    names = dict.fromkeys(p.name for p in load_board(board).all_pads() if p.layers)
+    names = dict.fromkeys(p.name for p in pads if p.layers)
     return sorted(names, key=lambda name: [int(t) if t.isdigit() else t for t in re.split(r"(\d+)", name)])
+
+
+@dataclass(frozen=True)
+class Handed:
+    """A button press as New shows it (design 5.3, 5.5): the board KiCad has open and its API's `socket` and `token`;
+    the pickers' `pads`, the `start` and `end` pads it pre-fills ("" for none) and New's status line (`problem`, as
+    (code, params); None for none)."""
+    board: Path
+    socket: str
+    token: str
+    pads: list[str]
+    start: str
+    end: str
+    problem: tuple[str, dict] | None
+
+
+def handed(path: Path) -> Handed:
+    """The button press in the handoff file `path` (button.write_handoff), read off the GUI thread (design 5.5): its
+    selection joined to the pads of its board as saved (load_board), the pads by their KIIDs (Pad.uuid) and the
+    footprints by reference. load_board's refusal: no pads, and the refusal as `problem`. A selected KIID or reference
+    the file lacks (KiCad holds edits not yet saved): every pad with copper, nothing pre-filled and G_HANDOFF_UNSAVED.
+    Else the pickers list the selected footprints' pads and the selected pads, or every pad with copper when no
+    footprint is selected (_names); of the selected pads with copper, by name, one is the start; two are the start and
+    the end, swapped when only the first is a connector's (classify), so that the connector's side is the end; three or
+    more pre-fill nothing, with G_HANDOFF_PADS. Raises when the handoff file cannot be read."""
+    data = json.loads(path.read_text(encoding="utf-8"))
+    board, socket, token = Path(data["board"]), data["socket"], data["token"]
+    try:
+        b = load_board(board)
+    except KrsError as e:
+        return Handed(board, socket, token, [], "", "", (e.code, e.params))
+    by_kiid = {p.uuid: p for p in b.all_pads()}
+    if any(k not in by_kiid for k in data["pads"]) or any(r not in b.footprints for r in data["footprints"]):
+        return Handed(board, socket, token, _names(b.all_pads()), "", "", ("G_HANDOFF_UNSAVED", {"board": str(board)}))
+    selected = [by_kiid[k] for k in data["pads"]]
+    pickers = _names([p for r in data["footprints"] for p in b.footprints[r].pads] + selected if data["footprints"]
+                     else b.all_pads())
+    ends = list({p.name: p for p in selected if p.layers}.values())  # by name, each once, in the order they came in
+    if len(ends) > 2:
+        return Handed(board, socket, token, pickers, "", "", ("G_HANDOFF_PADS", {"count": len(ends)}))
+    if len(ends) == 2:
+        # ponytail: KiCad's API gives no selection order, so two pads neither of which is a connector's keep the order
+        # they came in; Swap fixes it
+        connectors = classify(b).connectors
+        if ends[0].ref in connectors and ends[1].ref not in connectors:
+            ends.reverse()
+    start, end, *_ = [p.name for p in ends] + ["", ""]
+    return Handed(board, socket, token, pickers, start, end, None)
 
 
 def message(error: Exception) -> str:

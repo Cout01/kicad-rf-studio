@@ -314,6 +314,9 @@ CATALOG: dict[str, str] = {
     "E_NO_KICAD_FOLDER": "No KiCad 9.0 or 10.0 folder in {folder}: start KiCad once, so that it makes its folder there, or name the version with --kicad 9.0 or --kicad 10.0.",
     "E_PLUGIN_WRITE": "Cannot write or remove the kicad-rf-studio button in {path}: {reason}. Check that this folder can be written (Windows' Controlled folder access can block it), then run install-kicad-plugin again.",
     "E_PLUGIN_PYTHON": "This Python's path, {python}, has a character that launch.cmd cannot hold in the console's code page. Install kicad-rf-studio in a folder whose path has none, then run install-kicad-plugin again.",
+    "G_SWAP": "Swap start and end",
+    "G_HANDOFF_UNSAVED": "{board} as saved lacks a pad or a part selected in KiCad, which holds edits not yet saved: save the board in KiCad and press the button again.",
+    "G_HANDOFF_PADS": "{count} pads are selected in KiCad. Select only the chain's two end pads and press the button again, or pick start and end here.",
 }
 
 _translation = gettext.translation(

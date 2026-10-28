@@ -3,10 +3,10 @@
 cost, starts, follows and stops a run, its own or one it re-attaches through the project lock, replays the project's
 last run and shows its results, which its parts' rows retune in this process (ResultsView), Apply stores through the
 CLI's retune and Verify checks; Advanced edits project.json's fields and saves them under the project lock
-(AdvancedView); all driven by one 500 ms timer (`tick`). The project is read, a board's pads listed, new run and retune
-waited for on a pool thread (control.open_project, control.pads, cli.new, control.apply); cost, run and verify start as
-a detached orchestrator (control.start), so this process never reaches runs.run_jobs. Its Help menu shows About
-(control.about) and Qt's About."""
+(AdvancedView); all driven by one 500 ms timer (`tick`). The project is read, a board's pads listed, a KiCad button
+press read, new run and retune waited for on a pool thread (control.open_project, control.pads, control.handed, cli.new,
+control.apply); cost, run and verify start as a detached orchestrator (control.start), so this process never reaches
+runs.run_jobs. Its Help menu shows About (control.about) and Qt's About."""
 import json
 import subprocess
 from concurrent.futures import Future, ThreadPoolExecutor
@@ -259,15 +259,16 @@ class ResultsView(QWidget):
 
 
 class NewForm(QGroupBox):
-    """New from a board (Stage 2 design 5.3): the board and the project folder, each with its Browse…; the start and
-    end pads, picked from the board's pads or typed; f0; new's options at new's defaults (the board's own stackup, and
-    a lid height of 0 for none); Create, its status line and new's notes. `chosen` is the board text whose pads were
-    last read."""
+    """New from a board (Stage 2 design 5.3, 5.5): the board and the project folder, each with its Browse…; the start
+    and end pads, picked from the board's pads or typed, and Swap beside the end; f0; new's options at new's defaults
+    (the board's own stackup, and a lid height of 0 for none); Create, its status line and new's notes. `chosen` is the
+    board text whose pads were last read."""
 
     def __init__(self):
         super().__init__(render("G_NEW"))
         self.board, self.board_button = QLineEdit(), QPushButton(render("G_BROWSE"))
         self.start, self.end, self.f0 = QComboBox(editable=True), QComboBox(editable=True), QLineEdit()
+        self.swap_button = QPushButton(render("G_SWAP"))
         self.harmonics = QSpinBox(minimum=1, maximum=99, value=HARMONICS)
         self.preset, self.stackup = QComboBox(), QComboBox()
         self.preset.addItems(cli.PRESETS)
@@ -281,14 +282,22 @@ class NewForm(QGroupBox):
         self.create_button, self.status, self.notes = QPushButton(render("G_CREATE")), QLabel(), QListWidget()
         self.status.setWordWrap(True)  # a refusal names a path, which would otherwise widen the window
         self.chosen = ""
-        form = QFormLayout(self)
+        form, end_row = QFormLayout(self), beside(self.end, self.swap_button)
+        end_row.setStretch(0, 1)  # the end picker takes the row's width, as the start one does, and Swap keeps its own
         for code, field in (("G_NEW_BOARD", beside(self.board, self.board_button)), ("G_NEW_START", self.start),
-                            ("G_NEW_END", self.end), ("G_NEW_F0", self.f0), ("G_NEW_HARMONICS", self.harmonics),
+                            ("G_NEW_END", end_row), ("G_NEW_F0", self.f0), ("G_NEW_HARMONICS", self.harmonics),
                             ("G_NEW_PRESET", self.preset), ("G_NEW_STACKUP", self.stackup), ("G_NEW_LID", self.lid),
                             ("G_NEW_FOLDER", beside(self.folder, self.folder_button))):
             form.addRow(render(code), field)
         for widget in (self.create_button, self.status, self.notes):
             form.addRow(widget)
+        self.swap_button.clicked.connect(self.swap)
+
+    def swap(self) -> None:
+        """Swap: start and end exchange their texts."""
+        start, end = self.start.currentText(), self.end.currentText()
+        self.start.setCurrentText(end)
+        self.end.setCurrentText(start)
 
 
 class AdvancedView(QWidget):
@@ -346,8 +355,9 @@ class MainWindow(QMainWindow):
     which Run… confirms on; the watch: `command`, `run_dir`, its events' `tail`, its `end` event and `proc`, only a
     process this window started; `live`, whether the watched process goes on; `mtime`, project.json's and the board
     file's st_mtime_ns at the last read (stamp); `started`, every process this window started, polled every tick, so
-    that none is left a zombie on Linux; and the New form's work going on (Futures): `pads_read`, the chosen board's
-    pads, and `creating`, new.
+    that none is left a zombie on Linux; the New form's work going on (Futures): `pads_read`, the chosen board's
+    pads, or a press (take_handoff), and `creating`, new; and the KiCad button's presses: `handoff`, the handoff file of
+    the last press taken, and `handed`, the last press shown (control.Handed), each None before the first.
     Every slot is a bound method: a lambda or partial slot would keep a closed window alive (probed on PySide6
     6.12)."""
 
@@ -357,7 +367,7 @@ class MainWindow(QMainWindow):
         self.resize(1200, 800)
         self.prefix = prefix or control.orchestrator()
         self.path = self.opened = self.loading = self.applying = self.cost = self.mtime = None
-        self.pads_read = self.creating = None
+        self.pads_read = self.creating = self.handoff = self.handed = None
         self.command = self.run_dir = self.tail = self.end = self.proc = None
         self.live, self.started, self.verify_next = False, [], False
         self.pool = ThreadPoolExecutor(1)
@@ -740,6 +750,16 @@ class MainWindow(QMainWindow):
             f.folder.setText(str(Path(text).with_suffix("")))
             self.pads_read = self.pool.submit(control.pads, Path(text))
 
+    def take_handoff(self, path: Path) -> None:
+        """A press of the KiCad button, in the handoff file `path` (design 5.3, 5.5): kept as `handoff`, the Project
+        tab shown and New's status line cleared, then the press read on the pool (control.handed) as New's read,
+        `pads_read`, which show_pads shows. It replaces a read in flight, so a slower read of another board never
+        overwrites it, and a board picked after the press wins over it."""
+        self.handoff = path
+        self.tabs.setCurrentIndex(0)  # the Project tab, New's
+        self.new_form.status.clear()
+        self.pads_read = self.pool.submit(control.handed, path)
+
     def pick_folder(self) -> None:
         """New's project folder Browse…: the folder picked in the dialog; nothing on Cancel."""
         name = QFileDialog.getExistingDirectory(self, render("G_NEW_FOLDER"))
@@ -768,19 +788,31 @@ class MainWindow(QMainWindow):
             lid_height=f.lid.value() or None, output=f.folder.text().strip())  # a lid height of 0: none, new's default
 
     def show_pads(self, done: Future) -> None:
-        """The board's pads (`done`, control.pads) in the start and end pickers, none picked for the user; on a
-        refusal (load_board's, else E_INTERNAL), the pickers left empty, the refusal in the status line and `chosen`
-        cleared, so that the same board, fixed and picked again, is read again. The exception is taken, never raised
-        again: its traceback would then hold this frame, and so the window, in a cycle with the Future that only the
-        garbage collector frees, maybe on a pool thread (probed)."""
+        """New's read (`done`): the board's pads (control.pads) in the start and end pickers, none picked for the user;
+        or a press (control.handed), kept as `handed`: its board in the board field and as `chosen` ("" when the press
+        has no pads, a refusal, so that the board, fixed and picked again, is read again), the project folder beside it
+        as board_chosen sets it, its pads in the pickers with its start and end picked, and its problem in the status
+        line, which is otherwise left as it is. On a refusal (load_board's, else E_INTERNAL), the pickers left empty,
+        the refusal in the status line and `chosen` cleared, so that the same board, fixed and picked again, is read
+        again. The exception is taken, never raised again: its traceback would then hold this frame, and so the window,
+        in a cycle with the Future that only the garbage collector frees, maybe on a pool thread (probed)."""
         f, error = self.new_form, done.exception()
         if error is not None:
             f.status.setText(control.message(error))
             f.chosen = ""
-        for box in (f.start, f.end):
+        read = [] if error is not None else done.result()
+        names, start, end = read, "", ""
+        if isinstance(read, control.Handed):
+            self.handed, names, start, end = read, read.pads, read.start, read.end
+            f.board.setText(str(read.board))
+            f.chosen = str(read.board) if read.pads else ""
+            f.folder.setText(str(read.board.with_suffix("")))
+            if read.problem:
+                f.status.setText(control.text(*read.problem))
+        for box, pick in ((f.start, start), (f.end, end)):
             box.clear()
-            box.addItems([] if error is not None else done.result())
-            box.setCurrentIndex(-1)
+            box.addItems(names)
+            box.setCurrentIndex(box.findText(pick))  # -1, none picked, for "": no pad's name is empty
 
     def created(self, done: Future) -> None:
         """new's end (`done`): Create enabled again and the last New's notes cleared; on success the status line
