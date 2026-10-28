@@ -273,6 +273,11 @@ CATALOG: dict[str, str] = {
     "G_APPLY": "Apply",
     "G_APPLYING": "Applying: retune stores the changed values in project.json and writes results/…",
     "G_APPLIED": "Applied: project.json holds these values, and {folder} holds their outputs.",
+    "G_VERIFY": "Verify",
+    "G_VERIFY_NONE": "Not verified yet: Verify runs a full simulation of the stored values, with each part in the grid.",
+    "G_VERIFY_STALE": "Verify is stale: the values or the model changed since the last verify.",
+    "G_APPLY_FIRST": "Verify runs the values stored in project.json, and these are not applied yet. Apply them, then verify?",
+    "G_VERIFY_VALUE": "Verify puts each part in the grid at its value, but {ref} has \"{value}\": Verify can place only a C, L or R whose value reads (a C above 0). Set {ref}'s value in Advanced (under chain.series, chain.shunt or others), which keeps its S2P file, or clear the file in its row in Results and retune and type the value there, which Apply stores without the file; then press Verify again.",
 }
 
 _translation = gettext.translation(

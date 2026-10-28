@@ -310,3 +310,26 @@ def test_apply_runs_retune_to_its_end_without_a_window_and_returns_its_lines(tmp
     assert control.apply(["py"], pj, ["C2=1pF"]) == (0, ["a", "b"])
     assert seen[0]["stdin"] == subprocess.DEVNULL and "KICAD_API_TOKEN" not in seen[0]["env"]
     assert seen[0]["creationflags"] == (subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0)
+
+
+def test_verify_is_stale_until_it_ran_these_values_on_this_model(tmp_path):  # design 5.3 What-if, Verify
+    project = {**lpf(), "results": {"model_hash": "M"}}
+    rows = control.rows(project, tmp_path, ["C1", "L1", "C2", "C3"])
+    assert control.verify_stale(project, rows) == "G_VERIFY_NONE"
+    for broken in ({}, {"base_hash": "M", "values": []}):  # hand edits: read as no verify
+        assert control.verify_stale({**project, "verify": broken}, rows) == "G_VERIFY_NONE"
+    values = {"C1": "100pF", "L1": "15nH", "C2": "3p3", "C3": "3.3pF"}
+    project["verify"] = {"base_hash": "M", "values": values, "run_dir": str(tmp_path / "v")}
+    assert control.verify_stale(project, rows) is None  # 3p3 reads as 3.3pF
+    with_file = [*rows[:2], replace(rows[2], value="4.7pF", s2p="c2.s2p"), rows[3]]
+    assert control.verify_stale(project, with_file) is None  # a part with a file: verify runs its stored value
+    assert control.verify_stale(project, [*rows[:2], replace(rows[2], value="4.7pF"), rows[3]]) == "G_VERIFY_STALE"
+    assert control.verify_stale({**project, "results": {"model_hash": "N"}}, rows) == "G_VERIFY_STALE"  # a run since
+    assert control.verify_lines(project) == [] == control.verify_lines(None) == control.verify_lines({"verify": {}})
+    (tmp_path / "v").mkdir()
+    events = [("progress", "I_PROGRESS", {}), ("result", "I_VERIFY_COMPARE", {"x": 1}),
+              ("message", "E_RESULTS_WRITE", {}), ("result", "I_VERIFY_SCOPE", {})]
+    (tmp_path / "v" / "events.jsonl").write_text("".join(
+        json.dumps({"t": 0, "kind": k, "job": None, "code": c, "params": p}) + "\n" for k, c, p in events),
+        encoding="utf-8")
+    assert control.verify_lines(project) == [("I_VERIFY_COMPARE", {"x": 1}), ("I_VERIFY_SCOPE", {})]

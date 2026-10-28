@@ -1,14 +1,15 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """The GUI's Qt-free logic (Stage 2 design 5.1, 5.3): the detached start, Apply's retune run to its end, the events
 tail, re-attach through the lock and the end events, the project read off the GUI thread, the retune session (an update
-of a project read's chain from the parts' rows), and New's pad list. Never imports Qt or matplotlib."""
+of a project read's chain from the parts' rows), Verify's stale indicator and comparison, and New's pad list. Never
+imports Qt or matplotlib."""
 import json
 import math
 import os
 import re
 import subprocess
 import sys
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, field, replace
 from functools import partial
 from pathlib import Path
 
@@ -27,7 +28,7 @@ GUI = {"E_LOCKED": "G_LOCKED", "I_RUN_START": "G_RUN_START", "I_WHAT_IF": "G_WHA
        "W_LID_HEIGHT_MISSING": "G_LID_HEIGHT_MISSING", "I_PART_NO_MODEL": "G_PART_NO_MODEL",
        "W_NO_REFERENCE": "G_NO_REFERENCE", "E_RETUNE_VALUE": "G_RETUNE_VALUE", "E_PART_NO_VALUE": "G_PART_NO_VALUE",
        "E_S2P_MISSING": "G_S2P_MISSING", "E_S2P_UNREADABLE": "G_S2P_UNREADABLE", "E_S2P_BAND": "G_S2P_BAND",
-       "W_S2P_FIXTURE": "G_S2P_FIXTURE"}
+       "W_S2P_FIXTURE": "G_S2P_FIXTURE", "E_VERIFY_VALUE": "G_VERIFY_VALUE"}
 
 
 def orchestrator() -> list[str]:
@@ -154,12 +155,28 @@ def last_cost(project: Path, spec_hash: str | None) -> Path | None:
                  and _model_hash(d) == spec_hash), None)
 
 
+def verify_lines(project: dict | None) -> list[tuple[str, dict]]:
+    """The comparison of the last verify of `project` (design 5.3): the result events of its run folder's events.jsonl
+    (verify.run_dir), in order, as (code, params), read with Tail until it returns nothing; [] without a verify and on
+    any exception (a folder that cannot be read, a hand-edited block), so that open_project never raises."""
+    # ponytail: reads verify's whole events.jsonl on each project read (MBs after a long verify); its result lines are
+    # its last, so the last 64 KiB would do, as last_event reads
+    try:
+        tail, events = Tail(Path(project["verify"]["run_dir"]) / "events.jsonl"), []
+        while more := tail.read():
+            events += more
+        return [(e["code"], e["params"]) for e in events if e.get("kind") == "result"]
+    except Exception:
+        return []
+
+
 @dataclass
 class Opened:
     """A project as open_project reads it: project.json, its model's spec_hash and the chain results while they apply,
     each None when not read; the first refusal met, as (code, params); the last cost of this model (last_cost) and the
     newest run or verify that ended; each None without one; the board file that project.json names
-    (core.project.board_file), None when project.json cannot be read or names no board."""
+    (core.project.board_file), None when project.json cannot be read or names no board; and the last verify's
+    comparison (verify_lines), [] without one."""
     project: dict | None
     spec_hash: str | None
     results: pipeline.ChainResults | None
@@ -167,6 +184,7 @@ class Opened:
     cost: Path | None
     last: Path | None
     board: Path | None = None
+    verified: list[tuple[str, dict]] = field(default_factory=list)
 
 
 def open_project(path: Path) -> Opened:
@@ -174,8 +192,8 @@ def open_project(path: Path) -> Opened:
     model, the model's spec_hash (None without a spec), results_of and chain_results with errors as lines, the first
     KrsError stopping there as `problem`, any other exception E_INTERNAL; then the board file, from the project read
     when pipeline.load succeeded, else from load_project alone (a board that fails to load still has a path), None
-    when that raises too; then last_cost and the newest of ended() that is a run or a verify. Never raises; starts
-    nothing."""
+    when that raises too; then last_cost, the newest of ended() that is a run or a verify, and verify_lines. Never
+    raises; starts nothing."""
     project = model_hash = results = problem = None
     try:
         project, board, geom, _ = pipeline.load(path)
@@ -192,7 +210,8 @@ def open_project(path: Path) -> Opened:
     except Exception:  # project.json unreadable, or naming no board
         file = None
     last = next((d for d, end in ended(path) if end["params"]["command"] in ("run", "verify")), None)
-    return Opened(project, model_hash, results, problem, last_cost(path, model_hash), last, file)
+    return Opened(project, model_hash, results, problem, last_cost(path, model_hash), last, file,
+                  verify_lines(project))
 
 
 def run_state(run_dir: Path, end: dict | None, holder: dict | None, own: bool,
@@ -322,6 +341,22 @@ def carried(before: dict | None, after: dict | None, folder: Path, rows: list[Ro
         elif row.ref not in new or changed(after, folder, [row]):
             lost = True
     return [kept[row.ref] for row in fresh], lost
+
+
+def verify_stale(project: dict, rows: list[Row]) -> str | None:
+    """The stale indicator of `project` with the retune's `rows` (design 5.3): G_VERIFY_NONE without a verify block it
+    can read (none, or a hand edit that is not an object with base_hash and an object of values); G_VERIFY_STALE when
+    a run came since (base_hash is not the results' model_hash) or when a row's value reads (port_value) other than
+    the one verify ran; else None. A row with an S2P file counts with its part's stored value: Apply keeps that value,
+    and verify runs it, not the file (C-38)."""
+    v, by_ref = project.get("verify"), parts(project)
+    if not (isinstance(v, dict) and "base_hash" in v and isinstance(v.get("values"), dict)):
+        return "G_VERIFY_NONE"
+    if v["base_hash"] != project["results"]["model_hash"] or any(
+            port_value(row.ref, by_ref[row.ref]["value"] if row.s2p else row.value)
+            != port_value(row.ref, v["values"].get(row.ref, "")) for row in rows):
+        return "G_VERIFY_STALE"
+    return None
 
 
 def pads(board: Path) -> list[str]:

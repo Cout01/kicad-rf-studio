@@ -1,10 +1,10 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """The main window (Stage 2 design 5.1, 5.3, 5.4): it creates a project from a board (NewForm) or opens one, shows its
 cost, starts, follows and stops a run, its own or one it re-attaches through the project lock, replays the project's
-last run and shows its results, which its parts' rows retune in this process (ResultsView) and Apply stores through the
-CLI's retune, driven by one 500 ms timer (`tick`). The project is read, a board's pads listed, new run and retune
-waited for on a pool thread (control.open_project, control.pads, cli.new, control.apply); cost and run start as a
-detached orchestrator (control.start), so this process never reaches runs.run_jobs."""
+last run and shows its results, which its parts' rows retune in this process (ResultsView), Apply stores through the
+CLI's retune and Verify checks, driven by one 500 ms timer (`tick`). The project is read, a board's pads listed, new
+run and retune waited for on a pool thread (control.open_project, control.pads, cli.new, control.apply); cost, run and
+verify start as a detached orchestrator (control.start), so this process never reaches runs.run_jobs."""
 import subprocess
 from concurrent.futures import Future, ThreadPoolExecutor
 from pathlib import Path
@@ -52,7 +52,7 @@ def page(*widgets: QWidget) -> QWidget:
 
 
 def beside(*widgets: QWidget) -> QHBoxLayout:
-    """A form's field: `widgets` in a row."""
+    """`widgets` in a row: a form's field, or a row of a tab."""
     layout = QHBoxLayout()
     for widget in widgets:
         layout.addWidget(widget)
@@ -71,28 +71,31 @@ def combo(choices: tuple, current: str, slot) -> QComboBox:
 
 
 class ResultsView(QWidget):
-    """The Results and retune tab (Stage 2 design 5.3, 5.4): the what-if label while RETUNE_VALIDATED is False, or why
-    there are no results; the retune box, shown only with part ports: the parts table (`parts`), a row per part port
-    with its value, its Snapping, its S2P file and that file's fixture, then the row (`buttons`) of S2P file…, Revert,
-    Apply and the retune's status line; summary.png's drawing on a FigureCanvasQTAgg; and the result's lines and stated
-    limits. `series` holds each part's Snapping as the user set it. A row's edit emits `edited`; the window answers it
-    with the chain of the rows (show_chain). The plot: its `axes` as draw_summary drew them (None without a plot, or to
-    draw the next one in full) and its `curves`, animated, which a retune moves and blits (retrace_summary, blit) on
-    the background (`bg`) that the last full draw kept (on_draw), None until one."""
+    """The Results and retune tab (Stage 2 design 5.3, 5.4): the row (`header`) of the what-if label while
+    RETUNE_VALIDATED is False, the stale indicator (`stale`, which the window sets) and Verify, the last two only with
+    part ports; why there are no results; the retune box, shown only with part ports: the parts table (`parts`), a row
+    per part port with its value, its Snapping, its S2P file and that file's fixture, then the row (`buttons`) of S2P
+    file…, Revert, Apply and the retune's status line; summary.png's drawing on a FigureCanvasQTAgg; and the row
+    (`footer`) of the result's lines and stated limits, then the last verify's comparison (`verify_lines`), shown only
+    with part ports. `series` holds each part's Snapping as the user set it. A row's edit emits `edited`; the window
+    answers it with the chain of the rows (show_chain). The plot: its `axes` as draw_summary drew them (None without a
+    plot, or to draw the next one in full) and its `curves`, animated, which a retune moves and blits (retrace_summary,
+    blit) on the background (`bg`) that the last full draw kept (on_draw), None until one."""
 
     edited = Signal()
 
     def __init__(self):
         super().__init__()
         self.what_if, self.problem, self.lines = QLabel(control.text("I_WHAT_IF", {})), QLabel(), QListWidget()
+        self.stale, self.verify_button, self.verify_lines = QLabel(), QPushButton(render("G_VERIFY")), QListWidget()
         self.canvas = FigureCanvasQTAgg(Figure(layout="constrained"))
         self.axes, self.curves, self.bg = None, [], None
         self.parts, self.retune_box, self.buttons = QTableWidget(0, len(PART_COLUMNS)), QWidget(), QHBoxLayout()
         self.s2p_button, self.revert_button = QPushButton(render("G_CHOOSE_S2P")), QPushButton(render("G_REVERT"))
         self.apply_button, self.retune_status, self.series = QPushButton(render("G_APPLY")), QLabel(), {}
-        for label in (self.what_if, self.problem, self.retune_status):
+        for label in (self.what_if, self.stale, self.problem, self.retune_status):
             label.setWordWrap(True)  # its sentence, some 200 characters, would otherwise set the window's minimum width
-        for widget in (self.what_if, self.problem, self.retune_box):
+        for widget in (self.what_if, self.stale, self.verify_button, self.problem, self.retune_box, self.verify_lines):
             widget.hide()  # until a read shows it
         self.parts.setHorizontalHeaderLabels([render(code) for code in PART_COLUMNS])
         self.parts.horizontalHeader().setSectionResizeMode(S2P, QHeaderView.ResizeMode.Stretch)  # a file's path
@@ -102,9 +105,15 @@ class ResultsView(QWidget):
         box.setContentsMargins(0, 0, 0, 0)  # aligned with the tab's other widgets
         box.addWidget(self.parts)
         box.addLayout(self.buttons)
+        self.header = beside(self.what_if, self.stale, self.verify_button)
+        for k in (0, 1):
+            self.header.setStretch(k, 1)  # the labels take the row's width, and Verify keeps its own
+        self.footer = beside(self.lines, self.verify_lines)
         layout = QVBoxLayout(self)
-        for widget in (self.what_if, self.problem, self.retune_box, self.canvas, self.lines):
+        layout.addLayout(self.header)
+        for widget in (self.problem, self.retune_box, self.canvas):
             layout.addWidget(widget)
+        layout.addLayout(self.footer)
         self.parts.itemChanged.connect(self.item_changed)
         self.s2p_button.clicked.connect(self.choose_s2p)
         self.canvas.mpl_connect("draw_event", self.on_draw)
@@ -112,12 +121,18 @@ class ResultsView(QWidget):
     def display(self, opened: control.Opened, folder: Path | None) -> None:
         """Shows the project read `opened` of the project folder `folder` (None for none): the problem's line only
         with one; the rows of the results' part ports as project.json stores them (control.rows, S2P files against
-        `folder`), none without part ports; then the results' chain (show_chain), under the folder's name, drawn in
-        full (`axes` None): a read, Revert and the re-read after Apply. Never touches retune_status."""
+        `folder`), none without part ports, and only with them Verify and the last verify's comparison
+        (opened.verified); then the results' chain (show_chain), under the folder's name, drawn in full (`axes` None):
+        a read, Revert and the re-read after Apply. Never touches retune_status or the stale indicator."""
         res = opened.results
         self.problem.setText("" if opened.problem is None else control.text(*opened.problem))
         self.problem.setVisible(opened.problem is not None)
-        self.show_rows(control.rows(opened.project, folder, res.refs) if res is not None and res.refs else [])
+        rows = control.rows(opened.project, folder, res.refs) if res is not None and res.refs else []
+        self.show_rows(rows)
+        self.verify_lines.clear()
+        self.verify_lines.addItems([control.text(c, p) for c, p in opened.verified])
+        for widget in (self.verify_button, self.verify_lines):
+            widget.setVisible(bool(rows))
         self.axes = None
         self.show_chain(res, folder.name if folder else "")
 
@@ -270,7 +285,8 @@ class NewForm(QGroupBox):
 class MainWindow(QMainWindow):
     """The main window; `prefix` is the command that starts the orchestrator (control.orchestrator() by default).
     Its state: `path`, the resolved project file; `opened`, its last read (control.Opened) and `loading`, the read
-    going on (a Future); `applying`, Apply's retune going on (a Future); `cost`, the folder of this model's last cost,
+    going on (a Future); `applying`, Apply's retune going on (a Future), and `verify_next`, whether its end starts
+    verify (Verify's Yes to G_APPLY_FIRST); `cost`, the folder of this model's last cost,
     which Run… confirms on; the watch: `command`, `run_dir`, its events' `tail`, its `end` event and `proc`, only a
     process this window started; `live`, whether the watched process goes on; `mtime`, project.json's and the board
     file's st_mtime_ns at the last read (stamp); `started`, every process this window started, polled every tick, so
@@ -287,7 +303,7 @@ class MainWindow(QMainWindow):
         self.path = self.opened = self.loading = self.applying = self.cost = self.mtime = None
         self.pads_read = self.creating = None
         self.command = self.run_dir = self.tail = self.end = self.proc = None
-        self.live, self.started = False, []
+        self.live, self.started, self.verify_next = False, [], False
         self.pool = ThreadPoolExecutor(1)
         self.open_button, self.project_status, self.new_form = QPushButton(render("G_OPEN")), QLabel(), NewForm()
         self.cost_lines, self.cost_status = QListWidget(), QLabel()
@@ -313,11 +329,12 @@ class MainWindow(QMainWindow):
                              (self.run_button, self.run), (self.stop_button, self.stop),
                              (form.board_button, self.pick_board), (form.folder_button, self.pick_folder),
                              (form.create_button, self.create_project), (self.results.revert_button, self.revert),
-                             (self.results.apply_button, self.apply)):
+                             (self.results.apply_button, self.apply), (self.results.verify_button, self.verify)):
             button.clicked.connect(slot)
         self.results.edited.connect(self.retune)
         form.board.editingFinished.connect(self.board_chosen)
-        for button in (self.cost_button, self.run_button, self.stop_button, self.results.apply_button):  # no project
+        for button in (self.cost_button, self.run_button, self.stop_button, self.results.apply_button,
+                       self.results.verify_button):  # no project
             button.setEnabled(False)
         self.timer = QTimer(self)
         self.timer.timeout.connect(self.tick)
@@ -332,15 +349,18 @@ class MainWindow(QMainWindow):
     def open_project(self, path: Path) -> None:
         """Opens the project file `path`, a folder standing for its project.json: the views and the watch cleared,
         then its read and a tick. A process this window started goes on, no longer watched, and so does an Apply's
-        retune of the previous project, which ends on the pool unread (`applying` None)."""
+        retune of the previous project, which ends on the pool unread (`applying` None) and starts no verify
+        (`verify_next` False)."""
         self.path = pipeline.project_path(str(path)).resolve()
         self.command = self.run_dir = self.tail = self.end = self.proc = self.cost = self.opened = self.applying = None
+        self.verify_next = False
         for view in (self.cost_lines, self.cost_status, self.log, self.run_status):
             view.clear()
         self.jobs.setRowCount(0)
         self.results.display(control.Opened(None, None, None, None, None, None), None)  # no plot, lines, labels or rows
         self.results.retune_status.clear()
         self.results.series.clear()  # the Snapping choices are the open project's
+        self.show_stale()  # no rows: hidden
         self.load()
         self.tick()
 
@@ -367,13 +387,13 @@ class MainWindow(QMainWindow):
         read when the stamp changed (a save of project.json, Apply's included, or of the board file); the buttons: Cost
         while nothing watched goes on and no run holds the lock, Run… also only with a cost of this model and no Apply
         going on, Stop only while the watch goes on, the retune box while no read and no Apply goes on, so that its
-        table and buttons wait for Apply's re-read, and Apply also only while nothing watched goes on, no run holds the
-        lock and the last read has results. A holder whose run folder is the project's results/ is a retune
-        (pipeline.retune, r2 §1): waited for, never watched or bannered. Any other holder's run folder, when it names
-        one other than the watched one, is watched when this window's own process was not running at the last tick
-        (`live`) and the holder lives, or when the holder is dead and nothing is watched (on open), so a cost meanwhile
-        keeps its tab. Before all that, with or without a project, New's pad list and new itself when done (show_pads,
-        created, which opens the project new wrote, whose own tick runs inside this one)."""
+        table and buttons wait for Apply's re-read, and Apply and Verify also only while nothing watched goes on, no
+        run holds the lock and the last read has results. A holder whose run folder is the project's results/ is a
+        retune (pipeline.retune, r2 §1): waited for, never watched or bannered. Any other holder's run folder, when it
+        names one other than the watched one, is watched when this window's own process was not running at the last
+        tick (`live`) and the holder lives, or when the holder is dead and nothing is watched (on open), so a cost
+        meanwhile keeps its tab. Before all that, with or without a project, New's pad list and new itself when done
+        (show_pads, created, which opens the project new wrote, whose own tick runs inside this one)."""
         self.started = [p for p in self.started if p.poll() is None]  # poll() reaps one that ended
         if self.pads_read is not None and self.pads_read.done():
             done, self.pads_read = self.pads_read, None
@@ -434,18 +454,21 @@ class MainWindow(QMainWindow):
         self.run_button.setEnabled(not (self.live or held) and self.cost is not None and self.applying is None)
         self.stop_button.setEnabled(self.live)
         self.results.retune_box.setEnabled(idle)  # r2: the last read's layout may be a gone model's
-        self.results.apply_button.setEnabled(idle and not (self.live or held) and self.opened is not None
-                                             and self.opened.results is not None)
+        ready = idle and not (self.live or held) and self.opened is not None and self.opened.results is not None
+        for button in (self.results.apply_button, self.results.verify_button):
+            button.setEnabled(ready)
 
     def show_event(self, event: dict) -> None:
         """One event of the watched folder: an end sets `end` and is never listed, and a cost that ended with exit
-        code 0 reads the project again, which finds that cost as the model's (control.last_cost) off the GUI thread.
-        Under a cost every other event is a line of the Cost tab; under a run a progress fills its job's row, and every
-        other event is a line of the log, a job's verdict also filling its row's port and verdict cells."""
+        code 0 reads the project again, which finds that cost as the model's (control.last_cost) off the GUI thread;
+        so does the end of a verify this window started, since verify writes its result events after it saves
+        project.json, which the read that save started may miss. Under a cost every other event is a line of the Cost
+        tab; under a run or a verify a progress fills its job's row, and every other event is a line of the log, a
+        job's verdict also filling its row's port and verdict cells."""
         kind, job, params = event["kind"], event["job"], event["params"]
         if kind == "end":
             self.end = event
-            if self.command == "cost" and params["exit_code"] == 0:
+            if self.command == "verify" or (self.command == "cost" and params["exit_code"] == 0):
                 self.load()
             return
         line = control.text(event["code"], params)
@@ -478,8 +501,8 @@ class MainWindow(QMainWindow):
         self.tabs.setCurrentIndex(1 if command == "cost" else 2)
 
     def start(self, command: str) -> None:
-        """Starts `command` (cost or run) on the project as a detached orchestrator in a new run folder and watches
-        it; a program that cannot start is G_START_FAILED in that command's status, and nothing starts."""
+        """Starts `command` (cost, run or verify) on the project as a detached orchestrator in a new run folder and
+        watches it; a program that cannot start is G_START_FAILED in that command's status, and nothing starts."""
         run_dir = runs.run_dir_for(self.path.parent.name)
         try:
             proc = control.start(self.prefix, command, self.path, run_dir)
@@ -514,7 +537,8 @@ class MainWindow(QMainWindow):
         """A project read: its line (G_PROJECT), or its refusal when there is no project, and its cost; while nothing
         is watched and the project has no lock, its newest run or verify that ended (opened.last) is watched, which
         replays it. Unless a cost is watched, live or ended, the Cost tab replays the last cost of this model
-        (G_COST_REUSED), or says there is none (G_NO_COST). Last, the Results tab shows the read (ResultsView)."""
+        (G_COST_REUSED), or says there is none (G_NO_COST). Last, the Results tab shows the read (ResultsView) and its
+        stale indicator (show_stale)."""
         p = opened.project
         self.project_status.setText(control.text(*opened.problem) if p is None else render(
             "G_PROJECT", path=str(self.path), f0_mhz=f"{p['f0_hz'] / 1e6:g}", harmonics=p["harmonics"],
@@ -533,19 +557,31 @@ class MainWindow(QMainWindow):
                                           control.Tail(self.cost / "events.jsonl").read() if e["kind"] != "end"])
                 self.cost_status.setText(render("G_COST_REUSED", folder=self.cost.name))
         self.results.display(opened, self.path.parent)
+        self.show_stale()
 
     def retune(self) -> None:
         """A row edited (results.edited): the retune's status line cleared, then the chain of the table's rows on the
-        last read's layout (control.retuned, which never raises), shown under the what-if label (show_chain)."""
+        last read's layout (control.retuned, which never raises), shown under the what-if label (show_chain), and the
+        stale indicator of those rows (show_stale)."""
         self.results.retune_status.clear()
         self.results.show_chain(control.retuned(self.path, self.opened.project, self.opened.results,
                                                 self.results.rows()), self.path.parent.name)
+        self.show_stale()
 
     def revert(self) -> None:
         """Revert: the retune's status line cleared, then the last read shown again (display): the rows at their stored
-        values, drawn in full."""
+        values, drawn in full, with their stale indicator (show_stale)."""
         self.results.retune_status.clear()
         self.results.display(self.opened, self.path.parent)
+        self.show_stale()
+
+    def show_stale(self) -> None:
+        """The stale indicator (design 5.3): control.verify_stale of the last read's project with the table's rows,
+        None without rows; its code's text in `stale`, which shows only with a code."""
+        rows = self.results.rows()
+        code = control.verify_stale(self.opened.project, rows) if rows else None
+        self.results.stale.setText("" if code is None else render(code))
+        self.results.stale.setVisible(code is not None)
 
     def changes(self) -> list[str]:
         """retune's assignments for the table's rows that differ from the last read's project.json (control.changed);
@@ -566,7 +602,10 @@ class MainWindow(QMainWindow):
     def applied(self, done: Future) -> None:
         """Apply's end (`done`, control.apply) in the retune's status line: G_APPLIED on exit code 0, else retune's own
         lines; a program that cannot start (an OSError) G_START_FAILED, and any other exception control.message's
-        line, the exception taken as show_pads takes it. project.json's new stamp reads the project again (tick)."""
+        line, the exception taken as show_pads takes it. On exit code 0 after Verify's Yes (`verify_next`, which this
+        takes back first), verify starts on the values Apply stored; any other end starts nothing. project.json's new
+        stamp reads the project again (tick)."""
+        then, self.verify_next = self.verify_next, False
         status, error = self.results.retune_status, done.exception()
         if isinstance(error, OSError):
             status.setText(render("G_START_FAILED", program=self.prefix[0], reason=reason(error)))
@@ -578,6 +617,19 @@ class MainWindow(QMainWindow):
             # STOP); retune writing events would let the window word them
             status.setText(render("G_APPLIED", folder=str(self.path.parent / "results")) if code == 0
                            else "\n".join(lines))
+            if code == 0 and then:
+                self.start("verify")
+
+    def verify(self) -> None:
+        """Verify: with changes not applied (changes), asks G_APPLY_FIRST, and Yes applies them, after which an exit-0
+        Apply starts verify (`verify_next`, applied), while No does nothing; without changes, starts verify on the
+        stored values. No cost confirmation of its own (design 5.3): its cost lines show live in the Run tab, with
+        Stop."""
+        if not self.changes():
+            self.start("verify")
+        elif self.ask(render("G_APPLY_FIRST")):
+            self.verify_next = True
+            self.apply()
 
     def pick_board(self) -> None:
         """New's board Browse…: the board file picked in the dialog, then board_chosen(); nothing on Cancel."""

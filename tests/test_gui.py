@@ -30,6 +30,7 @@ from test_cli_cost import FIX, fail, new_project
 from test_gui_control import FAKE_PREFIX, until
 from test_post_chain import M0402
 from test_run import lpf_loads, lpf_run
+from test_verify import verified
 
 F, _ = grid(915e6, 3, 1.1)
 ROOT = Path(__file__).resolve().parents[1]
@@ -657,3 +658,57 @@ def test_apply_waits_while_a_run_holds_the_lock_and_shows_retunes_own_refusal(wi
     lock.unlink()
     w.tick()
     assert r.apply_button.isEnabled()  # enabled again once the lock goes, the value still unapplied
+
+
+def test_verify_asks_to_apply_first_runs_detached_and_shows_its_comparison(window, tmp_path, monkeypatch):
+    pj = verified(tmp_path, monkeypatch).resolve()  # tests/test_verify.py: lpf915 on the network fake; Review Focus 4
+    monkeypatch.setenv("KRS_FAKE_CBOX", "6e-16")  # the detached verify's cell C, as verified() patches it here
+    w = window()
+    w.open_project(pj)
+    opened(w)
+    r, asked = w.results, []
+    assert r.stale.text() == render("G_VERIFY_NONE") and not r.stale.isHidden() and r.verify_button.isEnabled()
+    r.parts.item(2, VALUE).setText("15nH")  # a value retune refuses
+    monkeypatch.setattr(w, "ask", lambda text: asked.append(text) or False)
+    r.verify_button.click()  # unapplied values: Apply first? No: nothing starts
+    assert asked == [render("G_APPLY_FIRST")] and w.applying is None and w.command != "verify"
+    monkeypatch.setattr(w, "ask", lambda text: asked.append(text) or True)
+    r.verify_button.click()  # Yes, but retune refuses the value: no verify of the stored ones
+    assert w.applying is not None and not r.verify_button.isEnabled()  # disabled while Apply runs
+    w.applying.result(timeout=120)
+    w.tick()
+    assert w.command != "verify" and not w.verify_next
+    assert r.retune_status.text() == render("E_RETUNE_VALUE", ref="C2", value="15nH")  # retune's own line
+    r.parts.item(2, VALUE).setText("4.7pF")
+    r.verify_button.click()  # Yes: Apply, then verify
+    w.applying.result(timeout=120)
+    w.tick()  # Apply stored them: verify starts on them, with no cost confirmation of its own
+    assert (w.command, w.proc is not None, len(asked)) == ("verify", True, 3)
+    until(lambda: w.tick() or w.run_status.text() == render("G_END_DONE", exit_code=0))
+    assert any(x.startswith("Worst case: ") for x in items(w.log))  # its own cost lines, live
+    opened(w)  # its end read the project again, comparison included
+    assert load_project(pj)["verify"]["values"]["C2"] == "4.7pF" and r.stale.isHidden()
+    assert [c for c, _ in w.opened.verified][:2] == ["I_VERIFY_RESULTS", "I_VERIFY_COMPARE"]
+    assert items(r.verify_lines) == [control.text(c, p) for c, p in w.opened.verified]
+    w.tabs.setCurrentWidget(r)
+    grab(w, "verify")
+    r.parts.item(1, VALUE).setText("12nH")
+    assert r.stale.text() == render("G_VERIFY_STALE") and not r.stale.isHidden()
+    again = window()  # re-attached like a run: a window opened later replays the verify that ended
+    again.open_project(pj)
+    opened(again)
+    assert again.run_dir == w.run_dir and again.run_status.text() == render("G_END_DONE", exit_code=0)
+    lock = runs.lock_file(pj)
+    lock.write_text(json.dumps({"pid": os.getpid(), "run_dir": str(pj.parent / "results"), "started": "S"}),
+                    encoding="utf-8")  # another window's retune holds it
+    w.tick()
+    assert not r.verify_button.isEnabled()  # design 5.1: disabled while any run holds the lock
+    lock.unlink()
+    w.tick()
+    assert r.verify_button.isEnabled()
+    r.verify_button.click()  # 12nH unapplied: Apply, then verify; but another project is opened meanwhile
+    old = w.applying
+    w.open_project(new_project(tmp_path, "coupon_gcpw_pads", preset="draft"))
+    old.result(timeout=120)
+    opened(w)
+    assert (w.applying, w.verify_next, w.command) == (None, False, None)  # no verify of the project now open
