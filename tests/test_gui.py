@@ -36,7 +36,7 @@ from test_verify import verified
 F, _ = grid(915e6, 3, 1.1)
 ROOT = Path(__file__).resolve().parents[1]
 QT_FREE = ("kicad_rf_studio.cli", "kicad_rf_studio.worker", "kicad_rf_studio.pipeline", "kicad_rf_studio.runs",
-           "kicad_rf_studio.gui", "kicad_rf_studio.gui.control")
+           "kicad_rf_studio.gui", "kicad_rf_studio.gui.control", "kicad_rf_studio.button")
 
 
 def test_pyside6_essentials_is_a_core_dependency_with_the_gui_entry():  # design 5.6, A-15

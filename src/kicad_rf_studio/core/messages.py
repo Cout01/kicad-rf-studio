@@ -298,6 +298,13 @@ CATALOG: dict[str, str] = {
     "G_ABOUT_DEPENDENCY": "{name} {version}: {licence}",
     "G_NOT_INSTALLED": "not installed",
     "G_ABOUT_TEXT": "kicad-rf-studio {version}: simulates the RF parts of a KiCad board with openEMS.\n\nCopyright (C) 2026 the kicad-rf-studio contributors.\n\nThis program is free software: you can redistribute it and/or modify it under the terms of the GNU General Public License as published by the Free Software Foundation, either version 3 of the License, or (at your option) any later version. This program comes with ABSOLUTELY NO WARRANTY. It includes a copy of CSXCAD's SmoothMeshLines under the GNU Lesser General Public License, version 3 or later. Both licences are at https://www.gnu.org/licenses/.\n\nRuntime dependencies (installed by pip, or by you for openEMS and CSXCAD; not included):\n{dependencies}",
+    "E_KICAD_UNREACHABLE": "Cannot reach KiCad: it was closed or restarted, or its API is off. In KiCad's PCB editor, with Preferences > Plugins > Enable KiCad API on, press the kicad-rf-studio button again.",
+    "E_KICAD_BUSY": "KiCad stayed busy (a dialog, a tool or a zone fill is still open or running). Finish it in KiCad, then try again.",
+    "E_KICAD_UNSUPPORTED": "This KiCad cannot answer a request the kicad-rf-studio button needs: the button needs KiCad 9.0.7 or later, or 10.x.",
+    "E_KICAD_VERSION": "KiCad {version} is not supported: the kicad-rf-studio button needs KiCad 9.0.7 or later, or 10.x.",
+    "E_KICAD_NO_BOARD": "KiCad's PCB editor has no saved board open. Open or save the board in KiCad's PCB editor, then press the kicad-rf-studio button again.",
+    "E_HANDOFF_WRITE": "Cannot write {path}: {reason}. Check that this folder can be written, then press the kicad-rf-studio button again.",
+    "E_GUI_START": "Cannot start {program}: {reason}. Install kicad-rf-studio again, then run kicad-rf-studio install-kicad-plugin.",
 }
 
 _translation = gettext.translation(

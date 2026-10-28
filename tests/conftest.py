@@ -4,6 +4,7 @@ import os
 import subprocess
 import sys
 import time
+from pathlib import Path
 
 import pytest
 
@@ -82,6 +83,33 @@ def ctrl_c_on_third_poll(monkeypatch):
     monkeypatch.setattr(subprocess, "Popen", popen)
     monkeypatch.setattr(time, "sleep", sleep)
     return started
+
+
+@pytest.fixture(autouse=True)
+def no_kicad(tmp_path, monkeypatch):
+    """No test reaches a real KiCad (Stage 2 design 3): KiCad's documents and settings folders are under tmp_path, and
+    its API socket is one no KiCad listens on, since kipy's default would be the KiCad the owner has open. A test that
+    needs other values sets them."""
+    monkeypatch.setenv("KICAD_DOCUMENTS_HOME", str(tmp_path / "documents"))
+    monkeypatch.setenv("KICAD_CONFIG_HOME", str(tmp_path / "config"))
+    monkeypatch.setenv("KICAD_API_SOCKET", f"ipc://{tmp_path / 'no-kicad.sock'}")
+    monkeypatch.delenv("KICAD_API_TOKEN", raising=False)
+
+
+@pytest.fixture
+def kicad(tmp_path):
+    """Fake KiCad API servers (tests/fake_kicad.py), each at its own ipc address under tmp_path, with lpf915 open
+    unless another board is given; closed at teardown."""
+    from fake_kicad import FakeKiCad  # here: kipy and pynng load only in the tests that use it
+    made = []
+
+    def make(board=Path(__file__).with_name("fixtures") / "lpf915.kicad_pcb", **kw):
+        made.append(FakeKiCad(f"ipc://{tmp_path / f'api{len(made)}.sock'}", board, **kw))
+        return made[-1]
+
+    yield make
+    for server in made:
+        server.close()
 
 
 @pytest.fixture(scope="session")
