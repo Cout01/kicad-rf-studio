@@ -348,6 +348,8 @@ def test_a_single_trace_has_no_what_if_label(window, tmp_path, calibrated):  # d
     assert w.results.what_if.isHidden() and len(fig.axes) == 3
     assert fig.get_suptitle() == render("I_PLOT_TITLE", name="coupon_gcpw_pads")
     assert "openEMS" not in sys.modules and "CSXCAD" not in sys.modules  # this process read and drew it (design 4)
+    w.open_project(tmp_path / "nope.json")  # final review F8: the old plot goes before the new read is taken in
+    assert fig.axes == [] and items(w.results.lines) == [] and w.results.what_if.isHidden()
 
 
 def test_an_open_window_reads_its_board_again_when_it_is_saved(window, tmp_path):  # Review Focus 5

@@ -138,6 +138,7 @@ class MainWindow(QMainWindow):
         for view in (self.cost_lines, self.cost_status, self.log, self.run_status):
             view.clear()
         self.jobs.setRowCount(0)
+        self.results.display(control.Opened(None, None, None, None, None, None), "")  # no plot, no lines, no labels
         self.load()
         self.tick()
 
