@@ -135,6 +135,14 @@ def summary_csv(lay: Layout, chain: np.ndarray, ideal: np.ndarray | None, p_layo
     return out.getvalue().encode("utf-8")
 
 
+def _traces(lay: Layout, s: np.ndarray) -> list:
+    """The four (x, y) pairs of one curve of S (F, 2, 2) on lay's grid, as draw_summary plots them: |S21| and |S11| in
+    dB against GHz, S11's locus on the Smith chart, and its points at lay's markers."""
+    ghz, s11 = lay.f / 1e9, s[:, 0, 0]
+    return [(ghz, 20 * np.log10(np.abs(s[:, 1, 0]))), (ghz, 20 * np.log10(np.abs(s11))), (s11.real, s11.imag),
+            (s11[lay.markers].real, s11[lay.markers].imag)]
+
+
 def draw_summary(fig, lay: Layout, chain: np.ndarray, ideal: np.ndarray | None, name: str,
                  label: str | None = None) -> tuple:
     """summary.png's plots (C-30) on the matplotlib Figure `fig` (summary_png's, or the GUI canvas's): |S21| and |S11|
@@ -146,11 +154,11 @@ def draw_summary(fig, lay: Layout, chain: np.ndarray, ideal: np.ndarray | None, 
     ghz = lay.f / 1e9
     curves = [(chain, "-", "I_PLOT_LAYOUT")] + ([(ideal, "--", "I_PLOT_IDEAL")] if ideal is not None else [])
     for s, style, code in curves:
-        ax21.plot(ghz, 20 * np.log10(np.abs(s[:, 1, 0])), style, label=render(code))
-        ax11.plot(ghz, 20 * np.log10(np.abs(s[:, 0, 0])), style, label=render(code))
-        s11 = s[:, 0, 0]
-        locus, = ax_smith.plot(s11.real, s11.imag, style)
-        ax_smith.plot(s11[lay.markers].real, s11[lay.markers].imag, "o", color=locus.get_color())
+        s21, s11, locus, dots = _traces(lay, s)
+        ax21.plot(*s21, style, label=render(code))
+        ax11.plot(*s11, style, label=render(code))
+        line, = ax_smith.plot(*locus, style)
+        ax_smith.plot(*dots, "o", color=line.get_color())
     for ax, ylabel in ((ax21, "|S21| (dB)"), (ax11, "|S11| (dB)")):
         for k in lay.markers:
             ax.axvline(ghz[k], color="grey", linewidth=0.5)
@@ -158,6 +166,22 @@ def draw_summary(fig, lay: Layout, chain: np.ndarray, ideal: np.ndarray | None, 
         ax.legend()
     fig.suptitle(render("I_PLOT_TITLE", name=name) + ("\n" + label if label else ""), wrap=True)
     return ax21, ax11, ax_smith
+
+
+def retrace_summary(axes: tuple, lay: Layout, chain: np.ndarray, ideal: np.ndarray | None) -> list:
+    """Moves the curves that draw_summary drew on `axes` (its return, with `ideal` present or absent as drawn) to
+    `chain`'s and `ideal`'s, through set_data of _traces' pairs, with no draw and no rescale (the GUI's instant retune,
+    Stage 2 design 5.4). Curve k of n, layout first, is the k-th line of the S21 and S11 axes and the k-th pair of the
+    Smith chart's last 2n lines. Returns those Line2D, per curve: S21, S11, locus, dots."""
+    ax21, ax11, ax_smith = axes
+    curves = [s for s in (chain, ideal) if s is not None]
+    n, lines = len(curves), []
+    for k, s in enumerate(curves):
+        drawn = (ax21.lines[k], ax11.lines[k], ax_smith.lines[-2 * n + 2 * k], ax_smith.lines[-2 * n + 2 * k + 1])
+        for line, xy in zip(drawn, _traces(lay, s)):
+            line.set_data(*xy)
+        lines += drawn
+    return lines
 
 
 def summary_png(lay: Layout, chain: np.ndarray, ideal: np.ndarray | None, name: str, label: str | None = None) -> bytes:

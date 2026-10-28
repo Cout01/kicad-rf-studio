@@ -15,7 +15,7 @@ from matplotlib.figure import Figure
 from kicad_rf_studio.core.messages import KrsError, render
 from kicad_rf_studio.core.post.chain import ideal_schematic
 from kicad_rf_studio.core.post.outputs import (COLUMNS, LIMITS, OUTPUTS, draw_summary, marker_lines, port_map,
-                                               summary_csv, summary_png, touchstone, write)
+                                               retrace_summary, summary_csv, summary_png, touchstone, write)
 from kicad_rf_studio.core.post.waves import Layout, grid
 from kicad_rf_studio.core.project import parts
 from networks import read_s, star
@@ -114,6 +114,19 @@ def test_the_png_is_draw_summary_on_an_agg_figure_at_100_dpi():  # Stage 2 desig
     assert summary_png(lay_of(EXT, chain), chain, chain, "lpf915", "L") == out.getvalue()
     assert [len(ax.lines) for ax in (ax21, ax11)] == [5, 5]  # layout, ideal and the three marker lines
     assert fig.get_suptitle() == render("I_PLOT_TITLE", name="lpf915") + "\nL" and smith in fig.axes
+
+
+def test_retrace_moves_the_curves_draw_summary_drew_in_place():  # Stage 2 design 5.4: set_data at fixed limits
+    one = ideal_schematic(PI, PI_Z, F)
+    two = ideal_schematic(PI, {ref: 1.3 * z for ref, z in PI_Z.items()}, F)
+    lay, fig, fresh = lay_of(EXT, one), Figure(), Figure()
+    axes = draw_summary(fig, lay, one, one, "lpf915", "L")
+    limits = [ax.get_ylim() for ax in axes[:2]]
+    curves = retrace_summary(axes, lay, two, one)
+    assert len(curves) == 8 and {c.axes for c in curves} == set(axes)
+    for ax, new in zip(axes, draw_summary(fresh, lay, two, one, "lpf915", "L")):
+        assert all(np.array_equal(a.get_xydata(), b.get_xydata()) for a, b in zip(ax.lines, new.lines))
+    assert [ax.get_ylim() for ax in axes[:2]] == limits  # no rescale: the limits stay the first draw's
 
 
 def test_only_the_png_writer_imports_matplotlib():  # C-5

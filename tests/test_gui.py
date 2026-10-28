@@ -7,6 +7,7 @@ import os
 import re
 import subprocess
 import sys
+import time
 import tomllib
 from pathlib import Path
 
@@ -577,3 +578,30 @@ def test_a_read_keeps_the_unapplied_values_unless_project_json_changed_their_par
     w.tick()
     opened(w)
     assert column(r.parts, VALUE)[2] == "3.9pF" and r.retune_status.text() == render("G_DROPPED")
+
+
+def test_a_retune_moves_the_curves_in_place_and_blits_them_within_the_budget(window, qapp, tmp_path, monkeypatch):
+    pj = lpf_run(tmp_path, monkeypatch).resolve()  # design 5.4, goal 4: a redraw measured over 50 ms on lpf915
+    w = window()
+    w.open_project(pj)
+    opened(w)
+    r, fig = w.results, w.results.canvas.figure
+    w.tabs.setCurrentWidget(r)
+    qapp.processEvents()  # the first paint draws the canvas, and on_draw keeps its background for the blits
+    axes, draws, real = list(fig.axes), [], r.canvas.draw
+    monkeypatch.setattr(r.canvas, "draw", lambda: draws.append(1) or real())
+    timings = []
+    for text in ("5pF", "3.3pF", "5pF"):  # each snapped on commit: the GUI thread's whole path, end to end
+        start = time.perf_counter()
+        r.parts.item(2, VALUE).setText(text)
+        timings.append(time.perf_counter() - start)
+    res = control.retuned(pj, w.opened.project, w.opened.results, r.rows())
+    assert min(timings) < 0.05 and r.parts.item(2, VALUE).text() == "5.1pF"
+    assert draws == [] and fig.axes == axes == list(r.axes)  # moved in place and blitted, never redrawn
+    assert np.array_equal(r.curves[0].get_ydata(), 20 * np.log10(np.abs(res.chain[:, 1, 0])))
+    assert fig.get_suptitle().endswith("\n" + render("G_WHAT_IF")) and not r.what_if.isHidden()
+    r.parts.item(2, VALUE).setText("15nH")  # a refusal clears the plot; the next good value draws it in full
+    assert fig.axes == [] and r.curves == []
+    r.parts.item(2, VALUE).setText("3.3pF")
+    assert len(fig.axes) == 3
+    assert np.array_equal(r.curves[0].get_ydata(), 20 * np.log10(np.abs(w.opened.results.chain[:, 1, 0])))

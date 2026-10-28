@@ -22,7 +22,7 @@ from kicad_rf_studio import cli, pipeline, runs
 from kicad_rf_studio.core.kicad.stackup import PRESETS as STACKUPS
 from kicad_rf_studio.core.kicad.values import parse_frequency
 from kicad_rf_studio.core.messages import KrsError, detail, reason, render
-from kicad_rf_studio.core.post.outputs import LIMITS, draw_summary
+from kicad_rf_studio.core.post.outputs import LIMITS, draw_summary, retrace_summary
 from kicad_rf_studio.core.project import DEFAULT_PRESET, HARMONICS
 from kicad_rf_studio.gui import control
 
@@ -76,7 +76,9 @@ class ResultsView(QWidget):
     with its value, its Snapping, its S2P file and that file's fixture, then the row (`buttons`) of S2P file…, Revert
     and the retune's status line; summary.png's drawing on a FigureCanvasQTAgg; and the result's lines and stated
     limits. `series` holds each part's Snapping as the user set it. A row's edit emits `edited`; the window answers it
-    with the chain of the rows (show_chain)."""
+    with the chain of the rows (show_chain). The plot: its `axes` as draw_summary drew them (None without a plot, or to
+    draw the next one in full) and its `curves`, animated, which a retune moves and blits (retrace_summary, blit) on
+    the background (`bg`) that the last full draw kept (on_draw), None until one."""
 
     edited = Signal()
 
@@ -84,6 +86,7 @@ class ResultsView(QWidget):
         super().__init__()
         self.what_if, self.problem, self.lines = QLabel(control.text("I_WHAT_IF", {})), QLabel(), QListWidget()
         self.canvas = FigureCanvasQTAgg(Figure(layout="constrained"))
+        self.axes, self.curves, self.bg = None, [], None
         self.parts, self.retune_box, self.buttons = QTableWidget(0, len(PART_COLUMNS)), QWidget(), QHBoxLayout()
         self.s2p_button, self.revert_button = QPushButton(render("G_CHOOSE_S2P")), QPushButton(render("G_REVERT"))
         self.retune_status, self.series = QLabel(), {}
@@ -104,16 +107,18 @@ class ResultsView(QWidget):
             layout.addWidget(widget)
         self.parts.itemChanged.connect(self.item_changed)
         self.s2p_button.clicked.connect(self.choose_s2p)
+        self.canvas.mpl_connect("draw_event", self.on_draw)
 
     def display(self, opened: control.Opened, folder: Path | None) -> None:
         """Shows the project read `opened` of the project folder `folder` (None for none): the problem's line only
         with one; the rows of the results' part ports as project.json stores them (control.rows, S2P files against
-        `folder`), none without part ports; then the results' chain (show_chain), under the folder's name. Never
-        touches retune_status."""
+        `folder`), none without part ports; then the results' chain (show_chain), under the folder's name, drawn in
+        full (`axes` None): a read, Revert and the re-read after Apply. Never touches retune_status."""
         res = opened.results
         self.problem.setText("" if opened.problem is None else control.text(*opened.problem))
         self.problem.setVisible(opened.problem is not None)
         self.show_rows(control.rows(opened.project, folder, res.refs) if res is not None and res.refs else [])
+        self.axes = None
         self.show_chain(res, folder.name if folder else "")
 
     def show_rows(self, rows: list[control.Row]) -> None:
@@ -180,20 +185,53 @@ class ResultsView(QWidget):
 
     def show_chain(self, res: pipeline.ChainResults | None, name: str) -> None:
         """Shows the chain results `res` (None for none), `name` being the project folder's name, which summary.png's
-        title shows: the figure and the lines cleared; the what-if label only when `res` carries what_if; with a chain
-        closed on 2 external ports, summary.png's plots (draw_summary) with the label as their title's second line;
-        with any results, plot or not, their lines, then LIMITS (C-32). Qt redraws the canvas once its event loop runs
-        (draw_idle)."""
+        title shows: the lines cleared; the what-if label only when `res` carries what_if; with any results, plot or
+        not, their lines, then LIMITS (C-32). With a chain closed on 2 external ports and the plot drawn (`axes`), its
+        curves moved in place (retrace_summary) and blitted (blit). Otherwise the figure cleared, then, with such a
+        chain, summary.png's plots (draw_summary) with the label as their title's second line, their curves (`curves`)
+        animated, which a full draw leaves to on_draw; Qt redraws the canvas once its event loop runs (draw_idle)."""
+        # ponytail: the curves keep the limits of the last full draw (the stored values', or the first good values after
+        # a refusal); a retune far off clips until Revert or Apply draws again
         fig = self.canvas.figure
-        fig.clear()
         self.lines.clear()
         label = self.what_if.text() if res is not None and res.what_if else None
         self.what_if.setVisible(label is not None)
         if res is not None:
-            if res.chain is not None and len(res.ext) == 2:
-                draw_summary(fig, res.lay, res.chain, res.ideal, name, label)
             self.lines.addItems([control.text(c, p) for c, p in res.lines] + [render(c) for c in LIMITS])
+        plot = res is not None and res.chain is not None and len(res.ext) == 2
+        if plot and self.axes is not None:
+            retrace_summary(self.axes, res.lay, res.chain, res.ideal)
+            self.blit()
+            return
+        fig.clear()
+        self.axes, self.curves, self.bg = None, [], None
+        if plot:
+            self.axes = draw_summary(fig, res.lay, res.chain, res.ideal, name, label)
+            self.curves = retrace_summary(self.axes, res.lay, res.chain, res.ideal)  # the data unchanged
+            for curve in self.curves:
+                curve.set_animated(True)
         self.canvas.draw_idle()
+
+    def blit(self) -> None:
+        """The curves drawn on the background that the last full draw kept (`bg`), then the figure copied to the screen
+        (canvas.blit); without a background, the canvas drawn in full, whose draw_event keeps one (on_draw)."""
+        # ponytail: a status line that changes height (G_APPLIED cleared, the stale indicator lit) resizes the canvas,
+        # which Qt then redraws once in full; fixed-height status lines if that is felt
+        if self.bg is None:
+            self.canvas.draw()
+            return
+        self.canvas.restore_region(self.bg)
+        for curve in self.curves:
+            curve.axes.draw_artist(curve)
+        self.canvas.blit(self.canvas.figure.bbox)
+
+    def on_draw(self, event) -> None:
+        """A full draw's draw_event (the first one, a resize's, a draw_idle's): the figure as drawn, without the
+        animated curves, kept as the background of the blits (`bg`), then the curves drawn on it. A blit was measured
+        at 1.1–1.6 ms on lpf915, against 103–108 ms for a full redraw."""
+        self.bg = self.canvas.copy_from_bbox(self.canvas.figure.bbox)
+        for curve in self.curves:
+            curve.axes.draw_artist(curve)
 
 
 class NewForm(QGroupBox):
