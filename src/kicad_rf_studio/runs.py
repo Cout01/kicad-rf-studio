@@ -166,16 +166,19 @@ def lock_file(project_path: Path) -> Path:
 
 def lock_holder(project_path: Path) -> dict | None:
     """Who holds the project lock: None without one; else the lock's {"pid", "run_dir", "started"} and "alive",
-    whether that process still runs. A lock that does not parse yet (made, not yet written) is a live run's of unknown
-    folder."""
-    # ponytail: a lock left empty by a hard kill between its creation and its write reads live until deleted; E_LOCKED's
-    # advice covers it
+    whether that process still runs. A lock that does not parse yet (made, not yet written), cannot be read (Windows,
+    while it is being deleted) or is not {"pid": int, ...} is a live run's of unknown folder."""
+    # ponytail: a lock left empty (a hard kill between its creation and its write) or malformed (a hand edit) reads live
+    # until deleted; E_LOCKED's advice covers it
+    not_yet_written = {"pid": None, "run_dir": None, "started": None, "alive": True}
     try:
         holder = json.loads(lock_file(project_path).read_text(encoding="utf-8"))
     except FileNotFoundError:
         return None
-    except ValueError:  # json.JSONDecodeError or UnicodeError: empty or half written
-        return {"pid": None, "run_dir": None, "started": None, "alive": True}
+    except (ValueError, PermissionError):  # empty or half written (JSONDecodeError, UnicodeError), or being deleted
+        return not_yet_written
+    if not isinstance(holder, dict) or not isinstance(holder.get("pid"), int):
+        return not_yet_written
     return {**holder, "alive": _alive(holder["pid"])}
 
 

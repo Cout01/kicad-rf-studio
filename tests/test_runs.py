@@ -205,6 +205,36 @@ def test_the_lock_holder_and_whether_it_lives(tmp_path):  # design 5.1, 5.2 item
     assert runs.lock_holder(pj) == {"pid": None, "run_dir": None, "started": None, "alive": True}
 
 
+@pytest.mark.parametrize("text", ["{}", "[]", "null", '{"pid": "7"}'])
+def test_a_malformed_lock_reads_as_one_not_yet_written(tmp_path, text):  # final review F5: a hand edit
+    pj = tmp_path / "project.json"
+    runs.lock_file(pj).write_text(text, encoding="utf-8")
+    assert runs.lock_holder(pj) == {"pid": None, "run_dir": None, "started": None, "alive": True}
+
+
+def test_a_malformed_lock_refuses_the_run(tmp_path):  # final review F5: E_LOCKED after its waits, never E_INTERNAL
+    pj, lock = tmp_path / "project.json", tmp_path / "project.json.lock"
+    lock.write_text("{}", encoding="utf-8")
+    with pytest.raises(KrsError) as e:
+        with runs.project_lock(pj, tmp_path / "run"):
+            pass
+    assert (e.value.code, e.value.params) == ("E_LOCKED", {"lock": str(lock), "run": None, "started": None})
+
+
+def test_a_lock_that_cannot_be_read_reads_as_one_not_yet_written(tmp_path, monkeypatch):  # final review F5
+    pj, lock = tmp_path / "project.json", tmp_path / "project.json.lock"
+    lock.write_text(json.dumps({"pid": os.getpid(), "run_dir": "R", "started": "S"}), encoding="utf-8")
+    real = Path.read_text
+
+    def read_text(self, *args, **kwargs):  # Windows: the lock opened while it is being deleted
+        if self == lock:
+            raise PermissionError(13, "access denied")
+        return real(self, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "read_text", read_text)
+    assert runs.lock_holder(pj) == {"pid": None, "run_dir": None, "started": None, "alive": True}
+
+
 def test_a_lock_released_while_it_is_read_is_taken(tmp_path, monkeypatch):  # was E_INTERNAL (FileNotFoundError)
     pj, lock = tmp_path / "project.json", tmp_path / "project.json.lock"
     lock.write_text(json.dumps({"pid": os.getpid(), "run_dir": "R", "started": "S"}), encoding="utf-8")
