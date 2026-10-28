@@ -6,7 +6,6 @@ import contextlib
 import ctypes
 import json
 import os
-import re
 import shutil
 import signal
 import stat
@@ -24,6 +23,7 @@ from kicad_rf_studio.core.kicad import load_board
 from kicad_rf_studio.core.messages import CATALOG, KrsError, render
 from test_cli_cost import FIX
 from test_gui_control import recorder, until
+import release_check
 
 LPF = FIX / "lpf915.kicad_pcb"
 KIID = {p.name: p.uuid for p in load_board(LPF).all_pads()}  # J1.2 is two pads: never selected here
@@ -239,10 +239,7 @@ def test_the_plugin_passes_kicads_schema_and_both_identifier_rules_and_its_icons
                      "show-button": True, "scopes": ["pcb"], "entrypoint": LAUNCHER,
                      "icons-light": ["icon-light-24.png", "icon-light-48.png"],
                      "icons-dark": ["icon-dark-24.png", "icon-dark-48.png"]}]}
-    nine = r"[\w\d]{2,}\.[\w\d]+\.[\w\d]+"  # KiCad 9.0.7's IsValidIdentifier, unanchored
-    ten = r"[a-zA-Z]{2,}(\.([a-zA-Z0-9][a-zA-Z0-9-]*[a-zA-Z0-9]|[a-zA-Z0-9])){2,}"  # 10.0.7's, anchored
-    assert re.search(nine, button.IDENTIFIER) and re.fullmatch(ten, button.IDENTIFIER)
-    assert re.fullmatch(r"[A-Za-z]+(\.[A-Za-z0-9]+){2,}", button.IDENTIFIER)  # design 5.5's own rule, the owner's too
+    assert release_check.identifier_problems(button.IDENTIFIER) == []  # KiCad 9.0.7's, 10.0.7's and design 5.5's rules
     for theme, rgb in button.ICONS.items():
         for size in button.SIZES:
             image = QImage(str(folder / f"icon-{theme}-{size}.png"))
