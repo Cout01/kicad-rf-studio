@@ -612,10 +612,13 @@ class MainWindow(QMainWindow):
         self.start("cost")
 
     def run(self) -> None:
-        """Run…: asks to start the run, showing the cost lines of `cost`'s folder, and starts it on Yes."""
+        """Run…: asks to start the run, showing the cost lines of `cost`'s folder, and starts it on Yes. The project is
+        bound before the question, as refill binds its press: when another project opened while the question was open
+        (a later start's request), Yes starts nothing."""
+        path = self.path
         lines = [control.text(e["code"], e["params"]) for e in control.Tail(self.cost / "events.jsonl").read()
                  if e["kind"] == "cost"]
-        if self.ask("\n".join([render("G_CONFIRM_RUN"), "", *lines])):
+        if self.ask("\n".join([render("G_CONFIRM_RUN"), "", *lines])) and self.path == path:
             self.start("run")
 
     def ask(self, text: str, title: str = "G_CONFIRM_TITLE") -> bool:
@@ -719,10 +722,12 @@ class MainWindow(QMainWindow):
         """Verify: with changes not applied (changes), asks G_APPLY_FIRST, and Yes applies them, after which an exit-0
         Apply starts verify (`verify_next`, applied), while No does nothing; without changes, starts verify on the
         stored values. No cost confirmation of its own (design 5.3): its cost lines show live in the Run tab, with
-        Stop."""
+        Stop. The project is bound before the question, as refill binds its press: when another project opened while
+        the question was open (a later start's request), Yes applies nothing."""
+        path = self.path
         if not self.changes():
             self.start("verify")
-        elif self.ask(render("G_APPLY_FIRST")):
+        elif self.ask(render("G_APPLY_FIRST")) and self.path == path:
             self.verify_next = True
             self.apply()
 

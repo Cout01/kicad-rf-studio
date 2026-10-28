@@ -912,6 +912,33 @@ def test_verify_asks_to_apply_first_runs_detached_and_shows_its_comparison(windo
     assert (w.applying, w.verify_next, w.command) == (None, False, None)  # no verify of the project now open
 
 
+def test_a_project_opened_while_runs_or_verifys_question_is_open_gets_nothing(window, tmp_path, monkeypatch):
+    pj = new_project(tmp_path, "coupon_gcpw_pads", preset="draft").resolve()  # design 5.1, 5.3
+    costed(pj)
+    w = window()
+    w.open_project(pj)
+    opened(w)  # a cost of this model read, which Run… asks on
+    calls = []
+
+    def start(*args):  # recorded; then nothing starts, as for a program that cannot start
+        calls.append(args)
+        raise OSError
+
+    def ask(text):  # the box's event loop takes a later start's request, which opens another project; then Yes
+        w.act({"handoff": None, "project": str(tmp_path / "other" / "project.json")})  # a refused read
+        return True
+
+    monkeypatch.setattr(control, "start", start)
+    monkeypatch.setattr(w, "ask", ask)
+    w.run()
+    assert calls == []  # Yes to a run of the project no longer open: nothing starts
+    w.open_project(pj)
+    monkeypatch.setattr(w, "changes", lambda: ["C2=4.7pF"])  # unapplied values: Apply first?
+    monkeypatch.setattr(w, "apply", lambda: calls.append("apply"))
+    w.verify()
+    assert (w.verify_next, calls) == (False, [])  # Yes to Apply first on the project no longer open: nothing applied
+
+
 def test_advanced_saves_project_json_under_the_lock_and_a_model_change_marks_the_results_stale(
         window, tmp_path, monkeypatch):
     pj = lpf_run(tmp_path, monkeypatch).resolve()  # design 5.1, 5.3 Advanced; Review Focus 5
