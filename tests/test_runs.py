@@ -160,6 +160,20 @@ def test_a_live_lock_refuses_and_a_stale_one_is_reclaimed(tmp_path, capsys):  # 
     assert not lock.exists() and capsys.readouterr().out == render("W_STALE_LOCK", lock=str(lock), run="R") + "\n"
 
 
+def test_a_stale_lock_reclaimed_for_an_existing_run_folder_is_an_event_there(tmp_path, capsys):  # final review F6
+    pj, lock, run_dir = tmp_path / "project.json", tmp_path / "project.json.lock", tmp_path / "run"
+    run_dir.mkdir()  # as cli.main makes a --run-dir folder before the lock: the GUI's Run tab shows its events
+    dead = subprocess.Popen([sys.executable, "-c", "pass"])
+    dead.wait()
+    lock.write_text(json.dumps({"pid": dead.pid, "run_dir": "R", "started": "S"}), encoding="utf-8")
+    with runs.project_lock(pj, run_dir):
+        pass
+    events = [json.loads(line) for line in (run_dir / "events.jsonl").read_text(encoding="utf-8").splitlines()]
+    assert [(e["kind"], e["code"], e["params"]) for e in events] == [
+        ("message", "W_STALE_LOCK", {"lock": str(lock), "run": "R"})]
+    assert capsys.readouterr().out == render("W_STALE_LOCK", lock=str(lock), run="R") + "\n"  # the same line
+
+
 def test_events_are_json_lines_mirrored_on_stdout(tmp_path, capsys):  # spec 3.3, 6.1
     params = {"kind": "gr_text", "uuid": "u", "layer": "F.Cu"}  # W_COPPER_DROPPED has a field named kind
     runs.emit(tmp_path, "message", "W_COPPER_DROPPED", params, job=2)
