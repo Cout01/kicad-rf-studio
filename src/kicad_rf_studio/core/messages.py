@@ -270,6 +270,9 @@ CATALOG: dict[str, str] = {
     "G_S2P_UNREADABLE": "Part {ref}: {path} is not a Touchstone file that can be read. Check the file, or, for a C, L or R, clear the file to use its value.",
     "G_S2P_BAND": "Part {ref}: {path} covers {f_lo}–{f_hi} MHz, not the simulated band {f1}–{f2} MHz, and it is never extrapolated. Choose a file that covers the band, or, for a C, L or R, clear the file to use its value.",
     "G_S2P_FIXTURE": "Part {ref}: {path} fits a {fits}-thru measurement better than the {named} fixture it was given. The fixture names how the vendor measured the part, not its place on the board; if the vendor used {fits}-thru, set its fixture to {fits}.",
+    "G_APPLY": "Apply",
+    "G_APPLYING": "Applying: retune stores the changed values in project.json and writes results/…",
+    "G_APPLIED": "Applied: project.json holds these values, and {folder} holds their outputs.",
 }
 
 _translation = gettext.translation(

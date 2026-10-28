@@ -20,6 +20,7 @@ from kicad_rf_studio import pipeline, runs
 from kicad_rf_studio.cli import main
 from kicad_rf_studio.core.messages import CATALOG, KrsError, render
 from kicad_rf_studio.core.model.spec import spec_hash
+from kicad_rf_studio.core.post.outputs import LIMITS
 from kicad_rf_studio.core.post.waves import grid
 from kicad_rf_studio.core.project import board_file, load_project, parts, save_project
 from kicad_rf_studio.gui import control
@@ -290,3 +291,22 @@ def test_a_read_keeps_the_unapplied_rows_whose_part_it_did_not_change(tmp_path):
     assert control.carried(before, mine, folder, edited, mine_rows) == (mine_rows, True)
     assert control.carried(before, None, folder, edited, []) == ([], True)  # a read that failed, or results gone stale
     assert control.carried(None, before, folder, [], rows) == (rows, False)  # the first read
+
+
+def test_apply_runs_retune_to_its_end_without_a_window_and_returns_its_lines(tmp_path, calibrated, monkeypatch):
+    pj = lpf_run(tmp_path, monkeypatch).resolve()  # design 5.3 Apply, 5.4
+    monkeypatch.setenv("KRS_FAKE_DATA", str(calibrated))
+    code, lines = control.apply(FAKE_PREFIX, pj, ["C2=4.7pF"])
+    stored = pipeline.chain_results(pj, load_project(pj))
+    assert code == 0 and parts(load_project(pj))["C2"]["value"] == "4.7pF"
+    assert lines[:len(stored.lines)] == [render(c, **p) for c, p in stored.lines] and lines[-1] == render(LIMITS[-1])
+    assert control.apply(FAKE_PREFIX, pj, ["C2=15nH"]) == (2, [render("E_RETUNE_VALUE", ref="C2", value="15nH")])
+    with pytest.raises(FileNotFoundError):
+        control.apply([str(tmp_path / "no-python")], pj, [])
+    seen = []  # what a real run cannot show: no window, no KiCad API variables, stdin closed
+    monkeypatch.setenv("KICAD_API_TOKEN", "t")
+    monkeypatch.setattr(subprocess, "run", lambda args, **kw: seen.append(kw) or SimpleNamespace(
+        returncode=0, stdout="a\n", stderr="b\n"))
+    assert control.apply(["py"], pj, ["C2=1pF"]) == (0, ["a", "b"])
+    assert seen[0]["stdin"] == subprocess.DEVNULL and "KICAD_API_TOKEN" not in seen[0]["env"]
+    assert seen[0]["creationflags"] == (subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0)

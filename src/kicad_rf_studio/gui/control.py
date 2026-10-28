@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
-"""The GUI's Qt-free logic (Stage 2 design 5.1, 5.3): the detached start, the events tail, re-attach through the lock
-and the end events, the project read off the GUI thread, the retune session (an update of a project read's chain
-from the parts' rows), and New's pad list. Never imports Qt or matplotlib."""
+"""The GUI's Qt-free logic (Stage 2 design 5.1, 5.3): the detached start, Apply's retune run to its end, the events
+tail, re-attach through the lock and the end events, the project read off the GUI thread, the retune session (an update
+of a project read's chain from the parts' rows), and New's pad list. Never imports Qt or matplotlib."""
 import json
 import math
 import os
@@ -38,16 +38,20 @@ def orchestrator() -> list[str]:
     return [python, "-X", "utf8", "-I", "-m", "kicad_rf_studio"]
 
 
+def _env() -> dict:
+    """This process's environment for the CLI it starts: os.environ without KiCad's API variables."""
+    return {k: v for k, v in os.environ.items() if k not in ("KICAD_API_SOCKET", "KICAD_API_TOKEN")}
+
+
 def start(prefix: list[str], command: str, project: Path, run_dir: Path) -> subprocess.Popen:
     """Starts `prefix command PROJECT --run-dir RUN_DIR` detached (design 5.1), in `run_dir`, which it makes and which
     is its working folder: stdin the null device, stdout and stderr to run_dir/cli.log, and KiCad's API variables left
-    out of its environment. On Windows in a process group of its own with no window, out of this process's job when
-    the job allows it; elsewhere in a session of its own."""
+    out of its environment (_env). On Windows in a process group of its own with no window, out of this process's job
+    when the job allows it; elsewhere in a session of its own."""
     run_dir.mkdir(parents=True, exist_ok=True)
-    env = {k: v for k, v in os.environ.items() if k not in ("KICAD_API_SOCKET", "KICAD_API_TOKEN")}
     with open(run_dir / "cli.log", "wb") as log:
         spawn = partial(subprocess.Popen, [*prefix, command, str(project), "--run-dir", str(run_dir)], cwd=run_dir,
-                        env=env, stdin=subprocess.DEVNULL, stdout=log, stderr=subprocess.STDOUT)
+                        env=_env(), stdin=subprocess.DEVNULL, stdout=log, stderr=subprocess.STDOUT)
         if sys.platform != "win32":
             return spawn(start_new_session=True)
         flags = subprocess.CREATE_NEW_PROCESS_GROUP | subprocess.CREATE_NO_WINDOW
@@ -57,6 +61,18 @@ def start(prefix: list[str], command: str, project: Path, run_dir: Path) -> subp
             # ponytail: without breakaway, a job that kills its processes on close still takes the run with it; plan 3
             # checks KiCad's job
             return spawn(creationflags=flags)
+
+
+def apply(prefix: list[str], project: Path, assignments: list[str]) -> tuple[int, list[str]]:
+    """Apply (design 5.3): `prefix retune PROJECT ASSIGNMENTS...` run to its end, with stdin the null device, no
+    window and KiCad's API variables left out of its environment (_env); its exit code and its lines, stdout's then
+    stderr's, read as UTF-8 with errors replaced. Raises an OSError when the program cannot start."""
+    # ponytail: the pool's one thread waits for retune (2–4 s), so a project read queued meanwhile waits too; a pool of
+    # two if that matters
+    done = subprocess.run([*prefix, "retune", str(project), *assignments], stdin=subprocess.DEVNULL,
+                          capture_output=True, encoding="utf-8", errors="replace", env=_env(),
+                          creationflags=subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0)
+    return done.returncode, (done.stdout + done.stderr).splitlines()
 
 
 def _event(line: bytes) -> dict | None:

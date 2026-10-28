@@ -605,3 +605,55 @@ def test_a_retune_moves_the_curves_in_place_and_blits_them_within_the_budget(win
     r.parts.item(2, VALUE).setText("3.3pF")
     assert len(fig.axes) == 3
     assert np.array_equal(r.curves[0].get_ydata(), 20 * np.log10(np.abs(w.opened.results.chain[:, 1, 0])))
+
+
+def test_apply_stores_the_values_through_retune_and_the_window_reads_them_back(window, tmp_path, monkeypatch):
+    pj = lpf_run(tmp_path, monkeypatch).resolve()  # design 5.3 Apply
+    w = window()
+    w.open_project(pj)
+    opened(w)
+    r, summary = w.results, pj.parent / "results" / "summary.csv"
+    applied, written = render("G_APPLIED", folder=str(pj.parent / "results")), summary.stat().st_mtime_ns
+    assert r.apply_button.isEnabled()  # nothing changed: retune writes the outputs alone (C-19)
+    r.apply_button.click()
+    w.applying.result(timeout=120)
+    w.tick()
+    assert r.retune_status.text() == applied and summary.stat().st_mtime_ns != written and w.loading is None
+    r.parts.item(2, VALUE).setText("4.7pF")
+    r.apply_button.click()
+    assert r.retune_status.text() == render("G_APPLYING") and not r.parts.isEnabled() and not r.apply_button.isEnabled()
+    w.applying.result(timeout=120)
+    w.tick()
+    assert r.retune_status.text() == applied and parts(load_project(pj))["C2"]["value"] == "4.7pF"
+    assert w.loading is not None and not r.retune_box.isEnabled()  # project.json's new mtime: read again
+    opened(w)
+    assert column(r.parts, VALUE) == ["100pF", "15nH", "4.7pF", "3.3pF"] and r.retune_status.text() == applied
+    assert r.apply_button.isEnabled() and r.parts.isEnabled()
+    r.parts.item(2, VALUE).setText("3.3pF")
+    r.apply_button.click()
+    old = w.applying
+    w.open_project(new_project(tmp_path, "coupon_gcpw_pads", preset="draft"))  # another project meanwhile
+    old.result(timeout=120)
+    opened(w)
+    assert w.applying is None and r.retune_status.text() == ""  # its end is not the open project's
+
+
+def test_apply_waits_while_a_run_holds_the_lock_and_shows_retunes_own_refusal(window, tmp_path, monkeypatch):
+    pj = lpf_run(tmp_path, monkeypatch).resolve()  # design 5.1; Review Focus 3
+    w = window()
+    w.open_project(pj)
+    opened(w)
+    r = w.results
+    r.parts.item(2, VALUE).setText("4.7pF")
+    lock = runs.lock_file(pj)
+    lock.write_text(json.dumps({"pid": os.getpid(), "run_dir": "R", "started": "S"}), encoding="utf-8")
+    w.tick()
+    assert not r.apply_button.isEnabled()  # disabled while any run holds the lock
+    w.apply()  # the lock came between the click and retune: retune refuses it itself
+    w.applying.result(timeout=120)
+    w.tick()
+    assert r.retune_status.text() == render("E_LOCKED", lock=str(lock), run="R", started="S")  # the CLI's own line
+    assert parts(load_project(pj))["C2"]["value"] == "3.3pF" and r.parts.item(2, VALUE).text() == "4.7pF"
+    lock.unlink()
+    w.tick()
+    assert r.apply_button.isEnabled()  # enabled again once the lock goes, the value still unapplied

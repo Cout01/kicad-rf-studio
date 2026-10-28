@@ -1,10 +1,10 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """The main window (Stage 2 design 5.1, 5.3, 5.4): it creates a project from a board (NewForm) or opens one, shows its
 cost, starts, follows and stops a run, its own or one it re-attaches through the project lock, replays the project's
-last run and shows its results, which its parts' rows retune in this process (ResultsView), driven by one 500 ms timer
-(`tick`). The project is read, a board's pads listed and new run on a pool thread (control.open_project, control.pads,
-cli.new); cost and run start as a detached orchestrator (control.start), so this process never reaches
-runs.run_jobs."""
+last run and shows its results, which its parts' rows retune in this process (ResultsView) and Apply stores through the
+CLI's retune, driven by one 500 ms timer (`tick`). The project is read, a board's pads listed, new run and retune
+waited for on a pool thread (control.open_project, control.pads, cli.new, control.apply); cost and run start as a
+detached orchestrator (control.start), so this process never reaches runs.run_jobs."""
 import subprocess
 from concurrent.futures import Future, ThreadPoolExecutor
 from pathlib import Path
@@ -73,8 +73,8 @@ def combo(choices: tuple, current: str, slot) -> QComboBox:
 class ResultsView(QWidget):
     """The Results and retune tab (Stage 2 design 5.3, 5.4): the what-if label while RETUNE_VALIDATED is False, or why
     there are no results; the retune box, shown only with part ports: the parts table (`parts`), a row per part port
-    with its value, its Snapping, its S2P file and that file's fixture, then the row (`buttons`) of S2P file…, Revert
-    and the retune's status line; summary.png's drawing on a FigureCanvasQTAgg; and the result's lines and stated
+    with its value, its Snapping, its S2P file and that file's fixture, then the row (`buttons`) of S2P file…, Revert,
+    Apply and the retune's status line; summary.png's drawing on a FigureCanvasQTAgg; and the result's lines and stated
     limits. `series` holds each part's Snapping as the user set it. A row's edit emits `edited`; the window answers it
     with the chain of the rows (show_chain). The plot: its `axes` as draw_summary drew them (None without a plot, or to
     draw the next one in full) and its `curves`, animated, which a retune moves and blits (retrace_summary, blit) on
@@ -89,14 +89,14 @@ class ResultsView(QWidget):
         self.axes, self.curves, self.bg = None, [], None
         self.parts, self.retune_box, self.buttons = QTableWidget(0, len(PART_COLUMNS)), QWidget(), QHBoxLayout()
         self.s2p_button, self.revert_button = QPushButton(render("G_CHOOSE_S2P")), QPushButton(render("G_REVERT"))
-        self.retune_status, self.series = QLabel(), {}
+        self.apply_button, self.retune_status, self.series = QPushButton(render("G_APPLY")), QLabel(), {}
         for label in (self.what_if, self.problem, self.retune_status):
             label.setWordWrap(True)  # its sentence, some 200 characters, would otherwise set the window's minimum width
         for widget in (self.what_if, self.problem, self.retune_box):
             widget.hide()  # until a read shows it
         self.parts.setHorizontalHeaderLabels([render(code) for code in PART_COLUMNS])
         self.parts.horizontalHeader().setSectionResizeMode(S2P, QHeaderView.ResizeMode.Stretch)  # a file's path
-        for widget in (self.s2p_button, self.revert_button, self.retune_status):
+        for widget in (self.s2p_button, self.revert_button, self.apply_button, self.retune_status):
             self.buttons.addWidget(widget)
         box = QVBoxLayout(self.retune_box)
         box.setContentsMargins(0, 0, 0, 0)  # aligned with the tab's other widgets
@@ -270,11 +270,12 @@ class NewForm(QGroupBox):
 class MainWindow(QMainWindow):
     """The main window; `prefix` is the command that starts the orchestrator (control.orchestrator() by default).
     Its state: `path`, the resolved project file; `opened`, its last read (control.Opened) and `loading`, the read
-    going on (a Future); `cost`, the folder of this model's last cost, which Run… confirms on; the watch: `command`,
-    `run_dir`, its events' `tail`, its `end` event and `proc`, only a process this window started; `live`, whether
-    the watched process goes on; `mtime`, project.json's and the board file's st_mtime_ns at the last read (stamp);
-    `started`, every process this window started, polled every tick, so that none is left a zombie on Linux; and the
-    New form's work going on (Futures): `pads_read`, the chosen board's pads, and `creating`, new.
+    going on (a Future); `applying`, Apply's retune going on (a Future); `cost`, the folder of this model's last cost,
+    which Run… confirms on; the watch: `command`, `run_dir`, its events' `tail`, its `end` event and `proc`, only a
+    process this window started; `live`, whether the watched process goes on; `mtime`, project.json's and the board
+    file's st_mtime_ns at the last read (stamp); `started`, every process this window started, polled every tick, so
+    that none is left a zombie on Linux; and the New form's work going on (Futures): `pads_read`, the chosen board's
+    pads, and `creating`, new.
     Every slot is a bound method: a lambda or partial slot would keep a closed window alive (probed on PySide6
     6.12)."""
 
@@ -283,7 +284,8 @@ class MainWindow(QMainWindow):
         self.setWindowTitle(render("G_APP"))
         self.resize(1200, 800)
         self.prefix = prefix or control.orchestrator()
-        self.path = self.opened = self.loading = self.cost = self.mtime = self.pads_read = self.creating = None
+        self.path = self.opened = self.loading = self.applying = self.cost = self.mtime = None
+        self.pads_read = self.creating = None
         self.command = self.run_dir = self.tail = self.end = self.proc = None
         self.live, self.started = False, []
         self.pool = ThreadPoolExecutor(1)
@@ -310,11 +312,12 @@ class MainWindow(QMainWindow):
         for button, slot in ((self.open_button, self.browse), (self.cost_button, self.estimate),
                              (self.run_button, self.run), (self.stop_button, self.stop),
                              (form.board_button, self.pick_board), (form.folder_button, self.pick_folder),
-                             (form.create_button, self.create_project), (self.results.revert_button, self.revert)):
+                             (form.create_button, self.create_project), (self.results.revert_button, self.revert),
+                             (self.results.apply_button, self.apply)):
             button.clicked.connect(slot)
         self.results.edited.connect(self.retune)
         form.board.editingFinished.connect(self.board_chosen)
-        for button in (self.cost_button, self.run_button, self.stop_button):  # no project yet
+        for button in (self.cost_button, self.run_button, self.stop_button, self.results.apply_button):  # no project
             button.setEnabled(False)
         self.timer = QTimer(self)
         self.timer.timeout.connect(self.tick)
@@ -328,9 +331,10 @@ class MainWindow(QMainWindow):
 
     def open_project(self, path: Path) -> None:
         """Opens the project file `path`, a folder standing for its project.json: the views and the watch cleared,
-        then its read and a tick. A process this window started goes on, no longer watched."""
+        then its read and a tick. A process this window started goes on, no longer watched, and so does an Apply's
+        retune of the previous project, which ends on the pool unread (`applying` None)."""
         self.path = pipeline.project_path(str(path)).resolve()
-        self.command = self.run_dir = self.tail = self.end = self.proc = self.cost = self.opened = None
+        self.command = self.run_dir = self.tail = self.end = self.proc = self.cost = self.opened = self.applying = None
         for view in (self.cost_lines, self.cost_status, self.log, self.run_status):
             view.clear()
         self.jobs.setRowCount(0)
@@ -357,17 +361,19 @@ class MainWindow(QMainWindow):
         """The window's one driver, every 500 ms (design 5.1), in this order: the project lock's holder
         (runs.lock_holder), through which a run this window did not start is attached (below); a project read that
         finished, shown (a display that fails shows E_INTERNAL, and the tick goes on), with the user's unapplied rows
-        carried over it (control.carried) and retuned on its layout, and G_DROPPED when one was lost; the watched
-        folder's new events, then its state (control.run_state, given that holder); the G_LOCKED banner while another's
-        live run holds the lock and this window watches no process of its own; a read when the stamp changed (a save of
-        project.json or of the board file); the buttons: Cost while nothing watched goes on and no run holds the lock,
-        Run… also only with a cost of this model, Stop only while the watch goes on, and the retune box while no read
-        goes on. A holder whose run folder is the project's results/ is a retune (pipeline.retune, r2 §1): waited for,
-        never watched or bannered. Any other holder's run folder, when it names one other than the watched one, is
-        watched when this window's own process was not running at the last tick (`live`) and the holder lives, or when
-        the holder is dead and nothing is watched (on open), so a cost meanwhile keeps its tab. Before all that, with
-        or without a project, New's pad list and new itself when done (show_pads, created, which opens the project new
-        wrote, whose own tick runs inside this one)."""
+        carried over it (control.carried) and retuned on its layout, and G_DROPPED when one was lost; Apply's retune
+        that ended (applied); the watched folder's new events, then its state (control.run_state, given that holder);
+        the G_LOCKED banner while another's live run holds the lock and this window watches no process of its own; a
+        read when the stamp changed (a save of project.json, Apply's included, or of the board file); the buttons: Cost
+        while nothing watched goes on and no run holds the lock, Run… also only with a cost of this model and no Apply
+        going on, Stop only while the watch goes on, the retune box while no read and no Apply goes on, so that its
+        table and buttons wait for Apply's re-read, and Apply also only while nothing watched goes on, no run holds the
+        lock and the last read has results. A holder whose run folder is the project's results/ is a retune
+        (pipeline.retune, r2 §1): waited for, never watched or bannered. Any other holder's run folder, when it names
+        one other than the watched one, is watched when this window's own process was not running at the last tick
+        (`live`) and the holder lives, or when the holder is dead and nothing is watched (on open), so a cost meanwhile
+        keeps its tab. Before all that, with or without a project, New's pad list and new itself when done (show_pads,
+        created, which opens the project new wrote, whose own tick runs inside this one)."""
         self.started = [p for p in self.started if p.poll() is None]  # poll() reaps one that ended
         if self.pads_read is not None and self.pads_read.done():
             done, self.pads_read = self.pads_read, None
@@ -403,6 +409,9 @@ class MainWindow(QMainWindow):
                     self.results.retune_status.setText(render("G_DROPPED"))
             except Exception as e:  # a display that fails: this tick goes on, and so do the next ones
                 self.project_status.setText(control.text("E_INTERNAL", {"detail": detail(e)}))
+        if self.applying is not None and self.applying.done():
+            done, self.applying = self.applying, None
+            self.applied(done)
         self.live = False
         if self.command:
             # polled before the tail is read, so an exit seen here has its end event read already
@@ -420,10 +429,13 @@ class MainWindow(QMainWindow):
             self.banner.hide()
         if self.stamp() != self.mtime:
             self.load()
+        idle = self.loading is None and self.applying is None
         self.cost_button.setEnabled(not (self.live or held))
-        self.run_button.setEnabled(not (self.live or held) and self.cost is not None)
+        self.run_button.setEnabled(not (self.live or held) and self.cost is not None and self.applying is None)
         self.stop_button.setEnabled(self.live)
-        self.results.retune_box.setEnabled(self.loading is None)  # r2: the last read's layout may be a gone model's
+        self.results.retune_box.setEnabled(idle)  # r2: the last read's layout may be a gone model's
+        self.results.apply_button.setEnabled(idle and not (self.live or held) and self.opened is not None
+                                             and self.opened.results is not None)
 
     def show_event(self, event: dict) -> None:
         """One event of the watched folder: an end sets `end` and is never listed, and a cost that ended with exit
@@ -535,6 +547,38 @@ class MainWindow(QMainWindow):
         self.results.retune_status.clear()
         self.results.display(self.opened, self.path.parent)
 
+    def changes(self) -> list[str]:
+        """retune's assignments for the table's rows that differ from the last read's project.json (control.changed);
+        [] without rows, without a read or without its project."""
+        rows, opened = self.results.rows(), self.opened
+        if not rows or opened is None or opened.project is None:
+            return []
+        return control.changed(opened.project, self.path.parent, rows)
+
+    def apply(self) -> None:
+        """Apply: retune run to its end on the pool with the changed rows (control.apply, as `applying`), G_APPLYING in
+        the retune's status line, then a tick, which disables the retune box until Apply's re-read. With no changes,
+        retune writes the outputs alone (C-19), which a run's E_RESULTS_WRITE advises."""
+        self.applying = self.pool.submit(control.apply, self.prefix, self.path, self.changes())
+        self.results.retune_status.setText(render("G_APPLYING"))
+        self.tick()
+
+    def applied(self, done: Future) -> None:
+        """Apply's end (`done`, control.apply) in the retune's status line: G_APPLIED on exit code 0, else retune's own
+        lines; a program that cannot start (an OSError) G_START_FAILED, and any other exception control.message's
+        line, the exception taken as show_pads takes it. project.json's new stamp reads the project again (tick)."""
+        status, error = self.results.retune_status, done.exception()
+        if isinstance(error, OSError):
+            status.setText(render("G_START_FAILED", program=self.prefix[0], reason=reason(error)))
+        elif error is not None:
+            status.setText(control.message(error))
+        else:
+            code, lines = done.result()
+            # ponytail: retune prints rendered lines, not codes, so its refusals read in the CLI's words (E_LOCKED's
+            # STOP); retune writing events would let the window word them
+            status.setText(render("G_APPLIED", folder=str(self.path.parent / "results")) if code == 0
+                           else "\n".join(lines))
+
     def pick_board(self) -> None:
         """New's board Browse…: the board file picked in the dialog, then board_chosen(); nothing on Cancel."""
         name, _ = QFileDialog.getOpenFileName(self, render("G_NEW_BOARD"), "", render("G_BOARD_FILTER"))
@@ -611,7 +655,8 @@ class MainWindow(QMainWindow):
 
     def closeEvent(self, event: QCloseEvent) -> None:
         """Closing the window stops its timer and drops the pool's work not yet begun (project reads, a pad list, a
-        New); what it started goes on (design 5.1: a run outlives its window, and the next window re-attaches it)."""
+        New, an Apply); what it started goes on (design 5.1: a run outlives its window, and the next window re-attaches
+        it), an Apply's retune included."""
         self.timer.stop()
         self.pool.shutdown(wait=False, cancel_futures=True)
         super().closeEvent(event)
