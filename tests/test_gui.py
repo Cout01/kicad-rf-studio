@@ -738,10 +738,12 @@ def test_advanced_saves_project_json_under_the_lock_and_a_model_change_marks_the
     d = load_project(pj)
     parts(d)["C3"]["value"] = "3.9pF"  # a terminal's retune after the last read: Save keeps it
     save_project(pj, d)
+    w.results.parts.item(2, VALUE).setText("4.7pF")  # an unapplied value, which the stale read drops
     a.save_button.click()
     assert (load_project(pj)["t_max_s"], parts(load_project(pj))["C3"]["value"]) == (3e-08, "3.9pF")
     assert a.status.text() == render("I_WROTE", path=pj)
     opened(w)  # the new mtime read the project again: its model changed, so its results are stale
+    assert w.results.retune_status.text() == render("G_DROPPED")
     assert w.results.problem.text() == render("G_RESULTS_STALE") and w.results.retune_box.isHidden()
     assert w.results.canvas.figure.axes == [] and a.edits == {}
     a.table.item(row["t_max_s"], 1).setText("4e-08")

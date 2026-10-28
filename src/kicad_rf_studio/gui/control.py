@@ -341,9 +341,10 @@ def carried(before: dict | None, after: dict | None, folder: Path, rows: list[Ro
             fresh: list[Row]) -> tuple[list[Row], bool]:
     """A new read's rows `fresh` with the user's `rows` carried over it (design 5.3): each row that differs from
     `before`, the last read's project (changed, against `folder`, project.json's), put back in its part's place when
-    `after`, the new read's, holds that part exactly as `before` did (parts); and whether any such row was lost: its
-    part changed or gone, or no `after`, unless `after` now stores the row as it is (Apply's re-read). Nothing is
-    carried without `before`."""
+    the new read has a row for its part (`fresh`) and `after`, the new read's project, holds that part exactly as
+    `before` did (parts); and whether any such row was lost: its part changed or gone, no `after`, or no row for it in
+    `fresh` (results gone stale), unless `after` now stores the row as it is (Apply's re-read). Nothing is carried
+    without `before`."""
     # ponytail: a row whose part project.json changed takes the stored row (G_DROPPED); a per-field merge if users lose
     # work that way
     if before is None:
@@ -353,7 +354,7 @@ def carried(before: dict | None, after: dict | None, folder: Path, rows: list[Ro
     for row in rows:
         if not changed(before, folder, [row]):
             continue
-        if new.get(row.ref) == old[row.ref]:
+        if row.ref in kept and new.get(row.ref) == old[row.ref]:
             kept[row.ref] = row
         elif row.ref not in new or changed(after, folder, [row]):
             lost = True

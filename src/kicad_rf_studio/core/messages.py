@@ -263,7 +263,7 @@ CATALOG: dict[str, str] = {
     "G_CHOOSE_S2P": "S2P file…",
     "G_S2P_FILTER": "Touchstone 2-ports (*.s2p)",
     "G_REVERT": "Revert",
-    "G_DROPPED": "project.json changed on disk: the parts it changed show their stored values again, and the values you had not applied to them were dropped.",
+    "G_DROPPED": "project.json or its board changed on disk: the values you had not applied to the parts it changed, or to results that no longer apply, were dropped, and those parts show their stored values.",
     "G_RETUNE_VALUE": "Cannot read \"{value}\" as the value of {ref}: a C, L or R takes a value in its own unit (4.7pF, 4p7, 15nH, 50R; a C above 0), and any part takes an S2P file in its row.",
     "G_PART_NO_VALUE": "Part {ref} has no value that reads (\"{value}\") and no S2P file, so its port cannot be closed. Give it an S2P file in its row, or, for a C, L or R, a value.",
     "G_S2P_MISSING": "Part {ref}: its S2P file {path} does not exist. Choose an existing file in its row, or, for a C, L or R, clear the file to use its value.",
