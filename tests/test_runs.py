@@ -235,6 +235,16 @@ def test_a_malformed_lock_refuses_the_run(tmp_path):  # final review F5: E_LOCKE
     assert (e.value.code, e.value.params) == ("E_LOCKED", {"lock": str(lock), "run": None, "started": None})
 
 
+def test_a_lock_with_only_its_pid_reads_its_folder_and_start_as_none(tmp_path):  # final review F10: a hand edit
+    pj, lock = tmp_path / "project.json", tmp_path / "project.json.lock"
+    lock.write_text(json.dumps({"pid": os.getpid()}), encoding="utf-8")
+    with pytest.raises(KrsError) as e:  # never KeyError, which the GUI's tick would raise too
+        with runs.project_lock(pj, tmp_path / "run"):
+            pass
+    assert (e.value.code, e.value.params) == ("E_LOCKED", {"lock": str(lock), "run": None, "started": None})
+    assert runs.lock_holder(pj) == {"pid": os.getpid(), "run_dir": None, "started": None, "alive": True}
+
+
 def test_a_lock_that_cannot_be_read_reads_as_one_not_yet_written(tmp_path, monkeypatch):  # final review F5
     pj, lock = tmp_path / "project.json", tmp_path / "project.json.lock"
     lock.write_text(json.dumps({"pid": os.getpid(), "run_dir": "R", "started": "S"}), encoding="utf-8")
