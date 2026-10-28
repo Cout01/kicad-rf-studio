@@ -12,8 +12,9 @@ import subprocess
 from concurrent.futures import Future, ThreadPoolExecutor
 from pathlib import Path
 
-from PySide6.QtCore import QLocale, QSignalBlocker, Qt, QTimer, Signal
+from PySide6.QtCore import QLocale, QLockFile, QSignalBlocker, Qt, QTimer, Signal
 from PySide6.QtGui import QCloseEvent
+from PySide6.QtNetwork import QLocalServer
 from PySide6.QtWidgets import (QAbstractScrollArea, QComboBox, QDoubleSpinBox, QFileDialog, QFormLayout, QGroupBox,
                                QHBoxLayout, QHeaderView, QLabel, QLineEdit, QListWidget, QMainWindow, QMessageBox,
                                QPushButton, QSizePolicy, QSpinBox, QTableWidget, QTableWidgetItem, QTabWidget,
@@ -357,7 +358,9 @@ class MainWindow(QMainWindow):
     file's st_mtime_ns at the last read (stamp); `started`, every process this window started, polled every tick, so
     that none is left a zombie on Linux; the New form's work going on (Futures): `pads_read`, the chosen board's
     pads, or a press (take_handoff), and `creating`, new; and the KiCad button's presses: `handoff`, the handoff file of
-    the last press taken, and `handed`, the last press shown (control.Handed), each None before the first.
+    the last press taken, and `handed`, the last press shown (control.Handed), each None before the first; one window
+    per user (gui.main, serve): `server`, the local server that takes a second start's request, and `lock`, gui.lock,
+    both None in a window main did not make.
     Every slot is a bound method: a lambda or partial slot would keep a closed window alive (probed on PySide6
     6.12)."""
 
@@ -367,7 +370,7 @@ class MainWindow(QMainWindow):
         self.resize(1200, 800)
         self.prefix = prefix or control.orchestrator()
         self.path = self.opened = self.loading = self.applying = self.cost = self.mtime = None
-        self.pads_read = self.creating = self.handoff = self.handed = None
+        self.pads_read = self.creating = self.handoff = self.handed = self.server = self.lock = None
         self.command = self.run_dir = self.tail = self.end = self.proc = None
         self.live, self.started, self.verify_next = False, [], False
         self.pool = ThreadPoolExecutor(1)
@@ -837,10 +840,48 @@ class MainWindow(QMainWindow):
         """Help's About Qt: Qt's own box, with Qt's version and licence."""
         QMessageBox.aboutQt(self)
 
+    def serve(self, server: QLocalServer, lock: QLockFile) -> None:
+        """One window per user (gui.main, design 5.5): keeps `server`, through which a later start's request comes
+        (incoming), and `lock`, gui.lock, until the window closes."""
+        self.server, self.lock = server, lock
+        server.setParent(self)
+        server.newConnection.connect(self.incoming)
+
+    def incoming(self) -> None:
+        """The server's newConnection: each pending connection's lines taken as they come (forwarded), and the
+        connection deleted once its start disconnects."""
+        while (sock := self.server.nextPendingConnection()) is not None:
+            sock.readyRead.connect(self.forwarded)
+            sock.disconnected.connect(sock.deleteLater)
+
+    def forwarded(self) -> None:
+        """A connection's readyRead: each complete line, a later start's request (gui.forward), acted on."""
+        sock = self.sender()
+        while sock.canReadLine():
+            self.act(json.loads(bytes(sock.readLine())))  # a QByteArray is not JSON input (TypeError)
+
+    def act(self, request: dict) -> None:
+        """A start's request (gui.main), this one's or a later one's (forwarded): the window shown, unminimized, raised
+        and activated; then the press taken when it names a handoff file, else the project opened when it names one."""
+        # ponytail: Windows' foreground lock may flash the taskbar button instead of raising the window, unless the
+        # helper's AllowSetForegroundWindow reached it; the click-through checks
+        self.show()
+        self.setWindowState(self.windowState() & ~Qt.WindowState.WindowMinimized)
+        self.raise_()
+        self.activateWindow()
+        if request["handoff"]:
+            self.take_handoff(Path(request["handoff"]))
+        elif request["project"]:
+            self.open_project(Path(request["project"]))
+
     def closeEvent(self, event: QCloseEvent) -> None:
-        """Closing the window stops its timer and drops the pool's work not yet begun (project reads, a pad list, a
-        New, an Apply); what it started goes on (design 5.1: a run outlives its window, and the next window re-attaches
-        it), an Apply's retune included."""
+        """Closing the window first closes its server and unlocks gui.lock (serve), so that a later start serves itself
+        instead of waiting on a closing window whose pool may still run; it then stops its timer and drops the pool's
+        work not yet begun (project reads, a pad list, a New, an Apply); what it started goes on (design 5.1: a run
+        outlives its window, and the next window re-attaches it), an Apply's retune included."""
+        if self.server is not None:  # serve keeps both
+            self.server.close()
+            self.lock.unlock()
         self.timer.stop()
         self.pool.shutdown(wait=False, cancel_futures=True)
         super().closeEvent(event)

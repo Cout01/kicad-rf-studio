@@ -569,6 +569,63 @@ def test_a_button_press_pre_fills_new_and_swap_swaps_start_and_end(window, tmp_p
     assert board.read_bytes() == (FIX / "lpf915.kicad_pcb").read_bytes()  # never written (anti-goal)
 
 
+def test_the_gui_entry_takes_a_handoff_and_a_second_start_forwards_its_own_and_exits(qapp, fake, tmp_path,
+                                                                                     monkeypatch):
+    local = tmp_path / "local"  # design 5.5 Single instance; Review Focus 1
+    monkeypatch.setattr(runs, "data_dir", lambda: local / "kicad-rf-studio")  # as a second process reads its env
+    board = tmp_path / "lpf915.kicad_pcb"
+    board.write_bytes((FIX / "lpf915.kicad_pcb").read_bytes())
+    handoff = press(board, ["U1.1", "J1.1"])
+    seen = []
+    QTimer.singleShot(0, lambda: (seen.extend(qapp.topLevelWidgets()), qapp.exit()))  # exit: Qt 6's quit closes it
+    assert gui.main(["--handoff", str(handoff)]) == 0
+    w = next(x for x in seen if isinstance(x, MainWindow) and x.handoff == handoff)  # `seen` keeps it alive
+    second, log = None, tmp_path / "second.log"
+    try:
+        if w.pads_read:
+            w.pads_read.result(timeout=60)
+        w.tick()
+        f = w.new_form
+        assert (f.start.currentText(), f.end.currentText()) == ("U1.1", "J1.1")
+        assert (w.server.serverName(), w.server.isListening()) == (gui.instance_name(), True)
+        w.showMinimized()
+        w.server.close()  # as if this window were still starting: it holds gui.lock, but does not listen yet
+        press(board, footprints=["C1"])  # the next press, into the same file
+        env = {**os.environ, "LOCALAPPDATA": str(local), "XDG_DATA_HOME": str(local), "QT_QPA_PLATFORM": "offscreen"}
+        with open(log, "wb") as err:
+            second = subprocess.Popen([sys.executable, "-X", "utf8", "-I", "-c",
+                                       "import sys; from kicad_rf_studio import gui; sys.exit(gui.main(sys.argv[1:]))",
+                                       "--handoff", str(handoff)], env=env, stdout=subprocess.DEVNULL, stderr=err)
+        begin = time.monotonic()
+        until(lambda: qapp.processEvents() or time.monotonic() - begin > 2)  # it finds the lock held, and waits
+        assert w.server.listen(gui.instance_name())  # listening at last: the waiting start forwards to it
+        until(lambda: qapp.processEvents() or second.poll() is not None)  # this window's event loop runs meanwhile
+        assert second.returncode == 0, log.read_text(encoding="utf-8", errors="replace")  # no window of its own
+        until(lambda: qapp.processEvents() or [f.start.itemText(i) for i in range(f.start.count())] == ["C1.1",
+                                                                                                         "C1.2"])
+        assert not w.isMinimized() and w.tabs.currentIndex() == 0  # brought to the front, on New
+    finally:
+        if second is not None and second.poll() is None:
+            second.kill()
+            second.wait()
+        w.close()
+        w.pool.shutdown(wait=True)
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="a socket file a killed window leaves on Linux")
+def test_a_socket_file_left_by_a_killed_window_does_not_stop_the_next(qapp, fake):  # Review Focus 1
+    from PySide6.QtCore import QDir
+    Path(QDir.tempPath(), gui.instance_name()).write_text("")  # where QLocalServer puts its socket
+    seen = []
+    QTimer.singleShot(0, lambda: (seen.extend(qapp.topLevelWidgets()), qapp.exit()))  # exit: Qt 6's quit closes it
+    assert gui.main([]) == 0
+    w = next(x for x in seen if isinstance(x, MainWindow) and x.server and x.server.serverName() ==
+             gui.instance_name())
+    assert w.server.isListening()  # with an access option Qt binds beside the name and renames over the stale file
+    w.close()
+    w.pool.shutdown(wait=True)
+
+
 def column(table, c):
     return [table.item(k, c).text() for k in range(table.rowCount())]
 
