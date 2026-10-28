@@ -14,9 +14,10 @@ from pathlib import Path
 
 from PySide6.QtCore import QLocale, QSignalBlocker, Qt, QTimer, Signal
 from PySide6.QtGui import QCloseEvent
-from PySide6.QtWidgets import (QComboBox, QDoubleSpinBox, QFileDialog, QFormLayout, QGroupBox, QHBoxLayout, QHeaderView,
-                               QLabel, QLineEdit, QListWidget, QMainWindow, QMessageBox, QPushButton, QSpinBox,
-                               QTableWidget, QTableWidgetItem, QTabWidget, QVBoxLayout, QWidget)
+from PySide6.QtWidgets import (QAbstractScrollArea, QComboBox, QDoubleSpinBox, QFileDialog, QFormLayout, QGroupBox,
+                               QHBoxLayout, QHeaderView, QLabel, QLineEdit, QListWidget, QMainWindow, QMessageBox,
+                               QPushButton, QSizePolicy, QSpinBox, QTableWidget, QTableWidgetItem, QTabWidget,
+                               QVBoxLayout, QWidget)
 # after PySide6: matplotlib's Qt backend then wraps the binding already loaded, never another one installed beside it
 from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg
 from matplotlib.figure import Figure
@@ -77,14 +78,14 @@ def combo(choices: tuple, current: str, slot) -> QComboBox:
 class ResultsView(QWidget):
     """The Results and retune tab (Stage 2 design 5.3, 5.4): the row (`header`) of the what-if label while
     RETUNE_VALIDATED is False, the stale indicator (`stale`, which the window sets) and Verify, the last two only with
-    part ports; why there are no results; the retune box, shown only with part ports: the parts table (`parts`), a row
-    per part port with its value, its Snapping, its S2P file and that file's fixture, then the row (`buttons`) of S2P
-    file…, Revert, Apply and the retune's status line; summary.png's drawing on a FigureCanvasQTAgg; and the row
-    (`footer`) of the result's lines and stated limits, then the last verify's comparison (`verify_lines`), shown only
-    with part ports. `series` holds each part's Snapping as the user set it. A row's edit emits `edited`; the window
-    answers it with the chain of the rows (show_chain). The plot: its `axes` as draw_summary drew them (None without a
-    plot, or to draw the next one in full) and its `curves`, animated, which a retune moves and blits (retrace_summary,
-    blit) on the background (`bg`) that the last full draw kept (on_draw), None until one."""
+    part ports; why there are no results; the retune box, shown only with part ports: the parts table (`parts`), as tall
+    as its rows, a row per part port with its value, its Snapping, its S2P file and that file's fixture, then the row
+    (`buttons`) of S2P file…, Revert, Apply and the retune's status line; summary.png's drawing on a FigureCanvasQTAgg;
+    and the row (`footer`) of the result's lines and stated limits, then the last verify's comparison (`verify_lines`),
+    shown only with part ports. `series` holds each part's Snapping as the user set it. A row's edit emits `edited`; the
+    window answers it with the chain of the rows (show_chain). The plot: its `axes` as draw_summary drew them (None
+    without a plot, or to draw the next one in full) and its `curves`, animated, which a retune moves and blits
+    (retrace_summary, blit) on the background (`bg`) that the last full draw kept (on_draw), None until one."""
 
     edited = Signal()
 
@@ -103,6 +104,10 @@ class ResultsView(QWidget):
             widget.hide()  # until a read shows it
         self.parts.setHorizontalHeaderLabels([render(code) for code in PART_COLUMNS])
         self.parts.horizontalHeader().setSectionResizeMode(S2P, QHeaderView.ResizeMode.Stretch)  # a file's path
+        # ponytail: the table grows with its rows, and the window's minimum height with it; a maximum height (a scroll
+        # bar past some rows) if a chain's parts outgrow the screen
+        self.parts.setSizeAdjustPolicy(QAbstractScrollArea.SizeAdjustPolicy.AdjustToContents)
+        self.parts.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
         for widget in (self.s2p_button, self.revert_button, self.apply_button, self.retune_status):
             self.buttons.addWidget(widget)
         box = QVBoxLayout(self.retune_box)

@@ -508,7 +508,7 @@ def column(table, c):
     return [table.item(k, c).text() for k in range(table.rowCount())]
 
 
-def test_the_retune_table_snaps_takes_s2p_parts_and_draws_under_the_what_if_label(window, tmp_path, monkeypatch):
+def test_the_retune_table_snaps_takes_s2p_parts_and_draws_under_the_what_if_label(window, qapp, tmp_path, monkeypatch):
     pj = lpf_run(tmp_path, monkeypatch).resolve()  # design 5.3 Retune, What-if; Review Focus 1, 2
     (tmp_path / "parts").mkdir()
     l1 = write_s2p(tmp_path / "parts" / "l1.s2p", z_part("L", 18e-9, None, F), "series", F)
@@ -529,6 +529,9 @@ def test_the_retune_table_snaps_takes_s2p_parts_and_draws_under_the_what_if_labe
     assert fig.get_suptitle().endswith(label) and not r.what_if.isHidden()  # the retuned plot, under the label
     assert items(r.lines) == [control.text(c, p) for c, p in res.lines] + [render(c) for c in LIMITS]
     w.tabs.setCurrentWidget(r)
+    qapp.processEvents()  # the layout settles
+    assert all(r.parts.viewport().rect().contains(r.parts.visualRect(r.parts.model().index(k, PART)))
+               for k in range(4))  # visual review V1: every row whole, none cut behind a scroll bar
     grab(w, "retune")
     r.parts.cellWidget(3, SNAP).setCurrentIndex(control.SERIES.index("off"))
     r.parts.item(3, VALUE).setText("5pF")
