@@ -354,12 +354,13 @@ def carried(before: dict | None, after: dict | None, folder: Path, rows: list[Ro
 
 def verify_stale(project: dict, rows: list[Row]) -> str | None:
     """The stale indicator of `project` with the retune's `rows` (design 5.3): G_VERIFY_NONE without a verify block it
-    can read (none, or a hand edit that is not an object with base_hash and an object of values); G_VERIFY_STALE when
-    a run came since (base_hash is not the results' model_hash) or when a row's value reads (port_value) other than
-    the one verify ran; else None. A row with an S2P file counts with its part's stored value: Apply keeps that value,
-    and verify runs it, not the file (C-38)."""
+    can read (none, or a hand edit that is not an object with base_hash and an object of value texts); G_VERIFY_STALE
+    when a run came since (base_hash is not the results' model_hash) or when a row's value reads (port_value) other
+    than the one verify ran; else None. A row with an S2P file counts with its part's stored value: Apply keeps that
+    value, and verify runs it, not the file (C-38)."""
     v, by_ref = project.get("verify"), parts(project)
-    if not (isinstance(v, dict) and "base_hash" in v and isinstance(v.get("values"), dict)):
+    if not (isinstance(v, dict) and "base_hash" in v and isinstance(v.get("values"), dict)
+            and all(isinstance(x, str) for x in v["values"].values())):
         return "G_VERIFY_NONE"
     if v["base_hash"] != project["results"]["model_hash"] or any(
             port_value(row.ref, by_ref[row.ref]["value"] if row.s2p else row.value)

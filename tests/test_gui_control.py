@@ -318,7 +318,8 @@ def test_verify_is_stale_until_it_ran_these_values_on_this_model(tmp_path):  # d
     project = {**lpf(), "results": {"model_hash": "M"}}
     rows = control.rows(project, tmp_path, ["C1", "L1", "C2", "C3"])
     assert control.verify_stale(project, rows) == "G_VERIFY_NONE"
-    for broken in ({}, {"base_hash": "M", "values": []}):  # hand edits: read as no verify
+    for broken in ({}, {"base_hash": "M", "values": []}, {"base_hash": "M", "values": {"C1": None}},
+                   {"base_hash": "M", "values": {"C1": 1e-10}}):  # hand edits: read as no verify
         assert control.verify_stale({**project, "verify": broken}, rows) == "G_VERIFY_NONE"
     values = {"C1": "100pF", "L1": "15nH", "C2": "3p3", "C3": "3.3pF"}
     project["verify"] = {"base_hash": "M", "values": values, "run_dir": str(tmp_path / "v")}
