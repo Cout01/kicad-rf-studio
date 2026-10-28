@@ -9,7 +9,7 @@ from pathlib import Path
 
 import pytest
 
-from kicad_rf_studio import runs
+from kicad_rf_studio import pipeline, runs
 from kicad_rf_studio.cli import main
 from kicad_rf_studio.core.messages import KrsError, render
 
@@ -166,8 +166,7 @@ def test_a_stale_lock_reclaimed_for_an_existing_run_folder_is_an_event_there(tmp
     dead = subprocess.Popen([sys.executable, "-c", "pass"])
     dead.wait()
     lock.write_text(json.dumps({"pid": dead.pid, "run_dir": "R", "started": "S"}), encoding="utf-8")
-    with runs.project_lock(pj, run_dir, events=True):  # final review F11: run and verify
-        pass
+    assert pipeline._locked(pj, lambda path, d: 0, run_dir) == 0  # run's and verify's lock (final review F11)
     events = [json.loads(line) for line in (run_dir / "events.jsonl").read_text(encoding="utf-8").splitlines()]
     assert [(e["kind"], e["code"], e["params"]) for e in events] == [
         ("message", "W_STALE_LOCK", {"lock": str(lock), "run": "R"})]
