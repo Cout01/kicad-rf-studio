@@ -154,8 +154,9 @@ class MainWindow(QMainWindow):
         buttons: Cost while nothing watched goes on and no run holds the lock, Run… also only with a cost of this
         model, Stop only while the watch goes on. A holder whose run folder is the project's results/ is a retune
         (pipeline.retune, r2 §1): waited for, never watched or bannered. Any other holder's run folder, when it names
-        one other than the watched one, is watched when this window's own process is not running and the holder
-        lives, or when the holder is dead and nothing is watched (on open), so a cost meanwhile keeps its tab."""
+        one other than the watched one, is watched when this window's own process was not running at the last tick
+        (`live`) and the holder lives, or when the holder is dead and nothing is watched (on open), so a cost meanwhile
+        keeps its tab."""
         if self.path is None:
             return
         holder = runs.lock_holder(self.path)
@@ -165,7 +166,7 @@ class MainWindow(QMainWindow):
         if holder and holder["run_dir"] and Path(holder["run_dir"]) == self.path.parent / "results":
             holder = None
         if holder and holder["run_dir"] and Path(holder["run_dir"]) != self.run_dir and (
-                self.command is None or (holder["alive"] and (self.proc is None or self.proc.poll() is not None))):
+                self.command is None or (holder["alive"] and (self.proc is None or not self.live))):
             self.watch("run", Path(holder["run_dir"]))
         if self.loading is not None and self.loading.done():
             done, self.loading = self.loading, None
@@ -226,6 +227,7 @@ class MainWindow(QMainWindow):
         """Watches `command`'s run folder `run_dir`, and `proc` when this window started it: that command's views
         cleared and its tab selected."""
         self.command, self.run_dir, self.end, self.proc = command, run_dir, None, proc
+        self.live = proc is not None  # the tick that start() runs counts the process it just started as live
         self.tail = control.Tail(run_dir / "events.jsonl")
         if command == "cost":
             self.cost_lines.clear()

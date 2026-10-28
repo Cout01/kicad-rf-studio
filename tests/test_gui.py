@@ -268,6 +268,25 @@ def test_another_runs_lock_disables_cost_and_run_until_it_goes(window, tmp_path)
     assert (w.cost_button.isEnabled(), w.run_button.isEnabled(), w.stop_button.isEnabled()) == (True, True, False)
 
 
+def test_a_cost_that_ends_under_another_runs_lock_shows_its_end_before_the_attach(window, tmp_path):  # design 5.1, 5.3
+    pj = new_project(tmp_path, "coupon_gcpw_pads", preset="draft").resolve()  # final review F1
+    w = window()
+    w.open_project(pj)
+    opened(w)
+    w.cost_button.click()
+    cost, lock, other = w.run_dir, runs.lock_file(pj), tmp_path / "other run"
+    until(lambda: w.proc.poll() is not None)  # no tick while the cost runs
+    lock.write_text(json.dumps({"pid": os.getpid(), "run_dir": str(other), "started": "S"}), encoding="utf-8")
+    w.tick()  # the tick that sees the cost's exit reads its last lines and its end first
+    assert w.command == "cost" and w.cost_status.text() == render("G_END_DONE", exit_code=0)
+    assert items(w.cost_lines)[-1].startswith("Main cost: ")
+    w.tick()  # then the other run's lock is attached
+    assert w.command == "run" and w.run_dir == other
+    opened(w)
+    assert w.cost == cost  # the exit-0 re-read was kept
+    lock.unlink()
+
+
 def test_results_show_the_chain_under_the_what_if_label_and_go_when_stale(window, tmp_path, monkeypatch):
     pj = lpf_run(tmp_path, monkeypatch).resolve()  # tests/test_run.py: lpf915 on the network fake; Review Focus 5
     w = window()
