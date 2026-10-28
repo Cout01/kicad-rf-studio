@@ -84,9 +84,10 @@ def window(qapp, calibrated, monkeypatch):
 
     yield make
     for w in made:
-        if w.proc is not None and w.proc.poll() is None:
-            w.proc.kill()
-            w.proc.wait()
+        for proc in w.started:  # every process it started, not only the watched one
+            if proc.poll() is None:
+                proc.kill()
+                proc.wait()
         w.close()
         w.pool.shutdown(wait=True)  # a read still going would outlive the fake data folder
 
@@ -243,6 +244,25 @@ def test_a_killed_run_reads_lost_and_its_stale_lock_does_not_block_the_next(wind
     opened(again)
     again.run_button.click()
     until(lambda: again.tick() or again.run_status.text() == render("G_END_DONE", exit_code=0))
+
+
+def test_a_run_no_longer_watched_that_is_killed_reads_lost(window, tmp_path, monkeypatch):  # Review Focus 4, Linux
+    pj = new_project(tmp_path, "coupon_gcpw_pads", preset="draft").resolve()  # final review F2
+    costed(pj)
+    w = window()
+    w.open_project(pj)
+    opened(w)
+    monkeypatch.setattr(w, "ask", lambda text: True)
+    monkeypatch.setenv("KRS_FAKE", "hang")
+    w.run_button.click()
+    until(lambda: (runs.lock_holder(pj) or {}).get("pid"))  # written, not only made
+    proc, run_dir = w.proc, w.run_dir
+    w.open_project(pj)  # the run goes on, no longer watched as this window's own
+    assert w.proc is None and w.run_dir == run_dir  # re-attached through the live lock
+    proc.kill()  # no wait: on Linux only the window may reap it, else os.kill(pid, 0) finds a zombie alive
+    until(lambda: w.tick() or runs.lock_holder(pj)["alive"] is False)
+    w.tick()
+    assert w.run_status.text() == render("G_END_LOST", folder=str(run_dir)) and w.cost_button.isEnabled()
 
 
 def test_another_runs_lock_disables_cost_and_run_until_it_goes(window, tmp_path):  # design 5.1, 5.3

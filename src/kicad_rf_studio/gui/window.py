@@ -81,8 +81,9 @@ class MainWindow(QMainWindow):
     Its state: `path`, the resolved project file; `opened`, its last read (control.Opened) and `loading`, the read
     going on (a Future); `cost`, the folder of this model's last cost, which Run… confirms on; the watch: `command`,
     `run_dir`, its events' `tail`, its `end` event and `proc`, only a process this window started; `live`, whether
-    the watched process goes on, and `mtime`, project.json's st_mtime_ns at the last read. Every slot is a bound
-    method: a lambda or partial slot would keep a closed window alive (probed on PySide6 6.12)."""
+    the watched process goes on; `mtime`, project.json's st_mtime_ns at the last read; and `started`, every process
+    this window started, polled every tick, so that none is left a zombie on Linux. Every slot is a bound method: a
+    lambda or partial slot would keep a closed window alive (probed on PySide6 6.12)."""
 
     def __init__(self, prefix: list[str] | None = None):
         super().__init__()
@@ -91,7 +92,7 @@ class MainWindow(QMainWindow):
         self.prefix = prefix or control.orchestrator()
         self.path = self.opened = self.loading = self.cost = self.mtime = None
         self.command = self.run_dir = self.tail = self.end = self.proc = None
-        self.live = False
+        self.live, self.started = False, []
         self.pool = ThreadPoolExecutor(1)
         self.open_button, self.project_status = QPushButton(render("G_OPEN")), QLabel()
         self.cost_lines, self.cost_status = QListWidget(), QLabel()
@@ -157,6 +158,7 @@ class MainWindow(QMainWindow):
         one other than the watched one, is watched when this window's own process was not running at the last tick
         (`live`) and the holder lives, or when the holder is dead and nothing is watched (on open), so a cost meanwhile
         keeps its tab."""
+        self.started = [p for p in self.started if p.poll() is None]  # poll() reaps one that ended
         if self.path is None:
             return
         holder = runs.lock_holder(self.path)
@@ -246,6 +248,7 @@ class MainWindow(QMainWindow):
             (self.cost_status if command == "cost" else self.run_status).setText(
                 render("G_START_FAILED", program=self.prefix[0], reason=reason(e)))
             return
+        self.started.append(proc)
         self.watch(command, run_dir, proc)
         self.tick()
 
