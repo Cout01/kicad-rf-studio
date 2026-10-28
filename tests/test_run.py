@@ -18,7 +18,7 @@ from kicad_rf_studio.core.kicad.stackup import kicad_default
 from kicad_rf_studio.core.messages import render
 from kicad_rf_studio.core.model.spec import spec_hash
 from kicad_rf_studio.core.post.chain import with_box, z_part
-from kicad_rf_studio.core.post.outputs import COLUMNS, LIMITS
+from kicad_rf_studio.core.post.outputs import COLUMNS, LIMITS, summary_csv, summary_png
 from kicad_rf_studio.core.post.waves import grid, layout
 from kicad_rf_studio.core.project import GATES, load_project, parts, save_project
 from kicad_rf_studio.pipeline import command_line, expected_loss, load, write_outputs
@@ -437,19 +437,45 @@ def test_the_expected_loss_takes_the_core_by_the_copper_and_skips_a_short(tmp_pa
     assert loss(short) == 0.0  # GND overlaps SIG at its cut, so its one section has no εeff (ShortError)
 
 
-def test_three_external_ports_and_a_part_port_get_the_label_after_w_not_two_port(tmp_path):  # D-15, PF-6
-    rec = synth_records(lambda f: star(f, 4), 4, 457.5e6, 3.0195e9, 1.73972e-13, 10e-9)
-    results = {**fake_run(tmp_path, rec, [port("P1"), port("P2"), port("P3"), port("C1", part=True)]),
+def star_project(tmp_path, ext):
+    """A run of `ext` external ports and one shunt part port, C1, reduced from the star's waves, and its project (no
+    board): project.json's path and the project."""
+    n = ext + 1
+    rec = synth_records(lambda f: star(f, n), n, 457.5e6, 3.0195e9, 1.73972e-13, 10e-9)
+    results = {**fake_run(tmp_path, rec, [*(port(f"P{k}") for k in range(1, n)), port("C1", part=True)]),
                "preset": "normal", "gates": GATES, "c_box": {"C1": C_BOX}, "loss_expected": 0.0}
-    ports = [{"name": f"P{k}", "signal": f"J{k}.1", "reference": {"pad": f"J{k}.2", "uuid": ""}} for k in (1, 2, 3)]
+    ports = [{"name": f"P{k}", "signal": f"J{k}.1", "reference": {"pad": f"J{k}.2", "uuid": ""}} for k in range(1, n)]
     c1 = {"ref": "C1", "pads": ["C1.1", "C1.2"], "nets": ["A", "GND"], "value": "1pF", "dnp": False, "role": "port",
           "model": None, "s2p": None}
-    project = {"f0_hz": 915e6, "harmonics": 3, "band_factor": 1.1, "ports": ports, "others": [],
-               "chain": {"nets": ["A"], "series": [], "shunt": [c1]}, "results": results}
-    pj = tmp_path / "p" / "project.json"
+    return tmp_path / "p" / "project.json", {
+        "f0_hz": 915e6, "harmonics": 3, "band_factor": 1.1, "ports": ports, "others": [],
+        "classes": {"gnd_nets": ["GND"], "power_nets": [], "connectors": [], "shields": []},
+        "chain": {"nets": ["A"], "series": [], "shunt": [c1]}, "results": results}
+
+
+def test_three_external_ports_and_a_part_port_get_the_label_after_w_not_two_port(tmp_path):  # D-15, PF-6
+    pj, project = star_project(tmp_path, 3)
     lines = write_outputs(pj, project, "c")
     assert [c for c, _ in lines][-len(LIMITS) - 3:] == ["W_NOT_TWO_PORT", "I_WHAT_IF", "I_OUTPUTS", *LIMITS]
     assert b"! Relative / what-if: " in (pj.parent / "results" / "chain.s3p").read_bytes()
+
+
+def test_write_outputs_writes_what_chain_results_holds(tmp_path):  # Stage 2 design 5.2 item 7, byte for byte
+    pj, project = star_project(tmp_path, 2)
+    res = pipeline.chain_results(pj, project)
+    assert not (pj.parent / "results").exists()  # pure: the GUI calls it on a worker thread (design 5.4)
+    assert (res.ext, res.refs, res.what_if, res.chain.shape) == ([0, 1], ["C1"], True, (len(F), 2, 2))
+    assert [c for c, _ in res.lines] == ["I_BASIS", "I_MARKER", "I_MARKER", "I_HR", "I_MARKER", "I_HR",
+                                         "I_PASSIVITY", "I_RECIPROCITY", "W_LOSS_BUDGET"]
+    what_if = {"command": command_line("kicad-rf-studio", "verify", str(pj))}
+    folder = pj.parent / "results"
+    assert write_outputs(pj, project, "c") == [
+        *res.lines, ("I_WHAT_IF", what_if),
+        ("I_OUTPUTS", {"files": "chain.s2p, layout.s3p, summary.csv, summary.png", "folder": str(folder)}),
+        *((code, {}) for code in LIMITS)]
+    assert (folder / "summary.csv").read_bytes() == summary_csv(res.lay, res.chain, res.ideal, res.p_layout, 0.0)
+    assert (folder / "summary.png").read_bytes() == summary_png(res.lay, res.chain, res.ideal, "p",
+                                                                render("I_WHAT_IF", **what_if))
 
 
 def test_run_ports_runs_only_the_ports_it_is_given_to_their_t_max(tmp_path, calibrated):  # D-9: the harnesses' jobs

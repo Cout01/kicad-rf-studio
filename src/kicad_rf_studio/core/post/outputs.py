@@ -135,14 +135,12 @@ def summary_csv(lay: Layout, chain: np.ndarray, ideal: np.ndarray | None, p_layo
     return out.getvalue().encode("utf-8")
 
 
-def summary_png(lay: Layout, chain: np.ndarray, ideal: np.ndarray | None, name: str, label: str | None = None) -> bytes:
-    """summary.png (C-30): |S21| and |S11| in dB against GHz, with layout solid and the ideal schematic dashed, a thin
-    line at each marker, and S11's locus on a Smith chart with the markers as dots, under I_PLOT_TITLE with `label`
-    (the what-if label, D-15) as its second line when given; a Figure drawn by Agg, never a pyplot figure, as PNG at
-    100 dpi."""
-    from matplotlib.figure import Figure  # here only: no other code of the core loads matplotlib (C-5)
-
-    fig = Figure(figsize=(15, 4.5), layout="constrained")
+def draw_summary(fig, lay: Layout, chain: np.ndarray, ideal: np.ndarray | None, name: str,
+                 label: str | None = None) -> tuple:
+    """summary.png's plots (C-30) on the matplotlib Figure `fig` (summary_png's, or the GUI canvas's): |S21| and |S11|
+    in dB against GHz, with layout solid and the ideal schematic dashed, a thin line at each marker, and S11's locus
+    on a Smith chart with the markers as dots, under I_PLOT_TITLE with `label` (the what-if label, D-15) as its second
+    line when given. Returns the axes (S21, S11, Smith)."""
     ax21, ax11, ax_smith = fig.subplots(1, 3)
     rf.plotting.smith(ax=ax_smith, draw_labels=True)
     ghz = lay.f / 1e9
@@ -159,6 +157,15 @@ def summary_png(lay: Layout, chain: np.ndarray, ideal: np.ndarray | None, name: 
         ax.set(xlabel=render("I_PLOT_FREQUENCY"), ylabel=ylabel)
         ax.legend()
     fig.suptitle(render("I_PLOT_TITLE", name=name) + ("\n" + label if label else ""), wrap=True)
+    return ax21, ax11, ax_smith
+
+
+def summary_png(lay: Layout, chain: np.ndarray, ideal: np.ndarray | None, name: str, label: str | None = None) -> bytes:
+    """summary.png (C-30): draw_summary on a Figure drawn by Agg, never a pyplot figure, as PNG at 100 dpi."""
+    from matplotlib.figure import Figure  # here only: no other code of the core loads matplotlib (C-5)
+
+    fig = Figure(figsize=(15, 4.5), layout="constrained")
+    draw_summary(fig, lay, chain, ideal, name, label)
     out = io.BytesIO()
     fig.savefig(out, format="png", dpi=100)
     return out.getvalue()

@@ -417,6 +417,63 @@ def _save(path: Path, data: dict, command: str) -> None:
                        command=command) from None
 
 
+@dataclass
+class ChainResults:
+    """A run's results as chain_results reads them: the layout N-port, its external ports by index and its part ports
+    by name; the chain S (F, P, P), None after a part's refusal; with a chain and P = 2, the ideal schematic (None
+    without part ports) and the loss budget, else both None; whether the chain is a what-if (closed part ports while
+    RETUNE_VALIDATED is False, D-15); and the lines to report, I_BASIS up to W_NOT_TWO_PORT."""
+    lay: Layout
+    ext: list[int]
+    refs: list[str]
+    chain: np.ndarray | None
+    ideal: np.ndarray | None
+    p_layout: np.ndarray | None
+    what_if: bool
+    lines: list[tuple[str, dict]]
+
+
+def chain_results(path: Path, project: dict, *, errors_as_lines: bool = False) -> ChainResults:
+    """The numbers and lines that write_outputs writes and reports for the run in `project`'s results, with no file
+    written (Stage 2 design 5.2 item 7): the layout N-port (layout), I_BASIS with each flagged job, gate_lines, the part
+    notes (part_impedances, S2P files beside `path`), the chain with every part port closed; with P = 2 the ideal
+    schematic, the loss budget, the marker and indicator lines, else the indicator lines and W_NOT_TWO_PORT (C-31). A
+    part's refusal (E_PART_NO_VALUE, E_S2P_*, E_CBOX) is raised, or, with `errors_as_lines`, becomes the last line, with
+    no chain. Raises layout's refusals and E_S_SINGULAR."""
+    results = project["results"]
+    lay = layout(project, results)
+    ext, refs = _split(lay)
+    count = Counter(job["verdict"] for job in results["jobs"])
+    end = {"flat": "t_cut", "t_max": "t_stop"}  # where a flagged job's S ends: its cut, or its last sample
+    lines = [("I_BASIS", {"run_dir": results["run_dir"], "preset": results["preset"], "converged": count["converged"],
+                          "flat": count["flat"], "t_max": count["t_max"]})]
+    lines += [(VERDICTS[job["verdict"]], {"port": job["port"], "t_ns": f"{job[end[job['verdict']]] * 1e9:.2f}",
+                                          "residual_db": f"{job['residual_db']:.1f}"})
+              for job in results["jobs"] if job["verdict"] in end]
+    lines += gate_lines(results["gates"])
+    chain = ideal = p_layout = None
+    try:
+        zparts, notes = part_impedances(project, path.parent, refs, lay.f)
+        lines += notes
+        zk = loads(zparts, refs, results["c_box"], lay.f)
+    except KrsError as err:
+        if not errors_as_lines:
+            raise
+        lines.append((err.code, err.params))
+    else:
+        chain = terminate(lay.s, ext, zk, lay.f)
+        if len(ext) == 2:
+            ideal = ideal_schematic(project, zparts, lay.f) if refs else None
+            p_layout = loss_budget(lay.s, ext, zk)
+            lines += [*marker_lines(lay, chain, ideal),
+                      *indicator_lines(lay.f, lay.a_db, lay.s, p_layout, results["loss_expected"])]
+        else:
+            lines += [*indicator_lines(lay.f, lay.a_db, lay.s, None, results["loss_expected"]),
+                      ("W_NOT_TWO_PORT", {"ports": len(ext)})]
+    return ChainResults(lay, ext, refs, chain, ideal, p_layout,
+                        chain is not None and bool(refs) and not RETUNE_VALIDATED, lines)
+
+
 def write_outputs(path: Path, project: dict, command: str, *,
                   errors_as_lines: bool = False) -> list[tuple[str, dict]]:
     """The outputs of the run in `project`'s results (spec 3.2, 7.3, C-26..C-32), the step `run` and `retune` share:
@@ -430,47 +487,20 @@ def write_outputs(path: Path, project: dict, command: str, *,
     chain's lines and files, so that the layout N-port is still written (C-26); E_RESULTS_WRITE in the place of
     I_OUTPUTS, so that the lines already computed and LIMITS are still reported (spec 7.5). Raises layout's refusals
     and E_S_SINGULAR."""
-    results = project["results"]
-    lay = layout(project, results)
-    ext, refs = _split(lay)
+    res = chain_results(path, project, errors_as_lines=errors_as_lines)
+    results, lay, ext = project["results"], res.lay, res.ext
     folder, n, p = path.parent / "results", len(lay.ports), len(ext)
     files = {f"layout.s{n}p": touchstone(lay.s, lay.f, [q["name"] for q in lay.ports],
                                          port_map(project, results, lay, range(n)))}
-    count = Counter(job["verdict"] for job in results["jobs"])
-    end = {"flat": "t_cut", "t_max": "t_stop"}  # where a flagged job's S ends: its cut, or its last sample
-    lines = [("I_BASIS", {"run_dir": results["run_dir"], "preset": results["preset"], "converged": count["converged"],
-                          "flat": count["flat"], "t_max": count["t_max"]})]
-    lines += [(VERDICTS[job["verdict"]], {"port": job["port"], "t_ns": f"{job[end[job['verdict']]] * 1e9:.2f}",
-                                          "residual_db": f"{job['residual_db']:.1f}"})
-              for job in results["jobs"] if job["verdict"] in end]
-    lines += gate_lines(results["gates"])
-    try:
-        zparts, notes = part_impedances(project, path.parent, refs, lay.f)
-        lines += notes
-        zk = loads(zparts, refs, results["c_box"], lay.f)
-    except KrsError as err:
-        if not errors_as_lines:
-            raise
-        lines.append((err.code, err.params))
-    else:
-        chain = terminate(lay.s, ext, zk, lay.f)
-        what_if = {"command": command_line("kicad-rf-studio", "verify", str(path))}
-        label = render("I_WHAT_IF", **what_if) if refs and not RETUNE_VALIDATED else None
-        if refs:
-            files[f"chain.s{p}p"] = touchstone(chain, lay.f, [lay.ports[k]["name"] for k in ext],
-                                               port_map(project, results, lay, ext) + ([label] if label else []))
-        if p == 2:
-            ideal = ideal_schematic(project, zparts, lay.f) if refs else None
-            p_layout = loss_budget(lay.s, ext, zk)
-            lines += [*marker_lines(lay, chain, ideal),
-                      *indicator_lines(lay.f, lay.a_db, lay.s, p_layout, results["loss_expected"])]
-            files["summary.csv"] = summary_csv(lay, chain, ideal, p_layout, results["loss_expected"])
-            files["summary.png"] = summary_png(lay, chain, ideal, path.absolute().parent.name, label)  # `run .` too
-        else:
-            lines += [*indicator_lines(lay.f, lay.a_db, lay.s, None, results["loss_expected"]),
-                      ("W_NOT_TWO_PORT", {"ports": p})]
-        if label:
-            lines.append(("I_WHAT_IF", what_if))
+    what_if = {"command": command_line("kicad-rf-studio", "verify", str(path))}
+    label = render("I_WHAT_IF", **what_if) if res.what_if else None
+    if res.chain is not None and res.refs:
+        files[f"chain.s{p}p"] = touchstone(res.chain, lay.f, [lay.ports[k]["name"] for k in ext],
+                                           port_map(project, results, lay, ext) + ([label] if label else []))
+    if res.chain is not None and p == 2:
+        files["summary.csv"] = summary_csv(lay, res.chain, res.ideal, res.p_layout, results["loss_expected"])
+        files["summary.png"] = summary_png(lay, res.chain, res.ideal, path.absolute().parent.name, label)  # `run .` too
+    lines = [*res.lines, *([("I_WHAT_IF", what_if)] if label else [])]
     try:
         write(folder, files, OUTPUTS, command)
     except KrsError as err:  # E_RESULTS_WRITE: a file held open, say

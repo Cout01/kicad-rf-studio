@@ -14,8 +14,8 @@ from matplotlib.figure import Figure
 
 from kicad_rf_studio.core.messages import KrsError, render
 from kicad_rf_studio.core.post.chain import ideal_schematic
-from kicad_rf_studio.core.post.outputs import (COLUMNS, LIMITS, OUTPUTS, marker_lines, port_map, summary_csv,
-                                               summary_png, touchstone, write)
+from kicad_rf_studio.core.post.outputs import (COLUMNS, LIMITS, OUTPUTS, draw_summary, marker_lines, port_map,
+                                               summary_csv, summary_png, touchstone, write)
 from kicad_rf_studio.core.post.waves import Layout, grid
 from kicad_rf_studio.core.project import parts
 from networks import read_s, star
@@ -103,6 +103,17 @@ def test_the_png_title_carries_the_what_if_label(monkeypatch):  # D-15
     summary_png(lay_of(EXT, chain), chain, chain, "lpf915", label="L")
     summary_png(lay_of(EXT, chain), chain, chain, "lpf915")
     assert titles == [render("I_PLOT_TITLE", name="lpf915") + "\nL", render("I_PLOT_TITLE", name="lpf915")]
+
+
+def test_the_png_is_draw_summary_on_an_agg_figure_at_100_dpi():  # Stage 2 design 5.2 item 7
+    chain = ideal_schematic(PI, PI_Z, F)
+    fig = Figure(figsize=(15, 4.5), layout="constrained")
+    ax21, ax11, smith = draw_summary(fig, lay_of(EXT, chain), chain, chain, "lpf915", "L")
+    out = io.BytesIO()
+    fig.savefig(out, format="png", dpi=100)
+    assert summary_png(lay_of(EXT, chain), chain, chain, "lpf915", "L") == out.getvalue()
+    assert [len(ax.lines) for ax in (ax21, ax11)] == [5, 5]  # layout, ideal and the three marker lines
+    assert fig.get_suptitle() == render("I_PLOT_TITLE", name="lpf915") + "\nL" and smith in fig.axes
 
 
 def test_only_the_png_writer_imports_matplotlib():  # C-5
