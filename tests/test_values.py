@@ -3,7 +3,7 @@ import time
 
 import pytest
 
-from kicad_rf_studio.core.kicad.values import parse_frequency, parse_value, part_kind, part_value
+from kicad_rf_studio.core.kicad.values import E12, E24, parse_frequency, parse_value, part_kind, part_value, snap
 from kicad_rf_studio.core.messages import KrsError
 
 
@@ -186,3 +186,12 @@ def test_a_part_value_takes_its_kind_from_the_designator(ref, text, value):  # C
 
 def test_part_kind():
     assert [part_kind(r) for r in ("C1", "L2", "R10", "D1", "CN1", "RF1")] == ["C", "L", "R", None, None, None]
+
+
+@pytest.mark.parametrize(("value", "series", "snapped"), [
+    (4.7e-12, "E12", 4.7e-12), (5.0e-9, "E12", 4.7e-9), (5.0e-9, "E24", 5.1e-9), (9.6e-12, "E12", 10e-12),
+    (1.049e-9, "E24", 1.1e-9),  # log space: 1.049 lies past √1.1 = 1.0488, though nearer 1.0 in a straight line
+    (1.04e-9, "E24", 1.0e-9), (33.3, "E24", 33.0), (0.0912, "E24", 0.091)])
+def test_snap_takes_the_nearest_iec_60063_value_in_log_space(value, series, snapped):  # design 5.2 item 8
+    assert snap(value, series) == snapped
+    assert (len(E12), len(E24)) == (12, 24) and set(E12) <= set(E24)

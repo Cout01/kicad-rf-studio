@@ -93,3 +93,17 @@ def parse_frequency(text: str) -> float:
         if 0 < hz < math.inf:
             return hz
     raise KrsError("E_BAD_FREQUENCY", text=text)
+
+
+# IEC 60063's E12 and E24 series, one decade each
+E12 = (1.0, 1.2, 1.5, 1.8, 2.2, 2.7, 3.3, 3.9, 4.7, 5.6, 6.8, 8.2)
+E24 = (1.0, 1.1, 1.2, 1.3, 1.5, 1.6, 1.8, 2.0, 2.2, 2.4, 2.7, 3.0,
+       3.3, 3.6, 3.9, 4.3, 4.7, 5.1, 5.6, 6.2, 6.8, 7.5, 8.2, 9.1)
+
+
+def snap(value: float, series: str) -> float:
+    """The `series` value ("E12" or "E24", IEC 60063) nearest to `value` (> 0) in log space, as the decimal it is
+    written as; a tie goes to the lower (Stage 2 design 5.2 item 8)."""
+    decade = math.floor(math.log10(value))
+    candidates = [float(f"{m}e{e}") for m in {"E12": E12, "E24": E24}[series] for e in range(decade - 1, decade + 2)]
+    return min(candidates, key=lambda c: (abs(math.log(c / value)), c))

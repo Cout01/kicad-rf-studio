@@ -692,3 +692,11 @@ def test_reach_and_margin_are_optional_and_enter_the_model(tmp_path):  # D-12, R
         save_project(pj, d)
         assert model_hash() != base
         del d[group][key]
+
+
+def test_new_returns_the_notes_it_prints(tmp_path, capsys):  # design 5.2 item 5
+    path, notes = cli.new(LPF, "U1.1", "J1.1", 915e6, lid_height=2.5, output=tmp_path / "a")
+    assert path == tmp_path / "a" / "project.json" and path.is_file() and notes[-1] == ("I_WROTE", {"path": path})
+    code, pj = run_new(tmp_path, "--lid-height", "2.5", out=tmp_path / "b")
+    assert code == 0 and capsys.readouterr().out.splitlines() == [
+        *(render(c, **p) for c, p in notes[:-1]), render("I_WROTE", path=pj)]

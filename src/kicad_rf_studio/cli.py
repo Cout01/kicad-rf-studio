@@ -68,41 +68,45 @@ def _reference(ref) -> dict | None:
     return {"pad": ref.pad, "uuid": ref.uuid}
 
 
-def _new(a: argparse.Namespace) -> None:
-    """Board, stackup, z-stack, classes, chain, ports, region, parts and lid, then project.json and the summary: every
-    refusal (E_STACKUP_LAYERS, E_DIELECTRIC_THICKNESS, E_CHAIN_OFF_OUTLINE among them) comes before anything is
-    written (C-44)."""
+def new(board: str | Path, start: str, end: str, f0: float, *, harmonics: int = HARMONICS,
+        preset: str = DEFAULT_PRESET, stackup: str | None = None, lid_height: float | None = None,
+        output: str | Path | None = None) -> tuple[Path, list[tuple[str, dict]]]:
+    """Board, stackup, z-stack, classes, chain, ports, region, parts and lid, then project.json: every refusal
+    (E_STACKUP_LAYERS, E_DIELECTRIC_THICKNESS, E_CHAIN_OFF_OUTLINE among them) comes before anything is written
+    (C-44). Returns project.json's path and the summary as (code, params) notes, I_WROTE last, which the `new` command
+    prints and Stage 2's GUI shows (design 5.2); prints nothing. `f0` is in Hz, `lid_height` in mm, `output`
+    project.json's folder (the working one when None) and `stackup` a stackup preset's name (None: the board's own)."""
     # imported here, as in `cost`: the CLI adds no work at import time
     from kicad_rf_studio.core.geometry.lid import find_lid
     from kicad_rf_studio.core.geometry.region import band, build_region
     from kicad_rf_studio.core.geometry.zstack import zstack
     from kicad_rf_studio.core.model.parts import project_parts
 
-    board = load_board(a.board)
-    named = a.stackup is not None  # an empty --stackup is a name too, and an unknown one
-    stackup = stackup_preset(a.stackup, board.thickness, len(board.copper_layers)) if named else board.stackup
+    board = load_board(board)
+    named = stackup is not None  # an empty --stackup is a name too, and an unknown one
+    stackup = stackup_preset(stackup, board.thickness, len(board.copper_layers)) if named else board.stackup
     if stackup is None or stackup.dielectric_thickness() <= 0:  # no stackup, or none that leaves a dielectric
         raise KrsError("E_NO_STACKUP")
     zs = zstack(stackup, board.copper_layers)
     classes = classify(board)
-    chain = trace_chain(board, a.start, a.end, classes)
+    chain = trace_chain(board, start, end, classes)
     ports = []
-    for n, signal in enumerate((a.start, a.end), 1):
+    for n, signal in enumerate((start, end), 1):
         ref = choose_reference(board, classes, signal)
         sig = next(p for p in board.pads(signal) if p.layers)  # the pad trace_chain resolved: the first with copper
         ports.append({"name": f"P{n}", "signal": signal, "signal_uuid": sig.uuid, "layer": signal_layer(board, sig),
                       "rule": ref and ref.rule, "reference": _reference(ref)})
-    f1, f2 = band({"f0_hz": a.f0, "harmonics": a.harmonics, "band_factor": BAND_FACTOR})
+    f1, f2 = band({"f0_hz": f0, "harmonics": harmonics, "band_factor": BAND_FACTOR})
     region = build_region(board, chain, ports, zs, f2, EXPAND_H)
     series, shunt, others, part_notes = project_parts(board, chain, classes, region.roi, f1, f2)
     _, gate = find_lid(board, classes, region, zs,
-                       {"harmonics": a.harmonics, "lid": None, "lid_height_mm": a.lid_height})
-    folder = Path(a.output or ".")
-    board_path, other_drive = relative_path(a.board, folder)
+                       {"harmonics": harmonics, "lid": None, "lid_height_mm": lid_height})
+    folder = Path(output or ".")
+    board_path, other_drive = relative_path(board.path, folder)
     project = make_project(
-        board_path, board_hash(a.board), a.f0, stackup, classes,
+        board_path, board_hash(board.path), f0, stackup, classes,
         {"start": chain.start, "end": chain.end, "nets": list(chain.nets), "series": series, "shunt": shunt}, others,
-        ports, harmonics=a.harmonics, preset=a.preset, lid_height_mm=a.lid_height)
+        ports, harmonics=harmonics, preset=preset, lid_height_mm=lid_height)
     target = folder / "project.json"
     try:
         if target.exists():  # it may hold the hand edits that W_NO_REFERENCE and W_LID_HEIGHT_MISSING ask for
@@ -126,22 +130,28 @@ def _new(a: argparse.Namespace) -> None:
              *map(_part_note, series + shunt + others),
              *(("I_PORT", {"name": p["name"], "signal": p["signal"], "reference": shown_reference(p["reference"]),
                            "rule": p["rule"] or "none"}) for p in ports),
-             ("I_F0", {"f0_mhz": f"{a.f0 / 1e6:g}", "harmonics": a.harmonics}),
-             ("I_DEFAULTS", {"preset": a.preset, "band_factor": BAND_FACTOR, "t_max_ns": f"{T_MAX_S * 1e9:g}",
-                             "harmonics": a.harmonics, "mesh_n": MESH_N[a.preset], "expand_h": f"{EXPAND_H:g}",
+             ("I_F0", {"f0_mhz": f"{f0 / 1e6:g}", "harmonics": harmonics}),
+             ("I_DEFAULTS", {"preset": preset, "band_factor": BAND_FACTOR, "t_max_ns": f"{T_MAX_S * 1e9:g}",
+                             "harmonics": harmonics, "mesh_n": MESH_N[preset], "expand_h": f"{EXPAND_H:g}",
                              "margin_scale": f"{MARGIN_SCALE:g}", "reach_h": f"{REACH_H:g}"}),
-             ("I_LID", {"state": "on" if a.harmonics > 1 else "off"})]
+             ("I_LID", {"state": "on" if harmonics > 1 else "off"})]
     if heavy := stackup.nonstandard_copper():
         notes.append(("W_COPPER_WEIGHT", {"layers": _list(heavy)}))
     # what `run` refuses (E_LID_HEIGHT) is a warning here: lid_height_mm can still be set in project.json
     notes += [("W_LID_HEIGHT_MISSING", params) for code, params in gate if code == "E_LID_HEIGHT"]
     notes += part_notes  # W_VALUE_UNREADABLE (DNP parts too), W_PART_OPEN
     notes += [("W_NO_REFERENCE", {"signal": p["signal"]}) for p in ports if p["reference"] is None]
-    if not 1e6 <= a.f0 <= 1e11:  # a bare --f0 915 is 915 Hz
-        notes.append(("W_F0_RANGE", {"f0_hz": f"{a.f0:g}"}))
+    if not 1e6 <= f0 <= 1e11:  # a bare --f0 915 is 915 Hz
+        notes.append(("W_F0_RANGE", {"f0_hz": f"{f0:g}"}))
     if other_drive:
         notes.append(("W_ABSOLUTE_BOARD_PATH", {}))
     notes.append(("I_WROTE", {"path": target}))
+    return target, notes
+
+
+def _new(a: argparse.Namespace) -> None:
+    _, notes = new(a.board, a.start, a.end, a.f0, harmonics=a.harmonics, preset=a.preset, stackup=a.stackup,
+                   lid_height=a.lid_height, output=a.output)
     for code, params in notes:
         print(render(code, **params))
 
