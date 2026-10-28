@@ -478,6 +478,14 @@ def test_write_outputs_writes_what_chain_results_holds(tmp_path):  # Stage 2 des
                                                                 render("I_WHAT_IF", **what_if))
 
 
+def test_chain_results_takes_the_layout_it_is_given(tmp_path, monkeypatch):  # Stage 2 design 5.3: the retune session
+    pj, project = star_project(tmp_path, 2)
+    res = pipeline.chain_results(pj, project)
+    monkeypatch.setattr(pipeline, "layout", fail)  # the session holds the layout: never read again
+    again = pipeline.chain_results(pj, project, lay=res.lay)
+    assert again.lay is res.lay and np.array_equal(again.chain, res.chain) and again.lines == res.lines
+
+
 def test_run_ports_runs_only_the_ports_it_is_given_to_their_t_max(tmp_path, calibrated):  # D-9: the harnesses' jobs
     project, board, geom, _ = load(coupon(tmp_path))
     model, run_dir = pipeline.build_model(project, board, geom), runs.run_dir_for("ports")

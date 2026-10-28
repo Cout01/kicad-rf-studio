@@ -107,3 +107,12 @@ def snap(value: float, series: str) -> float:
     decade = math.floor(math.log10(value))
     candidates = [float(f"{m}e{e}") for m in {"E12": E12, "E24": E24}[series] for e in range(decade - 1, decade + 2)]
     return min(candidates, key=lambda c: (abs(math.log(c / value)), c))
+
+
+def value_text(value: float, kind: str | None) -> str:
+    """`value` (> 0) as a part value that port_value reads back exactly: an engineering prefix from p to G, and F for a
+    C or H for an L (4.7pF, 15nH, 4.7k); how snapping writes a value back (Stage 2 design 5.3)."""
+    exp = min(max(3 * math.floor(math.log10(value) / 3 + 1e-9), -12), 9)  # the 1e-9 keeps a decade exact
+    prefix = {-12: "p", -9: "n", -6: "u", -3: "m", 0: "", 3: "k", 6: "M", 9: "G"}[exp]
+    unit = {"C": "F", "L": "H"}.get(kind, "")
+    return f"{value / 10 ** exp:g}{prefix}{unit}"

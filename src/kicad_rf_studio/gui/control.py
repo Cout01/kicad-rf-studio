@@ -1,18 +1,21 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
-"""The GUI's Qt-free logic (Stage 2 design 5.1): the detached start, the events tail, re-attach through the lock and
-the end events, and the project read off the GUI thread. Never imports Qt or matplotlib."""
+"""The GUI's Qt-free logic (Stage 2 design 5.1, 5.3): the detached start, the events tail, re-attach through the lock
+and the end events, the project read off the GUI thread, and the retune session (an update of a project read's chain
+from the parts' rows). Never imports Qt or matplotlib."""
 import json
+import math
 import os
 import subprocess
 import sys
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from functools import partial
 from pathlib import Path
 
 from kicad_rf_studio import pipeline, runs
+from kicad_rf_studio.core.kicad.values import part_kind, port_value, snap, value_text
 from kicad_rf_studio.core.messages import KrsError, detail, render
 from kicad_rf_studio.core.model import spec
-from kicad_rf_studio.core.project import board_file, load_project
+from kicad_rf_studio.core.project import board_file, load_project, parts
 
 END = {0: "G_END_DONE", 2: "G_END_REFUSED", 3: "G_END_BLOCKED", 4: "G_END_NOT_KEPT", 130: "G_END_STOPPED"}
 # the CLI's lines that the GUI words its own way, with the same params (design 5.3)
@@ -193,3 +196,83 @@ def text(code: str, params: dict) -> str:
     """The line the GUI shows for the CLI's `code` with `params`: the GUI's own words (GUI) for the five lines whose
     advice is a terminal's, else the CLI's line."""
     return render(GUI.get(code, code), **params)
+
+
+@dataclass(frozen=True)
+class Row:
+    """A part port's row in the retune session (design 5.3): its ref, its value as typed, its S2P file ("" for none)
+    and that file's connection, "series" or "shunt"."""
+    ref: str
+    value: str
+    s2p: str
+    connection: str
+
+
+SERIES = ("off", "E12", "E24")  # a row's snapping choices (design 5.3)
+
+
+def default_series(ref: str) -> str:
+    """A part's snapping until the user sets it (design 7's owner default): E24 for a C or an L, else off."""
+    return "E24" if part_kind(ref) in ("C", "L") else "off"
+
+
+def snapped(ref: str, text: str, series: str) -> str:
+    """The value text `text` of the part `ref` snapped to `series` (design 5.3): the nearest E12 or E24 value (snap)
+    written as port_value reads it (value_text). `text` unchanged when series is off, or when port_value gives None, 0
+    or a value that is not finite for it (a 400-digit value reads as inf, which snap cannot take)."""
+    value = port_value(ref, text)
+    if series == "off" or not value or not math.isfinite(value):
+        return text
+    return value_text(snap(value, series), part_kind(ref))
+
+
+def _s2p(part: dict, folder: Path) -> tuple[str, str]:
+    """The S2P file of the project.json `part`, resolved against `folder` (project.json's) as part_impedances resolves
+    it, and its connection; ("", "series") without one."""
+    s2p = part["s2p"]
+    return (str((folder / s2p["file"]).resolve()), s2p["connection"]) if s2p else ("", "series")
+
+
+def rows(project: dict, folder: Path, refs: list[str]) -> list[Row]:
+    """The rows of the part ports `refs` as `project` stores them (design 5.3): each part's value, S2P file and
+    connection (_s2p, against `folder`, project.json's)."""
+    by_ref = parts(project)
+    return [Row(ref, by_ref[ref]["value"], *_s2p(by_ref[ref], folder)) for ref in refs]
+
+
+def changed(project: dict, folder: Path, rows: list[Row]) -> list[str]:
+    """The REF=RIGHT assignments (pipeline.assign) of the `rows` that differ from `project`, in row order (design 5.3).
+    A row with a file is FILE:CONNECTION, its file resolved against `folder` (project.json's), never the working
+    directory; it changed when the part has no file, another one or another connection, whatever its value. A row
+    without one is its value as typed; it changed when the part has a file or another value text."""
+    # ponytail: a value typed as TEXT:series reads as an S2P file, as on the command line; refuse the suffix in the
+    # Value cell if it confuses users
+    by_ref, assignments = parts(project), []
+    for row in rows:
+        part = by_ref[row.ref]
+        if row.s2p:
+            file = str(Path(folder, row.s2p).resolve())
+            if (file, row.connection) != _s2p(part, folder):
+                assignments.append(f"{row.ref}={file}:{row.connection}")
+        elif part["s2p"] or row.value != part["value"]:
+            assignments.append(f"{row.ref}={row.value}")
+    return assignments
+
+
+def retuned(path: Path, project: dict, stored: pipeline.ChainResults, rows: list[Row]) -> pipeline.ChainResults:
+    """The chain results of the project file `path` (`project`, as read) with its `rows` (design 5.3, 5.4): the rows
+    that changed stored by pipeline.assign, then pipeline.chain_results with errors as lines on the layout `stored`
+    holds, the CLI's own functions in retune's order, so its numbers and lines are retune's. Any exception on the way
+    gives `stored` with no chain and no what-if, its lines that one line: a KrsError's (assign's refusal,
+    E_S_SINGULAR), else E_INTERNAL. Writes nothing and never raises, so no stale curve stays on screen."""
+    # ponytail: each S2P file is read again on every update, on the GUI thread (about 2, 5 and 19 ms per file of 401,
+    # 1601 and 6401 points on lpf915; a file on a slow network share stalls it); cache by (file, mtime_ns), or read on
+    # the pool, when several large files pass 50 ms
+    try:
+        new = pipeline.assign(project, changed(project, path.parent, rows), path.parent)
+        return pipeline.chain_results(path, new, errors_as_lines=True, lay=stored.lay)
+    except KrsError as e:
+        line = (e.code, e.params)
+    except Exception as e:  # E_INTERNAL, as cli.main reports it
+        line = ("E_INTERNAL", {"detail": detail(e)})
+    return replace(stored, chain=None, ideal=None, p_layout=None, what_if=False, lines=[line])

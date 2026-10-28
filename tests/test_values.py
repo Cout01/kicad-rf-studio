@@ -3,7 +3,8 @@ import time
 
 import pytest
 
-from kicad_rf_studio.core.kicad.values import E12, E24, parse_frequency, parse_value, part_kind, part_value, snap
+from kicad_rf_studio.core.kicad.values import (E12, E24, parse_frequency, parse_value, part_kind, part_value,
+                                               port_value, snap, value_text)
 from kicad_rf_studio.core.messages import KrsError
 
 
@@ -195,3 +196,17 @@ def test_part_kind():
 def test_snap_takes_the_nearest_iec_60063_value_in_log_space(value, series, snapped):  # design 5.2 item 8
     assert snap(value, series) == snapped
     assert (len(E12), len(E24)) == (12, 24) and set(E12) <= set(E24)
+
+
+@pytest.mark.parametrize(("value", "kind", "text"), [
+    (4.7e-12, "C", "4.7pF"), (15e-9, "L", "15nH"), (100e-12, "C", "100pF"), (5.1e-9, "C", "5.1nF"),
+    (1e-6, "C", "1uF"), (4700.0, "R", "4.7k"), (47.0, "R", "47"), (0.091, "R", "91m"), (1e-13, "C", "0.1pF")])
+def test_value_text_writes_a_value_as_a_part_value(value, kind, text):  # Stage 2 design 5.3: snapping writes it back
+    assert value_text(value, kind) == text
+
+
+def test_port_value_reads_back_every_e_series_value_value_text_writes():  # no floor-of-log10 edge at a decade
+    for m in E24:  # E12 is a part of E24
+        for e in range(-13, 10):
+            v = float(f"{m}e{e}")
+            assert [port_value(ref, value_text(v, ref[0])) for ref in ("C1", "L1", "R1")] == [v, v, v]

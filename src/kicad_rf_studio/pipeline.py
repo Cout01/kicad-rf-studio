@@ -433,15 +433,17 @@ class ChainResults:
     lines: list[tuple[str, dict]]
 
 
-def chain_results(path: Path, project: dict, *, errors_as_lines: bool = False) -> ChainResults:
+def chain_results(path: Path, project: dict, *, errors_as_lines: bool = False,
+                  lay: Layout | None = None) -> ChainResults:
     """The numbers and lines that write_outputs writes and reports for the run in `project`'s results, with no file
     written (Stage 2 design 5.2 item 7): the layout N-port (layout), I_BASIS with each flagged job, gate_lines, the part
     notes (part_impedances, S2P files beside `path`), the chain with every part port closed; with P = 2 the ideal
     schematic, the loss budget, the marker and indicator lines, else the indicator lines and W_NOT_TWO_PORT (C-31). A
     part's refusal (E_PART_NO_VALUE, E_S2P_*, E_CBOX) is raised, or, with `errors_as_lines`, becomes the last line, with
-    no chain. Raises layout's refusals and E_S_SINGULAR."""
+    no chain. A given `lay` stands in for the layout N-port, which depends only on the run, never on the part values
+    (the GUI's retune session holds it, Stage 2 design 5.3). Raises layout's refusals and E_S_SINGULAR."""
     results = project["results"]
-    lay = layout(project, results)
+    lay = layout(project, results) if lay is None else lay
     ext, refs = _split(lay)
     count = Counter(job["verdict"] for job in results["jobs"])
     end = {"flat": "t_cut", "t_max": "t_stop"}  # where a flagged job's S ends: its cut, or its last sample

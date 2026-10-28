@@ -1,23 +1,32 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
-"""The GUI's Qt-free logic (Stage 2 design 5.1, 5.8): the detached start, the events tail, re-attach through the lock
-and the end events, and the project read off the GUI thread. Detached runs go through tests/fake_cli.py."""
+"""The GUI's Qt-free logic (Stage 2 design 5.1, 5.3, 5.8): the detached start, the events tail, re-attach through the
+lock and the end events, the project read off the GUI thread, and the retune session. Detached runs go through
+tests/fake_cli.py."""
 import json
 import subprocess
 import sys
 import time
+from dataclasses import replace
 from pathlib import Path
 from types import SimpleNamespace
 
+import numpy as np
 import pytest
+import skrf as rf
 
 from kicad_rf_studio import pipeline, runs
 from kicad_rf_studio.cli import main
 from kicad_rf_studio.core.messages import render
 from kicad_rf_studio.core.model.spec import spec_hash
-from kicad_rf_studio.core.project import board_file, load_project, save_project
+from kicad_rf_studio.core.post.waves import grid
+from kicad_rf_studio.core.project import board_file, load_project, parts, save_project
 from kicad_rf_studio.gui import control
+from networks import star, terminate_np
 from test_cli_cost import new_project
+from test_post_chain import M0402, lpf
+from test_run import lpf_loads, lpf_run
 
+F, _ = grid(915e6, 3, 1.1)
 FAKE_CLI = Path(__file__).with_name("fake_cli.py")
 FAKE_PREFIX = [sys.executable, "-X", "utf8", "-I", str(FAKE_CLI)]
 
@@ -180,3 +189,61 @@ def test_a_run_going_on_is_found_through_its_lock_and_stops_by_its_stop_file(tmp
         proc.wait()
     assert control.last_event(d)["params"] == {"exit_code": 4, "command": "run", "project": str(pj)}  # not kept
     assert [f for f, _ in control.ended(pj)] == [d] and (d / "cli.log").is_file() and runs.lock_holder(pj) is None
+
+
+@pytest.mark.parametrize(("ref", "text", "series", "shown"), [
+    ("C2", "5pF", "E24", "5.1pF"), ("C2", "5pF", "E12", "4.7pF"), ("C2", "5pF", "off", "5pF"),
+    ("L1", "4.0nH", "E24", "3.9nH"), ("C2", "4p7", "E24", "4.7pF"), ("C2", "3,9pF", "off", "3,9pF"),
+    ("C2", "abc", "E24", "abc"), ("C2", "0", "E24", "0"), ("R1", "0R", "E24", "0R"),
+    ("C2", "9" * 400 + "pF", "E24", "9" * 400 + "pF")])  # reads as inf, which snap cannot take
+def test_snapping_writes_back_the_nearest_value_as_port_value_reads_it(ref, text, series, shown):  # design 5.3, 7
+    assert control.snapped(ref, text, series) == shown
+    assert [control.default_series(r) for r in ("C2", "L1", "R1", "FB1")] == ["E24", "E24", "off", "off"]
+    assert control.SERIES == ("off", "E12", "E24")
+
+
+def test_the_rows_and_the_assignments_of_the_changed_ones(tmp_path):  # design 5.3: free text, or an S2P file
+    project, folder, refs = lpf(), tmp_path / "lpf915", ["C1", "L1", "C2", "C3"]  # lpf(): a copy, never the cache
+    parts(project)["L1"]["s2p"] = {"file": "../parts/l1.s2p", "connection": "series"}
+    rows = control.rows(project, folder, refs)
+    l1 = str((tmp_path / "parts" / "l1.s2p").resolve())
+    assert rows == [control.Row("C1", "100pF", "", "series"), control.Row("L1", "15nH", l1, "series"),
+                    control.Row("C2", "3.3pF", "", "series"), control.Row("C3", "3.3pF", "", "series")]
+    assert control.changed(project, folder, rows) == []
+    edited = [rows[0], replace(rows[1], connection="shunt"), replace(rows[2], value="4p7"),
+              replace(rows[3], s2p="c3.s2p")]  # a file named from the project's folder, never the working one
+    assert control.changed(project, folder, edited) == [
+        f"L1={l1}:shunt", "C2=4p7", f"C3={(folder / 'c3.s2p').resolve()}:series"]
+    assert control.changed(project, folder, [replace(rows[1], s2p="")]) == ["L1=15nH"]  # a value clears the file
+
+
+def test_the_retune_session_gives_retunes_own_numbers_in_milliseconds_and_writes_nothing(
+        tmp_path, calibrated, monkeypatch):  # design 5.1, 5.3, 5.4; Review Focus 1, 2
+    pj = lpf_run(tmp_path, monkeypatch).resolve()  # tests/test_run.py: lpf915 on the star network fake
+    opened = control.open_project(pj)
+    rows = control.rows(opened.project, pj.parent, opened.results.refs)
+    rows[2] = replace(rows[2], value="4.7pF")
+    before = {p: p.stat().st_mtime_ns for p in (pj, *(pj.parent / "results").iterdir())}
+    timings = []
+    for _ in range(5):
+        start = time.perf_counter()
+        res = control.retuned(pj, opened.project, opened.results, rows)
+        timings.append(time.perf_counter() - start)
+    assert min(timings) < 0.05  # the GUI thread's budget (design goal 4); about 5 ms measured on lpf915
+    assert {p: p.stat().st_mtime_ns for p in before} == before  # nothing written: Apply writes
+    assert res.what_if and res.lay is opened.results.lay
+    oracle = terminate_np(star(F, 6), [0, 1], lpf_loads(M0402, C2=4.7e-12))
+    assert np.abs(res.chain - oracle).max() <= 1e-5  # the network the fake ran (tests/networks.py)
+    three = tmp_path / "x.s3p"
+    rf.Network(frequency=rf.Frequency.from_f(F, unit="Hz"), s=star(F, 3), z0=50).write_touchstone(str(three))
+    wrong = control.retuned(pj, opened.project, opened.results, [replace(rows[1], s2p=str(three))])
+    assert wrong.chain is None and wrong.lines[-1] == ("E_S2P_PORTS", {"ref": "L1", "path": str(three.resolve()),
+                                                                        "ports": 3})
+    bad = control.retuned(pj, opened.project, opened.results, [replace(rows[2], value="15nH")])
+    assert (bad.chain, bad.what_if, bad.lines) == (None, False, [("E_RETUNE_VALUE", {"ref": "C2", "value": "15nH"})])
+    assert main(["retune", str(pj), "C2=4.7pF"]) == 0
+    stored = pipeline.chain_results(pj, load_project(pj))
+    assert np.array_equal(res.chain, stored.chain) and res.lines == stored.lines  # retune's own numbers and lines
+    monkeypatch.setattr(pipeline, "chain_results", lambda *a, **k: 1 / 0)  # any other failure: a line, never a raise
+    assert control.retuned(pj, opened.project, opened.results, rows).lines == [
+        ("E_INTERNAL", {"detail": "ZeroDivisionError: division by zero"})]
