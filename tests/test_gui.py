@@ -312,6 +312,19 @@ def test_a_cost_that_ends_under_another_runs_lock_shows_its_end_before_the_attac
     lock.unlink()
 
 
+def test_a_lock_that_appears_just_before_a_click_keeps_the_new_watch(window, tmp_path):  # design 5.1, 5.3
+    pj = new_project(tmp_path, "coupon_gcpw_pads", preset="draft").resolve()  # final review F12
+    w = window()
+    w.open_project(pj)
+    opened(w)
+    assert w.cost_button.isEnabled()  # no lock
+    lock, other = runs.lock_file(pj), tmp_path / "other run"
+    lock.write_text(json.dumps({"pid": os.getpid(), "run_dir": str(other), "started": "S"}), encoding="utf-8")
+    w.cost_button.click()  # no tick since the lock appeared: the click's own tick is the first to read it
+    assert w.command == "cost" and w.proc is not None and w.run_dir != other
+    lock.unlink()
+
+
 def test_results_show_the_chain_under_the_what_if_label_and_go_when_stale(window, tmp_path, monkeypatch):
     pj = lpf_run(tmp_path, monkeypatch).resolve()  # tests/test_run.py: lpf915 on the network fake; Review Focus 5
     w = window()
