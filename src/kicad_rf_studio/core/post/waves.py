@@ -89,7 +89,8 @@ def layout(project: dict, results: dict, f: np.ndarray | None = None) -> Layout:
     jobs, run_dir = results["jobs"], Path(results["run_dir"])
     for job in jobs:
         if job["verdict"] not in KEPT:
-            raise KrsError("E_RESULTS_JOB", port=job["port"], verdict=job["verdict"])
+            # ponytail: the term by name; test_post_waves requires one for each verdict whose S is not kept
+            raise KrsError("E_RESULTS_JOB", port=job["port"], verdict="T_" + job["verdict"].upper())
     paths = [run_dir / "model.json", *(run_dir / job["waves"] if job["waves"] else run_dir for job in jobs)]
     for path in paths:
         if not path.is_file():

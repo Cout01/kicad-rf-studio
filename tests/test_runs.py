@@ -81,6 +81,14 @@ def test_the_version_check_reads_metadata_in_an_isolated_subprocess(monkeypatch,
     assert seen[0][:3] == [sys.executable, "-I", "-c"] and "import openEMS" not in seen[0][3]  # no DLL load
 
 
+@pytest.mark.parametrize(("windows", "code", "text"), [
+    (True, "T_INSTALL_WINDOWS", "kicad-rf-studio setup-openems <openEMS folder>"),
+    (False, "T_INSTALL_LINUX", "update_openEMS.sh <prefix> --python with this venv active (see README)")])
+def test_the_install_hint_is_a_term_and_reads_as_before(monkeypatch, windows, code, text):  # pt-BR design 5.1
+    monkeypatch.setattr(runs, "WINDOWS", windows)
+    assert runs.install_command() == code and render(code) == text
+
+
 @pytest.mark.parametrize(("windows", "env", "expected"), [
     (True, {"LOCALAPPDATA": "/x/Local"}, "/x/Local/kicad-rf-studio"),
     (False, {"XDG_DATA_HOME": "/x/share"}, "/x/share/kicad-rf-studio"),

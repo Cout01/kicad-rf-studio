@@ -111,7 +111,7 @@ def test_remesh_failure_blocks(monkeypatch):
     monkeypatch.setattr(gates, "build_mesh", always_puts_a_line_on_the_edge)
     with pytest.raises(KrsError) as e:  # Task 2 ruling: str(KrsError) is the message, so check .code, not match=
         mesh_with_lint(geom, prot, 2)
-    assert (e.value.code, e.value.params) == ("E_EDGE_LINT", {"axis": "x", "edge_mm": edge, "reason": "on edge",
+    assert (e.value.code, e.value.params) == ("E_EDGE_LINT", {"axis": "x", "edge_mm": edge, "reason": "T_ON_EDGE",
                                                               "n": 2})
     assert str(e.value) == render("E_EDGE_LINT", axis="x", edge_mm=edge, reason="on edge", n=2)
 
@@ -360,4 +360,4 @@ def test_the_edge_lint_names_a_y_edge_in_kicads_frame(monkeypatch):  # C-43, L-4
     with pytest.raises(KrsError) as e:
         mesh_with_lint(None, None, 2)
     assert (e.value.code, e.value.params) == ("E_EDGE_LINT", {"axis": "y", "edge_mm": 100.4505,
-                                                              "reason": "on edge", "n": 2})
+                                                              "reason": "T_ON_EDGE", "n": 2})

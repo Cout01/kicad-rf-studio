@@ -16,8 +16,10 @@ from kicad_rf_studio.core.project import load_project, save_project
 from test_cli_cost import new_project
 
 
-def events(run_dir):
-    return [json.loads(line) for line in (run_dir / "events.jsonl").read_text(encoding="utf-8").splitlines()]
+def events(run_dir, **match):
+    """The events of `run_dir` whose fields equal `match` (all of them without one), in order."""
+    lines = (run_dir / "events.jsonl").read_text(encoding="utf-8").splitlines()
+    return [e for e in map(json.loads, lines) if all(e[k] == v for k, v in match.items())]
 
 
 def test_python_m_runs_the_cli(tmp_path):  # design 5.2 item 1
@@ -141,3 +143,17 @@ def test_the_first_use_calibrates_inside_the_run_folder_under_its_stop(tmp_path,
         assert main([command, str(pj), "--run-dir", str(s)]) == 130
         assert [e["code"] for e in events(s)][-2:] == ["I_CALIBRATING", "I_END"]
         assert (s / "calibrate" / "model.json").is_file() and "machines" not in runs.load_settings()
+
+
+def test_a_word_parameter_stays_a_code_in_the_event_and_reads_as_its_term(tmp_path, capsys, fake, monkeypatch):
+    # pt-BR design 5.1 and Stage 1 3.3: a fresh machine's calibration cannot load openEMS
+    monkeypatch.setenv("KRS_FAKE_EXIT", "2")
+    monkeypatch.delenv("CSXCAD_INSTALL_PATH", raising=False)
+    pj, run_dir = new_project(tmp_path, "coupon_gcpw_pads", preset="draft"), tmp_path / "r"
+    capsys.readouterr()
+    assert main(["cost", str(pj), "--run-dir", str(run_dir)]) == 2
+    (message,) = events(run_dir, code="E_OPENEMS_DLL")
+    assert (message["kind"], message["params"]) == ("message", {"value": "T_UNSET",
+                                                                "command": runs.install_command()})
+    err = capsys.readouterr().err
+    assert render("E_OPENEMS_DLL", **message["params"]) + "\n" in err and "T_" not in err

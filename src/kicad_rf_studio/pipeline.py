@@ -142,7 +142,8 @@ def port_gates(ports: list[dict], roots: list[list[int]]) -> list[tuple[str, dic
     for port, r in zip(ports, roots):
         rc, sc, rw, sw = r if len(r) == 4 else [*r, *r]  # a CurvePort's ends stand for their own caps
         notes += [("E_PORT_OPEN", {"name": port["name"], "end": end})
-                  for end, cap, witness in (("reference", rc, rw), ("signal", sc, sw)) if not (cap == witness >= 0)]
+                  for end, cap, witness in (("T_END_REFERENCE", rc, rw), ("T_END_SIGNAL", sc, sw))
+                  if not (cap == witness >= 0)]
         if rw == sw >= 0:
             notes.append(("E_PORT_SHORT", {"name": port["name"]}))
     return notes

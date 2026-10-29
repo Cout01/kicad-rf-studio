@@ -506,7 +506,7 @@ HATCHED_ZONE = ('(zone (net 0) (net_name "") (layer "F.Cu") (uuid "h1") (fill ye
 
 
 def test_hatched_fill_warns(mini_board):
-    assert any(c == "W_COPPER_DROPPED" and p["kind"] == "hatched zone" for c, p in mini_board(HATCHED_ZONE).warnings)
+    assert any(c == "W_COPPER_DROPPED" and p["kind"] == "T_HATCHED_ZONE" for c, p in mini_board(HATCHED_ZONE).warnings)
 
 
 def test_an_unfilled_hatched_zone_warns_as_a_solid_one_does(mini_board):

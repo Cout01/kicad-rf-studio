@@ -37,10 +37,10 @@ def test_cost_notes_follow_the_cost_model():  # spec 6.4
 
 @pytest.mark.parametrize(("roots", "notes"), [
     ([[1, 2, 1, 2]], []), ([[1, 1, 1, 1]], [("E_PORT_SHORT", {"name": "P1"})]),
-    ([[1, 2, 3, 2]], [("E_PORT_OPEN", {"name": "P1", "end": "reference"})]),
-    ([[1, -1, 1, 2]], [("E_PORT_OPEN", {"name": "P1", "end": "signal"})]),
+    ([[1, 2, 3, 2]], [("E_PORT_OPEN", {"name": "P1", "end": "T_END_REFERENCE"})]),
+    ([[1, -1, 1, 2]], [("E_PORT_OPEN", {"name": "P1", "end": "T_END_SIGNAL"})]),
     ([[4, 9]], []), ([[4, 4]], [("E_PORT_SHORT", {"name": "P1"})]),  # a CurvePort has no caps
-    ([[-1, 9]], [("E_PORT_OPEN", {"name": "P1", "end": "reference"})])])
+    ([[-1, 9]], [("E_PORT_OPEN", {"name": "P1", "end": "T_END_REFERENCE"})])])
 def test_port_gates(roots, notes):  # C-15
     assert port_gates([{"name": "P1"}], roots) == notes
 
@@ -62,5 +62,7 @@ def test_the_driver_names_a_cell_under_d_over_3_else_the_runs_else_the_cell_coun
 
 def test_two_open_ends_are_no_short():  # pec_roots gives -1 for every node no PEC edge touches
     assert port_gates([{"name": "P1"}, {"name": "P2"}], [[-1, -1, -1, -1], [-1, -1]]) == [
-        ("E_PORT_OPEN", {"name": "P1", "end": "reference"}), ("E_PORT_OPEN", {"name": "P1", "end": "signal"}),
-        ("E_PORT_OPEN", {"name": "P2", "end": "reference"}), ("E_PORT_OPEN", {"name": "P2", "end": "signal"})]
+        ("E_PORT_OPEN", {"name": "P1", "end": "T_END_REFERENCE"}),
+        ("E_PORT_OPEN", {"name": "P1", "end": "T_END_SIGNAL"}),
+        ("E_PORT_OPEN", {"name": "P2", "end": "T_END_REFERENCE"}),
+        ("E_PORT_OPEN", {"name": "P2", "end": "T_END_SIGNAL"})]

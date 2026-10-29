@@ -191,7 +191,8 @@ def _zone(b: Board, node: list, table: dict[str, str]) -> None:
     if atom(child(node, "fill") or [], "mode") == "hatch":
         for fill in fills:
             if _text(fill, "layer") in b.copper_layers:
-                b.warnings.append(("W_COPPER_DROPPED", {"kind": "hatched zone", "layer": _text(fill, "layer"), "uuid": uuid}))
+                b.warnings.append(("W_COPPER_DROPPED", {"kind": "T_HATCHED_ZONE", "layer": _text(fill, "layer"),
+                                                        "uuid": uuid}))
         return
     for fill in fills:
         layer = _text(fill, "layer")

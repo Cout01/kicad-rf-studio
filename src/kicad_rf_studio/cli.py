@@ -28,8 +28,7 @@ from kicad_rf_studio.core.kicad.tracer import signal_layer
 from kicad_rf_studio.core.kicad.values import parse_frequency
 from kicad_rf_studio.core.messages import KrsError, detail, reason, render
 from kicad_rf_studio.core.project import (BAND_FACTOR, DEFAULT_PRESET, EXPAND_H, HARMONICS, MARGIN_SCALE, MESH_N,
-                                          REACH_H, T_MAX_S, board_hash, make_project, relative_path, save_project,
-                                          shown_reference)
+                                          REACH_H, T_MAX_S, board_hash, make_project, relative_path, save_project)
 
 PRESETS = ("draft", "normal", "strict")  # the run presets; `--stackup` names a stackup preset, which is another thing
 
@@ -49,6 +48,18 @@ def _list(names) -> str:
     return ", ".join(names) or "T_NONE"
 
 
+def _stackup_note(stackup) -> tuple[str, dict]:
+    """The stackup as `new` prints it: I_STACKUP, or I_STACKUP_NO_MASK without a mask; the board's own as
+    T_SOURCE_BOARD (project.json keeps "board")."""
+    dielectric = next(x for x in stackup.layers if x.kind == "dielectric")  # there is one: its thickness is above 0
+    mask = next((x for x in stackup.layers if x.kind == "mask"), None)  # the top one; a stackup may have none
+    shown = {"source": "T_SOURCE_BOARD" if stackup.source == "board" else stackup.source,
+             "thickness_mm": f"{stackup.dielectric_thickness():g}", "epsilon_r": dielectric.epsilon_r}
+    if mask is None:
+        return "I_STACKUP_NO_MASK", shown
+    return "I_STACKUP", {**shown, "mask_mm": f"{mask.thickness:g}", "mask_epsilon_r": mask.epsilon_r}
+
+
 def _part_note(part: dict) -> tuple[str, dict]:
     """A part as I_PART prints it, or I_PART_NO_MODEL for one with no package preset."""
     named, model = {"ref": part["ref"], "value": part["value"], "role": part["role"]}, part["model"]
@@ -56,6 +67,18 @@ def _part_note(part: dict) -> tuple[str, dict]:
         return "I_PART_NO_MODEL", named
     return "I_PART", {**named, "package": model["package"], "esl_nh": f"{model['esl_h'] * 1e9:g}",
                       "esr_ohm": f"{model['esr_ohm']:g}"}
+
+
+def _port_note(port: dict) -> tuple[str, dict]:
+    """A port as `new` prints it: I_PORT with a pad reference, I_PORT_POINT with a point on a layer (KiCad's frame, as
+    stored; x and y as f"{v:.3f}"), I_PORT_NO_REFERENCE with none (a port with no reference has no rule)."""
+    named, ref = {"name": port["name"], "signal": port["signal"]}, port["reference"]
+    if ref is None:
+        return "I_PORT_NO_REFERENCE", named
+    if "pad" in ref:
+        return "I_PORT", {**named, "reference": ref["pad"], "rule": port["rule"]}
+    x, y = ref["point"]
+    return "I_PORT_POINT", {**named, "x": f"{x:.3f}", "y": f"{y:.3f}", "layer": ref["layer"], "rule": port["rule"]}
 
 
 def _reference(ref) -> dict | None:
@@ -118,24 +141,18 @@ def new(board: str | Path, start: str, end: str, f0: float, *, harmonics: int = 
         raise KrsError("E_OUTPUT_PATH", path=str(e.filename or target), reason=reason(e, "T_CANNOT_WRITE")) from None
 
     c = project["classes"]
-    dielectric = next(x for x in stackup.layers if x.kind == "dielectric")  # there is one: its thickness is above 0
-    mask = next((x for x in stackup.layers if x.kind == "mask"), None)  # the top one; a stackup may have none
-    notes = [*board.warnings, ("W_FILLS_AS_SAVED", {}),
-             ("I_STACKUP", {"source": stackup.source, "thickness_mm": f"{stackup.dielectric_thickness():g}",
-                            "epsilon_r": dielectric.epsilon_r, "mask_mm": f"{mask.thickness:g}" if mask else "none",
-                            "mask_epsilon_r": mask.epsilon_r if mask else "none"}),
+    notes = [*board.warnings, ("W_FILLS_AS_SAVED", {}), _stackup_note(stackup),
              ("I_CLASSES", {"gnd": _list(c["gnd_nets"]), "power": _list(c["power_nets"]),
                             "connectors": _list(c["connectors"]), "shields": _list(c["shields"])}),
              ("I_CHAIN", {"start": chain.start, "end": chain.end, "series": _list(p.ref for p in chain.series),
                           "shunt": _list(p.ref for p in chain.shunt)}),
              *map(_part_note, series + shunt + others),
-             *(("I_PORT", {"name": p["name"], "signal": p["signal"], "reference": shown_reference(p["reference"]),
-                           "rule": p["rule"] or "none"}) for p in ports),
+             *map(_port_note, ports),
              ("I_F0", {"f0_mhz": f"{f0 / 1e6:g}", "harmonics": harmonics}),
              ("I_DEFAULTS", {"preset": preset, "band_factor": BAND_FACTOR, "t_max_ns": f"{T_MAX_S * 1e9:g}",
                              "harmonics": harmonics, "mesh_n": MESH_N[preset], "expand_h": f"{EXPAND_H:g}",
                              "margin_scale": f"{MARGIN_SCALE:g}", "reach_h": f"{REACH_H:g}"}),
-             ("I_LID", {"state": "on" if harmonics > 1 else "off"})]
+             ("I_LID_ON" if harmonics > 1 else "I_LID_OFF", {})]
     if heavy := stackup.nonstandard_copper():
         notes.append(("W_COPPER_WEIGHT", {"layers": _list(heavy)}))
     # what `run` refuses (E_LID_HEIGHT) is a warning here: lid_height_mm can still be set in project.json

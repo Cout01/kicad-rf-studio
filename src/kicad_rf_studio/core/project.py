@@ -66,8 +66,8 @@ def parts(data: dict) -> dict[str, dict]:
 
 
 def shown_reference(ref: dict | None) -> str:
-    """A port's stored reference as I_PORT and the port map show it: the pad's name, the point on its layer (KiCad's
-    frame, as stored), or "none"."""
+    """A port's stored reference as the port map shows it: the pad's name, the point on its layer (KiCad's frame, as
+    stored), or "none"."""
     if ref is None:
         return "none"
     if "pad" in ref:
@@ -159,47 +159,45 @@ def _reference(v) -> bool:
             and isinstance(v.get("layer"), str))
 
 
-# What check_project requires, in the file's order. A (test, text) pair is a field and the text says what it must be;
-# a dict is an object with those fields; a (dict, text) pair is a list of such objects.
-_TEXT = (lambda v: isinstance(v, str), "text")
-_ABOVE_0 = (lambda v: _number(v) and v > 0, "a number above 0")
-_OPTIONAL_ABOVE_0 = (lambda v: v is _MISSING or _number(v) and v > 0, "a number above 0")  # missing reads the default
-_FLAG = (lambda v: isinstance(v, bool), "true or false")
-_TWO_NAMES = (lambda v: _names(v) and len(v) == 2, "two names")
-_CLASS = (lambda v: v is None or _names(v), "a list of names, or null (computed from the board)")
+# What check_project requires, in the file's order. A (test, expected) pair is a field and `expected`, a T_EXPECT_ code,
+# says what it must be; a dict is an object with those fields; a (dict, expected) pair is a list of such objects.
+_TEXT = (lambda v: isinstance(v, str), "T_EXPECT_TEXT")
+_ABOVE_0 = (lambda v: _number(v) and v > 0, "T_EXPECT_ABOVE_0")
+_OPTIONAL_ABOVE_0 = (lambda v: v is _MISSING or _number(v) and v > 0, "T_EXPECT_ABOVE_0")  # missing reads the default
+_FLAG = (lambda v: isinstance(v, bool), "T_EXPECT_FLAG")
+_TWO_NAMES = (lambda v: _names(v) and len(v) == 2, "T_EXPECT_TWO_NAMES")
+_CLASS = (lambda v: v is None or _names(v), "T_EXPECT_CLASS")
 _PARTS = ({"ref": _TEXT, "pads": _TWO_NAMES, "nets": _TWO_NAMES, "value": _TEXT, "dnp": _FLAG,
-           "role": (lambda v: v in ROLES, "port, copper, open, grid or curve_port"),
-           "model": (_model, "null, or package (text) with esl_h, esr_ohm and cp_f (numbers of 0 or more)"),
+           "role": (lambda v: v in ROLES, "T_EXPECT_ROLE"),
+           "model": (_model, "T_EXPECT_MODEL"),
            "s2p": (lambda v: v is None or (isinstance(v, dict) and isinstance(v.get("file"), str)
                                            and v.get("connection") in ("series", "shunt")),
-                   "null, or file (text) and connection (series or shunt)")},
-          "a list of parts")
+                   "T_EXPECT_S2P")},
+          "T_EXPECT_PARTS")
 _FIELDS = {
     "board": {"path": _TEXT, "sha256": _TEXT},
     "f0_hz": _ABOVE_0,
-    "harmonics": (lambda v: type(v) is int and v > 0, "a whole number above 0"),  # not isinstance: 3.0 and True fail
-    "preset": (lambda v: v in tuple(MESH_N), "draft, normal or strict"),  # in a dict, a list would raise TypeError
+    "harmonics": (lambda v: type(v) is int and v > 0, "T_EXPECT_WHOLE_ABOVE_0"),  # not isinstance: 3.0 and True fail
+    "preset": (lambda v: v in tuple(MESH_N), "T_EXPECT_PRESET"),  # in a dict, a list would raise TypeError
     "band_factor": _ABOVE_0,
     "t_max_s": _ABOVE_0,
     "region": {"expand_h": _ABOVE_0, "margin_scale": _OPTIONAL_ABOVE_0},
-    "mesh": {"n": (lambda v: type(v) is int and v >= 2, "a whole number of 2 or more"), "reach_h": _OPTIONAL_ABOVE_0},
+    "mesh": {"n": (lambda v: type(v) is int and v >= 2, "T_EXPECT_MESH_N"), "reach_h": _OPTIONAL_ABOVE_0},
     "stackup": {"source": _TEXT, "layers": ({
-        "name": _TEXT, "kind": (lambda v: v in ("mask", "copper", "dielectric"), "mask, copper or dielectric"),
-        "thickness_mm": (lambda v: _number(v) and v >= 0, "a number of 0 or more"),
-        "epsilon_r": (lambda v: v is None or _number(v) and v > 0, "a number above 0, or null"),
-        "loss_tangent": (lambda v: v is None or _number(v) and v >= 0, "a number of 0 or more, or null")},
-        "a list of layers")},
-    "lid_height_mm": (lambda v: v is None or _number(v) and v > 0,
-                      'a number above 0, or null ("lid": false leaves the lid out)'),
-    "lid": (lambda v: v is None or isinstance(v, bool), "true, false or null"),
+        "name": _TEXT, "kind": (lambda v: v in ("mask", "copper", "dielectric"), "T_EXPECT_KIND"),
+        "thickness_mm": (lambda v: _number(v) and v >= 0, "T_EXPECT_0_OR_MORE"),
+        "epsilon_r": (lambda v: v is None or _number(v) and v > 0, "T_EXPECT_ABOVE_0_OR_NULL"),
+        "loss_tangent": (lambda v: v is None or _number(v) and v >= 0, "T_EXPECT_0_OR_MORE_OR_NULL")},
+        "T_EXPECT_LAYERS")},
+    "lid_height_mm": (lambda v: v is None or _number(v) and v > 0, "T_EXPECT_LID_HEIGHT"),
+    "lid": (lambda v: v is None or isinstance(v, bool), "T_EXPECT_LID"),
     "classes": dict.fromkeys(("gnd_nets", "power_nets", "connectors", "shields"), _CLASS),
-    "chain": {"start": _TEXT, "end": _TEXT, "nets": (_names, "a list of names"), "series": _PARTS, "shunt": _PARTS},
+    "chain": {"start": _TEXT, "end": _TEXT, "nets": (_names, "T_EXPECT_NAMES"), "series": _PARTS, "shunt": _PARTS},
     "others": _PARTS,
     "ports": ({"name": _TEXT, "signal": _TEXT, "signal_uuid": _TEXT, "layer": _TEXT,
-               "rule": (lambda v: v in (None, "connector", "ic", "copper"), "connector, ic, copper or null"),
-               "reference": (_reference, "a pad, a point or null")}, "a list of ports"),
-    "gates": {"fit2d_limit": _ABOVE_0, "dt_floor": (lambda v: _number(v) and 0 < v <= 1,
-                                                    "a number above 0 and at most 1")},
+               "rule": (lambda v: v in (None, "connector", "ic", "copper"), "T_EXPECT_RULE"),
+               "reference": (_reference, "T_EXPECT_REFERENCE")}, "T_EXPECT_PORTS"),
+    "gates": {"fit2d_limit": _ABOVE_0, "dt_floor": (lambda v: _number(v) and 0 < v <= 1, "T_EXPECT_DT_FLOOR")},
     "allow_curve_port": _FLAG}
 _MISSING = object()  # a key that is not there, which only an optional field accepts (null is a value)
 
@@ -208,7 +206,7 @@ def _check(value, spec, field: str, path: Path) -> None:
     """Raises E_PROJECT_FIELD for the first field of `value` that `spec` (_FIELDS or a part of it) refuses."""
     if isinstance(spec, dict):  # an object with these fields
         if not isinstance(value, dict):
-            raise KrsError("E_PROJECT_FIELD", path=str(path), field=field, expected="an object")
+            raise KrsError("E_PROJECT_FIELD", path=str(path), field=field, expected="T_EXPECT_OBJECT")
         for key, sub in spec.items():
             _check(value.get(key, _MISSING), sub, f"{field}.{key}" if field else key, path)
         return
@@ -227,7 +225,7 @@ def check_project(data: dict, path: Path) -> dict:
     optional, and an object."""
     _check(data, _FIELDS, "", path)
     if not isinstance(data.get("results", {}), dict):
-        raise KrsError("E_PROJECT_FIELD", path=str(path), field="results", expected="an object")
+        raise KrsError("E_PROJECT_FIELD", path=str(path), field="results", expected="T_EXPECT_OBJECT")
     return data
 
 

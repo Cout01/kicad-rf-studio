@@ -52,15 +52,16 @@ def edge_lint(mesh: Mesh) -> list[LintHit]:
 def mesh_with_lint(geom: Geometry, prot: Protected, n: int) -> Mesh:
     """build_mesh's mesh, linted; on a failure rebuilt once (spec 5.5) with the failing edges as `extra_edges`, which
     keep their own pattern. Raises E_EDGE_LINT with `n`, naming the first edge that still fails (a neighbour may fail
-    instead after the re-mesh, T10) as KiCad shows it: y down, and the reason in words ("on edge")."""
+    instead after the re-mesh, T10) as KiCad shows it: y down, and the reason in words (T_ON_EDGE)."""
     mesh = build_mesh(geom, prot, n)
     if hits := edge_lint(mesh):
         bad = {(h.axis, h.edge) for h in hits}
         mesh = build_mesh(geom, prot, n, {axis: [e for e in mesh.edges[axis] if (axis, e[0]) in bad] for axis in "xy"})
         if hits := edge_lint(mesh):
             hit = hits[0]
+            # ponytail: the term by name; a new reason in rule.lint_hits needs its T_ code
             raise KrsError("E_EDGE_LINT", axis=hit.axis, edge_mm=0.0 - hit.edge if hit.axis == "y" else hit.edge,
-                           reason=hit.reason.replace("_", " "), n=n)
+                           reason="T_" + hit.reason.upper(), n=n)
     return mesh
 
 

@@ -38,7 +38,7 @@ PART, VALUE, SNAP, S2P, FIXTURE = range(5)  # the parts table's columns
 PART_COLUMNS = ("G_COL_PART", "G_COL_VALUE", "G_COL_SNAP", "G_COL_S2P", "G_COL_FIXTURE")
 FIELD_COLUMNS = ("G_COL_FIELD", "G_COL_VALUE", "G_COL_DEFAULT", "G_COL_UNIT")  # Advanced's table; Value alone edited
 SNAPPING = tuple(zip(control.SERIES, ("G_SNAP_OFF", "G_SNAP_E12", "G_SNAP_E24")))  # a Snapping combo's (data, code)
-FIXTURES = (("series", "G_FIXTURE_SERIES"), ("shunt", "G_FIXTURE_SHUNT"))  # an S2P fixture combo's (data, code)
+FIXTURES = tuple(control.FIXTURE_LABELS.items())  # an S2P fixture combo's (data, code)
 
 
 def mtime_ns(path: Path) -> int | None:

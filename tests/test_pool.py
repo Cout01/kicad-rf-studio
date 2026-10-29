@@ -101,7 +101,7 @@ def test_watch_aborts_only_the_job_it_names(tmp_path, fake, monkeypatch):
 
 
 @pytest.mark.parametrize(("exit_code", "code", "params"), [  # final review M4: the install command of this OS
-    (2, "E_OPENEMS_DLL", {"value": "unset", "command": runs.install_command()}), (10, "E_SETUP_FAILED", {}),
+    (2, "E_OPENEMS_DLL", {"value": "T_UNSET", "command": runs.install_command()}), (10, "E_SETUP_FAILED", {}),
     (7, "E_WORKER_FAILED", {"job": "T_JOB_SETUP", "exit_code": 7})])
 def test_a_failed_job_maps_to_one_coded_error(tmp_path, fake, monkeypatch, exit_code, code, params):  # Review Focus 1
     monkeypatch.setenv("KRS_FAKE_EXIT", str(exit_code))

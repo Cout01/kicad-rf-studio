@@ -129,7 +129,7 @@ W = 2 * np.pi * F
 PI_Z = {"L1": 1j * W * BW_L, "C1": 1 / (1j * W * BW_C), "C2": 1 / (1j * W * BW_C)}
 
 
-@pytest.mark.parametrize(("c", "shown"), [(None, "missing"), (0.0, "0"), (math.inf, "inf")])
+@pytest.mark.parametrize(("c", "shown"), [(None, "T_MISSING"), (0.0, "0"), (math.inf, "inf")])
 def test_a_part_port_needs_a_usable_c_box(c, shown):  # C-16
     with pytest.raises(KrsError) as e:
         loads({"C1": z_part("C", 1e-12, None, F)}, ["C1"], {} if c is None else {"C1": c}, F)

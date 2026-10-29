@@ -60,10 +60,8 @@ def save_settings(data: dict) -> None:
 
 
 def install_command() -> str:
-    """How to give this Python openEMS, as the E_OPENEMS_* messages say it."""
-    if WINDOWS:
-        return "kicad-rf-studio setup-openems <openEMS folder>"
-    return "update_openEMS.sh <prefix> --python with this venv active (see README)"
+    """The T_ code of how to give this Python openEMS, as the E_OPENEMS_* messages say it."""
+    return "T_INSTALL_WINDOWS" if WINDOWS else "T_INSTALL_LINUX"
 
 
 def openems_versions() -> tuple[str, str]:
@@ -349,7 +347,7 @@ def check_job(job: Path, result: dict, name: str, settings: dict) -> None:
         raise KeyboardInterrupt
     code, log = result["code"], str(job / LOG)
     if code == 2:
-        raise KrsError("E_OPENEMS_DLL", value=worker_env(settings).get("CSXCAD_INSTALL_PATH") or "unset",
+        raise KrsError("E_OPENEMS_DLL", value=worker_env(settings).get("CSXCAD_INSTALL_PATH") or "T_UNSET",
                        command=install_command())
     if code == SETUP_FAILED:
         raise KrsError("E_SETUP_FAILED", log=log)

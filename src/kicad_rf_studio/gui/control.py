@@ -34,6 +34,8 @@ GUI = {"E_LOCKED": "G_LOCKED", "I_RUN_START": "G_RUN_START", "I_WHAT_IF": "G_WHA
        "W_NO_REFERENCE": "G_NO_REFERENCE", "E_RETUNE_VALUE": "G_RETUNE_VALUE", "E_PART_NO_VALUE": "G_PART_NO_VALUE",
        "E_S2P_MISSING": "G_S2P_MISSING", "E_S2P_UNREADABLE": "G_S2P_UNREADABLE", "E_S2P_BAND": "G_S2P_BAND",
        "W_S2P_FIXTURE": "G_S2P_FIXTURE", "E_VERIFY_VALUE": "G_VERIFY_VALUE", "E_PROJECT_FIELD": "G_PROJECT_FIELD"}
+# an S2P fixture combo's label code by its data
+FIXTURE_LABELS = {"series": "G_FIXTURE_SERIES", "shunt": "G_FIXTURE_SHUNT"}
 
 
 def orchestrator() -> list[str]:
@@ -245,7 +247,11 @@ def run_state(run_dir: Path, end: dict | None, holder: dict | None, own: bool,
 
 def text(code: str, params: dict) -> str:
     """The line the GUI shows for the CLI's `code` with `params`: the GUI's own words (GUI) for the lines whose advice
-    is a terminal's, else the CLI's line."""
+    is a terminal's, else the CLI's line; W_S2P_FIXTURE's fixtures named by the combo's labels, not the CLI's syntax
+    (pt-BR design 5.1)."""
+    if code == "W_S2P_FIXTURE":
+        params = {**params, "named": render(FIXTURE_LABELS[params["named"]]),
+                  "fits": render(FIXTURE_LABELS[params["fits"]])}
     return render(GUI.get(code, code), **params)
 
 

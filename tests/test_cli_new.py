@@ -281,7 +281,7 @@ def test_the_printed_summary(tmp_path, monkeypatch, capsys):
         "Port P2: signal J1.1, reference J1.2 (connector).",
         "f0 915 MHz, with 3 harmonics.",
         DEFAULTS,
-        render("I_LID", state="on"),
+        render("I_LID_ON"),
         render("W_PART_OPEN", refs="C4"),
         f"Wrote {pj}."]
 
@@ -309,10 +309,10 @@ NO_MASK = ('(stackup (layer "F.Cu" (type "copper") (thickness 0.035)) '
            '(layer "B.Cu" (type "copper") (thickness 0.035)))')
 
 
-def test_a_stackup_without_a_mask_shows_none_for_it(tmp_path, capsys, mini_board_file):
+def test_a_stackup_without_a_mask_says_so(tmp_path, capsys, mini_board_file):
     board = mini_board_file(footprint("TP1", pad(1, "SIG")) + footprint("TP2", pad(1, "SIG", x=5)), stackup=NO_MASK)
     code = main(["new", str(board), "--start", "TP1.1", "--end", "TP2.1", "--f0", "915MHz", "-o", str(tmp_path / "p")])
-    assert code == 0 and "Stackup: board, dielectric 0.73 mm, εr 4.4; mask none mm, εr none." in (
+    assert code == 0 and "Stackup: board, dielectric 0.73 mm, εr 4.4; no mask." in (
         capsys.readouterr().out.splitlines())
 
 
@@ -338,7 +338,7 @@ def test_heavy_copper_is_warned_between_the_defaults_and_the_lid(tmp_path, capsy
     code = main(["new", str(heavy), "--start", "U1.1", "--end", "J1.1", "--f0", "915MHz", "-o", str(tmp_path / "p")])
     lines = capsys.readouterr().out.splitlines()
     n = next(i for i, line in enumerate(lines) if line.startswith("Copper layers F.Cu are not 35"))
-    assert code == 0 and lines[n - 1] == render("I_LID", state="on")
+    assert code == 0 and lines[n - 1] == render("I_LID_ON")
     assert lines[n + 1] == render("W_LID_HEIGHT_MISSING", refs="SH1")
     assert not any("Copper layers" in line for line in lines[:n] + lines[n + 1:])
 
@@ -400,11 +400,11 @@ def test_ports_without_a_reference(tmp_path, capsys, mini_board_file):
         "Stackup: jlcpcb-2l, dielectric 0.69952 mm, εr 4.5; mask 0.01524 mm, εr 3.8.",
         "GND nets: none. Power nets: none. Connectors: none. Shields: none.",
         "Chain TP1.1 → TP2.1: series none; shunt none.",
-        "Port P1: signal TP1.1, reference none (none).",
-        "Port P2: signal TP2.1, reference none (none).",
+        "Port P1: signal TP1.1, no reference.",
+        "Port P2: signal TP2.1, no reference.",
         "f0 915 MHz, with 3 harmonics.",
         DEFAULTS,
-        render("I_LID", state="on"),
+        render("I_LID_ON"),
         "No reference found for TP1.1; set it in project.json before `run`.",
         "No reference found for TP2.1; set it in project.json before `run`.",
         f"Wrote {out / 'project.json'}."]
@@ -634,7 +634,7 @@ def test_the_lid_warning_follows_find_lids_condition(tmp_path, capsys, extra, wa
     run_new(tmp_path, *extra)
     out = capsys.readouterr().out.splitlines()
     assert (render("W_LID_HEIGHT_MISSING", refs="SH1") in out) == warned
-    assert render("I_LID", state="off" if "1" in extra else "on") in out
+    assert render("I_LID_OFF" if "1" in extra else "I_LID_ON") in out
 
 
 def test_a_through_hole_port_takes_the_layer_its_track_reaches(tmp_path, mini_board_file):  # M-6

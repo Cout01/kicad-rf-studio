@@ -4,7 +4,7 @@ import os
 
 import pytest
 
-from kicad_rf_studio.core.messages import KrsError
+from kicad_rf_studio.core.messages import KrsError, render
 from kicad_rf_studio.core.project import SCHEMA, board_file, board_hash, load_project, read_project, save_project
 from test_cli_new import run_new
 
@@ -106,8 +106,8 @@ def test_a_bad_field_is_named_never_internal(tmp_path, where, value, field, expe
     save_project(pj, d)
     with pytest.raises(KrsError) as e:
         read_project(pj)
-    assert (e.value.code, e.value.params) == ("E_PROJECT_FIELD", {"path": str(pj), "field": field,
-                                                                  "expected": expected})
+    assert (e.value.code, {**e.value.params, "expected": render(e.value.params["expected"])}) == (
+        "E_PROJECT_FIELD", {"path": str(pj), "field": field, "expected": expected})
 
 
 # --- beyond the brief's tests ---------------------------------------------------------------------------------
@@ -136,7 +136,8 @@ def test_every_kind_of_field_is_checked(tmp_path, where, value, field, expected)
     save_project(pj, d)
     with pytest.raises(KrsError) as e:
         read_project(pj)
-    assert (e.value.code, e.value.params["field"], e.value.params["expected"]) == ("E_PROJECT_FIELD", field, expected)
+    assert (e.value.code, e.value.params["field"], render(e.value.params["expected"])) == (
+        "E_PROJECT_FIELD", field, expected)
     assert str(e.value) == (f"{pj}: {field} is missing or is not {expected}. Fix it in a text editor, or re-create "
                             "the project with `new`.")
 
@@ -187,6 +188,6 @@ def test_a_parts_s2p_is_null_or_a_file_and_its_fixture(tmp_path, value, ok):  # 
         return
     with pytest.raises(KrsError) as e:
         read_project(pj)
-    assert (e.value.code, e.value.params) == ("E_PROJECT_FIELD", {
-        "path": str(pj), "field": "chain.series[0].s2p",
-        "expected": "null, or file (text) and connection (series or shunt)"})
+    assert (e.value.code, {**e.value.params, "expected": render(e.value.params["expected"])}) == (
+        "E_PROJECT_FIELD", {"path": str(pj), "field": "chain.series[0].s2p",
+                            "expected": "null, or file (text) and connection (series or shunt)"})

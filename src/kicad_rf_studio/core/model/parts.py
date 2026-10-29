@@ -49,7 +49,7 @@ def c_box_of(boxes: dict, ref: str) -> float:
     """The C_box (F) of the part port `ref` in `boxes`, a run's c_box by ref (C-16). E_CBOX when it is missing, not
     finite or not above 0: such a box cannot close the port."""
     if ref not in boxes:
-        raise KrsError("E_CBOX", ref=ref, value="missing")
+        raise KrsError("E_CBOX", ref=ref, value="T_MISSING")
     if not (math.isfinite(c := boxes[ref]) and c > 0):
         raise KrsError("E_CBOX", ref=ref, value=f"{c:g}")
     return c

@@ -20,6 +20,7 @@ import skrf as rf
 
 from kicad_rf_studio import __version__, button, pipeline, runs
 from kicad_rf_studio.cli import main
+from kicad_rf_studio.core import messages
 from kicad_rf_studio.core.kicad import load_board
 from kicad_rf_studio.core.messages import CATALOG, KrsError, render
 from kicad_rf_studio.core.model.spec import spec_hash
@@ -216,6 +217,16 @@ def test_every_gui_wording_keeps_its_cli_params_and_drops_terminal_syntax():  # 
     assert control.message(KrsError("E_NO_STACKUP")) == render("G_NO_STACKUP")
     assert control.message(ZeroDivisionError("division by zero")) == render(
         "E_INTERNAL", detail="ZeroDivisionError: division by zero")
+
+
+def test_the_gui_names_a_fixture_by_its_combo_label_not_the_cli_syntax(monkeypatch):  # pt-BR design 5.1
+    class Translation:
+        def gettext(self, msgid):
+            return {"series": "SERIES-LABEL", "shunt": "SHUNT-LABEL"}.get(msgid, msgid)
+
+    monkeypatch.setattr(messages, "_translation", Translation())
+    line = control.text("W_S2P_FIXTURE", {"ref": "C3", "path": "p", "named": "series", "fits": "shunt"})
+    assert line == render("G_S2P_FIXTURE", ref="C3", path="p", named="SERIES-LABEL", fits="SHUNT-LABEL")
 
 
 def test_open_project_reads_results_only_while_they_apply(tmp_path, calibrated, monkeypatch):  # Review Focus 1, 5

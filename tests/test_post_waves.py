@@ -7,8 +7,10 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-from kicad_rf_studio.core.messages import KrsError
+from kicad_rf_studio.core.messages import CATALOG, KrsError
 from kicad_rf_studio.core.post.waves import flipped, grid, kappa_eq, layout, level_db, s_matrix
+from kicad_rf_studio.pipeline import VERDICTS
+from kicad_rf_studio.stoprule import KEPT
 from networks import star, synth_records, terminate_np
 
 F0, F1, F2 = 915e6, 457.5e6, 3.0195e9
@@ -111,7 +113,7 @@ def test_results_that_cannot_be_reduced_name_the_fix(tmp_path, what):  # C-22, X
     run = Path(results["run_dir"])
     if what == "verdict":
         results["jobs"][1]["verdict"] = "diverged"
-        expected = ("E_RESULTS_JOB", {"port": "P2", "verdict": "diverged"})
+        expected = ("E_RESULTS_JOB", {"port": "P2", "verdict": "T_DIVERGED"})
     elif what == "waves":
         (run / "job-2" / "waves.npz").unlink()
         expected = ("E_RESULTS_WAVES", {"path": str(run / "job-2" / "waves.npz")})
@@ -121,6 +123,10 @@ def test_results_that_cannot_be_reduced_name_the_fix(tmp_path, what):  # C-22, X
     with pytest.raises(KrsError) as e:
         layout(P915, results)
     assert (e.value.code, e.value.params) == expected
+
+
+def test_each_verdict_whose_s_is_not_kept_has_its_term():  # pt-BR design 5.1: E_RESULTS_JOB names it by its term
+    assert {"T_" + v.upper() for v in VERDICTS.keys() - KEPT} <= CATALOG.keys()
 
 
 def test_the_layout_at_other_frequencies_is_the_same_reduction(tmp_path):  # P0: EMerge's points, another band
