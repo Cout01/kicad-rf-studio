@@ -105,10 +105,11 @@ class Chain:
 
 
 def unknown_pad(board: Board, name: str) -> KrsError:
-    """E_UNKNOWN_PAD for `name`, which no pad with copper is called, with up to five pad names close to it."""
+    """E_UNKNOWN_PAD for `name`, which no pad with copper is called, with up to five pad names close to it (T_NONE
+    when none is close)."""
     known = {p.name for fp in board.footprints.values() for p in _copper(fp)}
     return KrsError("E_UNKNOWN_PAD", name=name,
-                    candidates=", ".join(difflib.get_close_matches(name, known, n=5)) or "none")
+                    candidates=", ".join(difflib.get_close_matches(name, known, n=5)) or "T_NONE")
 
 
 def _resolve(board: Board, classes: Classes, name: str) -> list[Pad]:

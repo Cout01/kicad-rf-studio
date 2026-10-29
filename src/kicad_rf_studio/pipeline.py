@@ -250,7 +250,7 @@ def setup_gate(model: Model, project: dict, run_dir: Path, settings: dict, threa
     # T_max 2·t0, the pulse's end: nothing in setup depends on T_max, and openEMS's excitation arrays et and ht hold
     # NrTS lines
     job = runs.write_job(runs.job_dir(run_dir, 0, "setup"), 1, "setup", threads, 2 * model.spec["excitation"]["t0"])
-    runs.check_job(job, runs.run_jobs([job], 1, run_dir, settings)[job], "setup", settings)
+    runs.check_job(job, runs.run_jobs([job], 1, run_dir, settings)[job], "T_JOB_SETUP", settings)
     setup = json.loads((job / "setup.json").read_text(encoding="utf-8"))
     floor, blocked, warnings = project["gates"]["dt_floor"], [], []
     # ponytail: dt from the setup log (6 digits); openEMS_stats.txt exists only after a run
@@ -280,7 +280,7 @@ def readout_2d(geom: Geometry) -> list[tuple[str, dict]]:
         except ShortError:  # another net's copper (E_SHORT_IN_ROI) or copper with none, which no check reports
             lines.append(("W_2D_SHORT", named))
             continue
-        lines.append(("I_2D_SECTION", {**named, "gap_mm": "none" if s.gap is None else f"{s.gap:.3f}",
+        lines.append(("I_2D_SECTION", {**named, "gap_mm": "T_NONE" if s.gap is None else f"{s.gap:.3f}",
                                        "z0": f"{bare.z0:.2f}", "eeff": f"{bare.eps_eff:.3f}",
                                        "z0_mask": f"{coated.z0:.2f}", "eeff_mask": f"{coated.eps_eff:.3f}"}))
     return lines
@@ -413,7 +413,7 @@ def _save(path: Path, data: dict, command: str) -> None:
     try:
         save_project(path, data)
     except OSError as err:
-        raise KrsError("E_RESULTS_WRITE", path=str(path), reason=reason(err, "cannot be written"),
+        raise KrsError("E_RESULTS_WRITE", path=str(path), reason=reason(err, "T_CANNOT_WRITE"),
                        command=command) from None
 
 
@@ -897,7 +897,7 @@ def preview(path: Path) -> int:
     run_dir, settings = runs.run_dir_for(path.absolute().parent.name), runs.load_settings()  # absolute: as in cost
     runs.write_spec(run_dir, model.spec)
     job = runs.write_job(runs.job_dir(run_dir, 0, "xml"), 1, "xml", 1, model.spec["excitation"]["t_max"])
-    runs.check_job(job, runs.run_jobs([job], 1, run_dir, settings)[job], "xml", settings)
+    runs.check_job(job, runs.run_jobs([job], 1, run_dir, settings)[job], "T_JOB_XML", settings)
     xml = str(job / "model.xml")
     if (exe := appcsxcad(settings)) is None:
         raise KrsError("E_APPCSXCAD_MISSING", path=xml, command=runs.install_command())

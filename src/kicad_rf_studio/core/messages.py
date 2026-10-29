@@ -246,7 +246,6 @@ CATALOG: dict[str, str] = {
     "G_BROWSE": "Browse…",
     "G_BOARD_FILTER": "KiCad boards (*.kicad_pcb)",
     "G_STACKUP_BOARD": "The board's own",
-    "G_NONE": "none",
     "G_CREATE": "Create the project",
     "G_CREATING": "Reading the board and writing project.json…",
     "G_PROJECT_EXISTS": "{path} already exists. Open it with Open a project…, or choose another project folder.",
@@ -328,6 +327,24 @@ CATALOG: dict[str, str] = {
     "G_REFILLING": "KiCad is refilling the zones and saving the board…",
     "G_REFILLED": "KiCad refilled the zones and saved {board}.",
     "E_KICAD_OTHER_BOARD": "KiCad has {open} open, not {board}, so nothing was refilled or saved. Open {board} in KiCad and press the kicad-rf-studio button again.",
+    # T_: a word a message takes as a parameter, rendered with it (pt-BR design 5.1); no T_ template has a field
+    "T_FILE_NOT_FOUND": "file not found",
+    "T_NOT_A_FILE": "not a file",
+    "T_PERMISSION_DENIED": "permission denied",
+    "T_EXISTS_AS_FILE": "already exists as a file",
+    "T_NOT_UTF8": "not UTF-8 text",
+    "T_NOT_JSON": "not JSON",
+    "T_CANNOT_READ": "cannot be read",
+    "T_CANNOT_WRITE": "cannot be written",
+    "T_CANNOT_START": "cannot be started",
+    "T_CANNOT_MAKE": "cannot be made",
+    "T_HOLDS_A_RUN": "already holds a run",
+    "T_NOT_A_JSON_OBJECT": "not a JSON object",
+    "T_JOB_SETUP": "setup",
+    "T_JOB_XML": "xml",
+    "T_JOB_CALIBRATION": "calibration",
+    "T_NONE": "none",
+    "T_UNKNOWN": "unknown",
 }
 
 
@@ -359,24 +376,38 @@ def language() -> str:
     return _translation.info().get("language", "en")
 
 
+def _render(translation, code: str, params: dict) -> str:
+    """`code`'s template from `translation`, filled with `params`; a parameter that is a T_ code of CATALOG is shown as
+    that term from `translation`, and None as T_UNKNOWN's (pt-BR design 5.1)."""
+    # ponytail: a parameter equal to a T_ code renders as that term (a net named T_NONE would): design 5.1's accepted
+    # limit
+    def shown(value):
+        value = "T_UNKNOWN" if value is None else value
+        term = isinstance(value, str) and value.startswith("T_") and value in CATALOG
+        return translation.gettext(CATALOG[value]) if term else value
+
+    return translation.gettext(CATALOG[code]).format(**{name: shown(value) for name, value in params.items()})
+
+
 def render(code: str, **params) -> str:
-    """The message for `code` in the user's language; English when there is no translation."""
-    return _translation.gettext(CATALOG[code]).format(**params)
+    """The message for `code` in the user's language, its T_ parameters too; English when there is no translation."""
+    return _render(_translation, code, params)
 
 
-# The `reason` of E_BOARD_UNREADABLE, E_PROJECT_UNREADABLE, E_SETTINGS_UNREADABLE, E_OUTPUT_PATH and E_RESULTS_WRITE,
-# by the class of the error. Never the system's own message: it is long, in the system's language, and a
+# The `reason` of E_BOARD_UNREADABLE, E_PROJECT_UNREADABLE, E_SETTINGS_UNREADABLE, E_OUTPUT_PATH (and G_OUTPUT_PATH, its
+# GUI wording), E_RESULTS_WRITE, E_RUN_DIR, E_HANDOFF_WRITE, E_GUI_START, E_PLUGIN_WRITE, G_START_FAILED and
+# G_SAVE_FAILED, by the class of the error. Never the system's own message: it is long, in the system's language, and a
 # UnicodeDecodeError's repr holds every byte of the file. NotADirectoryError is a file where a folder of the path
 # should be.
-_REASONS = ((FileNotFoundError, "file not found"), (IsADirectoryError, "not a file"),
-            (PermissionError, "permission denied"), ((FileExistsError, NotADirectoryError), "already exists as a file"),
-            (UnicodeError, "not UTF-8 text"), (json.JSONDecodeError, "not JSON"))
+_REASONS = ((FileNotFoundError, "T_FILE_NOT_FOUND"), (IsADirectoryError, "T_NOT_A_FILE"),
+            (PermissionError, "T_PERMISSION_DENIED"), ((FileExistsError, NotADirectoryError), "T_EXISTS_AS_FILE"),
+            (UnicodeError, "T_NOT_UTF8"), (json.JSONDecodeError, "T_NOT_JSON"))
 
 
-def reason(error: Exception, fallback: str = "cannot be read") -> str:
-    """A short English phrase for an OSError, a UnicodeError or a JSON error met reading or writing a file; `fallback`
-    for any other error."""
-    return next((text for kind, text in _REASONS if isinstance(error, kind)), fallback)
+def reason(error: Exception, fallback: str = "T_CANNOT_READ") -> str:
+    """The T_ code of a short phrase for an OSError, a UnicodeError or a JSON error met reading or writing a file;
+    `fallback`, a T_ code, for any other error."""
+    return next((code for kind, code in _REASONS if isinstance(error, kind)), fallback)
 
 
 def detail(error: Exception) -> str:

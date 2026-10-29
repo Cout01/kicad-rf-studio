@@ -165,7 +165,7 @@ def test_the_pad_picker_lists_each_pad_with_copper_once_in_natural_order():  # d
     assert control.pads(FIX / "coupon_ms.kicad_pcb") == []  # a pad-less coupon
     with pytest.raises(KrsError) as e:
         control.pads(FIX / "nope.kicad_pcb")
-    assert (e.value.code, e.value.params["reason"]) == ("E_BOARD_UNREADABLE", "file not found")
+    assert (e.value.code, e.value.params["reason"]) == ("E_BOARD_UNREADABLE", "T_FILE_NOT_FOUND")
 
 
 def press(board, pads=(), footprints=(), socket="ipc://s", token="T"):
@@ -202,7 +202,7 @@ def test_a_handoff_joins_the_selection_to_the_saved_boards_pads(fake, tmp_path):
     gone = control.handed(button.write_handoff({"board": str(nope), "pads": [], "footprints": [], "kicad": "9.0.7",
                                                 "socket": "ipc://s", "token": "T"}))
     assert (gone.board, gone.pads, gone.problem) == (nope, [], ("E_BOARD_UNREADABLE", {
-        "path": str(nope), "reason": "file not found"}))
+        "path": str(nope), "reason": "T_FILE_NOT_FOUND"}))
 
 
 def test_every_gui_wording_keeps_its_cli_params_and_drops_terminal_syntax():  # design 5.3, 5.7

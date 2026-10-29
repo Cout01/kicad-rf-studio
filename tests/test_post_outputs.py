@@ -166,7 +166,7 @@ def test_a_file_another_program_holds_is_a_coded_refusal(tmp_path, monkeypatch, 
     with pytest.raises(KrsError) as e:
         write(out, {"layout.s7p": b"7", "summary.csv": b"new"}, OUTPUTS, "kicad-rf-studio retune p")
     assert (e.value.code, e.value.params) == ("E_RESULTS_WRITE", {
-        "path": str(out / held), "reason": "permission denied", "command": "kicad-rf-studio retune p"})
+        "path": str(out / held), "reason": "T_PERMISSION_DENIED", "command": "kicad-rf-studio retune p"})
     assert {p.name: p.read_text() for p in out.iterdir()} == left  # no temporary file left
 
 

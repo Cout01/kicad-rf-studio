@@ -117,11 +117,11 @@ def unreadable(path) -> str:
 
 
 def test_a_board_that_cannot_be_read_is_refused_with_a_short_reason(tmp_path):
-    assert unreadable(tmp_path / "nope.kicad_pcb") == "file not found"
-    assert unreadable(tmp_path) == "not a file"  # Windows reads a folder as PermissionError: look before reading
+    assert unreadable(tmp_path / "nope.kicad_pcb") == "T_FILE_NOT_FOUND"
+    assert unreadable(tmp_path) == "T_NOT_A_FILE"  # Windows reads a folder as PermissionError: look before reading
     latin1 = tmp_path / "latin1.kicad_pcb"
     latin1.write_bytes(b'(kicad_pcb (version 20241229) (generator "caf\xe9"))')  # one Latin-1 byte
-    assert unreadable(latin1) == "not UTF-8 text"
+    assert unreadable(latin1) == "T_NOT_UTF8"
     with pytest.raises(KrsError) as e:
         load_board(latin1)
     assert str(e.value) == (f"Cannot read the board {latin1}: not UTF-8 text. "
@@ -136,7 +136,7 @@ def test_a_board_that_the_system_will_not_open_is_refused(tmp_path, monkeypatch)
         raise PermissionError(13, "the system's own words, never shown", str(self))
 
     monkeypatch.setattr(Path, "read_text", denied)
-    assert unreadable(p) == "permission denied"
+    assert unreadable(p) == "T_PERMISSION_DENIED"
 
 
 def test_version_messages_carry_the_version(mini_board):

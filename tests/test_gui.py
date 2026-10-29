@@ -220,6 +220,25 @@ def test_a_process_that_cannot_start_or_ends_without_its_end_event_says_so(windo
     until(lambda: dies.tick() or dies.cost_status.text() == render("G_END_EXITED", **exited))
 
 
+def test_a_program_that_cannot_start_for_another_reason_cannot_be_started(window, tmp_path, monkeypatch):
+    pj = new_project(tmp_path, "coupon_gcpw_pads", preset="draft").resolve()  # pt-BR design 5.1: not "read"
+    w = window()
+    w.open_project(pj)
+    opened(w)
+    failed = render("G_START_FAILED", program=w.prefix[0], reason="T_CANNOT_START")
+
+    def refused(*args):
+        raise OSError(22, "x")
+
+    monkeypatch.setattr(control, "start", refused)
+    w.cost_button.click()
+    assert w.proc is None and w.cost_status.text() == failed
+    monkeypatch.setattr(control, "apply", refused)  # Apply's retune, the window's other start
+    w.apply()
+    until(lambda: w.tick() or w.applying is None)  # apply()'s own tick may already have read its end
+    assert w.results.retune_status.text() == failed
+
+
 def test_the_gui_entry_opens_the_project_it_is_given(qapp, tmp_path, calibrated):  # design 5.6
     pj = new_project(tmp_path, "coupon_gcpw_pads", preset="draft").resolve()
     seen = []
@@ -474,7 +493,7 @@ def test_new_from_a_board_lists_its_pads_writes_the_project_and_opens_it(window,
     w = window()
     f = w.new_form
     assert (f.harmonics.value(), f.preset.currentText(), f.stackup.currentData(), f.lid.value(), f.lid.text()) == (
-        3, "normal", None, 0.0, render("G_NONE"))  # new's defaults
+        3, "normal", None, 0.0, render("T_NONE"))  # new's defaults
     f.board_button.click()
     assert f.folder.text() == str(tmp_path / "lpf915")  # the README's `-o lpf915`, beside the board
     w.pads_read.result(timeout=60)

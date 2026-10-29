@@ -12,7 +12,7 @@ from kicad_rf_studio.cli import main
 from kicad_rf_studio.core.kicad import choose_reference, classify, load_board
 from kicad_rf_studio.core.kicad.sexpr import child, children, parse
 from kicad_rf_studio.core.kicad.tracer import Classes
-from kicad_rf_studio.core.messages import render
+from kicad_rf_studio.core.messages import KrsError, render
 from kicad_rf_studio.core.model.spec import spec_hash
 from kicad_rf_studio.core.project import board_file, board_hash, load_project, read_project, save_project
 from kicad_rf_studio.pipeline import build_model, load
@@ -700,3 +700,13 @@ def test_new_returns_the_notes_it_prints(tmp_path, capsys):  # design 5.2 item 5
     code, pj = run_new(tmp_path, "--lid-height", "2.5", out=tmp_path / "b")
     assert code == 0 and capsys.readouterr().out.splitlines() == [
         *(render(c, **p) for c, p in notes[:-1]), render("I_WROTE", path=pj)]
+
+
+def test_a_project_folder_that_cannot_be_written_says_so(tmp_path, monkeypatch):  # pt-BR design 5.1: not "read"
+    def refused(*args):
+        raise OSError(22, "x")
+
+    monkeypatch.setattr(cli, "save_project", refused)
+    with pytest.raises(KrsError) as e:
+        cli.new(LPF, "U1.1", "J1.1", 915e6, output=tmp_path / "p")
+    assert (e.value.code, e.value.params["reason"]) == ("E_OUTPUT_PATH", "T_CANNOT_WRITE")

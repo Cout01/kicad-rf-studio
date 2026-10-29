@@ -261,7 +261,7 @@ def test_a_chain_from_a_pad_to_itself_is_refused(lpf):
 def test_an_unknown_pad_with_no_close_name_says_none(lpf):
     with pytest.raises(KrsError) as e:
         trace_chain(lpf, "ZZZ", "J1.1")
-    assert e.value.params["candidates"] == "none" and str(e.value) == "Pad ZZZ does not exist. Closest pads: none."
+    assert e.value.params["candidates"] == "T_NONE" and str(e.value) == "Pad ZZZ does not exist. Closest pads: none."
 
 
 def test_the_nets_reached_are_listed_by_name_not_in_the_order_of_the_walk(mini_board):

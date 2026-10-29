@@ -221,5 +221,5 @@ def write(folder: Path, files: dict[str, bytes], own: re.Pattern, command: str) 
         for tmp in temporary:  # the ones not yet replaced; a replaced one is gone already
             with contextlib.suppress(OSError):
                 os.remove(tmp)
-        raise KrsError("E_RESULTS_WRITE", path=str(path), reason=reason(err, "cannot be written"),
+        raise KrsError("E_RESULTS_WRITE", path=str(path), reason=reason(err, "T_CANNOT_WRITE"),
                        command=command) from None

@@ -102,7 +102,7 @@ def test_openems_imports_in_this_python():  # tier b: the dev venv after setup-o
 # --- beyond the brief's tests: the settings file and a failed pip ------------------------------------------------
 
 
-@pytest.mark.parametrize(("text", "why"), [("{", "not JSON"), ("[]", "not a JSON object")])
+@pytest.mark.parametrize(("text", "why"), [("{", "T_NOT_JSON"), ("[]", "T_NOT_A_JSON_OBJECT")])
 def test_unreadable_settings_name_the_file_and_why(tmp_path, calls, text, why):
     (tmp_path / "data").mkdir()
     (tmp_path / "data" / "settings.json").write_text(text, encoding="utf-8")

@@ -17,7 +17,7 @@ from kicad_rf_studio.core.mesh.gates import fit2d
 from kicad_rf_studio.core.messages import CATALOG, KrsError, render
 from kicad_rf_studio.core.project import (board_hash, load_project, make_project, mesh_n, mesh_reach_h,
                                           region_expand_h, region_margin_scale, save_project)
-from kicad_rf_studio.pipeline import build_model, load
+from kicad_rf_studio.pipeline import build_model, load, readout_2d
 from test_geometry_sections import four_layer
 
 FIX = Path(__file__).parent / "fixtures"
@@ -130,10 +130,12 @@ def test_a_project_without_region_or_mesh_reads_their_defaults():  # a bare dict
 
 
 def test_a_microstrip_has_no_gap_and_its_mask_lowers_z0(tmp_path, capsys):
-    assert main(["cost", str(new_project(tmp_path, "coupon_ms_masked"))]) == 0
+    pj = new_project(tmp_path, "coupon_ms_masked")
+    assert main(["cost", str(pj)]) == 0
     assert capsys.readouterr().out.splitlines() == [
         FILLS, HEADER, "LINE on F.Cu: width 1.350 mm, gap none, length 20.000 mm — Z0 48.53 Ω, εeff 3.326 without "
                        "mask; Z0 47.85 Ω, εeff 3.420 with mask", PORTLESS]
+    assert [p["gap_mm"] for c, p in readout_2d(load(pj)[2]) if c == "I_2D_SECTION"] == ["T_NONE"]
 
 
 def test_rows_follow_the_chain_then_the_position_and_the_notes_come_last(tmp_path, capsys):

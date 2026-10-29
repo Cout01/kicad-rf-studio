@@ -101,7 +101,7 @@ def write_handoff(data: dict) -> Path:
         path.parent.mkdir(parents=True, exist_ok=True)
         save_project(path, data)
     except OSError as e:
-        raise KrsError("E_HANDOFF_WRITE", path=str(path), reason=reason(e, "cannot be written")) from None
+        raise KrsError("E_HANDOFF_WRITE", path=str(path), reason=reason(e, "T_CANNOT_WRITE")) from None
     return path
 
 
@@ -173,7 +173,7 @@ def main() -> int:
             try:
                 start_gui(command, handoff.parent)
             except OSError as e:
-                raise KrsError("E_GUI_START", program=command[0], reason=reason(e, "cannot be started")) from None
+                raise KrsError("E_GUI_START", program=command[0], reason=reason(e, "T_CANNOT_START")) from None
         return 0
     except Exception as e:
         line = str(e) if isinstance(e, KrsError) else render("E_INTERNAL", detail=detail(e))
@@ -263,7 +263,7 @@ def install(version: str | None = None, remove: bool = False) -> list[tuple[str,
             try:
                 shutil.rmtree(folder)
             except OSError as e:
-                raise KrsError("E_PLUGIN_WRITE", path=str(folder), reason=reason(e, "cannot be written")) from None
+                raise KrsError("E_PLUGIN_WRITE", path=str(folder), reason=reason(e, "T_CANNOT_WRITE")) from None
             notes.append(("I_PLUGIN_REMOVED", {"folder": str(folder)}))
         return notes or [("I_PLUGIN_NONE", {"folder": str(documents() / KICAD)})]
     if not folders:
@@ -288,7 +288,7 @@ def install(version: str | None = None, remove: bool = False) -> list[tuple[str,
             if not windows:
                 (folder / entry).chmod(0o755)
         except OSError as e:
-            raise KrsError("E_PLUGIN_WRITE", path=str(folder), reason=reason(e, "cannot be written")) from None
+            raise KrsError("E_PLUGIN_WRITE", path=str(folder), reason=reason(e, "T_CANNOT_WRITE")) from None
     return [("I_PLUGIN_INSTALLED", {"folder": str(folder)}) for folder in folders] + [("I_PLUGIN_NEXT", {})]
 
 

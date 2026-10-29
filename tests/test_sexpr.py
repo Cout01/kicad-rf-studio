@@ -2,8 +2,10 @@
 import gettext
 import locale
 import os
+import re
 import string
 import sys
+from pathlib import Path
 
 import pytest
 
@@ -114,14 +116,16 @@ def test_krs_error_carries_its_code_and_params_and_renders_them():
     assert "20231120" in str(err) and "{" not in str(err)
 
 
-@pytest.mark.parametrize("error, text", [
-    (FileNotFoundError(2, "x"), "file not found"), (IsADirectoryError(21, "x"), "not a file"),
-    (PermissionError(13, "x"), "permission denied"), (FileExistsError(17, "x"), "already exists as a file"),
-    (NotADirectoryError(20, "x"), "already exists as a file"),  # a folder on the way is a file
-    (UnicodeDecodeError("utf-8", b"\xe9", 0, 1, "invalid continuation byte"), "not UTF-8 text"),
-    (OSError(22, "x"), "cannot be read"), (OSError(), "cannot be read")])
-def test_a_file_error_has_a_short_reason_by_its_class(error, text):
-    assert reason(error) == text
+@pytest.mark.parametrize("error, code, text", [
+    (FileNotFoundError(2, "x"), "T_FILE_NOT_FOUND", "file not found"),
+    (IsADirectoryError(21, "x"), "T_NOT_A_FILE", "not a file"),
+    (PermissionError(13, "x"), "T_PERMISSION_DENIED", "permission denied"),
+    (FileExistsError(17, "x"), "T_EXISTS_AS_FILE", "already exists as a file"),
+    (NotADirectoryError(20, "x"), "T_EXISTS_AS_FILE", "already exists as a file"),  # a folder on the way is a file
+    (UnicodeDecodeError("utf-8", b"\xe9", 0, 1, "invalid continuation byte"), "T_NOT_UTF8", "not UTF-8 text"),
+    (OSError(22, "x"), "T_CANNOT_READ", "cannot be read"), (OSError(), "T_CANNOT_READ", "cannot be read")])
+def test_a_file_error_has_a_short_reason_by_its_class(error, code, text):  # a code, rendered when shown
+    assert reason(error) == code and render(code) == text
 
 
 def test_render_falls_back_to_the_english_template():
@@ -185,3 +189,32 @@ def test_windows_display_language_is_read_through_ctypes():
 
 def test_the_suite_pins_its_language_before_anything_reads_it():  # pt-BR design 4, 7.2
     assert os.environ["LANGUAGE"] == (os.environ.get("KRS_TEST_LANGUAGE") or "en")
+
+
+ROOT = Path(__file__).resolve().parents[1]
+
+
+def test_every_template_is_its_own_msgid_and_a_term_takes_no_field():  # pt-BR design 5.1: gettext keys on it
+    assert len(set(CATALOG.values())) == len(CATALOG)  # T_NONE takes G_NONE's "none"
+    assert [code for code in CATALOG if code.startswith("T_") and "{" in CATALOG[code]] == []  # rendered bare
+
+
+def test_a_term_parameter_renders_in_the_language_and_none_as_unknown(monkeypatch):  # pt-BR design 5.1
+    assert render("E_UNKNOWN_PAD", name="X", candidates="T_NONE") == render("E_UNKNOWN_PAD", name="X",
+                                                                            candidates="none")
+    assert render("E_LOCKED", lock="L", run=None, started=None) == render("E_LOCKED", lock="L", run="unknown",
+                                                                           started="unknown")
+    assert render("I_WROTE", path="T_max") == "Wrote T_max."  # only a code of CATALOG is a term
+
+    class Translation:
+        def gettext(self, msgid):
+            return {"none": "—"}.get(msgid, msgid)
+
+    monkeypatch.setattr(messages, "_translation", Translation())
+    assert render("E_UNKNOWN_PAD", name="X", candidates="T_NONE").endswith(": —.")
+
+
+def test_every_literal_reason_fallback_and_job_name_is_a_term():  # pt-BR design 5.1; Review Focus 3
+    text = "\n".join(p.read_text(encoding="utf-8") for p in sorted((ROOT / "src").rglob("*.py")))
+    words = r'reason\(\w+, "(?!T_)[^"]*"|reason="(?!T_)[^"]*"|check_job\(.*?, "(?!T_)[^"]*"'
+    assert re.findall(words, text) == []  # each found with its call: make the word a T_ code

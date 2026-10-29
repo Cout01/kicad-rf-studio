@@ -102,7 +102,7 @@ def test_watch_aborts_only_the_job_it_names(tmp_path, fake, monkeypatch):
 
 @pytest.mark.parametrize(("exit_code", "code", "params"), [  # final review M4: the install command of this OS
     (2, "E_OPENEMS_DLL", {"value": "unset", "command": runs.install_command()}), (10, "E_SETUP_FAILED", {}),
-    (7, "E_WORKER_FAILED", {"job": "setup", "exit_code": 7})])
+    (7, "E_WORKER_FAILED", {"job": "T_JOB_SETUP", "exit_code": 7})])
 def test_a_failed_job_maps_to_one_coded_error(tmp_path, fake, monkeypatch, exit_code, code, params):  # Review Focus 1
     monkeypatch.setenv("KRS_FAKE_EXIT", str(exit_code))
     monkeypatch.delenv("CSXCAD_INSTALL_PATH", raising=False)
@@ -110,8 +110,8 @@ def test_a_failed_job_maps_to_one_coded_error(tmp_path, fake, monkeypatch, exit_
     (job,) = tiny_jobs(run_dir, 1)
     out = runs.run_jobs([job], 1, run_dir, {})
     with pytest.raises(KrsError) as e:
-        runs.check_job(job, out[job], "setup", {})
+        runs.check_job(job, out[job], "T_JOB_SETUP", {})
     log = {} if code == "E_OPENEMS_DLL" else {"log": str(job / "log.txt")}
     assert (e.value.code, e.value.params) == (code, {**params, **log})
     with pytest.raises(KeyboardInterrupt):
-        runs.check_job(job, {"code": None, "stopped": True}, "setup", {})
+        runs.check_job(job, {"code": None, "stopped": True}, "T_JOB_SETUP", {})

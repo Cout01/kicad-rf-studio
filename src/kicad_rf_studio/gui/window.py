@@ -287,7 +287,7 @@ class NewForm(QGroupBox):
         for name in STACKUPS:
             self.stackup.addItem(name, name)
         # the C locale: project.json and the CLI write 2.5, and the system's locale may show 2,50
-        self.lid = QDoubleSpinBox(maximum=100, decimals=2, locale=QLocale.c(), specialValueText=render("G_NONE"))
+        self.lid = QDoubleSpinBox(maximum=100, decimals=2, locale=QLocale.c(), specialValueText=render("T_NONE"))
         self.folder, self.folder_button = QLineEdit(), QPushButton(render("G_BROWSE"))
         self.create_button, self.status, self.notes = QPushButton(render("G_CREATE")), QLabel(), sentences()
         self.status.setWordWrap(True)  # a refusal names a path, which would otherwise widen the window
@@ -606,7 +606,7 @@ class MainWindow(QMainWindow):
             proc = control.start(self.prefix, command, self.path, run_dir)
         except OSError as e:
             (self.cost_status if command == "cost" else self.run_status).setText(
-                render("G_START_FAILED", program=self.prefix[0], reason=reason(e)))
+                render("G_START_FAILED", program=self.prefix[0], reason=reason(e, "T_CANNOT_START")))
             return
         self.started.append(proc)
         self.watch(command, run_dir, proc)
@@ -715,7 +715,7 @@ class MainWindow(QMainWindow):
         then, self.verify_next = self.verify_next, False
         status, error = self.results.retune_status, done.exception()
         if isinstance(error, OSError):
-            status.setText(render("G_START_FAILED", program=self.prefix[0], reason=reason(error)))
+            status.setText(render("G_START_FAILED", program=self.prefix[0], reason=reason(error, "T_CANNOT_START")))
         elif error is not None:
             status.setText(control.message(error))
         else:
@@ -753,7 +753,7 @@ class MainWindow(QMainWindow):
                 data = control.edited(load_project(self.path), self.advanced.edits)
                 save_project(self.path, check_project(data, self.path))
         except OSError as e:
-            status.setText(render("G_SAVE_FAILED", path=str(self.path), reason=reason(e, "cannot be written")))
+            status.setText(render("G_SAVE_FAILED", path=str(self.path), reason=reason(e, "T_CANNOT_WRITE")))
             return
         except Exception as e:
             status.setText(control.message(e))

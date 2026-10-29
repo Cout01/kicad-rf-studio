@@ -49,7 +49,7 @@ def load_settings() -> dict:
     except (OSError, ValueError) as e:  # ValueError: UnicodeError or json.JSONDecodeError
         raise KrsError("E_SETTINGS_UNREADABLE", path=str(path), reason=reason(e)) from None
     if not isinstance(data, dict):
-        raise KrsError("E_SETTINGS_UNREADABLE", path=str(path), reason="not a JSON object")
+        raise KrsError("E_SETTINGS_UNREADABLE", path=str(path), reason="T_NOT_A_JSON_OBJECT")
     return data
 
 
@@ -343,7 +343,8 @@ def run_jobs(jobs: list[Path], pool: int, run_dir: Path, settings: dict,
 def check_job(job: Path, result: dict, name: str, settings: dict) -> None:
     """The one map from a job's exit to its outcome, `result` being the job's entry in what run_jobs returns:
     KeyboardInterrupt when the run was stopped, E_OPENEMS_DLL for exit code 2 (openEMS did not import, C-31),
-    E_SETUP_FAILED for SETUP_FAILED and E_WORKER_FAILED, naming the job `name`, for any other non-zero code."""
+    E_SETUP_FAILED for SETUP_FAILED and E_WORKER_FAILED, naming the job `name`, for any other non-zero code. `name` is
+    a T_ code (a tool may pass its own word, shown as it is)."""
     if result["stopped"]:
         raise KeyboardInterrupt
     code, log = result["code"], str(job / LOG)
@@ -410,7 +411,7 @@ def calibrate(settings: dict, run_dir: Path | None = None) -> dict:
                 for _ in range(k)]
         out = run_jobs(jobs, k, run_dir or folder, settings)
         for job in jobs:
-            check_job(job, out[job], "calibration", settings)
+            check_job(job, out[job], "T_JOB_CALIBRATION", settings)
         return sum(read_stats((job / "openEMS_stats.txt").read_text(encoding="utf-8"))["speed"] for job in jobs) / 1e6
 
     single = {t: measure(1, t, f"{t}t") for t in sorted({1, 2, 4, n}) if t <= n}

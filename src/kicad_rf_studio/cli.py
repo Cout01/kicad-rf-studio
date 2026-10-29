@@ -46,7 +46,7 @@ def _positive(kind):
 
 
 def _list(names) -> str:
-    return ", ".join(names) or "none"
+    return ", ".join(names) or "T_NONE"
 
 
 def _part_note(part: dict) -> tuple[str, dict]:
@@ -115,7 +115,7 @@ def new(board: str | Path, start: str, end: str, f0: float, *, harmonics: int = 
         folder.mkdir(parents=True, exist_ok=True)
         save_project(target, project)
     except OSError as e:  # the path the error names (the folder, a file in the way, the file written), else target
-        raise KrsError("E_OUTPUT_PATH", path=str(e.filename or target), reason=reason(e)) from None
+        raise KrsError("E_OUTPUT_PATH", path=str(e.filename or target), reason=reason(e, "T_CANNOT_WRITE")) from None
 
     c = project["classes"]
     dielectric = next(x for x in stackup.layers if x.kind == "dielectric")  # there is one: its thickness is above 0
@@ -271,9 +271,9 @@ def main(argv: list[str] | None = None) -> int:
             try:
                 args.run_dir.mkdir(parents=True, exist_ok=True)
             except OSError as e:
-                raise KrsError("E_RUN_DIR", path=str(args.run_dir), reason=reason(e, "cannot be made")) from None
+                raise KrsError("E_RUN_DIR", path=str(args.run_dir), reason=reason(e, "T_CANNOT_MAKE")) from None
             if (args.run_dir / "events.jsonl").exists():  # another run's folder: nothing is added to it
-                raise KrsError("E_RUN_DIR", path=str(args.run_dir), reason="already holds a run")
+                raise KrsError("E_RUN_DIR", path=str(args.run_dir), reason="T_HOLDS_A_RUN")
         if hasattr(args, "run_dir"):  # cost, run and verify
             from kicad_rf_studio.pipeline import project_path  # here: the three commands load pipeline anyway
 
