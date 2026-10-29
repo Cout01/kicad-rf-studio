@@ -11,7 +11,8 @@ GOLDEN = json.loads(golden_v1.GOLDEN.read_text(encoding="utf-8"))
 @pytest.fixture(scope="module")
 def now(tmp_path_factory):
     home = os.getcwd()
-    os.chdir(tmp_path_factory.mktemp("golden"))  # digests() works in relative paths, so no byte holds this machine's
+    # digests() works in relative paths, so no byte holds this machine's folders
+    os.chdir(tmp_path_factory.mktemp("golden"))
     try:
         return golden_v1.digests()
     finally:
@@ -21,7 +22,8 @@ def now(tmp_path_factory):
 def test_v1_builds_byte_for_byte_what_it_did_at_4e5edda(now):  # Stage 3 design 3, 4; RF 4
     assert set(now["models"]) == {"lpf915", "lpf915-45", "coupon_gcpw_pads", "calibration"}
     assert "verify" in now["models"]["lpf915"]
-    assert now["models"] == GOLDEN["models"]  # a v1 model spec, its hash, verify's model, project.json or new's lines
+    # a v1 model spec, its hash, verify's model, project.json or new's lines moved
+    assert now["models"] == GOLDEN["models"]
     assert set(now["outputs"]) == {"lpf915", "coupon_gcpw_pads"}
 
 

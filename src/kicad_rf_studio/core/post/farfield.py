@@ -66,6 +66,7 @@ def efficiencies(sphere: FarField, p_acc: np.ndarray, p_inc: np.ndarray) -> dict
 def eta_lines(f: np.ndarray, eta_rad: np.ndarray) -> list[tuple[str, dict]]:
     """One W_ETA_RAD line at the largest η_rad on `f` (Hz) when it is above ETA_LIMIT (design 5.5): the far field
     then radiates more power than the port accepts. No line otherwise; a non-finite η_rad counts as the largest."""
-    k = int(np.argmax(np.where(np.isfinite(eta_rad), eta_rad, np.inf)))  # a NaN or inf balance is the worst
+    worst = np.where(np.isfinite(eta_rad), eta_rad, np.inf)  # a NaN or an inf of either sign is the worst
+    k = int(np.argmax(worst))
     flag = ("W_ETA_RAD", {"eta": f"{eta_rad[k]:.3f}", "f_mhz": f"{f[k] / 1e6:.1f}", "limit": f"{ETA_LIMIT:g}"})
-    return [flag] if not eta_rad[k] <= ETA_LIMIT else []
+    return [flag] if worst[k] > ETA_LIMIT else []

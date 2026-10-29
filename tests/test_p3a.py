@@ -60,7 +60,7 @@ def test_the_p3a_rules():  # design 5.11's P3-A row and 5.9's decisions, pre-reg
                           ({"half": run(2.16, eta=1.021)}, ["eta"]), ({"short": run(1.79, eta=0.979)}, ["eta"]),
                           ({"box2": run(2.22)}, ["box"]), ({"half_3x": free(6.5)}, ["growth"]),
                           ({"short_3x": free(finite=False)}, ["growth"]),
-                          ({"half_3x": free(t_stop=20e-9)}, ["growth"]),
+                          ({"half_3x": free(t_stop=20e-9)}, ["growth"]), ({"short_3x": free(t_stop=None)}, ["growth"]),
                           ({"box2": run(2.14, verdict="t_max")}, ["dumps_after_abort"]),
                           ({"half": run(2.16, aborted=False)}, ["dumps_after_abort"]),
                           ({"short": run(1.79, blocked=["E_METAL_IN_PML"])}, ["setup"]),
