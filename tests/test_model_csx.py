@@ -72,6 +72,7 @@ FAR = {"f_hz": [1e9, 0.5e9, 1.1e9], "center": [2.0, 2.0, 2.0]}  # TINY's band, f
 def test_the_far_field_box_records_the_frequencies_in_the_frequency_domain(monkeypatch):  # design 5.5; RF 1
     log = fake_openems(monkeypatch)
     assert build_csx({**TINY, "nf2ff": FAR}, 1, 1e-9)[2] is not None
+    assert build_csx({**TINY, "nf2ff": {**FAR, "f_hz": [0.6e9] * 11}}, 1, 1e-9)[2] is not None  # NF2FF_MAX itself
     names = [n for n, _, _ in log]
     # openEMS's own placement under PML_8, accumulated every Nyquist/4 steps, as the port probes sample
     assert ("CreateNF2FFBox", ("nf2ff",), {"frequency": FAR["f_hz"], "over_sampling": 4}) in log
