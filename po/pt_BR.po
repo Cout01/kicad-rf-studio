@@ -1323,7 +1323,7 @@ msgstr "Não foi possível salvar {path}: {reason}. Feche o programa que o mant�
 #. G_PROJECT_FIELD
 #, python-brace-format
 msgid "{path}: {field} is missing or is not {expected}. Fix it in Advanced, or create the project again with New from a board."
-msgstr "{path}: {field} está ausente ou não é {expected}. Corrija-o na aba Avançado, ou recrie o projeto em Novo projeto a partir de uma placa."
+msgstr "{path}: {field} está ausente ou não é {expected}. Corrija-o na aba Avançado, ou crie o projeto de novo na seção Novo projeto a partir de uma placa."
 
 #. G_UNIT_HZ
 msgid "Hz"
