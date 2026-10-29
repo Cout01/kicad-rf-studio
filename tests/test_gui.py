@@ -14,7 +14,7 @@ from pathlib import Path
 
 import numpy as np
 import pytest
-from PySide6.QtCore import QTimer
+from PySide6.QtCore import QCoreApplication, QTimer
 from PySide6.QtWidgets import QFileDialog, QListView, QMessageBox
 
 from kicad_rf_studio import button, gui, pipeline, runs
@@ -75,6 +75,21 @@ def test_the_gui_entry_runs_offscreen_and_logs_without_a_console(qapp, fake, mon
     log = sys.stderr
     log.close()
     assert Path(log.name) == fake / "gui.log"
+
+
+def test_qts_own_words_come_from_pyside6s_qtbase_translation():  # pt-BR design 5.2
+    assert gui.qtbase("en") is None and gui.qtbase("xx") is None  # PySide6 ships a qtbase_en.qm: never loaded
+    translator = gui.qtbase("pt_BR")
+    assert Path(translator.filePath()).name == "qtbase_pt_BR.qm"
+    assert translator.translate("QPlatformTheme", "&Yes") == "&Sim"
+
+
+def test_gui_main_speaks_qts_words_in_its_language_and_leaves_none_behind(qapp, fake, monkeypatch):  # design 5.2
+    monkeypatch.setattr(gui, "language", lambda: "pt_BR")
+    seen = []
+    QTimer.singleShot(0, lambda: (seen.append(QCoreApplication.translate("QPlatformTheme", "&Yes")), qapp.quit()))
+    assert gui.main([]) == 0 and seen == ["&Sim"]
+    assert QCoreApplication.translate("QPlatformTheme", "&Yes") == "&Yes"  # removed: the session's app is English
 
 
 def grab(widget, name):

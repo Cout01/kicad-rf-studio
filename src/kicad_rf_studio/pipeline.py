@@ -31,7 +31,7 @@ from kicad_rf_studio.core.geometry.sections import cross_section
 from kicad_rf_studio.core.kicad import load_board
 from kicad_rf_studio.core.kicad.values import part_kind, port_value
 from kicad_rf_studio.core.mesh.gates import check_fit2d, dt_floor_reference, fit2d, mesh_with_lint
-from kicad_rf_studio.core.messages import KrsError, reason, render
+from kicad_rf_studio.core.messages import KrsError, english, reason, render
 from kicad_rf_studio.core.model.parts import CURVE_PORT, GRID, PORT
 from kicad_rf_studio.core.model.ports import ends, nominal_boxes, place
 from kicad_rf_studio.core.model.readers import read_log, read_probe, read_run_stats, read_stats
@@ -483,7 +483,8 @@ def write_outputs(path: Path, project: dict, command: str, *,
     layout.s{N}p; chain.s{P}p when part ports are closed; with P = 2 summary.csv and summary.png, else W_NOT_TWO_PORT
     (C-31); all written to results/ beside `path` (write, with `command` as E_RESULTS_WRITE's advice). Until
     RETUNE_VALIDATED, closed part ports put the what-if label I_WHAT_IF, which offers `verify` (D-15), as the last
-    comment line of chain.s{P}p and the second line of summary.png's title. Returns the lines to report: I_BASIS with
+    comment line of chain.s{P}p, in English (english: the file is ASCII, pt-BR design 5.3), and the second line of
+    summary.png's title, in the language of the process that draws it. Returns the lines to report: I_BASIS with
     each flagged job, gate_lines, the part notes, the marker and indicator lines (W_NOT_TWO_PORT after them), the
     label's line, then I_OUTPUTS and LIMITS. A part's refusal (E_PART_NO_VALUE, E_S2P_*, E_CBOX) and write's
     E_RESULTS_WRITE are raised, or, with `errors_as_lines`, each becomes a line: a part's refusal in the place of the
@@ -499,7 +500,8 @@ def write_outputs(path: Path, project: dict, command: str, *,
     label = render("I_WHAT_IF", **what_if) if res.what_if else None
     if res.chain is not None and res.refs:
         files[f"chain.s{p}p"] = touchstone(res.chain, lay.f, [lay.ports[k]["name"] for k in ext],
-                                           port_map(project, results, lay, ext) + ([label] if label else []))
+                                           port_map(project, results, lay, ext)
+                                           + ([english("I_WHAT_IF", **what_if)] if label else []))
     if res.chain is not None and p == 2:
         files["summary.csv"] = summary_csv(lay, res.chain, res.ideal, res.p_layout, results["loss_expected"])
         files["summary.png"] = summary_png(lay, res.chain, res.ideal, path.absolute().parent.name, label)  # `run .` too

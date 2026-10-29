@@ -20,7 +20,7 @@ import pytest
 from kicad_rf_studio import button, runs
 from kicad_rf_studio.cli import main
 from kicad_rf_studio.core.kicad import load_board
-from kicad_rf_studio.core.messages import CATALOG, KrsError, render
+from kicad_rf_studio.core.messages import CATALOG, KrsError, english, render
 from test_cli_cost import FIX
 from test_gui_control import recorder, until
 import release_check
@@ -106,6 +106,27 @@ def test_a_handoff_that_cannot_be_written_or_a_gui_that_cannot_start_is_its_own_
     monkeypatch.setattr(button, "gui_command", lambda handoff: [str(missing), "--handoff", str(handoff)])
     assert button.main() == 1
     assert capsys.readouterr().err == render("E_GUI_START", program=str(missing), reason="file not found") + "\n"
+
+
+def test_with_pt_br_active_the_helpers_line_stays_english_and_ascii(fake, kicad, pt_br, tmp_path, monkeypatch,
+                                                                    capsys):  # pt-BR design 5.4
+    k = kicad(version=(8, 0, 9))
+    monkeypatch.setenv("KICAD_API_SOCKET", k.url)
+    monkeypatch.setenv("KICAD_API_TOKEN", k.token)
+    assert button.main() == 1
+    line = english("E_KICAD_VERSION", version="8.0.9")
+    assert line != render("E_KICAD_VERSION", version="8.0.9")  # pt-BR is active
+    assert capsys.readouterr() == ("", line + "\n") and line.isascii()
+    assert (fake / "button.log").read_text(encoding="utf-8").splitlines()[-1].endswith(" " + line)
+    k = kicad()  # a GUI that cannot start: its reason, a term, in English too
+    monkeypatch.setenv("KICAD_API_SOCKET", k.url)
+    monkeypatch.setenv("KICAD_API_TOKEN", k.token)
+    missing = tmp_path / "no-gui"
+    monkeypatch.setattr(button, "gui_command", lambda handoff: [str(missing), "--handoff", str(handoff)])
+    assert button.main() == 1
+    err = capsys.readouterr().err
+    assert err == english("E_GUI_START", program=str(missing), reason="T_FILE_NOT_FOUND") + "\n"
+    assert err.replace(str(missing), "").isascii()
 
 
 def test_run_as_kicad_10_runs_it_the_helper_ends_quickly_says_nothing_and_its_gui_holds_no_pipe(kicad, tmp_path):

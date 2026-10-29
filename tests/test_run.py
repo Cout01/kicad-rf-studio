@@ -15,7 +15,7 @@ import pytest
 from kicad_rf_studio import pipeline, runs
 from kicad_rf_studio.cli import main
 from kicad_rf_studio.core.kicad.stackup import kicad_default
-from kicad_rf_studio.core.messages import render
+from kicad_rf_studio.core.messages import english, render
 from kicad_rf_studio.core.model.spec import spec_hash
 from kicad_rf_studio.core.post.chain import with_box, z_part
 from kicad_rf_studio.core.post.outputs import COLUMNS, LIMITS, summary_csv, summary_png
@@ -467,6 +467,14 @@ def test_three_external_ports_and_a_part_port_get_the_label_after_w_not_two_port
     lines = write_outputs(pj, project, "c")
     assert [c for c, _ in lines][-len(LIMITS) - 3:] == ["W_NOT_TWO_PORT", "I_WHAT_IF", "I_OUTPUTS", *LIMITS]
     assert b"! Relative / what-if: " in (pj.parent / "results" / "chain.s3p").read_bytes()
+
+
+def test_with_pt_br_active_chain_s2p_keeps_the_english_what_if_line(tmp_path, pt_br):  # pt-BR design 5.3
+    pj, project = star_project(tmp_path, 2)
+    write_outputs(pj, project, "c")
+    what_if = {"command": command_line("kicad-rf-studio", "verify", str(pj))}
+    assert render("I_WHAT_IF", **what_if) != english("I_WHAT_IF", **what_if)  # pt-BR is active
+    assert ("! " + english("I_WHAT_IF", **what_if)).encode() in (pj.parent / "results" / "chain.s2p").read_bytes()
 
 
 def test_write_outputs_writes_what_chain_results_holds(tmp_path):  # Stage 2 design 5.2 item 7, byte for byte

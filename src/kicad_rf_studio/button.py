@@ -19,7 +19,7 @@ import zlib
 from pathlib import Path
 
 from kicad_rf_studio import runs
-from kicad_rf_studio.core.messages import KrsError, detail, reason, render
+from kicad_rf_studio.core.messages import KrsError, detail, english, reason, render
 from kicad_rf_studio.core.project import save_project
 
 TIMEOUT_MS = 1000  # one API call's wait
@@ -159,8 +159,8 @@ def refill(socket: str, token: str, board: Path) -> Path:
 
 def main() -> int:
     """KiCad's exec action (design 5.5): hands the board and the selection of the KiCad that runs it to a detached GUI
-    through handoff.json and returns 0, printing nothing (KiCad 10 shows any stderr text); or prints why on one stderr
-    line, appends it to button.log in the data folder and returns 1."""
+    through handoff.json and returns 0, printing nothing (KiCad 10 shows any stderr text); or prints why on one
+    English stderr line (english, pt-BR design 5.4), appends it to button.log in the data folder and returns 1."""
     try:
         with warnings.catch_warnings():
             warnings.simplefilter("ignore")  # KiCad 10 shows any stderr text
@@ -176,7 +176,7 @@ def main() -> int:
                 raise KrsError("E_GUI_START", program=command[0], reason=reason(e, "T_CANNOT_START")) from None
         return 0
     except Exception as e:
-        line = str(e) if isinstance(e, KrsError) else render("E_INTERNAL", detail=detail(e))
+        line = english(e.code, **e.params) if isinstance(e, KrsError) else english("E_INTERNAL", detail=detail(e))
         print(line, file=sys.stderr)
         # ponytail: button.log only grows, one line per failed press; a size cap if it ever matters
         with contextlib.suppress(OSError):

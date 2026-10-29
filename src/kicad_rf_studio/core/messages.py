@@ -438,6 +438,13 @@ def render(code: str, **params) -> str:
     return _render(_translation, code, params)
 
 
+def english(code: str, **params) -> str:
+    """The message for `code` in English whatever the language, its T_ parameters too: the button helper's line, which
+    KiCad 10 shows decoded in a code page nobody has checked (pt-BR design 5.4), and chain.s2p's what-if line, in an
+    ASCII file (5.3)."""
+    return _render(gettext.NullTranslations(), code, params)
+
+
 # The `reason` of E_BOARD_UNREADABLE, E_PROJECT_UNREADABLE, E_SETTINGS_UNREADABLE, E_OUTPUT_PATH (and G_OUTPUT_PATH, its
 # GUI wording), E_RESULTS_WRITE, E_RUN_DIR, E_HANDOFF_WRITE, E_GUI_START, E_PLUGIN_WRITE, G_START_FAILED and
 # G_SAVE_FAILED, by the class of the error. Never the system's own message: it is long, in the system's language, and a

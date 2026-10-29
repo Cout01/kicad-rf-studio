@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """The GUI client (Stage 2 design 5): `control`, the Qt-free logic, and `window`, the main window; main(), one window
-per user (instance_name, forward, the lock file). `import kicad_rf_studio.gui` loads no Qt or matplotlib: main() and
-forward() import Qt inside themselves."""
+per user (instance_name, forward, the lock file). `import kicad_rf_studio.gui` loads no Qt or matplotlib: main(),
+forward() and qtbase() import Qt inside themselves."""
 import argparse
 import hashlib
 import json
@@ -10,6 +10,7 @@ import time
 from pathlib import Path
 
 from kicad_rf_studio import runs
+from kicad_rf_studio.core.messages import language
 
 START_WAIT_S = 10.0  # how long a start waits for a window that holds the lock to listen
 
@@ -37,6 +38,15 @@ def forward(name: str, request: dict) -> bool:
     return True
 
 
+def qtbase(language: str):
+    """A QTranslator holding PySide6's own qtbase_<language>.qm (pt-BR design 5.2): Yes/No, context menus, spin box
+    steps, About Qt; None for English, or for a language PySide6 has no file for."""
+    from PySide6.QtCore import QLibraryInfo, QTranslator
+    translator = QTranslator()
+    folder = QLibraryInfo.path(QLibraryInfo.LibraryPath.TranslationsPath)
+    return translator if language != "en" and translator.load(f"qtbase_{language}", folder) else None
+
+
 def main(argv: list[str] | None = None) -> int:
     """The kicad-rf-studio-gui entry (`argv` is sys.argv[1:] when None, as the gui-scripts entry calls it): a PROJECT
     (a project.json or its folder) and a KiCad button press's handoff FILE (--handoff), each optional, as the request
@@ -44,9 +54,9 @@ def main(argv: list[str] | None = None) -> int:
     that runs, and 0 returned at once; otherwise this start takes gui.lock in the data folder, or, while a live start
     holds it, forwards again every 0.2 s for up to START_WAIT_S, then listens on instance_name() and shows the main
     window, which acts on the request and keeps the server and the lock until it closes (a failed listen unlocks at
-    once); it returns the app's exit code once it quits. Without a console (pythonw, which runs the gui-scripts entry
-    on Windows) sys.stderr is None, so it first appends to gui.log in the data folder, where a slot's traceback and
-    an argument error land."""
+    once); it returns the app's exit code once it quits. Qt's own words follow the catalog's language while the
+    window runs (qtbase). Without a console (pythonw, which runs the gui-scripts entry on Windows) sys.stderr is
+    None, so it first appends to gui.log in the data folder, where a slot's traceback and an argument error land."""
     if sys.stderr is None:
         runs.data_dir().mkdir(parents=True, exist_ok=True)
         sys.stderr = open(runs.data_dir() / "gui.log", "a", encoding="utf-8")
@@ -78,9 +88,17 @@ def main(argv: list[str] | None = None) -> int:
     server.setSocketOptions(QLocalServer.SocketOption.UserAccessOption)
     if not server.listen(name):
         lock.unlock()  # a later start may serve; this window runs without a server
+    # ponytail: an exception before exec leaves the translator on the app; a try/finally if a caller ever reuses its app
+    # after one
+    translator = qtbase(language())
+    if translator is not None:
+        app.installTranslator(translator)
     from kicad_rf_studio.gui.window import MainWindow
 
     win = MainWindow()
     win.serve(server, lock)
     win.act(request)
-    return app.exec()
+    code = app.exec()
+    if translator is not None:
+        app.removeTranslator(translator)  # at once, not when collected: an app that outlives main is left as it was
+    return code
