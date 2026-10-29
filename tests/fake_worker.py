@@ -7,11 +7,12 @@ waves of the known N-port networks.star, from networks.network_trace) or a kind 
 $KRS_FAKE_STATS "partial" writes openEMS_stats.txt's first three values, the third without its newline: a killed write.
 $KRS_FAKE_SETUP is JSON that setup.json takes, and $KRS_FAKE_LOG a file that gets a line as each fake starts and
 ends. The setup mode writes setup.json, and an empty operator_dump.vtr when a port holds a part. A run of a spec with
-a far field also writes the 12 dumps (worker.DUMPS) empty, and the nf2ff mode writes <dumps>/<out>-<grid>.h5 empty
-for each grid of worker.GRIDS."""
+a far field also writes the 12 dumps (worker.DUMPS) empty, and the nf2ff mode copies tests/fixtures/farfield/<grid>.h5,
+a real 58 mm dipole's far field, to <dumps>/<out>-<grid>.h5 for each grid of worker.GRIDS."""
 import json
 import math
 import os
+import shutil
 import sys
 import time
 from pathlib import Path
@@ -98,7 +99,8 @@ def act(job: dict, spec: dict) -> int:
         return 0
     if job["mode"] == "nf2ff":
         for grid in GRIDS:
-            (Path(job["dumps"]) / f"{job['out']}-{grid}.h5").write_bytes(b"")
+            shutil.copyfile(Path(__file__).parent / "fixtures" / "farfield" / f"{grid}.h5",
+                            Path(job["dumps"]) / f"{job['out']}-{grid}.h5")
         return 0
     return run(job, spec)
 

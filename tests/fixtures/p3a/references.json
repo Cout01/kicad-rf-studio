@@ -1,0 +1,3 @@
+{"source": "Stage 3 design 5.11, gate P3-A: a short dipole's D is 1.5 (1.76 dBi) and a half-wave dipole's 1.64 (2.15 dBi) (Balanis, ch. 4); PEC in vacuum radiates every watt its port accepts; the box moves 2 cells; no energy growth out to 3 × the stop time, T_max (Stage 1 6.4), read as a rise of at most 6 dB, well below the growth detector's 20 dB",
+ "short_d_dbi": 1.76, "short_tol_db": 0.10, "half_d_dbi": 2.15, "half_tol_db": 0.15,
+ "eta_rad": 1.0, "eta_tol": 0.02, "box_cells": 2, "box_db": 0.05, "growth_factor": 3, "growth_db_max": 6.0}
