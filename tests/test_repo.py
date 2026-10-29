@@ -91,9 +91,11 @@ def test_the_release_check_workflow_runs_on_a_version_tag_or_by_hand_on_windows_
     flow = (ROOT / ".github" / "workflows" / "release-check.yml").read_text(encoding="utf-8")
     ci = (ROOT / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
     floor = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))["project"]["requires-python"]
-    assert '\non:\n  push:\n    tags: ["v*"]\n  workflow_dispatch:\n' in flow  # never a branch push (design 4)
+    triggers = flow.split("\non:\n", 1)[1].split("\npermissions:", 1)[0]  # the whole block: a trigger added fails it
+    assert triggers == '  push:\n    tags: ["v*"]\n  workflow_dispatch:\n'  # never a branch push (design 4)
     assert "\npermissions:\n  contents: read\n" in flow and "persist-credentials: false" in flow  # no token kept
     assert "fetch-depth: 0" in flow  # a shallow clone would leave the privacy gate one commit to scan
-    assert f'python-version: "{floor[2:]}"' in flow and 'python-version: "3.14"' in flow  # Linux's floor, Windows'
+    pairs = re.findall(r"- os: (\S+)\n\s+python-version: \"([\d.]+)\"", flow)  # the matrix's (os, Python) pairs
+    assert pairs == [("windows-latest", "3.14"), ("ubuntu-24.04", floor[2:])]  # the README's Python, Linux's floor
     assert next(line for line in ci.splitlines() if "libegl1" in line) in flow.splitlines()  # Review Focus 5
     assert flow.splitlines()[-1] == "      - run: python tools/release_check.py"
