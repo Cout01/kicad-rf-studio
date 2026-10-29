@@ -153,6 +153,7 @@ CATALOG: dict[str, str] = {
     "W_RECIPROCITY": "Reciprocity flagged: |Sij − Sji| {err} at {f_mhz} MHz (|a| {a_db} dB) is above {limit}. Check the verdicts above: a flat or T_max job is the usual cause, and a stricter preset the fix.",
     "I_LOSS_BUDGET": "Loss budget: {layout_pct} % unaccounted with the part losses removed, against {expected_pct} % expected dielectric loss, at worst at {f_mhz} MHz (|a| {a_db} dB); flagged {limit_pct} points above.",
     "W_LOSS_BUDGET": "Loss budget flagged: {layout_pct} % unaccounted at {f_mhz} MHz (|a| {a_db} dB) is more than {limit_pct} points above the {expected_pct} % expected dielectric loss. Radiation or power coupled into cut nets is the usual cause; look at the model with `preview`.",
+    "W_ETA_RAD": "Radiation efficiency flagged: η_rad {eta} at {f_mhz} MHz is above {limit}, so the far field radiates more power than the port accepts, and the efficiencies and gains at that frequency are not reliable. A stricter preset or a wider air gap is the usual fix.",
     "E_RESULTS_WRITE": "Cannot write {path}: {reason}. Close the program that holds it open (a spreadsheet, say), then run `{command}` to write it again.",
     "I_MARKER": "{marker} = {f_mhz} MHz (|a| {a_db} dB): IL {il_db} dB and RL {rl_db} dB with layout; IL {il_ideal_db} dB and RL {rl_ideal_db} dB ideal schematic.",
     "I_MARKER_TRACE": "{marker} = {f_mhz} MHz (|a| {a_db} dB): IL {il_db} dB and RL {rl_db} dB.",

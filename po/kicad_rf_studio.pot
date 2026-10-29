@@ -700,6 +700,11 @@ msgstr ""
 msgid "Loss budget flagged: {layout_pct} % unaccounted at {f_mhz} MHz (|a| {a_db} dB) is more than {limit_pct} points above the {expected_pct} % expected dielectric loss. Radiation or power coupled into cut nets is the usual cause; look at the model with `preview`."
 msgstr ""
 
+#. W_ETA_RAD
+#, python-brace-format
+msgid "Radiation efficiency flagged: η_rad {eta} at {f_mhz} MHz is above {limit}, so the far field radiates more power than the port accepts, and the efficiencies and gains at that frequency are not reliable. A stricter preset or a wider air gap is the usual fix."
+msgstr ""
+
 #. E_RESULTS_WRITE
 #, python-brace-format
 msgid "Cannot write {path}: {reason}. Close the program that holds it open (a spreadsheet, say), then run `{command}` to write it again."
