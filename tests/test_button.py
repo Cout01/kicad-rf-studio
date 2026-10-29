@@ -297,6 +297,15 @@ def test_the_installed_launcher_runs_the_helper_and_passes_its_line_and_exit_cod
         " " + render("E_KICAD_UNREACHABLE") + "\n")
 
 
+def test_install_kicad_plugin_run_again_rewrites_the_launcher_for_the_venv_where_it_now_is(tmp_path, monkeypatch):
+    monkeypatch.setenv("KICAD_DOCUMENTS_HOME", str(tmp_path))  # the README's "Moved the venv?"; Review Focus 4
+    launcher = tmp_path / SEGMENT / "10.0" / "plugins" / "kicad-rf-studio" / LAUNCHER
+    for venv in ("old venv", "new venv"):  # where install-kicad-plugin ran, then where the venv is now
+        monkeypatch.setattr(sys, "executable", str(tmp_path / venv / "python"))
+        button.install("10.0")
+    assert b"new venv" in launcher.read_bytes() and b"old venv" not in launcher.read_bytes()
+
+
 @pytest.mark.skipif(sys.platform != "win32", reason="cmd.exe reads launch.cmd in the console's code page")
 def test_a_python_path_launch_cmd_cannot_hold_is_refused(tmp_path, monkeypatch):  # Review Focus 5
     monkeypatch.setenv("KICAD_DOCUMENTS_HOME", str(tmp_path))

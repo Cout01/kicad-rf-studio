@@ -4,23 +4,68 @@ kicad-rf-studio imports KiCad boards and simulates their RF parts with openEMS. 
 
 ## Install
 
+kicad-rf-studio runs from a virtual environment of its own, `<venv>` below. pip installs it there with its Python dependencies, Qt among them (about 600 MB on disk); openEMS 0.37 comes apart. Until kicad-rf-studio is on PyPI, `<source>` is the source zip of a release on the project's GitHub page, once the project is published there, or a clone of this repository.
+
 ### Windows
 
-1. Create a virtual environment with Python 3.14: `py -3.14 -m venv <venv>`
-2. Install kicad-rf-studio into it: `<venv>\Scripts\python -m pip install <clone of this repository>`
-3. Unpack the official Windows package of openEMS 0.37 and give its folder, the one that holds `openEMS.exe` and `python\`, to `<venv>\Scripts\kicad-rf-studio setup-openems <openEMS folder>`. It installs the package's openEMS and CSXCAD wheels into the venv, offline, and records the folder.
+In PowerShell, on Windows 10 or 11:
+
+1. Install Python 3.14, 64-bit, for your user: with the Python install manager (`py install 3.14`), which needs no admin rights, or from python.org. The openEMS 0.37 wheels for Windows need Python 3.13 or 3.14.
+2. Make the venv at `%LOCALAPPDATA%\kicad-rf-studio\venv` and install kicad-rf-studio into it. `$venv` names it in the commands below; a new PowerShell window needs that first line again.
+
+   ```
+   $venv = "$env:LOCALAPPDATA\kicad-rf-studio\venv"
+   py -3.14 -m venv $venv
+   & "$venv\Scripts\python" -m pip install <source>
+   ```
+
+3. Unpack the official Windows package of openEMS 0.37 and give its folder, the one that holds `openEMS.exe` and `python\`, to `setup-openems`. It installs the package's openEMS and CSXCAD wheels into the venv, offline, and records the folder.
+
+   ```
+   & "$venv\Scripts\kicad-rf-studio" setup-openems "<openEMS folder>"
+   ```
+
+4. Install the KiCad button, for KiCad 9.0.7 or later, or 10.x. It writes into each KiCad version's plugins folder and never edits KiCad's settings. Then, in KiCad: Preferences › Plugins › Enable KiCad API, then restart KiCad.
+
+   ```
+   & "$venv\Scripts\kicad-rf-studio" install-kicad-plugin
+   ```
+
+5. Start the GUI with `& "$venv\Scripts\kicad-rf-studio-gui"`, or from KiCad's PCB editor: select the chain's two end pads and press the kicad-rf-studio button.
 
 ### Linux
 
-On Debian 12, Ubuntu 24.04 or Fedora, with the system Python (3.11 or newer):
+On Debian 12, Ubuntu 24.04 or Fedora (glibc 2.34 or newer), with the system Python (3.11 or newer):
 
-1. Create a virtual environment and activate it: `python3 -m venv <venv>`, then `source <venv>/bin/activate`
-2. Install kicad-rf-studio into it: `pip install <clone of this repository>`
-3. In a clone of upstream's openEMS-Project, install the build dependencies with `./scripts/install_deps.sh --install --python`, then build with `./update_openEMS.sh <prefix> --python` while the venv is active. Leave the GUI build on (no `--disable-GUI`): it builds AppCSXCAD.
+1. Clone upstream's openEMS-Project at v0.37.0, with its submodules, and install its build dependencies. This is the one step that needs admin rights: the script asks, then installs your distribution's packages with sudo, `python3-venv` among them on Debian and Ubuntu.
+
+   ```
+   git clone --recursive --branch v0.37.0 https://github.com/thliebig/openEMS-Project.git
+   cd openEMS-Project
+   ./scripts/install_deps.sh --install --python
+   ```
+
+2. Make the venv at `~/.local/share/kicad-rf-studio/venv`, activate it and install kicad-rf-studio into it:
+
+   ```
+   python3 -m venv ~/.local/share/kicad-rf-studio/venv
+   source ~/.local/share/kicad-rf-studio/venv/bin/activate
+   pip install <source>
+   ```
+
+3. With the venv active, build openEMS in the openEMS-Project folder, without sudo, so that its Python bindings land in the venv: `./update_openEMS.sh ~/.local/share/kicad-rf-studio/openEMS --python`. Leave the GUI build on (no `--disable-GUI`): it builds AppCSXCAD.
+4. With the venv active, install the KiCad button: `kicad-rf-studio install-kicad-plugin`. Then, in KiCad: Preferences › Plugins › Enable KiCad API, then restart KiCad. A Flatpak KiCad cannot start the button: open the board in the GUI instead.
+5. Start the GUI with `kicad-rf-studio-gui`. On a desktop, Qt needs the xcb cursor library: `libxcb-cursor0` on Debian and Ubuntu, `xcb-util-cursor` on Fedora.
+
+### After installing
+
+- **Moved the venv?** The button's launcher holds the path of the venv's Python, written by `install-kicad-plugin`: run `install-kicad-plugin` again from the venv where it now is. Until then the button fails: KiCad 10 shows the shell's error, KiCad 9 nothing.
+- **Remove the button:** `kicad-rf-studio install-kicad-plugin --remove` deletes its folder from each KiCad version's plugins folder, and nothing else. Once the venv is gone, delete the `kicad-rf-studio` folder by hand from each `Documents\KiCad\<version>\plugins` (Windows) or `~/.local/share/kicad/<version>/plugins` (Linux).
+- **Uninstall:** remove the button, then delete the venv; on Linux, also the openEMS folder `~/.local/share/kicad-rf-studio/openEMS` and the openEMS-Project clone. The folder that holds the venv, `%LOCALAPPDATA%\kicad-rf-studio` or `~/.local/share/kicad-rf-studio`, also holds the settings and the run folders your projects' results point to: delete it only when no project needs them.
 
 ## Tutorial
 
-This takes `lpf915`, the synthetic 915 MHz low-pass filter in `tests/fixtures` (a series DC block and a C-L-C pi of 0402 parts on a 50 Ω GCPW, under a shield), through `new`, `cost`, `run`, `retune` and `verify`. Run the commands from the root of the clone with the venv from Install; on Linux, with the venv active, type `kicad-rf-studio` alone.
+This takes `lpf915`, the synthetic 915 MHz low-pass filter in `tests/fixtures` (a series DC block and a C-L-C pi of 0402 parts on a 50 Ω GCPW, under a shield), through `new`, `cost`, `run`, `retune` and `verify`. Run the commands from the root of a clone, or of the unpacked source zip, with the venv from Install. In PowerShell, `<venv>\Scripts\kicad-rf-studio` is `& "$venv\Scripts\kicad-rf-studio"`; on Linux, with the venv active, type `kicad-rf-studio` alone.
 
 The times were measured on the development PC (Windows 11, 16 CPUs, 4 jobs at once) at the Normal preset, `new`'s default: by P0-B (`docs/validation/2026-10-25-p0-b.md`), unless marked as measured while this tutorial was written. P0-B's run B6 is this project: lpf915 at the protected reach of 6 substrate heights that `new` now writes. The excerpts are real output, from P0-B's runs or from runs made while this tutorial was written; `<run folder>` stands for the run's folder in the per-user data folder, and `lpf915` for the project's folder.
 
@@ -107,8 +152,9 @@ P0-B's consistency criterion, `verify` against the co-simulation, failed (|ΔS21
 1. Create a virtual environment: `python -m venv .venv`
 2. Activate it: `.venv\Scripts\activate` on Windows, `source .venv/bin/activate` elsewhere.
 3. Install the package in editable mode with the development extras: `python -m pip install -e .[dev]`
-4. Give the venv openEMS as Install says (on Windows, `kicad-rf-studio setup-openems <openEMS folder>`). Without it, the tests marked `openems` are skipped.
+4. Give the venv openEMS as Install says (on Windows, `kicad-rf-studio setup-openems <openEMS folder>`, and `CSXCAD_INSTALL_PATH` set to that folder: the tests import openEMS in this Python, which reads it to find openEMS's DLLs). Without it, the tests marked `openems` are skipped.
 5. Run the tests: `python -m pytest -q`
+6. Before a release, run `python tools/release_check.py`: it builds a wheel from git archive of HEAD and checks it, installs it in a fresh venv, starts the GUI there offscreen, checks the KiCad button's plugin.json against KiCad's schemas, and runs the privacy gate's generic rules over the history and the wheel. One real run through the GUI, lpf915 at Draft then its verify, runs with `KRS_E2E_DIR` set to an empty folder outside the repository and openEMS importable (step 4): `python -m pytest tests/test_gui.py -k real_run -s`. It takes about lpf915's Draft run plus its verify, and its cost line prints the estimate first; a file named STOP in its newest run folder stops it.
 
 ## Contributing
 

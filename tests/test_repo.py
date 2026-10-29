@@ -1,8 +1,12 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
+import re
 import subprocess
 import tomllib
 from pathlib import Path
+import pytest
 import kicad_rf_studio
+from kicad_rf_studio.cli import main
+from kicad_rf_studio.core.messages import CATALOG
 
 ROOT = Path(__file__).resolve().parents[1]
 SPDX = "# SPDX-License-Identifier: GPL-3.0-or-later"
@@ -60,6 +64,23 @@ def test_the_readme_has_a_tutorial():  # D-21
     assert "\n## Tutorial\n" in readme
     tutorial = readme.split("\n## Tutorial\n", 1)[1].split("\n## ", 1)[0]
     assert [c for c in ("new", "cost", "run", "retune", "verify") if f"kicad-rf-studio {c} " not in tutorial] == []
+
+def test_the_readme_installs_the_app_openems_and_the_button_with_real_commands(capsys):  # design 5.6, 7; RF 4
+    readme = (ROOT / "README.md").read_text(encoding="utf-8")
+    install = readme.split("\n## Install\n", 1)[1].split("\n## ", 1)[0]
+    step = "Preferences › Plugins › Enable KiCad API, then restart KiCad"
+    assert step in CATALOG["I_PLUGIN_NEXT"] and step in install  # the README quotes the command's own words
+    assert r"%LOCALAPPDATA%\kicad-rf-studio\venv" in install  # design 5.6's concrete venv
+    assert "run `install-kicad-plugin` again" in install  # Review Focus 4: a moved venv
+    # ponytail: code spans and fences only; a command named in prose goes unchecked
+    code = "\n".join(re.findall(r"```[^\n]*\n(.*?)```", readme, re.S) + re.findall(r"`([^`\n]+)`", readme))
+    named = set(re.findall(r"kicad-rf-studio[\"']? ([a-z][a-z-]*)", code))
+    assert {"setup-openems", "install-kicad-plugin"} <= named
+    for command in sorted(named):  # each a real subcommand: argparse shows its help and exits 0, else 2
+        with pytest.raises(SystemExit) as e:
+            main([command, "--help"])
+        assert e.value.code == 0, command
+    capsys.readouterr()
 
 def test_every_workflow_starts_with_an_spdx_header():  # D-55
     files = sorted((ROOT / ".github" / "workflows").glob("*.yml"))

@@ -1,7 +1,7 @@
 # kicad-rf-studio — Stage 1 design: a validated simulation engine
 
 - **Date:** 2026-10-16
-- **Status:** design approved section by section in conversation, revised on 2026-10-19 after an independent review, and approved by the owner. On 2026-10-21 the owner confirmed one amendment to §5.4: the substrate height now counts in the cell size. On 2026-10-22, plan 5 amended §1.1, §7.6, §9.1, §9.2 and §9.6 (A-1 to A-4) as controller recommendations while the owner was unavailable; the owner reviews them. On 2026-10-24, D-45's fix amended §5.6 (A-6) and §7.6 (A-7) the same way. On 2026-10-25, P0-B's TX-side outcome amended §1.1 and §12 (A-5) the same way. On 2026-10-26, plan 6's mesh-rule calibration amended §5.4 and §12 (A-8) the same way. On 2026-10-27, Stage 2's plan 1 amended §3.2, §3.3, §3.4 and §6.1 (A-13 to A-15) the same way. On 2026-10-28, Stage 2's plan 3 amended §3.2, §3.4, §4.3 and §10 (A-16 to A-18) the same way. On 2026-10-28, Stage 2's plan 4 amended §3.6 and §9.1 (A-19 and A-20) the same way.
+- **Status:** design approved section by section in conversation, revised on 2026-10-19 after an independent review, and approved by the owner. On 2026-10-21 the owner confirmed one amendment to §5.4: the substrate height now counts in the cell size. On 2026-10-22, plan 5 amended §1.1, §7.6, §9.1, §9.2 and §9.6 (A-1 to A-4) as controller recommendations while the owner was unavailable; the owner reviews them. On 2026-10-24, D-45's fix amended §5.6 (A-6) and §7.6 (A-7) the same way. On 2026-10-25, P0-B's TX-side outcome amended §1.1 and §12 (A-5) the same way. On 2026-10-26, plan 6's mesh-rule calibration amended §5.4 and §12 (A-8) the same way. On 2026-10-27, Stage 2's plan 1 amended §3.2, §3.3, §3.4 and §6.1 (A-13 to A-15) the same way. On 2026-10-28, Stage 2's plan 3 amended §3.2, §3.4, §4.3 and §10 (A-16 to A-18) the same way. On 2026-10-28, Stage 2's plan 4 amended §3.4, §3.6, §9.1 and §12 (A-19 to A-21) the same way.
 - **Scope:** Stage 1 of the project: the headless engine, the command-line orchestrator and the validation gates. The GUI and the KiCad toolbar button (Stage 2) get their own spec, written with Stage 1's results.
 
 ---
@@ -150,14 +150,16 @@ Stage 2's GUI calls the same functions, in the same order: `new`, then `cost`, t
 - **openEMS and CSXCAD** are not on PyPI, so they are never declared as dependencies.
 - **Windows:**
   - The official openEMS wheels need Python 3.13 or 3.14.
-  - Install steps:
-    1. `py -3.14 -m venv <venv>`;
-    2. `pip install <clone of the repository>` (publishing on PyPI is an open item, §12);
-    3. `kicad-rf-studio setup-openems <openEMS dir>`.
+  - Install steps, as the README gives them:
+    1. `py -3.14 -m venv "%LOCALAPPDATA%\kicad-rf-studio\venv"`: a venv of the app's own, in its per-user data folder (§3.3);
+    2. `pip install <source>`: a tagged release's source zip on GitHub once the repository is published, or a clone until then (publishing on PyPI is an open item, §12);
+    3. `kicad-rf-studio setup-openems <openEMS dir>`;
+    4. `kicad-rf-studio install-kicad-plugin` (§3.2), then, in KiCad, Preferences › Plugins › Enable KiCad API and a restart. No installer script wraps these steps in Stage 2. (A-21, Stage 2 plan 4: controller recommendation, owner unavailable.)
   - Step 3 wraps `pip install --no-index --no-deps --find-links <dir>\python openEMS CSXCAD`. `--no-index` stays, because both names are unclaimed on PyPI and dropping it invites dependency confusion.
 - **Linux** (tested only in CI containers):
   - Debian 12, Ubuntu 24.04 and Fedora, each with its system Python (≥ 3.11).
   - openEMS comes from upstream's `install_deps.sh` and `update_openEMS.sh <prefix> --python`. The script runs with the app's venv active, so that the bindings land in it; otherwise the script creates its own venv. The GUI build stays on, so that AppCSXCAD exists.
+  - The README's steps clone upstream's openEMS-Project at v0.37.0 and run its `install_deps.sh` first, the one step that needs admin rights; then they make the venv at `~/.local/share/kicad-rf-studio/venv`, build openEMS into `~/.local/share/kicad-rf-studio/openEMS` with that venv active and without sudo, and end with `kicad-rf-studio install-kicad-plugin`, as on Windows. (A-21, Stage 2 plan 4: controller recommendation, owner unavailable.)
 - **Version check:** before any command that starts a worker (`cost`, `run`, `verify`, `preview`), a subprocess checks that openEMS is at least 0.37, and the app warns outside 0.37.x.
 
 ### 3.5 Translations
@@ -679,5 +681,5 @@ These are not in Stage 1 or v1:
 | TX side in v1 | P0-B's rotated-port case: not joined (2026-10-25) |
 | v1 time policy | The owner, after P0-C |
 | Commit author identity for the public repository | The owner, before the first push. Every existing commit is then rewritten to that identity, so neither the old identity nor earlier text is published. Until then, commits stay local, and Linux CI (P0-D) waits |
-| Publishing on PyPI, and under which account | The owner, after the first push. Until then, install from a clone |
+| Publishing on PyPI, and under which account | The owner, after the first push. Until then, install from a tagged release's source zip on GitHub, once the repository is published, or from a clone (A-21, Stage 2 plan 4: controller recommendation, owner unavailable) |
 | Where the private board files are copied from | Asked at the start of P0-C |
