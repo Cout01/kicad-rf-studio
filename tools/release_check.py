@@ -100,10 +100,11 @@ def program(tmp: Path, name: str) -> str:
 
 def isolated(tmp: Path) -> dict:
     """This environment for the fresh venv's app: its data, caches and settings, and KiCad's documents and settings
-    folders under `tmp`, a KiCad API socket nobody listens on, no KiCad token, and Qt offscreen."""
-    home = str(tmp / "home")
+    folders under `tmp`, a KiCad API socket nobody listens on, no KiCad token, no PYTHONPATH or PYTHONHOME (the console
+    scripts run without -I, so these would put other code before the wheel's), and Qt offscreen."""
+    home, dropped = str(tmp / "home"), ("KICAD_API_TOKEN", "PYTHONPATH", "PYTHONHOME")
     names = ("LOCALAPPDATA", "XDG_DATA_HOME", "XDG_CACHE_HOME", "XDG_CONFIG_HOME", "MPLCONFIGDIR")
-    return {**{k: v for k, v in os.environ.items() if k != "KICAD_API_TOKEN"}, **dict.fromkeys(names, home),
+    return {**{k: v for k, v in os.environ.items() if k not in dropped}, **dict.fromkeys(names, home),
             "KICAD_DOCUMENTS_HOME": str(tmp / "documents"), "KICAD_CONFIG_HOME": str(tmp / "config"),
             "KICAD_API_SOCKET": f"ipc://{tmp / 'no-kicad.sock'}", "QT_QPA_PLATFORM": "offscreen"}
 
@@ -126,7 +127,7 @@ def build(tmp: Path) -> tuple[str, str]:
 
 def install(tmp: Path) -> tuple[str, str]:
     """(b) A fresh venv, the wheel installed, pip check, then kicad-python's protos imported (pip check passes on a
-    protobuf of 5.29.0 to 5.29.5, which they refuse: plan 3) and the gui-scripts entry there (the plugin step runs the
+    protobuf of 5.29.0 to 5.29.5, which they refuse: plan 3) and both entry points there (the plugin step runs the
     console script). pip keeps its own cache."""
     wheel, python = next((tmp / "dist").glob("*.whl")), program(tmp, "python")
     for command in ([sys.executable, "-m", "venv", str(tmp / "venv")],
@@ -135,8 +136,8 @@ def install(tmp: Path) -> tuple[str, str]:
                     [python, "-I", "-c", "import kipy.board_types"]):
         if (done := run(command)).returncode:
             return failed(command, done)
-    if not Path(program(tmp, "kicad-rf-studio-gui")).exists():
-        return "FAIL", "the fresh venv has no kicad-rf-studio-gui: the wheel lacks its gui-scripts entry"
+    if missing := [n for n in ("kicad-rf-studio", "kicad-rf-studio-gui") if not Path(program(tmp, n)).exists()]:
+        return "FAIL", f"the fresh venv lacks {' and '.join(missing)}: the wheel lacks its entry points"
     return "PASS", (f"{wheel.name} installs in a fresh venv with both entry points, pip check finds nothing broken, "
                     "kicad-python's protos import")
 
@@ -194,9 +195,9 @@ def main() -> int:
     SKIPPED, and a step that raises is its own FAIL. Returns 1 when a step failed, else 0."""
     sys.stdout.reconfigure(errors="replace")
     status = {}
-    # ponytail: a file a process still holds (Windows) stays in TEMP, named on the last line; a TEMP deeper than about
-    # 120 characters overflows Windows' 260-character paths in the venv, which the failing step names: run it with a
-    # shorter TEMP then
+    # ponytail: a file a process still holds (Windows) stays in TEMP, named on the last line; a TEMP longer than about
+    # 60 characters overflows Windows' 260-character paths in the venv (PySide6-Essentials' deepest file) unless long
+    # paths are enabled, and the failing step names it: run it with a shorter TEMP then
     with tempfile.TemporaryDirectory(prefix="krs release é ", ignore_cleanup_errors=True) as name:
         tmp = Path(name).resolve()  # TEMP may be an 8.3 short path, which venv warns about
         for step in STEPS:

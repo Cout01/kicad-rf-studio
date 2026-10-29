@@ -86,6 +86,29 @@ def test_the_privacy_step_passes_only_a_clean_scan_and_fails_when_the_gate_canno
     assert status == "FAIL" and detail.endswith(": exit code 1: privacy_gate: git rev-list failed: x")
 
 
+def test_the_isolated_environment_moves_the_apps_and_kicads_folders_and_drops_the_token_and_pythonpath(
+        tmp_path, monkeypatch):  # release 1: the plugin step's console scripts run without -I
+    for name in ("KICAD_API_TOKEN", "PYTHONPATH", "PYTHONHOME"):
+        monkeypatch.setenv(name, "src")
+    env = release_check.isolated(tmp_path)
+    assert [name for name in ("KICAD_API_TOKEN", "PYTHONPATH", "PYTHONHOME") if name in env] == []
+    paths = (env["LOCALAPPDATA"], env["KICAD_DOCUMENTS_HOME"], env["KICAD_API_SOCKET"].removeprefix("ipc://"))
+    assert all(Path(p).is_relative_to(tmp_path) for p in paths)
+
+
+def test_install_fails_a_venv_without_either_entry_point(tmp_path, monkeypatch):  # release 4
+    monkeypatch.setattr(release_check, "run", lambda command, **kw: subprocess.CompletedProcess(command, 0, "", ""))
+    (tmp_path / "dist").mkdir()
+    (tmp_path / "dist" / "x-0-py3-none-any.whl").touch()
+    gui, cli = (Path(release_check.program(tmp_path, name)) for name in ("kicad-rf-studio-gui", "kicad-rf-studio"))
+    gui.parent.mkdir(parents=True)
+    gui.touch()
+    assert release_check.install(tmp_path) == (
+        "FAIL", "the fresh venv lacks kicad-rf-studio: the wheel lacks its entry points")
+    cli.touch()
+    assert release_check.install(tmp_path)[0] == "PASS"
+
+
 def test_main_skips_what_a_failed_step_holds_up_fails_a_step_that_raises_and_removes_its_folder(monkeypatch, capsys):
     made = []
 
