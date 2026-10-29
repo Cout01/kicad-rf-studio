@@ -1,0 +1,55 @@
+{
+ "code": "e8148698c6e045293204bdec33271acc4e23dfe4",
+ "env": [
+  "win32",
+  "AMD64 Family 25 Model 97 Stepping 2, AuthenticAMD",
+  "2.5.4",
+  "1.18.1",
+  "3.11.2",
+  "2.2.0",
+  "en"
+ ],
+ "models": {
+  "calibration": {
+   "model_json": "8febceea91cd1947c60d5ab86155f30353e610e48be5129a08ac977b649c2465",
+   "spec_hash": "781209556bddd373667974a07a5fdeeb25cc60093e37062fcbaac1aaae1b0711"
+  },
+  "coupon_gcpw_pads": {
+   "model_json": "16ab4c2864c96a181ee7218d1659357c3cf88e5d7035c26c59ea9564faf65e55",
+   "notes": "ffbb7ab9068a95b349e4a6dc2dec249c72e11e3e661e79cf4c1648eca669ef32",
+   "project": "94d4ca477110e907351698bb2be01250067cbd78cbae665671b3689658f14aed",
+   "spec_hash": "aa214fa705ccc00ab4113525475fe15a4766ea073fc4a94c0798111bddcf2481"
+  },
+  "lpf915": {
+   "model_json": "fa2b55c801597978de48cdc6268ff92c6898046720ce8bdffbd9f8d11a5685f4",
+   "notes": "3fad4b21c54ee7c5271e9331c49215fec73564fa5bb5828ba02e28f0e9d0e1f0",
+   "project": "011dc383faf1203a0b6b54d67baa8bf568d0ff28a6e9a749f1b6fab8a55ec94c",
+   "spec_hash": "89cb90fab558f820317c3853aafc138c9fcd44b4dcdf62c070e1f89d0d549f78",
+   "verify": {
+    "model_json": "af0426602b5793e3241786b49cbd8ac2a91751e068c945338868c8ceb9f13728",
+    "spec_hash": "ce3f8e0fc1099035b2239ccd7eadd558b638937d9b055be35fd00f326450bdc9"
+   }
+  },
+  "lpf915-45": {
+   "model_json": "5793e2e638f800185fecea61e23c00b85d49fdae10ed5ca29a1b9deb80c49cb4",
+   "notes": "1490d2875547275716307b125e5aafdc8c0317a6119b41cc4c75715a4edce53e",
+   "project": "58d0ce3587d63fe5de7b82237e202aad0b870a7af511ad454eb8f3a8cec3e74c",
+   "spec_hash": "54aa9323711a8c44061c9a12806638e28b3d3109321f66b99e163a531e48b2e1"
+  }
+ },
+ "outputs": {
+  "coupon_gcpw_pads": {
+   "layout.s2p": "3360451242ed70f5578dbd68a9cc5e6ccfc6021514180b3569ac4a80820d4ad1",
+   "lines": "7f6168743a509384ab25a2a9d584138efe6758d2f07b1ec741588eb7e078968e",
+   "summary.csv": "fc36a03e9869f46c7e7b218d057d5315992c71a9c11f2710a4cb5860fc8afff6",
+   "summary.png": "07d521493a095b3edd0493acdc00b3f266717a5d1b71e6aa33bf04035ff71b41"
+  },
+  "lpf915": {
+   "chain.s2p": "cfd828e9211deb39e75d950c4d433401ddf3c225b1c3ad1c49e60d076f10759b",
+   "layout.s6p": "c502def74efa44b4196d89032425e3207909f62756dc2df77782c25a54173438",
+   "lines": "0ef345e219276f3361ec1af75f96281f38ebdb1499423571b795f80413875f55",
+   "summary.csv": "ef70f5d1bbcdc4b07d1ff56d47fb60de2d4af56cb4a361018a0eb570e80a0b93",
+   "summary.png": "89fc1bdc3cd9dcc368a71ea3a3618e880f03b881d95bca2f93f3767bb75b9985"
+  }
+ }
+}
