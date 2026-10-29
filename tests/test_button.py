@@ -299,7 +299,8 @@ def test_the_installed_launcher_runs_the_helper_and_passes_its_line_and_exit_cod
     install = ("import sys; from kicad_rf_studio.cli import main; rc = main(['install-kicad-plugin', '--kicad', "
                "'10.0']); assert not {'PySide6', 'shiboken6', 'kipy'} & {m.split('.')[0] for m in sys.modules}; "
                "sys.exit(rc)")
-    out = subprocess.run([sys.executable, "-I", "-c", install], capture_output=True, text=True, timeout=60)
+    out = subprocess.run([sys.executable, "-X", "utf8", "-I", "-c", install], capture_output=True, encoding="utf-8",
+                         timeout=60)
     assert out.returncode == 0, out.stderr  # design 4: install-kicad-plugin, run, loads neither Qt nor kicad-python
     folder = docs / SEGMENT / "10.0" / "plugins" / "kicad-rf-studio"
     text = button.launcher(os.path.abspath(sys.executable), sys.platform == "win32")
