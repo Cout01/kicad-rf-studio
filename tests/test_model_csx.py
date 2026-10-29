@@ -2,6 +2,8 @@
 import sys
 import types
 
+import pytest
+
 from kicad_rf_studio.core.model.csx import METAL_PRIORITY, build_csx
 from kicad_rf_studio.core.model.spec import excitation
 
@@ -53,6 +55,38 @@ def test_build_csx_follows_the_spec_and_the_engine_settings(monkeypatch):  # spe
     assert ("AddMaterial", ("substrate_0",), {"epsilon": 4.5, "kappa": 0.0046}) in log
     assert [kw["priority"] for n, _, kw in log if n == "AddLinPoly"] == [10, METAL_PRIORITY]
     assert ("AddLumpedPort", (1, 50, [2.0, 2.0, 0.0], [2.0, 2.0, 1.0], "z"), {"excite": 1}) in log
+
+
+def test_the_boundary_is_mur_without_the_key_and_pml_8_on_all_six_faces_with_it(monkeypatch):  # design 5.2; S1 5.1
+    log = fake_openems(monkeypatch)
+    assert build_csx(TINY, 1, 1e-9)[2] is None  # a v1 spec: MUR (the test above) and no far-field box
+    build_csx({**TINY, "boundary": "pml_8"}, 1, 1e-9)
+    assert ("SetBoundaryCond", (["PML_8"] * 6,), {}) in log
+    with pytest.raises(KeyError):  # MUR is the key's absence, never a value
+        build_csx({**TINY, "boundary": "mur"}, 1, 1e-9)
+
+
+FAR = {"f_hz": [1e9, 0.5e9, 1.1e9], "center": [2.0, 2.0, 2.0]}  # TINY's band, f1 0.5 GHz to f2 1.1 GHz, both ends in
+
+
+def test_the_far_field_box_records_the_frequencies_in_the_frequency_domain(monkeypatch):  # design 5.5; RF 1
+    log = fake_openems(monkeypatch)
+    assert build_csx({**TINY, "nf2ff": FAR}, 1, 1e-9)[2] is not None
+    names = [n for n, _, _ in log]
+    # openEMS's own placement under PML_8, accumulated every Nyquist/4 steps, as the port probes sample
+    assert ("CreateNF2FFBox", ("nf2ff",), {"frequency": FAR["f_hz"], "over_sampling": 4}) in log
+    assert names.index("CreateNF2FFBox") > names.index("SetBoundaryCond")  # it reads the grid and the boundary
+    build_csx({**TINY, "nf2ff": {**FAR, "box": [[1.0, 1.0, 1.0], [3.0, 3.0, 3.0]]}}, 1, 1e-9)
+    assert ("CreateNF2FFBox", ("nf2ff",), {"frequency": FAR["f_hz"], "over_sampling": 4, "start": [1.0, 1.0, 1.0],
+                                           "stop": [3.0, 3.0, 3.0]}) in log
+
+
+@pytest.mark.parametrize("f_hz", [[1.2e9], [0.4e9], [], [0.6e9] * 12])  # RF 1
+def test_far_field_frequencies_outside_the_band_or_more_than_11_are_refused(monkeypatch, f_hz):  # design 5.5
+    log = fake_openems(monkeypatch)
+    with pytest.raises(ValueError, match="far-field frequencies"):
+        build_csx({**TINY, "nf2ff": {**FAR, "f_hz": f_hz}}, 1, 1e-9)
+    assert "CreateNF2FFBox" not in [n for n, _, _ in log]
 
 
 def test_the_lid_and_the_vias_are_metal_primitives(monkeypatch):  # C-39, C-40, R3-057

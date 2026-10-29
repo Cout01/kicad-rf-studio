@@ -86,7 +86,7 @@ def test_a_setup_log_with_no_timestep_is_a_crash(tmp_path, monkeypatch):
 
 @pytest.mark.parametrize("mode", ["setup", "run"])
 def test_a_setup_error_code_is_setup_failed_in_either_mode(tmp_path, monkeypatch, mode):
-    monkeypatch.setattr(worker, "build_csx", lambda *_: (None, types.SimpleNamespace(Run=lambda *_, **__: 1)))
+    monkeypatch.setattr(worker, "build_csx", lambda *_: (None, types.SimpleNamespace(Run=lambda *_, **__: 1), None))
     monkeypatch.chdir(write_job(tmp_path, TINY, mode))
     assert worker.main(["job.json"]) == worker.SETUP_FAILED
 

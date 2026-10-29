@@ -21,6 +21,7 @@ from kicad_rf_studio.core.geometry.region import band
 from kicad_rf_studio.core.kicad.tracer import signal_layer
 from kicad_rf_studio.core.kicad.values import part_kind, part_value, port_value
 from kicad_rf_studio.core.messages import KrsError
+from kicad_rf_studio.core.model.csx import PML_CELLS
 from kicad_rf_studio.core.model.parts import COPPER
 from kicad_rf_studio.core.model.ports import _pad
 from kicad_rf_studio.core.model.readers import c_box
@@ -42,15 +43,27 @@ EPS0 = scipy.constants.epsilon_0  # F/m
 K_MAX = 0.45  # verify's limit on k = dt/(2·√(L·C)) of an inductor's cell (C-37)
 
 
-def excitation(project: dict) -> dict:
-    """The pulse of spec 5.8 over the band (f1, f2) of `project` (project.json): a sine at fm, the band's middle,
-    under a Gaussian of fw, its half-width, centred on t0 = 9/(2π·fw) and cut at 2·t0. `expr` is the pulse in
-    openEMS's syntax and `t_max` the project's T_max."""
-    f1, f2 = band(project)
+def pulse(f1: float, f2: float, t_max: float) -> dict:
+    """The pulse of spec 5.8 over the band (f1, f2), in Hz: a sine at fm, the band's middle, under a Gaussian of fw,
+    its half-width, centred on t0 = 9/(2π·fw) and cut at 2·t0. `expr` is the pulse in openEMS's syntax and `t_max`
+    the run's T_max, in s (design 5.4)."""
     fm, fw = (f1 + f2) / 2, (f2 - f1) / 2
     t0 = 9 / (2 * math.pi * fw)
-    return {"f1": f1, "f2": f2, "t0": t0, "t_max": project["t_max_s"],
+    return {"f1": f1, "f2": f2, "t0": t0, "t_max": t_max,
             "expr": f"sin(2*pi*{fm:.12g}*(t-{t0:.12g}))*exp(-(2*pi*{fw:.12g}*t/3-3)^2)*(t<{2 * t0:.12g})"}
+
+
+def excitation(project: dict) -> dict:
+    """pulse() over the band (f1, f2) of `project` (project.json), run to the project's T_max."""
+    return pulse(*band(project), project["t_max_s"])
+
+
+def with_pml(lines: list[float]) -> list[float]:
+    """`lines` (ascending, mm) with PML_CELLS lines added past each end at that end's outer cell, quantised to 1e-6 mm
+    (design 5.2)."""
+    lo, hi = lines[1] - lines[0], lines[-1] - lines[-2]
+    return ([round(lines[0] - k * lo, 6) for k in range(PML_CELLS, 0, -1)] + list(lines)
+            + [round(lines[-1] + k * hi, 6) for k in range(1, PML_CELLS + 1)])
 
 
 def kappa(eps_r: float, tan_d: float | None, f0: float) -> float:

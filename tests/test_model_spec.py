@@ -10,12 +10,14 @@ from shapely.geometry import MultiPolygon, Point, Polygon, box
 from kicad_rf_studio.core.geometry import build_geometry
 from kicad_rf_studio.core.geometry.lid import snap_lid
 from kicad_rf_studio.core.geometry.mask import smeared_epsilon
+from kicad_rf_studio.core.geometry.region import band
 from kicad_rf_studio.core.kicad import load_board
 from kicad_rf_studio.core.mesh.gates import mesh_with_lint
 from kicad_rf_studio.core.messages import KrsError
 from kicad_rf_studio.core.model.ports import place
 from kicad_rf_studio.core.model.readers import c_box
-from kicad_rf_studio.core.model.spec import K_MAX, excitation, grid_entry, kappa, model_spec, spec_hash, verify_spec
+from kicad_rf_studio.core.model.spec import (K_MAX, excitation, grid_entry, kappa, model_spec, pulse, spec_hash,
+                                             verify_spec, with_pml)
 from test_cli_cost import SEG
 from test_gates import mini, project_of
 from test_geometry_sections import four_layer, plane
@@ -36,6 +38,20 @@ def test_the_pulse_for_915_mhz():  # spec 5.8
     for t in (0.3e-9, 1.1e-9, 2.0e-9, 2.3e-9):  # the last one is past the gate (t < 2 t0)
         got = eval(e["expr"].replace("^", "**"), {"sin": math.sin, "exp": math.exp, "pi": math.pi, "t": t})
         assert got == pytest.approx(form(t), abs=1e-9)
+
+
+def test_the_pulse_is_spec_5_8s_over_any_band_and_excitation_is_it_over_the_projects():  # design 5.4
+    p = pulse(1.85e9, 3.0e9, 30e-9)
+    assert (p["f1"], p["f2"], p["t_max"]) == (1.85e9, 3.0e9, 30e-9)
+    assert p["t0"] == pytest.approx(9 / (2 * math.pi * 0.575e9)) and p["expr"].startswith("sin(2*pi*2425000000*(t-")
+    project = {"f0_hz": 915e6, "harmonics": 3, "band_factor": 1.1, "t_max_s": 40e-9}
+    assert excitation(project) == pulse(*band(project), 40e-9)
+
+
+def test_with_pml_adds_8_lines_past_each_end_at_its_outer_cell():  # design 5.2
+    assert with_pml([0.0, 1.0, 3.0]) == [-8.0, -7.0, -6.0, -5.0, -4.0, -3.0, -2.0, -1.0, 0.0, 1.0, 3.0,
+                                         5.0, 7.0, 9.0, 11.0, 13.0, 15.0, 17.0, 19.0]
+    assert with_pml([0.1, 0.4, 0.5])[:2] == [-2.3, -2.0]  # quantised to 1e-6 mm
 
 
 def test_kappa_is_set_at_f0():  # spec 5.3

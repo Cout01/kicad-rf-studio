@@ -72,7 +72,7 @@ def main(argv: list[str] | None = None) -> int:
     job = json.loads(Path((sys.argv[1:] if argv is None else argv)[0]).read_text(encoding="utf-8"))
     spec = json.loads(Path(job["spec"]).read_text(encoding="utf-8"))
     try:
-        _, fdtd = build_csx(spec, job["port"], job["t_max"])
+        _, fdtd, _ = build_csx(spec, job["port"], job["t_max"])
     except ImportError:
         return 2
     if job["mode"] == "xml":
