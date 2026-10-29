@@ -1,7 +1,7 @@
 # kicad-rf-studio — Stage 1 design: a validated simulation engine
 
 - **Date:** 2026-10-16
-- **Status:** design approved section by section in conversation, revised on 2026-10-19 after an independent review, and approved by the owner. On 2026-10-21 the owner confirmed one amendment to §5.4: the substrate height now counts in the cell size. On 2026-10-22, plan 5 amended §1.1, §7.6, §9.1, §9.2 and §9.6 (A-1 to A-4) as controller recommendations while the owner was unavailable; the owner reviews them. On 2026-10-24, D-45's fix amended §5.6 (A-6) and §7.6 (A-7) the same way. On 2026-10-25, P0-B's TX-side outcome amended §1.1 and §12 (A-5) the same way. On 2026-10-26, plan 6's mesh-rule calibration amended §5.4 and §12 (A-8) the same way. On 2026-10-27, Stage 2's plan 1 amended §3.2, §3.3, §3.4 and §6.1 (A-13 to A-15) the same way. On 2026-10-28, Stage 2's plan 3 amended §3.2, §3.4, §4.3 and §10 (A-16 to A-18) the same way. On 2026-10-28, Stage 2's plan 4 amended §3.4, §3.6, §9.1 and §12 (A-19 to A-21) the same way. On 2026-10-29, the pt-BR translation plan amended §1.1 and §3.5 (A-22) the same way.
+- **Status:** design approved section by section in conversation, revised on 2026-10-19 after an independent review, and approved by the owner. On 2026-10-21 the owner confirmed one amendment to §5.4: the substrate height now counts in the cell size. On 2026-10-22, plan 5 amended §1.1, §7.6, §9.1, §9.2 and §9.6 (A-1 to A-4) as controller recommendations while the owner was unavailable; the owner reviews them. On 2026-10-24, D-45's fix amended §5.6 (A-6) and §7.6 (A-7) the same way. On 2026-10-25, P0-B's TX-side outcome amended §1.1 and §12 (A-5) the same way. On 2026-10-26, plan 6's mesh-rule calibration amended §5.4 and §12 (A-8) the same way. On 2026-10-27, Stage 2's plan 1 amended §3.2, §3.3, §3.4 and §6.1 (A-13 to A-15) the same way. On 2026-10-28, Stage 2's plan 3 amended §3.2, §3.4, §4.3 and §10 (A-16 to A-18) the same way. On 2026-10-28, Stage 2's plan 4 amended §3.4, §3.6, §9.1 and §12 (A-19 to A-21) the same way. On 2026-10-29, the pt-BR translation plan amended §1.1 and §3.5 (A-22) the same way. On 2026-10-29, Stage 3's plan 1 amended §2, §5.1 and §9 (A-23 to A-25) the same way.
 - **Scope:** Stage 1 of the project: the headless engine, the command-line orchestrator and the validation gates. The GUI and the KiCad toolbar button (Stage 2) get their own spec, written with Stage 1's results.
 
 ---
@@ -71,7 +71,7 @@ The users are hardware engineers who use KiCad and are not FDTD experts. The pro
 |---|---|---|
 | 1 | Headless core, CLI orchestrator, worker, validation gates P0-0 to P0-D | This document |
 | 2 (completes v1) | PySide6 GUI client, KiCad toolbar button, live import through kicad-python | Own spec, written with Stage 1's results |
-| 3 | PCB antenna placement, with relative results (PML, NF2FF) | Later |
+| 3 | PCB antenna placement, with relative results (PML, NF2FF) | `docs/superpowers/specs/2026-10-29-stage3-antenna-placement-design.md` (A-23, Stage 3 plan 1: controller recommendation, owner unavailable.) |
 | Later | SI, EMC and differential pairs, a GPU engine, a bundled installer | — |
 
 ---
@@ -248,6 +248,7 @@ Per footprint, the reader takes:
 - **Walls** sit at ROI + 4 mm + 8 coarse cells, with MUR on all six faces.
 - **Through-crop.** Copper, substrate and vias run through the walls. Nets are never cut at the ROI edge: an "island crop" was 2–80× worse in the research.
 - **PML_8 on all six faces** is for antennas only (Stage 3), where no copper enters the absorber; Stage 1 always uses MUR. Boundary types are never mixed per face: the per-face mix and PML_8 grew after 15–21 ns, while MUR at the outer wall stayed stable.
+- **The antenna boundary** (Stage 3): a model spec written for an antenna holds `"boundary": "pml_8"`: PML_8 on all six faces, its 8 cells added outside the air box at the outer cell size. A spec without the key, as every v1 spec is, keeps MUR on all six faces, so the two are never mixed. A setup gate, E_METAL_IN_PML, refuses a model with metal, dielectric or a lumped port within the PML or the 2 cells just inside its inner edge. (A-24, Stage 3 plan 1: controller recommendation, owner unavailable.)
 - **Connectivity.** A short or an open inside the ROI is a gate; in the margin it is a warning.
 - **Vias** in the protected set (§5.4) are solid PEC cylinders on the fine mesh. All other vias, in the ROI or the margin, become PEC curves snapped to the mesh; otherwise a 0.3 mm cylinder on 2.4 mm cells touches no mesh edge and vanishes.
 
@@ -623,6 +624,10 @@ In an isolated KiCad 9.0.7 profile (§9.1), check that the `exec` plugin runtime
 - **Timebox:** target 2–3 weeks, ceiling 4 weeks. At the ceiling, stop and decide with the data.
 - **Reports:** a short report after each gate, P0-0 to P0-D, and after the button pre-check. Stage 1 ends with a bottom-up estimate for Stage 2.
 - **Machine time** (an estimate): about 4 h to 100 h for all gates, mostly overnight. P0-C dominates it, with about 8 chain-equivalents.
+
+### 9.8 P3-A: far-field sanity (Stage 3)
+
+Stage 3's first gate (Stage 3 design §5.11), run by `tools/p3a.py`. Synthetic z-directed PEC wire dipoles in vacuum under PML_8, with no board, each fed by a 50 Ω lumped port across a 1 mm gap, run through the product's job phase at Normal and its far-field transform. The pulse spans 1.85–3.0 GHz, the far field is recorded at 2.45, 2.40 and 2.50 GHz with an over-sampling of 4, and the air gap is λ/4 at 2.40 GHz. The cases are a short dipole of 12 mm (λ/10 at f0 = 2.45 GHz) and a half-wave dipole of 58 mm. Pass: at f0, the short dipole's D within 1.76 ± 0.10 dBi and the half-wave's within 2.15 ± 0.15 dBi; at every recorded frequency, η_rad within 1 ± 0.02 on both; the half-wave's far-field box moved 2 lines inward changes D by no more than 0.05 dB; each dipole run free to 3 × T_max (90 ns) with every sample finite and its energy's rise over its running minimum at most 6 dB; every base run the stop rule ended with ABORT still writes its 12 far-field dumps, which the transform reads; and no base run's setup gate blocks. The references are `tests/fixtures/p3a/references.json`. A failure is a pipeline bug, which blocks Stage 3 until it is fixed. The gate also measures a PML cell's cost against an ordinary cell's, from a MUR twin on the same mesh run free over the same steps, and a small single-job model's speed against the calibration (Stage 3 design §5.9). Result on 2026-10-29: pass, `docs/validation/2026-10-29-p3-a.md`. (A-25, Stage 3 plan 1: controller recommendation, owner unavailable.)
 
 ---
 

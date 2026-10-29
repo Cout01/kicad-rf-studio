@@ -1,0 +1,166 @@
+{
+  "gate": "P3-A",
+  "versions": {
+    "commit": "a39d9b8",
+    "code": "8f2443032997e65e1a935123af00ac0dfdb9fbf1",
+    "python": "3.14.2",
+    "openems": "0.37.0",
+    "csxcad": "0.7.0",
+    "os": "Windows-11-10.0.26200-SP0",
+    "cpus": 16
+  },
+  "references": {
+    "source": "Stage 3 design 5.11, gate P3-A: a short dipole's D is 1.5 (1.76 dBi) and a half-wave dipole's 1.64 (2.15 dBi) (Balanis, ch. 4); PEC in vacuum radiates every watt its port accepts; the box moves 2 cells; no energy growth out to 3 × the stop time, T_max (Stage 1 6.4), read as a rise of at most 6 dB, well below the growth detector's 20 dB",
+    "short_d_dbi": 1.76,
+    "short_tol_db": 0.1,
+    "half_d_dbi": 2.15,
+    "half_tol_db": 0.15,
+    "eta_rad": 1.0,
+    "eta_tol": 0.02,
+    "box_cells": 2,
+    "box_db": 0.05,
+    "growth_factor": 3,
+    "growth_db_max": 6.0
+  },
+  "calibration": {
+    "aggregate_mcs": 714.0895189300483,
+    "pool": 4,
+    "threads": 4,
+    "levels": {
+      "4": 178.52237973251206,
+      "1": 589.260094281615
+    }
+  },
+  "short": {
+    "verdict": "converged",
+    "aborted": true,
+    "dumps": true,
+    "blocked": [],
+    "d_dbi": 1.7890616789837097,
+    "eta_rad": 1.0004781395027413,
+    "warnings": [],
+    "cells": 139725,
+    "dt": 9.62917e-13,
+    "t_stop": 6.74908243093e-09,
+    "wall_s": 24.295927900006063,
+    "speed_mcs": 43.235449622043426,
+    "predicted_s": 1.6619691796620717
+  },
+  "half": {
+    "verdict": "converged",
+    "aborted": true,
+    "dumps": true,
+    "blocked": [],
+    "d_dbi": 2.1573322536314263,
+    "eta_rad": 1.00024419725709,
+    "warnings": [],
+    "cells": 326025,
+    "dt": 9.62917e-13,
+    "t_stop": 8.98497477e-09,
+    "wall_s": 63.848704000003636,
+    "speed_mcs": 48.923280775592445,
+    "predicted_s": 5.162640457880506
+  },
+  "box2": {
+    "verdict": "converged",
+    "aborted": true,
+    "dumps": true,
+    "blocked": [],
+    "d_dbi": 2.134408755593588,
+    "eta_rad": 1.00009674679937,
+    "warnings": [],
+    "cells": 326025,
+    "dt": 9.62917e-13,
+    "t_stop": 8.86075852894e-09,
+    "wall_s": 68.92903490003664,
+    "speed_mcs": 44.71118548928028,
+    "predicted_s": 5.091267548324502
+  },
+  "short_3x": {
+    "run_dir": "p3a-short-3x-20261029-180812-0a28",
+    "t_max": 8.999999999999999e-08,
+    "t_stop": 8.99739639411e-08,
+    "dt": 9.629165973641578e-13,
+    "speed_mcs": 42.3747123836072,
+    "finite": true,
+    "growth_db": 0.0828543200568106,
+    "cells": 139725,
+    "wall_s": 310.21405319997575,
+    "predicted_s": 22.156199616597654
+  },
+  "half_3x": {
+    "run_dir": "p3a-half-3x-20261029-181322-0d7b",
+    "t_max": 8.999999999999999e-08,
+    "t_stop": 8.99739639411e-08,
+    "dt": 9.629165973641578e-13,
+    "speed_mcs": 48.47828664455546,
+    "finite": true,
+    "growth_db": 0.1451470071204426,
+    "cells": 326025,
+    "wall_s": 630.3325747000054,
+    "predicted_s": 51.69779910539452
+  },
+  "mur": {
+    "run_dir": "p3a-half-mur-20261029-182353-c743",
+    "t_max": 8.999999999999999e-08,
+    "t_stop": 8.99739639411e-08,
+    "dt": 9.629165973641578e-13,
+    "speed_mcs": 226.0283192621759,
+    "finite": true,
+    "growth_db": 15.980876366553531,
+    "cells": 326025,
+    "wall_s": 136.17906300001778,
+    "predicted_s": 51.69779910539452
+  },
+  "pml": {
+    "cells": 326025,
+    "pml_cells": 221778,
+    "weight": 6.3840109570653265
+  },
+  "speed": {
+    "measured_mcs": 226.0283192621759,
+    "predicted_mcs": 589.260094281615,
+    "ratio": 0.3835798851061413
+  },
+  "decisions": {
+    "short_d": {
+      "pass": true
+    },
+    "half_d": {
+      "pass": true
+    },
+    "eta": {
+      "pass": true
+    },
+    "box": {
+      "pass": true
+    },
+    "growth": {
+      "pass": true
+    },
+    "dumps_after_abort": {
+      "pass": true
+    },
+    "setup": {
+      "pass": true
+    },
+    "pml_weight": {
+      "value": 6.3840109570653265,
+      "correction": true
+    },
+    "small_speed": {
+      "ratio": 0.3835798851061413,
+      "correction": true
+    },
+    "verdict": {
+      "value": "pass",
+      "fails": []
+    }
+  },
+  "machine": {
+    "steps": 6,
+    "machine_hours": 0.3520141283610913,
+    "loaded": [],
+    "elapsed_days": 7
+  }
+}
