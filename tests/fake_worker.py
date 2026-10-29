@@ -6,7 +6,9 @@ run's kind: "converge" (the default), "slow", "crash" (only on port $KRS_FAKE_JO
 waves of the known N-port networks.star, from networks.network_trace) or a kind of traces.trace.
 $KRS_FAKE_STATS "partial" writes openEMS_stats.txt's first three values, the third without its newline: a killed write.
 $KRS_FAKE_SETUP is JSON that setup.json takes, and $KRS_FAKE_LOG a file that gets a line as each fake starts and
-ends. The setup mode writes setup.json, and an empty operator_dump.vtr when a port holds a part."""
+ends. The setup mode writes setup.json, and an empty operator_dump.vtr when a port holds a part. A run of a spec with
+a far field also writes the 12 dumps (worker.DUMPS) empty, and the nf2ff mode writes <dumps>/<out>-<grid>.h5 empty
+for each grid of worker.GRIDS."""
 import json
 import math
 import os
@@ -15,6 +17,8 @@ import time
 from pathlib import Path
 
 import numpy as np
+
+from kicad_rf_studio.worker import DUMPS, GRIDS
 
 sys.path.insert(0, str(Path(__file__).parent))  # -I leaves the script's folder off sys.path
 from networks import network_trace  # noqa: E402
@@ -32,10 +36,11 @@ def note(what: str, port: int) -> None:
 
 
 def run(job: dict, spec: dict) -> int:
-    """Mode "run": empty excitation arrays et and ht first, as openEMS writes them, then the records of the kind,
-    sample by sample as openEMS writes them, until an ABORT file appears; "slow" converges at 0.2 s per sample, and
-    "crash" writes the converging samples up to 12 ns, ignoring ABORT, and exits 7 with no waves.npz."""
-    for name in ("et", "ht"):
+    """Mode "run": empty excitation arrays et and ht first, as openEMS writes them, with the far-field dumps when the
+    spec records a far field, so that a job stopped by ABORT keeps them, as openEMS 0.37.0 does; then the records of
+    the kind, sample by sample as openEMS writes them, until an ABORT file appears; "slow" converges at 0.2 s per
+    sample, and "crash" writes the converging samples up to 12 ns, ignoring ABORT, and exits 7 with no waves.npz."""
+    for name in ("et", "ht", *(DUMPS if "nf2ff" in spec else ())):
         Path(name).write_bytes(b"")
     kind, ports, ex = os.environ.get("KRS_FAKE", "converge"), range(1, len(spec["ports"]) + 1), spec["excitation"]
     if kind == "crash" and os.environ.get("KRS_FAKE_JOB", str(job["port"])) != str(job["port"]):
@@ -90,6 +95,10 @@ def act(job: dict, spec: dict) -> int:
         return 0
     if job["mode"] == "xml":
         Path("model.xml").write_text("<openEMS/>", encoding="utf-8")
+        return 0
+    if job["mode"] == "nf2ff":
+        for grid in GRIDS:
+            (Path(job["dumps"]) / f"{job['out']}-{grid}.h5").write_bytes(b"")
         return 0
     return run(job, spec)
 

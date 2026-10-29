@@ -1565,6 +1565,10 @@ msgstr "de XML"
 msgid "calibration"
 msgstr "de calibração"
 
+#. T_JOB_FAR_FIELD
+msgid "far-field"
+msgstr "de campo distante"
+
 #. T_NONE
 msgid "none"
 msgstr "—"

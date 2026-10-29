@@ -347,6 +347,7 @@ CATALOG: dict[str, str] = {
     "T_JOB_SETUP": "setup",
     "T_JOB_XML": "xml",
     "T_JOB_CALIBRATION": "calibration",
+    "T_JOB_FAR_FIELD": "far-field",
     "T_NONE": "none",
     "T_UNKNOWN": "unknown",
     "T_UNSET": "unset",

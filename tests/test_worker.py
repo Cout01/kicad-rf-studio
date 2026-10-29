@@ -10,7 +10,8 @@ import xml.etree.ElementTree
 import numpy as np
 import pytest
 
-from kicad_rf_studio import worker
+from kicad_rf_studio import pipeline, worker
+from kicad_rf_studio.core.messages import KrsError
 from kicad_rf_studio.core.model.readers import pec_roots
 from test_model_csx import TINY, fake_openems
 from test_readers import DUMPS, LINES, PROBE, SETUP_LOG
@@ -125,6 +126,71 @@ def test_the_worker_imports_no_geometry_stack():  # spec 3.1, R21, C-5
                           "'kicad_rf_studio.core.post') if m in sys.modules))"],
                          capture_output=True, text=True).stdout
     assert out.strip() == "[]"
+
+
+NF = {"f_hz": [1e9, 0.9e9], "center": [2.0, 2.0, 2.0]}  # TINY's band: 0.5–1.1 GHz
+
+
+def finished_job(tmp_path, dumps=worker.DUMPS):
+    """A run job of TINY with a far field, as openEMS leaves it: model.json above it, its job.json and `dumps`."""
+    job = write_job(tmp_path, {**TINY, "nf2ff": NF}, "run")
+    for name in dumps:
+        (job / name).write_bytes(b"")
+    return job
+
+
+def transform_job(job):
+    """The transform's own folder beside `job`, as far_field makes it, with the token ab12."""
+    folder = job.parent / "job-0-nf2ff-ab12"
+    folder.mkdir()
+    (folder / "job.json").write_text(json.dumps({"spec": "../model.json", "port": 1, "mode": "nf2ff", "threads": 1,
+                                                 "t_max": 1e-9, "dumps": f"../{job.name}", "out": "nf2ff-ab12"}),
+                                     encoding="utf-8")
+    return folder
+
+
+def test_nf2ff_mode_transforms_each_grid_afresh_into_a_file_of_its_own(tmp_path, monkeypatch):  # design 5.5; RF 2
+    log = fake_openems(monkeypatch)
+    monkeypatch.chdir(transform_job(finished_job(tmp_path)))
+    assert worker.main(["job.json"]) == 0
+    calls = [(args, kw) for name, args, kw in log if name == "CalcNF2FF"]
+    assert list(worker.GRIDS) == ["sphere", "elevation", "azimuth"]
+    assert [kw["outfile"] for _, kw in calls] == [f"nf2ff-ab12-{grid}.h5" for grid in worker.GRIDS]
+    assert all(kw["read_cached"] is False and args[0] == "../job-1-P1" for args, kw in calls)
+    assert all(kw["center"] == pytest.approx([2e-3] * 3) for _, kw in calls)  # metres: the spec's 2 mm
+    assert [args[1] for args, _ in calls] == [NF["f_hz"], NF["f_hz"][:1], NF["f_hz"][:1]]  # recorded ones only
+    assert [(len(args[2]), len(args[3])) for args, _ in calls] == [(37, 72), (360, 2), (1, 360)]
+    assert (calls[1][0][2][0], list(calls[1][0][3]), list(calls[2][0][2])) == (-180, [0, 90], [90])
+    assert "Run" not in [name for name, _, _ in log]  # no FDTD
+
+
+def test_nf2ff_mode_refuses_a_job_whose_far_field_was_never_recorded(tmp_path, monkeypatch):  # RF 3
+    log = fake_openems(monkeypatch)
+    monkeypatch.chdir(transform_job(finished_job(tmp_path, worker.DUMPS[:-1])))
+    with pytest.raises(FileNotFoundError, match="nf2ff_H_5.h5"):
+        worker.main(["job.json"])
+    assert "CalcNF2FF" not in [name for name, _, _ in log]
+
+
+def test_far_field_transforms_in_a_folder_of_its_own_and_never_reuses_a_file(tmp_path, fake):  # 5.5; RF 2
+    job = finished_job(tmp_path)
+    first, second = pipeline.far_field(job), pipeline.far_field(job)
+    assert list(first) == list(second) == list(worker.GRIDS)
+    assert all(p.parent == job and p.is_file() for p in (*first.values(), *second.values()))
+    assert not set(first.values()) & set(second.values())
+    folders = sorted(job.parent.glob("job-0-nf2ff-*"))
+    assert len(folders) == 2 and {json.loads((f / "job.json").read_text(encoding="utf-8"))["dumps"]
+                                  for f in folders} == {"../job-1-P1"}
+    assert "openEMS" not in sys.modules and "CSXCAD" not in sys.modules  # Stage 1 3.1: a worker transformed it
+
+
+def test_a_transform_that_fails_names_the_far_field_job(tmp_path, fake, monkeypatch):  # pt-BR design 5.1
+    job = finished_job(tmp_path)
+    monkeypatch.setenv("KRS_FAKE_EXIT", "1")
+    with pytest.raises(KrsError) as e:
+        pipeline.far_field(job)
+    assert (e.value.code, e.value.params["job"], e.value.params["exit_code"]) == (
+        "E_WORKER_FAILED", "T_JOB_FAR_FIELD", 1)
 
 
 @pytest.mark.openems

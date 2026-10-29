@@ -1555,6 +1555,10 @@ msgstr ""
 msgid "calibration"
 msgstr ""
 
+#. T_JOB_FAR_FIELD
+msgid "far-field"
+msgstr ""
+
 #. T_NONE
 msgid "none"
 msgstr ""

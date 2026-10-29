@@ -119,7 +119,8 @@ def run_dir_for(stem: str) -> Path:
 
 
 def job_dir(run_dir: Path, k: int, name: str) -> Path:
-    """The folder of job `k`, named `name`: k is 1-based for the run's jobs and 0 for job-0-setup and job-0-xml."""
+    """The folder of job `k`, named `name`: k is 1-based for the run's jobs and 0 for job-0-setup, job-0-xml and
+    job-0-nf2ff-<token>."""
     return run_dir / f"job-{k}-{ascii_name(name)}"
 
 
@@ -129,11 +130,12 @@ def write_spec(run_dir: Path, spec: dict) -> None:
     (run_dir / "model.json").write_text(json.dumps(spec), encoding="utf-8")
 
 
-def write_job(job: Path, port: int, mode: str, threads: int, t_max: float) -> Path:
-    """Makes the job folder `job` and its job.json, as worker.py reads it, and returns `job`."""
+def write_job(job: Path, port: int, mode: str, threads: int, t_max: float, **extra) -> Path:
+    """Makes the job folder `job` and its job.json, as worker.py reads it: the five keys and `extra`'s keys (the
+    far-field transform's dumps and out). Returns `job`."""
     job.mkdir(parents=True)
     (job / "job.json").write_text(json.dumps({"spec": "../model.json", "port": port, "mode": mode,
-                                              "threads": threads, "t_max": t_max}), encoding="utf-8")
+                                              "threads": threads, "t_max": t_max, **extra}), encoding="utf-8")
     return job
 
 
