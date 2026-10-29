@@ -41,8 +41,8 @@ def run(d, eta=1.0, verdict="converged", dumps=True, aborted=True, blocked=()):
             "eta_rad": eta}
 
 
-def free(growth=0.0, finite=True):
-    return {"finite": finite, "growth_db": growth}
+def free(growth=0.0, finite=True, t_stop=90e-9):
+    return {"finite": finite, "growth_db": growth, "t_max": 90e-9, "t_stop": t_stop}
 
 
 M = {"short": run(1.79), "half": run(2.16), "box2": run(2.14), "short_3x": free(), "half_3x": free(3.0),
@@ -60,6 +60,7 @@ def test_the_p3a_rules():  # design 5.11's P3-A row and 5.9's decisions, pre-reg
                           ({"half": run(2.16, eta=1.021)}, ["eta"]), ({"short": run(1.79, eta=0.979)}, ["eta"]),
                           ({"box2": run(2.22)}, ["box"]), ({"half_3x": free(6.5)}, ["growth"]),
                           ({"short_3x": free(finite=False)}, ["growth"]),
+                          ({"half_3x": free(t_stop=20e-9)}, ["growth"]),
                           ({"box2": run(2.14, verdict="t_max")}, ["dumps_after_abort"]),
                           ({"half": run(2.16, aborted=False)}, ["dumps_after_abort"]),
                           ({"short": run(1.79, blocked=["E_METAL_IN_PML"])}, ["setup"]),

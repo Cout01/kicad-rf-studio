@@ -86,12 +86,12 @@ def decide(m: dict) -> dict:
     """The P3-A row's checks (design 5.11) against REFS, each limit inclusive (|v − ref| ≤ tol) and a None value a
     fail, in this order: short_d and half_d, D in dBi at f0; eta, η_rad within REFS's band at every recorded frequency
     of both dipoles (m holds the value farthest from 1); box, the half-wave's D with its box moved REFS["box_cells"]
-    lines against its own; growth, both 3× runs finite with growth_db at most REFS["growth_db_max"];
-    dumps_after_abort, the three base runs converged by the stop rule's ABORT, each with its 12 dumps and a far field
-    read; setup, no base run's setup gate blocked. Then design 5.9's two decisions, report-only here (plan 2 applies
-    them): a correction when |w_pml − 1| > WEIGHT_TOL, or when the small-model speed ratio leaves SPEED_BAND, neither
-    for a None. Returns {check: {"pass"}, "pml_weight": {"value", "correction"}, "small_speed": {"ratio",
-    "correction"}, "verdict": {"value": "pass" or "fail", "fails": the failed checks in order}}."""
+    lines against its own; growth, both 3× runs finite, run to at least 0.99 × their t_max, with growth_db at most
+    REFS["growth_db_max"]; dumps_after_abort, the three base runs converged by the stop rule's ABORT, each with its 12
+    dumps and a far field read; setup, no base run's setup gate blocked. Then design 5.9's two decisions, report-only
+    here (plan 2 applies them): a correction when |w_pml − 1| > WEIGHT_TOL, or when the small-model speed ratio leaves
+    SPEED_BAND, neither for a None. Returns {check: {"pass"}, "pml_weight": {"value", "correction"}, "small_speed":
+    {"ratio", "correction"}, "verdict": {"value": "pass" or "fail", "fails": the failed checks in order}}."""
     def near(v: float | None, ref: float | None, tol: float) -> bool:
         return v is not None and ref is not None and abs(v - ref) <= tol
 
@@ -101,7 +101,9 @@ def decide(m: dict) -> dict:
               "eta": all(near(m[k]["eta_rad"], r["eta_rad"], r["eta_tol"]) for k in ("short", "half")),
               "box": near(m["box2"]["d_dbi"], m["half"]["d_dbi"], r["box_db"]),
               "growth": all(x["finite"] and x["growth_db"] is not None and x["growth_db"] <= r["growth_db_max"]
-                            for x in free),
+                            # the free run reached 3 × T_max: EndCriteria can end it early, and its last sample falls
+                            # within one probe interval
+                            and x["t_stop"] is not None and x["t_stop"] >= 0.99 * x["t_max"] for x in free),
               "dumps_after_abort": all(x["verdict"] == "converged" and x["aborted"] and x["dumps"]
                                        and x["d_dbi"] is not None for x in base),
               "setup": not any(x["blocked"] for x in base)}
@@ -198,8 +200,9 @@ def measure(out: Path) -> dict:
     n = math.prod(lines)
     pml = n - math.prod(k - 2 * (PML_CELLS + 1) for k in lines)
     s_mur, s_pml = m["mur"]["speed_mcs"], m["half_3x"]["speed_mcs"]
-    m["pml"] = {"cells": n, "pml_cells": pml, "weight": 1 + (s_mur / s_pml - 1) * n / pml}
-    m["speed"] = {"measured_mcs": s_mur, "predicted_mcs": mcs, "ratio": None if mcs is None else s_mur / mcs}
+    m["pml"] = {"cells": n, "pml_cells": pml,
+                "weight": None if not (s_mur and s_pml) else 1 + (s_mur / s_pml - 1) * n / pml}
+    m["speed"] = {"measured_mcs": s_mur, "predicted_mcs": mcs, "ratio": None if not (mcs and s_mur) else s_mur / mcs}
     return m
 
 
