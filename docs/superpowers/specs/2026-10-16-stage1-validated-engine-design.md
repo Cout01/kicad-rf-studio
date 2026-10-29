@@ -1,7 +1,7 @@
 # kicad-rf-studio — Stage 1 design: a validated simulation engine
 
 - **Date:** 2026-10-16
-- **Status:** design approved section by section in conversation, revised on 2026-10-19 after an independent review, and approved by the owner. On 2026-10-21 the owner confirmed one amendment to §5.4: the substrate height now counts in the cell size. On 2026-10-22, plan 5 amended §1.1, §7.6, §9.1, §9.2 and §9.6 (A-1 to A-4) as controller recommendations while the owner was unavailable; the owner reviews them. On 2026-10-24, D-45's fix amended §5.6 (A-6) and §7.6 (A-7) the same way. On 2026-10-25, P0-B's TX-side outcome amended §1.1 and §12 (A-5) the same way. On 2026-10-26, plan 6's mesh-rule calibration amended §5.4 and §12 (A-8) the same way. On 2026-10-27, Stage 2's plan 1 amended §3.2, §3.3, §3.4 and §6.1 (A-13 to A-15) the same way. On 2026-10-28, Stage 2's plan 3 amended §3.2, §3.4, §4.3 and §10 (A-16 to A-18) the same way. On 2026-10-28, Stage 2's plan 4 amended §3.4, §3.6, §9.1 and §12 (A-19 to A-21) the same way.
+- **Status:** design approved section by section in conversation, revised on 2026-10-19 after an independent review, and approved by the owner. On 2026-10-21 the owner confirmed one amendment to §5.4: the substrate height now counts in the cell size. On 2026-10-22, plan 5 amended §1.1, §7.6, §9.1, §9.2 and §9.6 (A-1 to A-4) as controller recommendations while the owner was unavailable; the owner reviews them. On 2026-10-24, D-45's fix amended §5.6 (A-6) and §7.6 (A-7) the same way. On 2026-10-25, P0-B's TX-side outcome amended §1.1 and §12 (A-5) the same way. On 2026-10-26, plan 6's mesh-rule calibration amended §5.4 and §12 (A-8) the same way. On 2026-10-27, Stage 2's plan 1 amended §3.2, §3.3, §3.4 and §6.1 (A-13 to A-15) the same way. On 2026-10-28, Stage 2's plan 3 amended §3.2, §3.4, §4.3 and §10 (A-16 to A-18) the same way. On 2026-10-28, Stage 2's plan 4 amended §3.4, §3.6, §9.1 and §12 (A-19 to A-21) the same way. On 2026-10-29, the pt-BR translation plan amended §1.1 and §3.5 (A-22) the same way.
 - **Scope:** Stage 1 of the project: the headless engine, the command-line orchestrator and the validation gates. The GUI and the KiCad toolbar button (Stage 2) get their own spec, written with Stage 1's results.
 
 ---
@@ -29,7 +29,7 @@ The users are hardware engineers who use KiCad and are not FDTD experts. The pro
 | Import | The app reads `.kicad_pcb` directly, and KiCad may be closed. In Stage 2, a KiCad toolbar button also sends the open board and the selection |
 | Licence and hosting | GPL-3.0-or-later, on GitHub |
 | Platforms | Windows 10/11 and Linux |
-| UI language | English. Every user-facing string is translatable from day one, and a pt-BR translation follows right after v1 |
+| UI language | English, or Brazilian Portuguese where Windows' display language is Portuguese (Brazil) or the gettext variables name it; every user-facing string is a catalog code (A-22, pt-BR translation plan: controller recommendation, owner unavailable.) |
 | openEMS | Used as-is: openEMS 0.37.0 and CSXCAD 0.7.0, installed separately, never bundled in v1 |
 | Simulation domain | Always a selected region, never a whole board |
 | Defaults | Safe automatic defaults. In Stage 1 every default is written to `project.json`, which serves as the advanced settings; Stage 2 adds an advanced panel |
@@ -167,6 +167,7 @@ Stage 2's GUI calls the same functions, in the same order: `new`, then `cost`, t
 - stdlib gettext, with one catalog shared by the core, the CLI and later the GUI.
 - Messages carry a code plus parameters, and the English template is the msgid.
 - Babel is a dev-only tool for extracting and compiling the catalogs, because the Windows Python ships no `Tools/i18n`.
+- The language is the gettext variables' when one is set, else Windows' display language (Portuguese (Brazil) gives pt-BR), else English. A word passed as a parameter is a `T_` code of the catalog, rendered with its message. The catalog's sources are `po/` at the repo's root, and the compiled `.mo` is committed under the package's `locale/`; `tools/catalog.py` writes both with Babel, pinned in the dev extra. (A-22, pt-BR translation plan: controller recommendation, owner unavailable.)
 
 ### 3.6 Licence and notices
 

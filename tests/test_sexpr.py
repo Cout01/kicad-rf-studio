@@ -272,3 +272,45 @@ def test_the_package_catalog_follows_the_gettext_variables(env, shown):  # pt-BR
     probe = "from kicad_rf_studio.core import messages; print(messages.language())"
     out = subprocess.run([sys.executable, "-I", "-c", probe], env={**base, **env}, capture_output=True, text=True)
     assert out.stdout.strip() == shown, out.stderr
+
+
+QUOTED = {  # a G_ message that names a widget, and that widget's label codes (design 6.2 rule 4)
+    "G_LOCKED": ("G_STOP",), "G_RUN_START": ("G_STOP",), "G_WHAT_IF": ("G_VERIFY",), "G_NO_COST": ("G_RUN",),
+    "G_COST_REUSED": ("G_RUN",), "G_PROJECT_EXISTS": ("G_OPEN",), "G_LID_HEIGHT_MISSING": ("G_TAB_ADVANCED",),
+    "G_NO_REFERENCE": ("G_TAB_ADVANCED",), "G_PART_NO_MODEL": ("G_TAB_RESULTS",), "G_VERIFY_NONE": ("G_VERIFY",),
+    "G_VERIFY_STALE": ("G_VERIFY",), "G_APPLY_FIRST": ("G_VERIFY", "G_APPLY"),
+    "G_VERIFY_VALUE": ("G_VERIFY", "G_TAB_ADVANCED", "G_TAB_RESULTS", "G_APPLY"),
+    "G_PROJECT_FIELD": ("G_TAB_ADVANCED", "G_NEW")}
+# what a msgstr keeps of its msgid (design 3, 6.2 rule 3): a command in backticks, quoted JSON, an option, a file-dialog
+# filter and a dotted number
+KEEP = re.compile(r'`[^`]+`|"[^"]*"|--[a-z][\w-]*|\(\*\.\w+\)|\d+(?:\.\d+)+')
+
+
+def test_the_pt_br_catalog_translates_every_template_and_nothing_else():  # pt-BR design 7.2; Review Focus 2
+    assert set(mo_pairs()) == set(CATALOG.values())
+
+
+def test_a_label_quoted_in_a_message_is_its_widgets_label_and_kicads_labels_are_kicads():  # design 6.1, 6.2; RF 4
+    pt = mo_pairs()
+    for text in (CATALOG.get, lambda code: pt[CATALOG[code]]):  # English, then pt-BR
+        assert [code for code, labels in QUOTED.items() if not all(text(label) in text(code) for label in labels)] == []
+    for code in ("E_KICAD_UNREACHABLE", "I_PLUGIN_NEXT"):
+        assert "Preferências › Plug-ins › Ativar a API do KiCad" in pt[CATALOG[code]], code
+    assert "Configuração da placa › Empilhamento físico" in pt[CATALOG["E_DIELECTRIC_THICKNESS"]]
+    assert [m for m in CATALOG.values() if "(B)" in m and "Preencher todas as zonas (B)" not in pt[m]] == []
+
+
+def test_the_pt_br_catalog_keeps_the_glossarys_nevers():  # design 6.1 (preencher, executar, gate), 6.2 rule 1
+    pt = mo_pairs()
+    never = re.compile(r"\b(recarreg\w*|rod(ar|e|ando)|tu|favor|o usuário)\b", re.I)
+    assert [msgid for msgid, msgstr in pt.items() if never.search(msgstr)] == []
+    gates = [CATALOG[code] for code in ("I_GATES_PASSED", "G_END_BLOCKED") if CATALOG[code] in pt]  # a gate, in prose
+    assert [m for m in gates if "checage" not in pt[m].lower() or "verifica" in pt[m].lower()] == []
+
+
+def test_every_translation_keeps_the_identifiers_numbers_filters_and_ellipses():  # design 3, 6.2 rules 3, 6; RF 1
+    pt = mo_pairs()
+    assert [m for m, s in pt.items()
+            if any(k not in s for k in KEEP.findall(m)) or m.endswith("…") != s.endswith("…")] == []
+    filters = [CATALOG[code] for code in ("G_OPEN_FILTER", "G_BOARD_FILTER", "G_S2P_FILTER") if CATALOG[code] in pt]
+    assert [m for m in filters if not pt[m].endswith(m.split()[-1])] == []  # Qt reads the filter at the end

@@ -410,6 +410,14 @@ def test_ports_without_a_reference(tmp_path, capsys, mini_board_file):
         f"Wrote {out / 'project.json'}."]
 
 
+def test_with_pt_br_active_new_leaves_no_english_word_parameter_in_its_lines(tmp_path, capsys, mini_board_file,
+                                                                             pt_br):  # design 3; Review Focus 3
+    board = mini_board_file(footprint("TP1", pad(1, "SIG")) + footprint("TP2", pad(1, "SIG", x=5)), stackup=NO_MASK)
+    code = main(["new", str(board), "--start", "TP1.1", "--end", "TP2.1", "--f0", "915MHz", "-o", str(tmp_path / "p")])
+    words = set(re.findall(r"\w+", capsys.readouterr().out))  # no mask, no ground: none, board, the lid
+    assert code == 0 and not words & {"none", "on", "off", "board", "unknown", "reference", "Port", "Stackup"}
+
+
 # --- the stackup ----------------------------------------------------------------------------------------------
 
 

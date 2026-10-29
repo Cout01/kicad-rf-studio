@@ -5,6 +5,7 @@ import os
 # by every process a test starts; KRS_TEST_LANGUAGE=pt_BR runs tests/test_gui.py in pt-BR (design 7.3)
 os.environ["LANGUAGE"] = os.environ.get("KRS_TEST_LANGUAGE") or "en"
 
+import gettext
 import json
 import subprocess
 import sys
@@ -122,6 +123,14 @@ def qapp():
     """The session's one QApplication, on the offscreen platform set above."""
     from PySide6.QtWidgets import QApplication
     return QApplication.instance() or QApplication([])
+
+
+@pytest.fixture
+def pt_br(monkeypatch):
+    """The pt-BR catalog active in this process whatever the pin (pt-BR design 7.2), with no fallback, so a missing .mo
+    fails; the processes a test starts keep the pinned language."""
+    from kicad_rf_studio.core import messages
+    monkeypatch.setattr(messages, "_translation", gettext.translation("kicad_rf_studio", messages.LOCALE, ["pt_BR"]))
 
 
 def pytest_collection_modifyitems(config, items):

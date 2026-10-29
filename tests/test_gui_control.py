@@ -32,6 +32,7 @@ from networks import star, terminate_np
 from test_cli_cost import FIX, new_project
 from test_post_chain import M0402, lpf
 from test_run import lpf_loads, lpf_run
+from test_sexpr import mo_pairs
 
 F, _ = grid(915e6, 3, 1.1)
 FAKE_CLI = Path(__file__).with_name("fake_cli.py")
@@ -210,9 +211,11 @@ def test_every_gui_wording_keeps_its_cli_params_and_drops_terminal_syntax():  # 
     def fields(code):
         return {name for _, name, _, _ in string.Formatter().parse(CATALOG[code]) if name}
 
+    pt = mo_pairs()
     for cli_code, gui_code in control.GUI.items():  # later tasks' entries too
         assert fields(gui_code) <= fields(cli_code), gui_code  # rendered with the CLI line's own params
-        assert not re.search(r"`|--[a-z]|-o |PROJECT", CATALOG[gui_code]), gui_code
+        for text in (CATALOG[gui_code], pt[CATALOG[gui_code]]):  # English, then pt-BR (pt-BR design 7.2)
+            assert not re.search(r"`|--[a-z]|(?<!\w)-o |PROJECT", text), gui_code  # "Abra-o" is no -o
     assert control.text("E_PROJECT_EXISTS", {"path": "P"}) == render("G_PROJECT_EXISTS", path="P")
     assert control.message(KrsError("E_NO_STACKUP")) == render("G_NO_STACKUP")
     assert control.message(ZeroDivisionError("division by zero")) == render(
