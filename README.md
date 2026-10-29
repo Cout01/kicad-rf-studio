@@ -25,7 +25,7 @@ In PowerShell, on Windows 10 or 11:
    & "$venv\Scripts\kicad-rf-studio" setup-openems "<openEMS folder>"
    ```
 
-4. Install the KiCad button, for KiCad 9.0.7 or later, or 10.x. It writes into each KiCad version's plugins folder and never edits KiCad's settings. Then, in KiCad: Preferences › Plugins › Enable KiCad API, then restart KiCad.
+4. Start KiCad once first, so that it makes its version's folder (or name the version with `--kicad 9.0` or `--kicad 10.0`). Install the KiCad button, for KiCad 9.0.7 or later, or 10.x. It writes into each KiCad version's plugins folder and never edits KiCad's settings. Then, in KiCad: Preferences › Plugins › Enable KiCad API, then restart KiCad.
 
    ```
    & "$venv\Scripts\kicad-rf-studio" install-kicad-plugin
@@ -54,13 +54,13 @@ On Debian 12, Ubuntu 24.04 or Fedora (glibc 2.34 or newer), with the system Pyth
    ```
 
 3. With the venv active, build openEMS in the openEMS-Project folder, without sudo, so that its Python bindings land in the venv: `./update_openEMS.sh ~/.local/share/kicad-rf-studio/openEMS --python`. Leave the GUI build on (no `--disable-GUI`): it builds AppCSXCAD.
-4. With the venv active, install the KiCad button: `kicad-rf-studio install-kicad-plugin`. Then, in KiCad: Preferences › Plugins › Enable KiCad API, then restart KiCad. A Flatpak KiCad cannot start the button: open the board in the GUI instead.
+4. Start KiCad once first, so that it makes its version's folder (or name the version with `--kicad 9.0` or `--kicad 10.0`). With the venv active, install the KiCad button: `kicad-rf-studio install-kicad-plugin`. Then, in KiCad: Preferences › Plugins › Enable KiCad API, then restart KiCad. A Flatpak KiCad cannot start the button: open the board in the GUI instead.
 5. Start the GUI with `kicad-rf-studio-gui`. On a desktop, Qt needs the xcb cursor library: `libxcb-cursor0` on Debian and Ubuntu, `xcb-util-cursor` on Fedora.
 
 ### After installing
 
-- **Moved the venv?** The button's launcher holds the path of the venv's Python, written by `install-kicad-plugin`: run `install-kicad-plugin` again from the venv where it now is. Until then the button fails: KiCad 10 shows the shell's error, KiCad 9 nothing.
-- **Remove the button:** `kicad-rf-studio install-kicad-plugin --remove` deletes its folder from each KiCad version's plugins folder, and nothing else. Once the venv is gone, delete the `kicad-rf-studio` folder by hand from each `Documents\KiCad\<version>\plugins` (Windows) or `~/.local/share/kicad/<version>/plugins` (Linux).
+- **Moved the venv?** Its `kicad-rf-studio` programs and the button's launcher still name its old place. Reinstall kicad-rf-studio, then run `install-kicad-plugin` again, both through the Python of the venv where it now is: `& "<venv>\Scripts\python" -m pip install --force-reinstall --no-deps <source>`, then `& "<venv>\Scripts\python" -m kicad_rf_studio install-kicad-plugin` (Linux: `<venv>/bin/python` in both). Until then the button fails: KiCad 10 shows the shell's error, KiCad 9 nothing.
+- **Remove the button:** `& "$venv\Scripts\kicad-rf-studio" install-kicad-plugin --remove` (Linux, with the venv active: `kicad-rf-studio install-kicad-plugin --remove`) deletes its folder from each KiCad version's plugins folder, and nothing else. Once the venv is gone, delete the `kicad-rf-studio` folder by hand from each `Documents\KiCad\<version>\plugins` (Windows) or `~/.local/share/kicad/<version>/plugins` (Linux).
 - **Uninstall:** remove the button, then delete the venv; on Linux, also the openEMS folder `~/.local/share/kicad-rf-studio/openEMS` and the openEMS-Project clone. The folder that holds the venv, `%LOCALAPPDATA%\kicad-rf-studio` or `~/.local/share/kicad-rf-studio`, also holds the settings and the run folders your projects' results point to: delete it only when no project needs them.
 
 ## Tutorial
@@ -154,7 +154,7 @@ P0-B's consistency criterion, `verify` against the co-simulation, failed (|ΔS21
 3. Install the package in editable mode with the development extras: `python -m pip install -e .[dev]`
 4. Give the venv openEMS as Install says (on Windows, `kicad-rf-studio setup-openems <openEMS folder>`, and `CSXCAD_INSTALL_PATH` set to that folder: the tests import openEMS in this Python, which reads it to find openEMS's DLLs). Without it, the tests marked `openems` are skipped.
 5. Run the tests: `python -m pytest -q`
-6. Before a release, run `python tools/release_check.py`: it builds a wheel from git archive of HEAD and checks it, installs it in a fresh venv, starts the GUI there offscreen, checks the KiCad button's plugin.json against KiCad's schemas, and runs the privacy gate's generic rules over the history and the wheel. One real run through the GUI, lpf915 at Draft then its verify, runs with `KRS_E2E_DIR` set to an empty folder outside the repository and openEMS importable (step 4): `python -m pytest tests/test_gui.py -k real_run -s`. It takes about lpf915's Draft run plus its verify, and its cost line prints the estimate first; a file named STOP in its newest run folder stops it.
+6. Before a release, run `python tools/release_check.py`: it builds a wheel from git archive of HEAD and checks it, installs it in a fresh venv, starts the GUI there offscreen, checks the KiCad button's plugin.json against KiCad's schemas, and runs the privacy gate's generic rules over the history and the wheel. One real run through the GUI, lpf915 at Draft then its verify, runs with `KRS_E2E_DIR` set to an empty folder outside the repository and openEMS importable (step 4): `python -X utf8 -m pytest tests/test_gui.py -k real_run -s`. It takes about lpf915's Draft run plus its verify, and its cost line prints the estimate first; a file named STOP in its newest run folder stops it.
 
 ## Contributing
 

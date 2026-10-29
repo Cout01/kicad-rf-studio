@@ -72,6 +72,7 @@ def test_the_readme_installs_the_app_openems_and_the_button_with_real_commands(c
     assert step in CATALOG["I_PLUGIN_NEXT"] and step in install  # the README quotes the command's own words
     assert r"%LOCALAPPDATA%\kicad-rf-studio\venv" in install  # design 5.6's concrete venv
     assert "run `install-kicad-plugin` again" in install  # Review Focus 4: a moved venv
+    assert "-m pip install --force-reinstall --no-deps <source>" in install  # its programs first (final review)
     # ponytail: code spans and fences only; a command named in prose goes unchecked
     code = "\n".join(re.findall(r"```[^\n]*\n(.*?)```", readme, re.S) + re.findall(r"`([^`\n]+)`", readme))
     named = set(re.findall(r"kicad-rf-studio[\"']? ([a-z][a-z-]*)", code))
