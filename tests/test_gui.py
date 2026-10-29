@@ -32,6 +32,7 @@ from test_cli_cost import FIX, fail, new_project
 from test_gui_control import FAKE_PREFIX, press, until
 from test_post_chain import M0402
 from test_run import lpf_loads, lpf_run
+from test_run_dir import events
 from test_verify import verified
 
 F, _ = grid(915e6, 3, 1.1)
@@ -166,7 +167,9 @@ def test_the_window_costs_then_runs_after_the_confirmation(window, tmp_path, mon
     assert w.proc is not None  # detached: the fixture makes run_jobs fail in this process
     until(lambda: w.tick() or w.cost_status.text() == render("G_END_DONE", exit_code=0))
     lines = items(w.cost_lines)
-    assert lines[:2] == [render("W_FILLS_AS_SAVED"), render("I_2D_HEADER")] and lines[-1].startswith("Main cost: ")
+    main_cost = events(w.run_dir, kind="cost")[-1]
+    assert lines[:2] == [render("W_FILLS_AS_SAVED"), render("I_2D_HEADER")] and main_cost["code"].startswith(
+        "I_COST_DRIVER_") and lines[-1] == control.text(main_cost["code"], main_cost["params"])
     opened(w)  # the cost's end read the project again, which found it as this model's cost
     assert w.cost == w.run_dir and w.run_button.isEnabled() and w.cost_status.text() == render("G_END_DONE",
                                                                                                exit_code=0)
@@ -179,13 +182,17 @@ def test_the_window_costs_then_runs_after_the_confirmation(window, tmp_path, mon
     asked = []
     monkeypatch.setattr(w, "ask", lambda text: asked.append(text) or len(asked) > 1)  # No, then Yes
     w.run_button.click()
-    assert w.command == "cost" and asked[0].startswith(render("G_CONFIRM_RUN")) and "Worst case: " in asked[0]
+    (cost_time,) = events(w.run_dir, code="I_COST_TIME")
+    assert w.command == "cost" and asked[0].startswith(render("G_CONFIRM_RUN")) and control.text(
+        cost_time["code"], cost_time["params"]) in asked[0]
     w.run_button.click()  # nothing started on No; now Yes
     until(lambda: w.tick() or w.run_status.text() == render("G_END_DONE", exit_code=0))
     assert [w.jobs.item(r, 0).text() for r in range(w.jobs.rowCount())] == ["P1", "P2"]
-    assert w.jobs.item(0, 4).text().startswith("P1: converged at ")
+    (p1,) = events(w.run_dir, kind="verdict", job=1)
+    assert p1["code"] == "I_JOB_CONVERGED" and w.jobs.item(0, 4).text() == control.text(p1["code"], p1["params"])
     log = items(w.log)
-    assert any(x.startswith("Running 2 jobs") and x.endswith("Stop stops them.") for x in log)
+    (start,) = events(w.run_dir, code="I_RUN_START")
+    assert start["params"]["runs"] == 2 and render("G_RUN_START", **start["params"]) in log
     assert not any("Ctrl+C" in x for x in log) and load_project(pj)["results"]["run_dir"] == str(w.run_dir)
     assert "openEMS" not in sys.modules and "CSXCAD" not in sys.modules  # design 4, 5.8: the GUI process
     grab(w, "run")
@@ -201,6 +208,14 @@ def test_every_list_of_sentences_wraps_at_its_width(window, qapp):  # Task 6 Ste
     qapp.processEvents()
     assert not w.log.horizontalScrollBar().isVisible()
     assert w.log.visualItemRect(w.log.item(0)).width() <= w.log.viewport().width()
+
+
+def test_the_window_fits_1200_by_800_and_its_tabs_need_no_scrolling(window):  # pt-BR design 3; Review Focus 4
+    w = window()
+    hint = w.minimumSizeHint()  # English probed: 830 × 518
+    assert hint.width() <= 1200 and hint.height() <= 800
+    # a tab never elides or narrows (scroll buttons appear instead), so every label is whole when the bar fits
+    assert w.tabs.tabBar().sizeHint().width() <= w.tabs.width()
 
 
 def test_the_window_drives_itself_and_survives_a_display_that_fails(window, qapp, tmp_path, monkeypatch):
@@ -227,7 +242,7 @@ def test_a_process_that_cannot_start_or_ends_without_its_end_event_says_so(windo
     opened(w)
     w.cost_button.click()
     assert w.proc is None and w.cost_status.text() == render("G_START_FAILED", program=missing,
-                                                             reason="file not found")
+                                                             reason="T_FILE_NOT_FOUND")
     dies = window([sys.executable, "-c", "raise SystemExit(3)"])  # an orchestrator that ends before cli.main
     dies.open_project(pj)
     opened(dies)
@@ -298,7 +313,8 @@ def test_a_window_closed_mid_run_leaves_it_running_and_a_new_one_attaches_with_s
     second.stop_button.click()
     assert (first.run_dir / "STOP").exists()
     until(lambda: second.tick() or second.run_status.text() == render("G_END_NOT_KEPT", exit_code=4))
-    assert any(x.endswith("stopped, so its S is not kept. Run `run` again for results.") for x in items(second.log))
+    stopped = events(first.run_dir, code="W_JOB_STOPPED")
+    assert stopped and all(control.text(e["code"], e["params"]) in items(second.log) for e in stopped)
     third = window()  # the run ended while no window watched it
     third.open_project(pj)
     opened(third)
@@ -388,7 +404,8 @@ def test_a_cost_that_ends_under_another_runs_lock_shows_its_end_before_the_attac
     lock.write_text(json.dumps({"pid": os.getpid(), "run_dir": str(other), "started": "S"}), encoding="utf-8")
     w.tick()  # the tick that sees the cost's exit reads its last lines and its end first
     assert w.command == "cost" and w.cost_status.text() == render("G_END_DONE", exit_code=0)
-    assert items(w.cost_lines)[-1].startswith("Main cost: ")
+    last = events(cost, kind="cost")[-1]
+    assert items(w.cost_lines)[-1] == control.text(last["code"], last["params"])
     w.tick()  # then the other run's lock is attached
     assert w.command == "run" and w.run_dir == other
     opened(w)
@@ -418,7 +435,7 @@ def test_results_show_the_chain_under_the_what_if_label_and_go_when_stale(window
     assert w.results.what_if.text() == label and not w.results.what_if.isHidden()  # design 5.3: 4 part ports
     assert len(fig.axes) == 3 and fig.get_suptitle() == render("I_PLOT_TITLE", name="lpf915") + "\n" + label
     assert items(w.results.lines) == [control.text(c, p) for c, p in res.lines] + [render(c) for c in LIMITS]
-    assert items(w.results.lines)[0].startswith("Results of the run in ")
+    assert res.lines[0][0] == "I_BASIS"
     w.results.canvas.draw()  # the Qt canvas renders it: draw_idle waits for an event loop the tests do not run
     w.tabs.setCurrentWidget(w.results)
     grab(w, "results")
@@ -610,7 +627,7 @@ def test_a_button_press_pre_fills_new_and_swap_swaps_start_and_end(window, tmp_p
     w.tick()
     assert (f.board.text(), f.chosen, f.start.count()) == (str(later), "", 0)  # plan 2's F4 rule, for a press too
     assert f.folder.text() == str(tmp_path / "later")  # another board: the folder beside it
-    assert f.status.text() == render("E_BOARD_UNREADABLE", path=str(later), reason="file not found")
+    assert f.status.text() == render("E_BOARD_UNREADABLE", path=str(later), reason="T_FILE_NOT_FOUND")
     later.write_bytes(board.read_bytes())
     w.board_chosen()
     assert w.pads_read is not None
@@ -794,7 +811,8 @@ def test_the_retune_table_snaps_takes_s2p_parts_and_draws_under_the_what_if_labe
     monkeypatch.setattr(QFileDialog, "getOpenFileName", lambda *a, **k: (str(c3), ""))
     r.parts.setCurrentCell(3, S2P)
     r.s2p_button.click()  # its fixture still series: retune's own warning, in the window's words
-    assert render("G_S2P_FIXTURE", ref="C3", path=str(c3.resolve()), named="series", fits="shunt") in items(r.lines)
+    assert control.text("W_S2P_FIXTURE", {"ref": "C3", "path": str(c3.resolve()), "named": "series",
+                                          "fits": "shunt"}) in items(r.lines)
     r.parts.cellWidget(3, FIXTURE).setCurrentIndex(1)  # shunt
     zk[:, 3] = with_box(z_part("C", 3.9e-12, None, F), F, C_BOX)
     res = control.retuned(pj, w.opened.project, w.opened.results, r.rows())
@@ -939,7 +957,8 @@ def test_verify_asks_to_apply_first_runs_detached_and_shows_its_comparison(windo
     w.tick()  # Apply stored them: verify starts on them, with no cost confirmation of its own
     assert (w.command, w.proc is not None, len(asked)) == ("verify", True, 3)
     until(lambda: w.tick() or w.run_status.text() == render("G_END_DONE", exit_code=0))
-    assert any(x.startswith("Worst case: ") for x in items(w.log))  # its own cost lines, live
+    (cost_time,) = events(w.run_dir, code="I_COST_TIME")
+    assert control.text(cost_time["code"], cost_time["params"]) in items(w.log)  # its own cost lines, live
     opened(w)  # its end read the project again, comparison included
     assert load_project(pj)["verify"]["values"]["C2"] == "4.7pF" and r.stale.isHidden()
     assert [c for c, _ in w.opened.verified][:2] == ["I_VERIFY_RESULTS", "I_VERIFY_COMPARE"]
@@ -1012,7 +1031,7 @@ def test_advanced_saves_project_json_under_the_lock_and_a_model_change_marks_the
     w.tick()
     a.save_button.click()  # the project's own checks refuse it; nothing is written
     assert a.status.text() == render("G_PROJECT_FIELD", path=str(pj), field="harmonics",
-                                     expected="a whole number above 0") and load_project(pj)["harmonics"] == 3
+                                     expected="T_EXPECT_WHOLE_ABOVE_0") and load_project(pj)["harmonics"] == 3
     a.table.item(row["harmonics"], 1).setText("3")
     a.table.item(row["t_max_s"], 1).setText("3e-08")  # T_max is in the model's excitation
     w.tick()
@@ -1106,7 +1125,8 @@ def test_one_real_run_through_the_window_new_cost_run_retune_apply_verify(qapp, 
         monkeypatch.setattr(w, "ask", lambda text: asked.append(text) or True)
         begin = time.monotonic()
         w.run_button.click()
-        assert w.command == "run" and "Worst case: " in asked[0]  # Run asked on the cost it shows
+        (cost_time,) = events(w.cost, code="I_COST_TIME")  # Run asked on the cost it shows
+        assert w.command == "run" and control.text(cost_time["code"], cost_time["params"]) in asked[0]
         ended(12 * 3600)
         assert (w.end["params"]["exit_code"], w.run_status.text()) == (0, render("G_END_DONE", exit_code=0)), \
             w.run_status.text()
