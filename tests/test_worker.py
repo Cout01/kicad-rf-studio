@@ -164,12 +164,13 @@ def test_nf2ff_mode_transforms_each_grid_afresh_into_a_file_of_its_own(tmp_path,
     assert "Run" not in [name for name, _, _ in log]  # no FDTD
 
 
-def test_nf2ff_mode_refuses_a_job_whose_far_field_was_never_recorded(tmp_path, monkeypatch):  # RF 3
+def test_nf2ff_mode_refuses_a_job_whose_far_field_was_never_recorded(tmp_path, monkeypatch, capsys):  # RF 3
     log = fake_openems(monkeypatch)
     monkeypatch.chdir(transform_job(finished_job(tmp_path, worker.DUMPS[:-1])))
     with pytest.raises(FileNotFoundError, match="nf2ff_H_5.h5"):
         worker.main(["job.json"])
     assert "CalcNF2FF" not in [name for name, _, _ in log]
+    assert "nf2ff_H_5.h5: the job ended before its far field was recorded" in capsys.readouterr().out
 
 
 def test_far_field_transforms_in_a_folder_of_its_own_and_never_reuses_a_file(tmp_path, fake):  # 5.5; RF 2

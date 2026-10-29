@@ -84,7 +84,9 @@ def _far_field(job: dict, spec: dict, box: object) -> None:
     files are missing and integrates the rest."""
     for name in DUMPS:
         if not (path := Path(job["dumps"]) / name).is_file():
-            raise FileNotFoundError(f"{path}: the job ended before its far field was recorded")
+            msg = f"{path}: the job ended before its far field was recorded"
+            print(msg, flush=True)  # the job's log.txt, which E_WORKER_FAILED names; the traceback goes to err.txt
+            raise FileNotFoundError(msg)
     nf = spec["nf2ff"]
     center = [c * 1e-3 for c in nf["center"]]
     for grid, (theta, phi, f0_only) in GRIDS.items():
