@@ -289,8 +289,8 @@ QUOTED = {  # a G_ message that names a widget, and that widget's label codes (d
     "G_VERIFY_VALUE": ("G_VERIFY", "G_TAB_ADVANCED", "G_TAB_RESULTS", "G_APPLY"),
     "G_PROJECT_FIELD": ("G_TAB_ADVANCED", "G_NEW")}
 # what a msgstr keeps of its msgid (design 3, 6.2 rule 3): a command in backticks, quoted JSON, an option, a file-dialog
-# filter and a dotted number
-KEEP = re.compile(r'`[^`]+`|"[^"]*"|--[a-z][\w-]*|\(\*\.\w+\)|\d+(?:\.\d+)+')
+# filter, a dotted number, and a file, field or variable name (project.json, mesh.n, ports[].reference, t_max_s, STOP)
+KEEP = re.compile(r'`[^`]+`|"[^"]*"|--[a-z][\w-]*|\(\*\.\w+\)|\d+(?:\.\d+)+|\w+(?:\[\])?(?:\.\w+)+|\w*_\w+|\bSTOP\b')
 
 
 def test_the_pt_br_catalog_translates_every_template_and_nothing_else():  # pt-BR design 7.2; Review Focus 2
@@ -309,13 +309,17 @@ def test_a_label_quoted_in_a_message_is_its_widgets_label_and_kicads_labels_are_
 
 def test_the_pt_br_catalog_keeps_the_glossarys_nevers():  # design 6.1 (preencher, executar, gate), 6.2 rule 1
     pt = mo_pairs()
-    never = re.compile(r"\b(recarreg\w*|rod(ar|e|ando)|tu|favor|o usuário)\b", re.I)
+    never = re.compile(r"\b(recarreg\w*|rod(?:a|am|amos|ando|ar|ará|arão|aria|ariam|aram|ava|avam|e|em|ou)|tu|favor"
+                       r"|o usuário)\b", re.I)
+    assert all(never.search(w) for w in ("rodar", "roda", "rodam", "rodou", "rodando")) and not never.search("rodapé")
     assert [msgid for msgid, msgstr in pt.items() if never.search(msgstr)] == []
     gates = [CATALOG[code] for code in ("I_GATES_PASSED", "G_END_BLOCKED") if CATALOG[code] in pt]  # a gate, in prose
     assert [m for m in gates if "checage" not in pt[m].lower() or "verifica" in pt[m].lower()] == []
 
 
 def test_every_translation_keeps_the_identifiers_numbers_filters_and_ellipses():  # design 3, 6.2 rules 3, 6; RF 1
+    assert KEEP.findall("project.json, mesh.n, ports[].reference, t_max_s, STOP") == [
+        "project.json", "mesh.n", "ports[].reference", "t_max_s", "STOP"]
     pt = mo_pairs()
     assert [m for m, s in pt.items()
             if any(k not in s for k in KEEP.findall(m)) or m.endswith("…") != s.endswith("…")] == []
