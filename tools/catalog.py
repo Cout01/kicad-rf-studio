@@ -57,6 +57,7 @@ def main(argv: list[str]) -> int:
             catalog = Catalog(locale=lang, domain=DOMAIN, project="kicad-rf-studio", version=__version__, fuzzy=False,
                               header_comment=f"# kicad-rf-studio's messages in {lang}: translate each msgstr here, "
                                              "then run tools/catalog.py.")
+        catalog.version = __version__  # update() leaves an existing .po's header version as it was
         catalog.update(template, no_fuzzy_matching=True)  # never a neighbour's msgstr guessed into a new msgid
         write(path, catalog)
         catalog.msgid_bugs_address = catalog.last_translator = catalog.language_team = ""
