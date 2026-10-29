@@ -7,6 +7,7 @@ from functools import cache
 import pytest
 from shapely.geometry import MultiPolygon, Point, Polygon, box
 
+import p3a
 from kicad_rf_studio.core.geometry import build_geometry
 from kicad_rf_studio.core.geometry.lid import snap_lid
 from kicad_rf_studio.core.geometry.mask import smeared_epsilon
@@ -14,10 +15,11 @@ from kicad_rf_studio.core.geometry.region import band
 from kicad_rf_studio.core.kicad import load_board
 from kicad_rf_studio.core.mesh.gates import mesh_with_lint
 from kicad_rf_studio.core.messages import KrsError
+from kicad_rf_studio.core.model.csx import PML_CELLS
 from kicad_rf_studio.core.model.ports import place
 from kicad_rf_studio.core.model.readers import c_box
-from kicad_rf_studio.core.model.spec import (K_MAX, excitation, grid_entry, kappa, model_spec, pulse, spec_hash,
-                                             verify_spec, with_pml)
+from kicad_rf_studio.core.model.spec import (K_MAX, PML_CLEAR, excitation, grid_entry, kappa, metal_in_pml,
+                                             model_spec, pulse, spec_hash, verify_spec, with_pml)
 from test_cli_cost import SEG
 from test_gates import mini, project_of
 from test_geometry_sections import four_layer, plane
@@ -52,6 +54,47 @@ def test_with_pml_adds_8_lines_past_each_end_at_its_outer_cell():  # design 5.2
     assert with_pml([0.0, 1.0, 3.0]) == [-8.0, -7.0, -6.0, -5.0, -4.0, -3.0, -2.0, -1.0, 0.0, 1.0, 3.0,
                                          5.0, 7.0, 9.0, 11.0, 13.0, 15.0, 17.0, 19.0]
     assert with_pml([0.1, 0.4, 0.5])[:2] == [-2.3, -2.0]  # quantised to 1e-6 mm
+
+
+def test_metal_dielectric_or_a_port_within_the_pml_and_2_cells_is_refused():  # design 5.2; RF 5
+    s = p3a.dipole(p3a.SHORT_MM)
+    (x, y, z), k = (s["mesh"][a] for a in "xyz"), PML_CELLS + PML_CLEAR
+    assert metal_in_pml(s) == [] and metal_in_pml(p3a.dipole(p3a.HALF_MM)) == []
+    assert metal_in_pml({key: v for key, v in s.items() if key != "boundary"}) == []  # MUR: no absorber
+
+    def line(axis, at, limit):
+        return ("E_METAL_IN_PML", {"axis": axis, "at_mm": f"{at:.3f}", "limit_mm": f"{limit:.3f}"})
+
+    def box(x0, x1, y0, y1, z0, z1):
+        return {"x": [x0, x1, x1, x0], "y": [y0, y0, y1, y1], "z": [z0, z1]}
+
+    def metal(**kw):
+        return {**s, "metal": {**s["metal"], **kw}}
+
+    def wire(z0):
+        return metal(curves=[*s["metal"]["curves"], {"at": [0.0, 0.0], "z": [z0, -6.0]}])
+
+    slab = {"name": "substrate_0", "eps": 4.3, "kappa": 0.0, "priority": 10,
+            "solids": [box(x[2], 5.0, -5.0, 5.0, -1.0, 1.0)]}
+    copper = box(0.0, x[-2], -1.0, 1.0, -1.0, 1.0)  # into the x-high absorber
+    lid = {"plate": {**box(-1.0, 1.0, -1.0, 1.0, 0.0, 0.0), "z": z[-3]},
+           "walls": [box(-1.0, 1.0, y[3], 0.0, -1.0, 1.0)]}
+    part = {**s["ports"][0], "name": "C1", "dir": "x", "start": [x[1], 0.0, 0.0], "stop": [0.0, 0.0, 0.0],
+            "R": None, "C": 1e-12}
+    cases = [
+        (wire(z[k]), []),  # on the limit's own line
+        (wire(z[k - 1]), [line("z", z[k - 1], z[k])]),
+        ({**s, "materials": [slab]}, [line("x", x[2], x[k])]),
+        ({**s, "ports": [{**s["ports"][0], "stop": [0.0, 0.0, z[-2]]}]}, [line("z", z[-2], z[-1 - k])]),
+        (metal(cylinders=[{"at": [x[k] + 0.1, 0.0], "r": 0.2, "z": [-1.0, 1.0]}]), [line("x", x[k] - 0.1, x[k])]),
+        (metal(copper=[copper]), [line("x", x[-2], x[-1 - k])]),
+        ({**s, "grid": [part]}, [line("x", x[1], x[k])]),
+        ({**metal(curves=[{"at": [x[5], 0.0], "z": [-1.0, 1.0]}]), "materials": [slab]}, [line("x", x[2], x[k])]),
+        (metal(copper=[copper], lid=lid),
+         [line("x", x[-2], x[-1 - k]), line("y", y[3], y[k]), line("z", z[-3], z[-1 - k])]),
+    ]
+    for spec, lines in cases:  # each kind; one line per face, at its farthest intruder, x low to z high
+        assert metal_in_pml(spec) == lines
 
 
 def test_kappa_is_set_at_f0():  # spec 5.3

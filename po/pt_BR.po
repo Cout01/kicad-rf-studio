@@ -547,6 +547,11 @@ msgstr "O openEMS deixou parte de {property} fora do modelo ({type}). Um tipo de
 msgid "openEMS left part of {property} out of the model ({type}). A primitive type such as LinPoly is a sliver smaller than a cell, \"none\" means the property holds no primitive, and \"outside\" means it lies outside the simulated region. Look at it with `preview` if it should carry current."
 msgstr "O openEMS deixou parte de {property} fora do modelo ({type}). Um tipo de primitiva como LinPoly indica uma lasca menor que uma célula, \"none\" quer dizer que a propriedade não contém primitivas, e \"outside\" quer dizer que ela fica fora da região simulada. Se essa parte deveria conduzir corrente, examine-a com `preview`."
 
+#. E_METAL_IN_PML
+#, python-brace-format
+msgid "The model has metal, dielectric or a port within the PML or the 2 cells just inside its inner edge: along {axis} it reaches {at_mm} mm, past {limit_mm} mm. Copper or dielectric in the absorber makes the run unstable; widen the air gap around the board."
+msgstr "O modelo tem metal, dielétrico ou uma porta dentro da PML ou das 2 células logo depois dela: ao longo de {axis}, ele chega a {at_mm} mm, além de {limit_mm} mm. Cobre ou dielétrico no absorvedor deixa a execução instável; aumente o espaçamento de ar em volta da placa."
+
 #. W_GATE_LIMITS
 #, python-brace-format
 msgid "project.json sets gates.fit2d_limit {fit2d_limit} and gates.dt_floor {dt_floor}, not 0.03 and 0.8, so this verdict is outside the validated limits. Set them back to 0.03 and 0.8 for a validated result."

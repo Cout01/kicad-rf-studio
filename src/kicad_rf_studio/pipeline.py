@@ -36,7 +36,7 @@ from kicad_rf_studio.core.messages import KrsError, english, reason, render
 from kicad_rf_studio.core.model.parts import CURVE_PORT, GRID, PORT
 from kicad_rf_studio.core.model.ports import ends, nominal_boxes, place
 from kicad_rf_studio.core.model.readers import read_log, read_probe, read_run_stats, read_stats
-from kicad_rf_studio.core.model.spec import grid_entry, model_spec, spec_hash, verify_spec
+from kicad_rf_studio.core.model.spec import grid_entry, metal_in_pml, model_spec, spec_hash, verify_spec
 from kicad_rf_studio.core.post.chain import ideal_schematic, loads, part_impedances, terminate, z_part
 from kicad_rf_studio.core.post.checks import compare, indicator_lines, loss_budget, loss_expected
 from kicad_rf_studio.core.post.outputs import (LIMITS, OUTPUTS, VERIFY_OUTPUT, grid_lines, marker_lines, port_map,
@@ -244,7 +244,8 @@ def prepare(model: Model, emit: Callable[[str, dict], None], run_dir: Path | Non
 def setup_gate(model: Model, project: dict, run_dir: Path, settings: dict, threads: int) -> tuple[dict, list, list]:
     """openEMS's setup of a built `model` and the gates on it (spec 6.1 step 2): model.json in `run_dir`, one
     setup-only worker in job-0-setup, then (its setup.json, the gates that block a run, the warnings). Blocking:
-    E_DT_FLOOR when dt is under gates.dt_floor × the model's reference (C-17), port_gates (C-15), and
+    E_DT_FLOOR when dt is under gates.dt_floor × the model's reference (C-17), E_METAL_IN_PML (metal_in_pml) for a
+    structure within an antenna's PML or the 2 cells inside it (Stage 3 design 5.2), port_gates (C-15), and
     E_UNUSED_PRIMITIVE for each "unused" entry of a port_* or lumped_* property (a port, its probes, a grid part);
     W_UNUSED_PRIMITIVE for any other property, copper (C-16). Raises what check_job raises, KeyboardInterrupt when STOP
     or Ctrl+C stopped the job."""
@@ -258,6 +259,7 @@ def setup_gate(model: Model, project: dict, run_dir: Path, settings: dict, threa
     # ponytail: dt from the setup log (6 digits); openEMS_stats.txt exists only after a run
     if setup["dt"] < floor * model.dt_ref:
         blocked.append(("E_DT_FLOOR", dt_params(model, floor, setup)))
+    blocked += metal_in_pml(model.spec)
     blocked += port_gates(model.spec["ports"], setup["pec"])
     for kind, prop in setup["unused"]:  # [type, property], ["none", property] or ["outside", property]
         note = {"property": prop, "type": kind}

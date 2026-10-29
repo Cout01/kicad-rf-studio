@@ -12,6 +12,8 @@ from pathlib import Path
 import numpy as np
 import pytest
 
+import p0
+import p3a
 from kicad_rf_studio import pipeline, runs
 from kicad_rf_studio.cli import main
 from kicad_rf_studio.core.kicad.stackup import kicad_default
@@ -412,6 +414,18 @@ def test_a_setup_gate_blocks_the_run_and_leaves_the_results(tmp_path, capsys, ca
     assert main(["run", str(pj)]) == 3
     assert render("E_PORT_SHORT", name="P1") in capsys.readouterr().out.splitlines()
     assert "results" not in load_project(pj)
+
+
+def test_the_setup_gate_blocks_metal_within_the_pml(tmp_path, calibrated):  # design 5.2: a setup gate; RF 5
+    def blocked(spec, name):
+        model = p0.model_of(spec)
+        return [code for code, _ in pipeline.setup_gate(model, {"gates": GATES}, tmp_path / name,
+                                                          runs.load_settings(), 2)[1]]
+
+    s = p3a.dipole(p3a.SHORT_MM)
+    assert "E_METAL_IN_PML" not in blocked(s, "clear")
+    s["metal"]["curves"].append({"at": [0.0, 0.0], "z": [s["mesh"]["z"][0], -6.0]})
+    assert blocked(s, "deep").count("E_METAL_IN_PML") == 1
 
 
 def test_a_job_stopped_before_it_started_has_no_time_or_residual(tmp_path, calibrated, monkeypatch):  # P26

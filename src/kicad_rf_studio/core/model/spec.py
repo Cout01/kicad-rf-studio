@@ -66,6 +66,35 @@ def with_pml(lines: list[float]) -> list[float]:
             + [round(lines[-1] + k * hi, 6) for k in range(1, PML_CELLS + 1)])
 
 
+PML_CLEAR = 2  # the cells just inside the PML's inner edge that hold no structure either (design 5.2)
+
+
+def metal_in_pml(spec: dict) -> list[tuple[str, dict]]:
+    """E_METAL_IN_PML (Stage 3 design 5.2), for each face of a `"boundary": "pml_8"` spec that metal, dielectric or a
+    lumped element reaches within the PML or the PML_CLEAR cells just inside its inner edge. That band holds every
+    coordinate below line PML_CELLS + PML_CLEAR, counted from either end of its axis; a coordinate on that line
+    passes. Params: the axis, the farthest coordinate and that line, in mm. [] for any other spec."""
+    if spec.get("boundary") != "pml_8":
+        return []
+    pec, k = spec["metal"], PML_CELLS + PML_CLEAR
+    solids = (*(s for m in spec["materials"] for s in m["solids"]), *pec["copper"], *pec["lid"]["walls"])
+    xyz = [(s["x"], s["y"], s["z"]) for s in solids]
+    if (plate := pec["lid"]["plate"]) is not None:
+        xyz.append((plate["x"], plate["y"], [plate["z"]]))
+    for rod in (*pec["cylinders"], *pec["curves"]):  # a curve is a rod of radius 0
+        (x, y), r = rod["at"], rod.get("r", 0.0)
+        xyz.append(([x - r, x + r], [y - r, y + r], rod["z"]))
+    xyz += [list(zip(e["start"], e["stop"])) for e in (*spec["ports"], *spec["grid"])]  # probes skipped: P0's own
+    out = []
+    for n, axis in enumerate("xyz"):
+        lines, coords = spec["mesh"][axis], [c for e in xyz for c in e[n]]
+        low, high = min(coords, default=math.inf), max(coords, default=-math.inf)
+        for at, limit, past in ((low, lines[k], low < lines[k]), (high, lines[-1 - k], high > lines[-1 - k])):
+            if past:
+                out.append(("E_METAL_IN_PML", {"axis": axis, "at_mm": f"{at:.3f}", "limit_mm": f"{limit:.3f}"}))
+    return out
+
+
 def kappa(eps_r: float, tan_d: float | None, f0: float) -> float:
     """The conductivity that gives a dielectric of εr `eps_r` the loss tangent `tan_d` at `f0` (spec 5.3: a constant
     κ, set at f0); 0 when the stackup gives no loss tangent."""

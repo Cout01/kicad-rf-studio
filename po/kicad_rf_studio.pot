@@ -545,6 +545,11 @@ msgstr ""
 msgid "openEMS left part of {property} out of the model ({type}). A primitive type such as LinPoly is a sliver smaller than a cell, \"none\" means the property holds no primitive, and \"outside\" means it lies outside the simulated region. Look at it with `preview` if it should carry current."
 msgstr ""
 
+#. E_METAL_IN_PML
+#, python-brace-format
+msgid "The model has metal, dielectric or a port within the PML or the 2 cells just inside its inner edge: along {axis} it reaches {at_mm} mm, past {limit_mm} mm. Copper or dielectric in the absorber makes the run unstable; widen the air gap around the board."
+msgstr ""
+
 #. W_GATE_LIMITS
 #, python-brace-format
 msgid "project.json sets gates.fit2d_limit {fit2d_limit} and gates.dt_floor {dt_floor}, not 0.03 and 0.8, so this verdict is outside the validated limits. Set them back to 0.03 and 0.8 for a validated result."
