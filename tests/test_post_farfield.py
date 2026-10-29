@@ -61,6 +61,8 @@ def test_eta_rad_above_1_02_is_flagged_at_its_worst_frequency():  # design 5.5
     assert eta_lines(f, np.array([1.0, 1.03, 1.025])) == [
         ("W_ETA_RAD", {"eta": "1.030", "f_mhz": "2400.0", "limit": "1.02"})]
     assert eta_lines(f, np.array([1.0, 1.02, 0.5])) == []
+    assert eta_lines(f, np.array([np.nan, 1.5, 1.0])) == [
+        ("W_ETA_RAD", {"eta": "nan", "f_mhz": "2450.0", "limit": "1.02"})]
 
 
 def test_a_far_field_file_in_another_layout_is_refused(tmp_path):  # r3: openEMS's legacy layout, or transposed
