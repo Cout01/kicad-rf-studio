@@ -680,8 +680,8 @@ def run_ports(model: Model, run_dir: Path, setup: dict, threads: int, pool: int,
         waves = f"{job.name}/waves.npz"
         done.append({"port": names[k - 1], "verdict": kind, "t_cut": verdict.t if verdict else None, "t_stop": t_stop,
                      "residual_db": r, "waves": waves if (run_dir / waves).is_file() else None})
-        if (stats := job / "openEMS_stats.txt").is_file():  # a killed or crashed job has none
-            speeds.append(read_stats(stats.read_text(encoding="utf-8"))["speed"])
+        if (stats := job / "openEMS_stats.txt").is_file() and (s := read_stats(stats.read_text(encoding="utf-8"))):
+            speeds.append(s["speed"])  # a killed or crashed job has none, or a part of one
     return done, speeds, wall_s
 
 

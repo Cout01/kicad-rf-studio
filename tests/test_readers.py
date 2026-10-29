@@ -33,6 +33,7 @@ def test_the_setup_log():  # r5's real lines; the banner (it holds an e-mail add
 def test_statistics_and_probes():
     assert read_stats(STATS) == {"cells": 34320, "dt": 1.739719832710559e-13, "iterations": 28740,
                                  "sim_time": 4.999954799210147e-09, "wall": 16.034181, "speed": 61515882.8505179}
+    assert read_stats("") is None and read_stats(STATS[:-1]) is None  # C1: a job killed while openEMS wrote it
     steps, speed, e = read_run_stats("%time\ttimestep\tspeed\tenergy\n4.12275\t8058\t6.70792e+07\t2.93607e-15\n"
                                      "8.21882\t15168\t5.95729e+07\t-nan(ind)\n12.304\t222")
     assert steps.tolist() == [8058, 15168] and speed[0] == 6.70792e+07 and e[0] == 2.93607e-15 and np.isnan(e[1])

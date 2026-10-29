@@ -4,6 +4,7 @@ what openEMS and the worker would, from tests/traces.py or tests/networks.py, in
 $KRS_FAKE_EXIT is an exit code and $KRS_FAKE "hang" a worker that never ends, in any mode; otherwise $KRS_FAKE is the
 run's kind: "converge" (the default), "slow", "crash" (only on port $KRS_FAKE_JOB when it is set), "network" (the
 waves of the known N-port networks.star, from networks.network_trace) or a kind of traces.trace.
+$KRS_FAKE_STATS "partial" writes openEMS_stats.txt's first three values, the third without its newline: a killed write.
 $KRS_FAKE_SETUP is JSON that setup.json takes, and $KRS_FAKE_LOG a file that gets a line as each fake starts and
 ends. The setup mode writes setup.json, and an empty operator_dump.vtr when a port holds a part."""
 import json
@@ -61,8 +62,11 @@ def run(job: dict, spec: dict) -> int:
     iterations = steps if n == len(rec.t_u) else round(rec.t_u[n] / DT)
     cells = math.prod(len(spec["mesh"][a]) for a in "xyz")
     print(f"Time for {iterations} iterations with {cells} cells : 1.00 sec")
-    Path("openEMS_stats.txt").write_text("".join(f"{v}\n" for v in (cells, DT, iterations, iterations * DT, 1.0,
-                                                                     5e7 * job["threads"])), encoding="utf-8")
+    values = (cells, DT, iterations, iterations * DT, 1.0, 5e7 * job["threads"])
+    text = "".join(f"{v}\n" for v in values)
+    if os.environ.get("KRS_FAKE_STATS") == "partial":  # as a kill in the middle of the write leaves it
+        text = "\n".join(str(v) for v in values[:3])
+    Path("openEMS_stats.txt").write_text(text, encoding="utf-8")
     np.savez("waves.npz", t_u=rec.t_u[:n], u=rec.u[:, :n], t_i=rec.t_i[:n], i=rec.i[:, :n])
     return 0
 

@@ -127,6 +127,15 @@ def test_the_network_fake_records_the_waves_of_a_known_network(tmp_path, calibra
     assert np.abs(layout(p, p["results"]).s - star(F, 2)).max() <= 1e-5
 
 
+def test_a_partial_stats_file_counts_as_missing(tmp_path, calibrated, monkeypatch):  # C1
+    # a job killed while openEMS wrote openEMS_stats.txt ended the run E_INTERNAL: read_stats raised IndexError
+    monkeypatch.setenv("KRS_FAKE", "network")
+    monkeypatch.setenv("KRS_FAKE_STATS", "partial")
+    pj = coupon(tmp_path, "normal")
+    assert main(["run", str(pj)]) == 0
+    assert [j["verdict"] for j in load_project(pj)["results"]["jobs"]] == ["converged"] * 2
+
+
 def test_a_crashed_job_is_unclassified_and_the_others_finish(tmp_path, capsys, calibrated, monkeypatch):  # RF 4
     monkeypatch.setenv("KRS_FAKE", "crash")  # past the converge cut, then exit 7 with no waves
     monkeypatch.setenv("KRS_FAKE_JOB", "2")

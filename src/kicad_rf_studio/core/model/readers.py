@@ -49,10 +49,13 @@ def read_run_stats(text: str) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
     return steps, speed, energy
 
 
-def read_stats(text: str) -> dict:
+def read_stats(text: str) -> dict | None:
     """openEMS_stats.txt, one value per line: the cells, the timestep dt (s), the iterations, the simulated time
-    sim_time (s), the wall-clock time wall (s) and the speed (cells/s)."""
-    v = [_num(line.split()[0]) for line in text.splitlines() if line.strip()]
+    sim_time (s), the wall-clock time wall (s) and the speed (cells/s). None when it holds fewer than six complete
+    lines: a job killed while openEMS wrote it."""
+    v = [_num(line.split()[0]) for line in text.split("\n")[:-1] if line.strip()]
+    if len(v) < 6:
+        return None
     return {"cells": int(v[0]), "dt": v[1], "iterations": int(v[2]), "sim_time": v[3], "wall": v[4], "speed": v[5]}
 
 
