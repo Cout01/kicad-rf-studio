@@ -97,6 +97,17 @@ def collected():
     gc.collect()
 
 
+def dispose(windows):
+    """What `windows` started killed, their pools awaited and the windows closed: a test leaves no run going."""
+    for w in windows:
+        for proc in w.started:  # every process it started, not only the watched one
+            if proc.poll() is None:
+                proc.kill()
+                proc.wait()
+        w.close()
+        w.pool.shutdown(wait=True)  # a read still going would outlive the fake data folder
+
+
 @pytest.fixture
 def window(qapp, calibrated, monkeypatch):
     """MainWindow on the fake CLI, shown offscreen, with runs.run_jobs and runs.ensure_calibrated failing in this
@@ -114,13 +125,7 @@ def window(qapp, calibrated, monkeypatch):
         return made[-1]
 
     yield make
-    for w in made:
-        for proc in w.started:  # every process it started, not only the watched one
-            if proc.poll() is None:
-                proc.kill()
-                proc.wait()
-        w.close()
-        w.pool.shutdown(wait=True)  # a read still going would outlive the fake data folder
+    dispose(made)
     made.clear()
 
 
@@ -995,3 +1000,97 @@ def test_the_help_menu_shows_about_and_qts_about(window, monkeypatch):  # design
     w.about_action.trigger()
     w.about_qt_action.trigger()
     assert seen == [(render("G_ABOUT"), control.about()), "Qt"]
+
+
+# ponytail: run by hand only, so it can lag the window's API until it next runs; the fake-backed tests above pin each
+# step's widgets meanwhile
+@pytest.mark.openems
+@pytest.mark.skipif(not os.environ.get("KRS_E2E_DIR"), reason="one real run through the window (design 5.11 item 2): "
+                    "set KRS_E2E_DIR to an empty folder outside the repository")
+def test_one_real_run_through_the_window_new_cost_run_retune_apply_verify(qapp, monkeypatch):
+    out = Path(os.environ["KRS_E2E_DIR"]).resolve()  # design 5.11 item 2: opt-in, never in the suite's runs
+    assert not out.is_relative_to(ROOT), "KRS_E2E_DIR must be outside the repository"  # its settings name this host
+    out.mkdir(parents=True, exist_ok=True)
+    assert not any(out.iterdir()), "KRS_E2E_DIR must be empty: a fresh data folder, as on a new install"
+    assert qapp.platformName() == "offscreen"  # hours of a window, never a visible one
+    for name in ("LOCALAPPDATA", "XDG_DATA_HOME"):
+        monkeypatch.setenv(name, str(out / "data"))  # runs.data_dir(), here and in every process the window starts
+    for name in ("run_jobs", "ensure_calibrated"):
+        monkeypatch.setattr(runs, name, fail)  # design 5.1: no run in the GUI process
+    board, pj = out / "board" / "lpf915.kicad_pcb", out / "board" / "lpf915" / "project.json"  # New's default folder
+    board.parent.mkdir()
+    board.write_bytes((FIX / "lpf915.kicad_pcb").read_bytes())
+
+    def ended(timeout):  # the watched process to its exit, then the tick that reads its end event
+        until(lambda: w.tick() or w.proc.poll() is not None, timeout=timeout)
+        w.tick()
+
+    def say(step, begin, line):  # the exit record quotes these lines: KRS_E2E_DIR's path never shows in them
+        print(f"e2e {step}: {time.monotonic() - begin:.0f} s: {line.replace(str(out), '<KRS_E2E_DIR>')}", flush=True)
+
+    w = MainWindow()  # the real orchestrator (control.orchestrator)
+    w.show()
+    try:
+        begin, f = time.monotonic(), w.new_form
+        f.board.setText(str(board))
+        w.board_chosen()
+        w.pads_read.result(timeout=60)
+        w.tick()
+        f.start.setCurrentText("U1.1")
+        f.end.setCurrentText("J1.1")
+        f.f0.setText("915MHz")
+        f.preset.setCurrentText("draft")
+        f.lid.setValue(2.5)  # the shield's lid, as the README's tutorial gives it
+        f.create_button.click()
+        assert w.creating.result(timeout=120)[0] == pj
+        w.tick()
+        opened(w)
+        assert w.project_status.text() == render("G_PROJECT", path=str(pj), f0_mhz="915", harmonics=3, preset="draft")
+        say("new", begin, w.project_status.text())
+        begin = time.monotonic()
+        w.cost_button.click()  # a fresh data folder: it calibrates this machine first
+        ended(3600)
+        assert w.cost_status.text() == render("G_END_DONE", exit_code=0), w.cost_status.text()
+        say("cost", begin, " | ".join(items(w.cost_lines)))  # the estimate, before any run
+        opened(w)  # the cost's end read the project again, which found it as this model's cost
+        assert w.cost == w.run_dir and w.run_button.isEnabled()
+        grab(w, "e2e-cost")
+        asked = []
+        monkeypatch.setattr(w, "ask", lambda text: asked.append(text) or True)
+        begin = time.monotonic()
+        w.run_button.click()
+        assert w.command == "run" and "Worst case: " in asked[0]  # Run asked on the cost it shows
+        ended(12 * 3600)
+        assert (w.end["params"]["exit_code"], w.run_status.text()) == (0, render("G_END_DONE", exit_code=0)), \
+            w.run_status.text()
+        say("run", begin, " | ".join([*column(w.jobs, 4), items(w.log)[-1]]))
+        grab(w, "e2e-run")
+        opened(w)
+        r = w.results
+        assert column(r.parts, PART) == ["C1", "L1", "C2", "C3"] and not r.what_if.isHidden()
+        r.parts.item(2, VALUE).setText("5pF")  # C2, snapped to E24 (design 7's default)
+        assert r.parts.item(2, VALUE).text() == "5.1pF"
+        assert r.canvas.figure.get_suptitle().endswith("\n" + render("G_WHAT_IF"))  # retuned, under the label
+        w.tabs.setCurrentWidget(r)
+        grab(w, "e2e-retune")
+        r.apply_button.click()
+        w.applying.result(timeout=300)
+        w.tick()
+        assert r.retune_status.text() == render("G_APPLIED", folder=str(pj.parent / "results"))
+        assert parts(load_project(pj))["C2"]["value"] == "5.1pF"
+        opened(w)
+        begin = time.monotonic()
+        r.verify_button.click()  # the values are applied: verify starts at once
+        assert w.command == "verify"
+        ended(12 * 3600)
+        assert (w.end["params"]["exit_code"], w.run_status.text()) == (0, render("G_END_DONE", exit_code=0)), \
+            w.run_status.text()
+        opened(w)
+        assert [c for c, _ in w.opened.verified][:2] == ["I_VERIFY_RESULTS", "I_VERIFY_COMPARE"] and r.stale.isHidden()
+        assert load_project(pj)["verify"]["values"]["C2"] == "5.1pF"
+        say("verify", begin, " | ".join(items(r.verify_lines)))
+        w.tabs.setCurrentWidget(r)
+        grab(w, "e2e-verify")
+        assert "openEMS" not in sys.modules and "CSXCAD" not in sys.modules  # design 4: the GUI process
+    finally:
+        dispose([w])  # a failed step leaves no run going
