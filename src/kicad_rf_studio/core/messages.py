@@ -1,9 +1,15 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """Every string a user can see is a code in CATALOG plus parameters. The English template is the
-gettext msgid, so a translation is a catalog file under kicad_rf_studio/locale."""
+gettext msgid, so a translation is a catalog file under kicad_rf_studio/locale. The language is picked once, at
+import (_languages)."""
+import ctypes
 import gettext
 import json
+import os
+import sys
 from pathlib import Path
+
+LOCALE = Path(__file__).resolve().parents[1] / "locale"
 
 CATALOG: dict[str, str] = {
     "E_PARSE_UNBALANCED": "The board file is damaged: unbalanced brackets near line {line}. Open it in KiCad and save it again.",
@@ -324,8 +330,33 @@ CATALOG: dict[str, str] = {
     "E_KICAD_OTHER_BOARD": "KiCad has {open} open, not {board}, so nothing was refilled or saved. Open {board} in KiCad and press the kicad-rf-studio button again.",
 }
 
-_translation = gettext.translation(
-    "kicad_rf_studio", localedir=Path(__file__).resolve().parents[1] / "locale", fallback=True)
+
+def _ui_language() -> int:
+    """Windows' display language, a LANGID (0x0416: Portuguese (Brazil)); 0 elsewhere."""
+    return ctypes.windll.kernel32.GetUserDefaultUILanguage() if sys.platform == "win32" else 0
+
+
+def _languages() -> list[str] | None:
+    """gettext's languages (pt-BR design 4): None when LANGUAGE, LC_ALL, LC_MESSAGES or LANG is set and not empty,
+    which gettext then reads itself; else ["pt_BR"] when Windows' display language is Portuguese (Brazil), and ["en"]
+    for any other. Never the regional format, which is the wrong signal. One element only: a list such as
+    ["en_US", "pt_BR"] makes gettext skip the missing English and load pt_BR."""
+    if any(os.environ.get(name) for name in ("LANGUAGE", "LC_ALL", "LC_MESSAGES", "LANG")):
+        return None
+    # ponytail: one LANGID, Portuguese (Brazil)'s; another language adds its own here, or reads
+    # GetUserPreferredUILanguages' names ("-" to "_")
+    return ["pt_BR"] if _ui_language() == 0x0416 else ["en"]
+
+
+_translation = gettext.translation("kicad_rf_studio", localedir=LOCALE, languages=_languages(), fallback=True)
+
+
+def language() -> str:
+    """The language the catalog speaks (pt-BR design 4), for Qt's translator and the tests: the loaded .mo's Language
+    header, "en" without one."""
+    # ponytail: the .mo's Language header names it (tools/catalog.py writes it from the .po's name); a .mo without one
+    # reads as English
+    return _translation.info().get("language", "en")
 
 
 def render(code: str, **params) -> str:

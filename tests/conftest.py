@@ -1,6 +1,11 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
-import json
 import os
+
+# pt-BR design 4: before conftest's imports, which load core.messages (it binds its language at import), and inherited
+# by every process a test starts; KRS_TEST_LANGUAGE=pt_BR runs tests/test_gui.py in pt-BR (design 7.3)
+os.environ["LANGUAGE"] = os.environ.get("KRS_TEST_LANGUAGE") or "en"
+
+import json
 import subprocess
 import sys
 import time

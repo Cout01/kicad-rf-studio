@@ -1,5 +1,9 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
+import gettext
+import locale
+import os
 import string
+import sys
 
 import pytest
 
@@ -131,3 +135,53 @@ def test_render_translates_the_template_and_then_fills_it_in(monkeypatch):
 
     monkeypatch.setattr(messages, "_translation", Translation())
     assert render("I_WROTE", path="out.json") == "[translated] Wrote out.json."
+
+
+GETTEXT_VARIABLES = ("LANGUAGE", "LC_ALL", "LC_MESSAGES", "LANG")
+
+
+@pytest.fixture
+def no_gettext_variable(monkeypatch):
+    for name in GETTEXT_VARIABLES:
+        monkeypatch.delenv(name, raising=False)
+
+
+@pytest.mark.parametrize(("ui", "chosen"), [
+    (0x0416, ["pt_BR"]),  # Portuguese (Brazil)
+    (0x0816, ["en"]),  # Portuguese (Portugal) is not pt-BR (design 3)
+    (0x0409, ["en"]),  # an English Windows, whatever its regional format (Review Focus 5)
+    (0, ["en"])])  # not Windows
+def test_with_no_gettext_variable_windows_display_language_picks_the_language(no_gettext_variable, monkeypatch, ui,
+                                                                              chosen):  # pt-BR design 4
+    monkeypatch.setattr(messages, "_ui_language", lambda: ui)
+    monkeypatch.setattr(locale, "getlocale", lambda *a: ("pt_BR", "cp1252"))  # the regional format is never read
+    assert messages._languages() == chosen
+
+
+@pytest.mark.parametrize("name", GETTEXT_VARIABLES)
+def test_a_gettext_variable_wins_over_windows_display_language(no_gettext_variable, monkeypatch, name):
+    monkeypatch.setattr(messages, "_ui_language", lambda: 0x0416)
+    monkeypatch.setenv(name, "")  # empty is unset, as gettext reads it
+    assert messages._languages() == ["pt_BR"]
+    monkeypatch.setenv(name, "C")
+    assert messages._languages() is None  # gettext reads it itself (Task 4 runs C and pt_BR.UTF-8)
+
+
+def test_language_names_the_catalog_that_loaded(monkeypatch):  # pt-BR design 4: for Qt's translator and the tests
+    class PtBr(gettext.NullTranslations):
+        def info(self):
+            return {"language": "pt_BR"}
+
+    monkeypatch.setattr(messages, "_translation", gettext.NullTranslations())
+    assert messages.language() == "en"
+    monkeypatch.setattr(messages, "_translation", PtBr())
+    assert messages.language() == "pt_BR"
+
+
+@pytest.mark.skipif(sys.platform != "win32", reason="Windows' display language")
+def test_windows_display_language_is_read_through_ctypes():
+    assert 0 < messages._ui_language() <= 0xFFFF  # a LANGID
+
+
+def test_the_suite_pins_its_language_before_anything_reads_it():  # pt-BR design 4, 7.2
+    assert os.environ["LANGUAGE"] == (os.environ.get("KRS_TEST_LANGUAGE") or "en")
