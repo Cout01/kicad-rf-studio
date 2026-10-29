@@ -15,7 +15,7 @@ from pathlib import Path
 import numpy as np
 import pytest
 from PySide6.QtCore import QTimer
-from PySide6.QtWidgets import QFileDialog, QMessageBox
+from PySide6.QtWidgets import QFileDialog, QListView, QMessageBox
 
 from kicad_rf_studio import button, gui, pipeline, runs
 from kicad_rf_studio.cli import main
@@ -173,6 +173,18 @@ def test_the_window_costs_then_runs_after_the_confirmation(window, tmp_path, mon
     assert not any("Ctrl+C" in x for x in log) and load_project(pj)["results"]["run_dir"] == str(w.run_dir)
     assert "openEMS" not in sys.modules and "CSXCAD" not in sys.modules  # design 4, 5.8: the GUI process
     grab(w, "run")
+
+
+def test_every_list_of_sentences_wraps_at_its_width(window, qapp):  # Task 6 Step 7, V1
+    # the real run's grabs at 1200 × 800 cut long lines at a list's right edge, behind a horizontal scroll bar
+    w = window()
+    lists = (w.new_form.notes, w.cost_lines, w.log, w.results.lines, w.results.verify_lines)
+    assert [(v.wordWrap(), v.resizeMode()) for v in lists] == [(True, QListView.ResizeMode.Adjust)] * 5
+    w.tabs.setCurrentWidget(w.log.parentWidget())  # the Run tab
+    w.log.addItem(" ".join(["word"] * 60))
+    qapp.processEvents()
+    assert not w.log.horizontalScrollBar().isVisible()
+    assert w.log.visualItemRect(w.log.item(0)).width() <= w.log.viewport().width()
 
 
 def test_the_window_drives_itself_and_survives_a_display_that_fails(window, qapp, tmp_path, monkeypatch):

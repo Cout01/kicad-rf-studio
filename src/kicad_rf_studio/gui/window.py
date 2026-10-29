@@ -17,9 +17,9 @@ from PySide6.QtCore import QLocale, QLockFile, QSignalBlocker, Qt, QTimer, Signa
 from PySide6.QtGui import QCloseEvent
 from PySide6.QtNetwork import QLocalServer
 from PySide6.QtWidgets import (QAbstractScrollArea, QComboBox, QDoubleSpinBox, QFileDialog, QFormLayout, QGroupBox,
-                               QHBoxLayout, QHeaderView, QLabel, QLineEdit, QListWidget, QMainWindow, QMessageBox,
-                               QPushButton, QSizePolicy, QSpinBox, QTableWidget, QTableWidgetItem, QTabWidget,
-                               QVBoxLayout, QWidget)
+                               QHBoxLayout, QHeaderView, QLabel, QLineEdit, QListView, QListWidget, QMainWindow,
+                               QMessageBox, QPushButton, QSizePolicy, QSpinBox, QTableWidget, QTableWidgetItem,
+                               QTabWidget, QVBoxLayout, QWidget)
 # after PySide6: matplotlib's Qt backend then wraps the binding already loaded, never another one installed beside it
 from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg
 from matplotlib.figure import Figure
@@ -66,6 +66,11 @@ def beside(*widgets: QWidget) -> QHBoxLayout:
     return layout
 
 
+def sentences() -> QListWidget:
+    """A list of sentences, each wrapped at the list's width, and again when the list resizes."""
+    return QListWidget(wordWrap=True, resizeMode=QListView.ResizeMode.Adjust)
+
+
 def combo(choices: tuple, current: str, slot) -> QComboBox:
     """A table cell's combo box of `choices`, (data, code) pairs shown as their code's text, `current`'s selected and
     only then its currentIndexChanged connected to `slot`, so that filling it emits nothing."""
@@ -93,8 +98,8 @@ class ResultsView(QWidget):
 
     def __init__(self):
         super().__init__()
-        self.what_if, self.problem, self.lines = QLabel(control.text("I_WHAT_IF", {})), QLabel(), QListWidget()
-        self.stale, self.verify_button, self.verify_lines = QLabel(), QPushButton(render("G_VERIFY")), QListWidget()
+        self.what_if, self.problem, self.lines = QLabel(control.text("I_WHAT_IF", {})), QLabel(), sentences()
+        self.stale, self.verify_button, self.verify_lines = QLabel(), QPushButton(render("G_VERIFY")), sentences()
         self.canvas = FigureCanvasQTAgg(Figure(layout="constrained"))
         self.axes, self.curves, self.bg = None, [], None
         self.parts, self.retune_box, self.buttons = QTableWidget(0, len(PART_COLUMNS)), QWidget(), QHBoxLayout()
@@ -284,7 +289,7 @@ class NewForm(QGroupBox):
         # the C locale: project.json and the CLI write 2.5, and the system's locale may show 2,50
         self.lid = QDoubleSpinBox(maximum=100, decimals=2, locale=QLocale.c(), specialValueText=render("G_NONE"))
         self.folder, self.folder_button = QLineEdit(), QPushButton(render("G_BROWSE"))
-        self.create_button, self.status, self.notes = QPushButton(render("G_CREATE")), QLabel(), QListWidget()
+        self.create_button, self.status, self.notes = QPushButton(render("G_CREATE")), QLabel(), sentences()
         self.status.setWordWrap(True)  # a refusal names a path, which would otherwise widen the window
         self.chosen = ""
         form, end_row = QFormLayout(self), beside(self.end, self.swap_button)
@@ -381,9 +386,9 @@ class MainWindow(QMainWindow):
         self.live, self.started, self.verify_next = False, [], False
         self.pool = ThreadPoolExecutor(1)
         self.open_button, self.project_status, self.new_form = QPushButton(render("G_OPEN")), QLabel(), NewForm()
-        self.cost_lines, self.cost_status = QListWidget(), QLabel()
+        self.cost_lines, self.cost_status = sentences(), QLabel()
         self.cost_button, self.run_button = QPushButton(render("G_COST")), QPushButton(render("G_RUN"))
-        self.banner, self.jobs, self.log = QLabel(), QTableWidget(0, len(COLUMNS)), QListWidget()
+        self.banner, self.jobs, self.log = QLabel(), QTableWidget(0, len(COLUMNS)), sentences()
         self.run_status, self.stop_button = QLabel(), QPushButton(render("G_STOP"))
         for label in (self.project_status, self.cost_status, self.banner, self.run_status):
             label.setWordWrap(True)  # a long line (two paths) would otherwise widen the window past the screen
