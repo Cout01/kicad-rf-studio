@@ -1,0 +1,38 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# The release check (Stage 2 design 5.6; spec 9.1 (d), A-20): tools/release_check.py on a version tag or by hand, on
+# Windows with Python 3.14 and on Linux at the Python floor pyproject.toml declares. Prepared, not run: nothing is
+# pushed before the owner says so (design 4).
+name: release-check
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  release-check:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            python-version: "3.14"  # the README's Windows Python: openEMS 0.37's wheels need 3.13 or 3.14
+          - os: ubuntu-24.04
+            python-version: "3.11"  # the declared floor, Debian 12's system Python
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # the whole history, which the privacy gate scans
+          persist-credentials: false  # nothing after this step needs the job's token
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+      # Qt's offscreen platform still loads these (ci.yml's list); unverified until the first push
+      - if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends libegl1 libgl1 libxkbcommon0 libfontconfig1 libdbus-1-3
+      - run: python -m pip install "jsonschema>=4.23,<5"  # the plugin step's schema check, at kicad-python's pin
+      - run: python tools/release_check.py
