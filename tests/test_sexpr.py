@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 import ast
+import ctypes
 import gettext
 import locale
 import os
@@ -188,6 +189,12 @@ def test_language_names_the_catalog_that_loaded(monkeypatch):  # pt-BR design 4:
 @pytest.mark.skipif(sys.platform != "win32", reason="Windows' display language")
 def test_windows_display_language_is_read_through_ctypes():
     assert 0 < messages._ui_language() <= 0xFFFF  # a LANGID
+
+
+@pytest.mark.skipif(sys.platform != "win32", reason="Windows' display language")
+def test_windows_display_language_keeps_only_the_langids_16_bits(monkeypatch):  # final review
+    monkeypatch.setattr(ctypes.windll.kernel32, "GetUserDefaultUILanguage", lambda: 0x7FFF0416)  # stray high bits
+    assert messages._ui_language() == 0x0416
 
 
 def test_the_suite_pins_its_language_before_anything_reads_it():  # pt-BR design 4, 7.2

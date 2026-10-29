@@ -393,8 +393,9 @@ CATALOG: dict[str, str] = {
 
 
 def _ui_language() -> int:
-    """Windows' display language, a LANGID (0x0416: Portuguese (Brazil)); 0 elsewhere."""
-    return ctypes.windll.kernel32.GetUserDefaultUILanguage() if sys.platform == "win32" else 0
+    """Windows' display language, a 16-bit LANGID (0x0416: Portuguese (Brazil)) masked out of ctypes' int result; 0
+    elsewhere."""
+    return ctypes.windll.kernel32.GetUserDefaultUILanguage() & 0xFFFF if sys.platform == "win32" else 0
 
 
 def _languages() -> list[str] | None:
