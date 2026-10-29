@@ -60,7 +60,8 @@ def test_kicad_python_is_a_core_dependency_and_imports():  # design 5.6; A-16
 
 def test_the_engine_the_cli_and_the_gui_package_load_no_qt_kicad_python_or_matplotlib():  # design 4, 5.6, 5.8; C-5
     probe = (f"import sys, {', '.join(QT_FREE)}; "
-             "print(sorted({m.split('.')[0] for m in sys.modules} & {'PySide6', 'shiboken6', 'kipy', 'matplotlib'}))")
+             "print(sorted({m.split('.')[0] for m in sys.modules} & {'PySide6', 'shiboken6', 'kipy', 'matplotlib',"
+             " 'babel'}))")  # babel: tools/catalog.py's alone (pt-BR design 7.1)
     out = subprocess.run([sys.executable, "-I", "-c", probe], capture_output=True, text=True)
     assert out.stdout.strip() == "[]", out.stderr
 

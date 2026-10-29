@@ -1,10 +1,13 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
+import ast
 import gettext
 import locale
 import os
 import re
 import string
+import subprocess
 import sys
+import tomllib
 from pathlib import Path
 
 import pytest
@@ -189,6 +192,7 @@ def test_windows_display_language_is_read_through_ctypes():
 
 def test_the_suite_pins_its_language_before_anything_reads_it():  # pt-BR design 4, 7.2
     assert os.environ["LANGUAGE"] == (os.environ.get("KRS_TEST_LANGUAGE") or "en")
+    assert messages.language() == os.environ["LANGUAGE"]  # a misplaced pin loads Windows' pt-BR here
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -218,3 +222,53 @@ def test_every_literal_reason_fallback_and_job_name_is_a_term():  # pt-BR design
     text = "\n".join(p.read_text(encoding="utf-8") for p in sorted((ROOT / "src").rglob("*.py")))
     words = r'reason\(\w+, "(?!T_)[^"]*"|reason="(?!T_)[^"]*"|check_job\(.*?, "(?!T_)[^"]*"'
     assert re.findall(words, text) == []  # each found with its call: make the word a T_ code
+
+
+PT_PO = ROOT / "po" / "pt_BR.po"
+PT_MO = messages.LOCALE / "pt_BR" / "LC_MESSAGES" / "kicad_rf_studio.mo"
+
+
+def po_pairs(text):
+    """A .po's msgid → msgstr pairs, its header's ("") among them: each string's quoted lines joined (Babel escapes only
+    the backslash, tab, CR, LF and double quote, which literal_eval reads alike)."""
+    def join(block):
+        return "".join(ast.literal_eval(line) for line in block.splitlines())
+    return {join(i): join(s) for i, s in re.findall(r'^msgid ((?:".*"\n)+)msgstr ((?:".*"\n)+)', text, re.M)}
+
+
+def mo_pairs(path=PT_MO):
+    """A compiled catalog's msgid → msgstr pairs, its header left out."""
+    with path.open("rb") as f:  # ponytail: GNUTranslations' private _catalog, stable since Python 2: no public list
+        return {k: v for k, v in gettext.GNUTranslations(f)._catalog.items() if k}
+
+
+def fields(text):
+    """Each replacement field of `text` as (name, format spec, conversion); None for a brace str.format refuses."""
+    try:
+        return {(name, spec, conv) for _, name, spec, conv in string.Formatter().parse(text) if name is not None}
+    except ValueError:  # an unbalanced brace: a mismatch, named by its msgid
+        return None
+
+
+def test_the_compiled_catalog_is_its_po_translated_and_ships_in_the_wheel():  # pt-BR design 7.1, 7.2; RF 2
+    text = PT_PO.read_text(encoding="utf-8")
+    assert set(po_pairs(text)) - {""} == set(CATALOG.values())  # after a change to CATALOG, run tools/catalog.py
+    assert mo_pairs() == {i: s for i, s in po_pairs(text).items() if i and s}  # after a .po edit, the same
+    data = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))["tool"]["setuptools"]["package-data"]
+    assert "locale/*/LC_MESSAGES/*.mo" in data["kicad_rf_studio"]  # the wheel compiles nothing (design 7.1)
+
+
+def test_every_translation_keeps_its_fields_and_line_breaks_with_no_spec_or_conversion():  # design 3, 7.2; RF 1
+    assert [m for m, s in mo_pairs().items() if (fields(s), s.count("\n")) != (fields(m), m.count("\n"))] == []
+
+
+@pytest.mark.parametrize(("env", "shown"), [
+    ({"LANG": "pt_BR.UTF-8"}, "pt_BR"),  # a Linux desktop's: no code (design 4)
+    ({"LANGUAGE": "en", "LANG": "pt_BR.UTF-8"}, "en"),  # LANGUAGE first: the README's way to keep English
+    ({"LANG": "C"}, "en"), ({"LC_ALL": "C.UTF-8"}, "en"),  # Review Focus 5
+    ({"LANG": "pt_PT.UTF-8"}, "en")])  # pt-PT is not pt-BR (design 3)
+def test_the_package_catalog_follows_the_gettext_variables(env, shown):  # pt-BR design 4, 7.1
+    base = {k: v for k, v in os.environ.items() if k not in GETTEXT_VARIABLES}
+    probe = "from kicad_rf_studio.core import messages; print(messages.language())"
+    out = subprocess.run([sys.executable, "-I", "-c", probe], env={**base, **env}, capture_output=True, text=True)
+    assert out.stdout.strip() == shown, out.stderr

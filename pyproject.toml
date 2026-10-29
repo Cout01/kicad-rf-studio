@@ -12,7 +12,7 @@ requires-python = ">=3.11"
 dependencies = ["shapely>=2.0", "numpy>=2", "scipy", "h5py", "matplotlib", "scikit-rf>=2.2", "PySide6-Essentials>=6.10.1,<7", "kicad-python>=0.8,<0.9"]
 
 [project.optional-dependencies]
-dev = ["pytest>=8"]
+dev = ["pytest>=8", "babel==2.18.0"]
 
 [project.scripts]
 kicad-rf-studio = "kicad_rf_studio.cli:main"
@@ -24,7 +24,7 @@ kicad-rf-studio-gui = "kicad_rf_studio.gui:main"
 where = ["src"]
 
 [tool.setuptools.package-data]
-kicad_rf_studio = ["data/**/*.json"]
+kicad_rf_studio = ["data/**/*.json", "locale/*/LC_MESSAGES/*.mo"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

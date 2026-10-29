@@ -1,0 +1,1727 @@
+# kicad-rf-studio's messages in pt_BR: translate each msgstr here, then run tools/catalog.py.
+msgid ""
+msgstr ""
+"Project-Id-Version: kicad-rf-studio 0.1.0.dev0\n"
+"Language: pt_BR\n"
+"Plural-Forms: nplurals=2; plural=(n > 1);\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=utf-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+"Generated-By: Babel 2.18.0\n"
+
+#. E_PARSE_UNBALANCED
+#, python-brace-format
+msgid "The board file is damaged: unbalanced brackets near line {line}. Open it in KiCad and save it again."
+msgstr ""
+
+#. E_NOT_A_BOARD
+#, python-brace-format
+msgid "{path} is not a KiCad board file."
+msgstr ""
+
+#. E_BOARD_UNREADABLE
+#, python-brace-format
+msgid "Cannot read the board {path}: {reason}. Check the path, or open the board in KiCad and save it again."
+msgstr ""
+
+#. E_BOARD_VERSION
+#, python-brace-format
+msgid "This board was saved by a KiCad older than 9 (file version {version}). Open it in KiCad 9 or newer and save it."
+msgstr ""
+
+#. W_BOARD_NEWER
+#, python-brace-format
+msgid "This board was saved by a newer KiCad (file version {version}); reading it was not tested."
+msgstr ""
+
+#. W_REPAIRED_FILTER_RATIO
+#, python-brace-format
+msgid "Repaired {count} teardrop entries damaged by a KiCad 9 writer bug; the file on disk is unchanged."
+msgstr ""
+
+#. W_ZONE_NOT_FILLED
+#, python-brace-format
+msgid "Zone {uuid} on {layer} has no fill and is left out. Refill (B) in KiCad and save."
+msgstr ""
+
+#. W_NO_OUTLINE
+msgid "The board has no Edge.Cuts outline, so the substrate is not clipped."
+msgstr ""
+
+#. W_COPPER_DROPPED
+#, python-brace-format
+msgid "{kind} {uuid} on {layer} is left out of the simulation; convert it to a filled shape or a solid zone in KiCad if it carries current."
+msgstr ""
+
+#. W_NETLESS_COPPER
+#, python-brace-format
+msgid "Copper shape {uuid} on {layer} has no net and is simulated as floating copper."
+msgstr ""
+
+#. W_COPPER_EMPTIED
+#, python-brace-format
+msgid "Copper of net {net} on {layer} is smaller than the 10 µm simplification and was left out."
+msgstr ""
+
+#. E_OPEN_IN_ROI
+#, python-brace-format
+msgid "Net {net} is broken inside the simulated region. Check the copper in KiCad and refill zones (B)."
+msgstr ""
+
+#. E_SHORT_IN_ROI
+#, python-brace-format
+msgid "Nets {nets} touch inside the simulated region. Check the copper in KiCad and refill zones (B)."
+msgstr ""
+
+#. W_OPEN_IN_MARGIN
+#, python-brace-format
+msgid "Net {net} is broken in the margin of the simulated region, which may affect the result. Check the copper in KiCad and refill zones (B)."
+msgstr ""
+
+#. W_SHORT_IN_MARGIN
+#, python-brace-format
+msgid "Nets {nets} touch in the margin of the simulated region, which may affect the result. Check the copper in KiCad and refill zones (B)."
+msgstr ""
+
+#. W_STAIRCASED
+#, python-brace-format
+msgid "Net {net} has copper that is not axis-aligned (45° segments or arcs), which the mesh staircases. P0-A measured a staircased 45° line 4.6 % off its axis-aligned twin in Z0 at mesh n 2, within the 5 % budget, so the run goes on, but its accuracy is not validated. For a validated result, route the measured nets with horizontal and vertical tracks. A finer mesh lowers the error: set \"mesh\": {{\"n\": 3}} in project.json."
+msgstr ""
+
+#. E_LID_HEIGHT
+#, python-brace-format
+msgid "Shield {refs} covers the simulated region but project.json has no lid_height_mm. Set lid_height_mm in project.json, or set \"lid\": false to leave the lid out."
+msgstr ""
+
+#. E_CHAIN_OFF_OUTLINE
+#, python-brace-format
+msgid "The measured nets ({nets}) have copper outside the board outline, or no copper at all. Of several Edge.Cuts outlines in one file (a panel, a frame, a coupon beside the board), only the one that encloses the most is read: save the board in a file of its own, or delete the other outlines."
+msgstr ""
+
+#. E_EDGE_LINT
+#, python-brace-format
+msgid "A mesh line sits badly at the copper edge {edge_mm} mm ({axis}, {reason}) even after one re-mesh. Widen the gap at that edge in KiCad, or change mesh.n in project.json (now {n})."
+msgstr ""
+
+#. E_FIT2D
+#, python-brace-format
+msgid "The mesh misses the 2D reference on net {net} ({layer}) by {err_pct} % (limit {limit_pct} %) at mesh.n {n}. Set mesh.n to 3 in project.json."
+msgstr ""
+
+#. E_FIT2D_FINE
+#, python-brace-format
+msgid "The fine mesh (mesh.n {n}) still misses the 2D reference on net {net} ({layer}) by {err_pct} % (limit {limit_pct} %). Raising gates.fit2d_limit in project.json lets the run go on, at your own risk."
+msgstr ""
+
+#. E_FIT2D_SHORT
+#, python-brace-format
+msgid "Other copper touches net {net} on {layer} at its 2D cut, so fit2d cannot check it. Check the copper in KiCad and refill zones (B); copper with no net counts too."
+msgstr ""
+
+#. I_2D_HEADER
+msgid "2D estimate: bends, vias, pads and parts not included"
+msgstr ""
+
+#. I_2D_SECTION
+#, python-brace-format
+msgid "{net} on {layer}: width {width_mm} mm, gap {gap_mm}, length {length_mm} mm — Z0 {z0} Ω, εeff {eeff} without mask; Z0 {z0_mask} Ω, εeff {eeff_mask} with mask"
+msgstr ""
+
+#. W_NO_SECTIONS
+msgid "The measured nets have no straight, axis-aligned sections, so there is no 2D estimate."
+msgstr ""
+
+#. W_2D_SHORT
+#, python-brace-format
+msgid "{net} on {layer}: width {width_mm} mm, length {length_mm} mm — other copper touches this line, so there is no 2D estimate. Check the copper in KiCad and refill zones (B)."
+msgstr ""
+
+#. W_PADSTACK
+#, python-brace-format
+msgid "Pad {pad} uses a per-layer padstack; its front shape is used on every layer."
+msgstr ""
+
+#. W_DUPLICATE_REF
+#, python-brace-format
+msgid "Footprints share the references {refs}; the copies were renamed with #2, #3 and so on. Annotate the board in KiCad to name them."
+msgstr ""
+
+#. E_BAD_FREQUENCY
+#, python-brace-format
+msgid "Cannot read the frequency \"{text}\". Write it like 915MHz."
+msgstr ""
+
+#. E_UNKNOWN_PRESET
+#, python-brace-format
+msgid "Unknown stackup preset \"{name}\". Known presets: {known}."
+msgstr ""
+
+#. E_DEFAULT_RULE_LAYERS
+#, python-brace-format
+msgid "Stackup presets are implemented for 2 copper layers, and this board has {count}. Add the stackup to the board in KiCad."
+msgstr ""
+
+#. W_COPPER_WEIGHT
+#, python-brace-format
+msgid "Copper layers {layers} are not 35 µm; the mesh rule is not validated for this copper weight."
+msgstr ""
+
+#. E_NO_STACKUP
+msgid "The board has no stackup. Give --stackup jlcpcb-2l, or --stackup kicad-default to accept KiCad's default rule."
+msgstr ""
+
+#. E_STACKUP_LAYERS
+#, python-brace-format
+msgid "The stackup has {stackup} copper layers but the board has {board}. Fix the board stackup in KiCad, or choose a matching --stackup."
+msgstr ""
+
+#. E_DIELECTRIC_THICKNESS
+#, python-brace-format
+msgid "The stackup layer \"{layer}\" has no thickness. Set its thickness in KiCad (Board Setup → Physical Stackup), save the board and re-create the project."
+msgstr ""
+
+#. E_UNKNOWN_PAD
+#, python-brace-format
+msgid "Pad {name} does not exist. Closest pads: {candidates}."
+msgstr ""
+
+#. E_AMBIGUOUS_PAD
+#, python-brace-format
+msgid "Pads named {name} sit on different nets ({nets}). Name a pad with a unique number."
+msgstr ""
+
+#. E_START_ON_GND
+#, python-brace-format
+msgid "Pad {name} is on net \"{net}\", which is GND, power or no net; a chain cannot start or end there."
+msgstr ""
+
+#. E_SAME_PADS
+#, python-brace-format
+msgid "The chain starts and ends at the same pad, {name}. Give two different pads."
+msgstr ""
+
+#. E_NO_CHAIN
+#, python-brace-format
+msgid "No chain from {start} to {end}: the walk stopped at nets {reached}. A DNP part, a connector, a shield, a GND or power net, or a part with three or more pads is in the way."
+msgstr ""
+
+#. E_PROJECT_SCHEMA
+#, python-brace-format
+msgid "{path} uses project schema {found}; this version reads schema {expected}."
+msgstr ""
+
+#. E_PROJECT_UNREADABLE
+#, python-brace-format
+msgid "Cannot read the project {path}: {reason}. Check the path, or fix project.json in a text editor."
+msgstr ""
+
+#. E_PROJECT_FIELD
+#, python-brace-format
+msgid "{path}: {field} is missing or is not {expected}. Fix it in a text editor, or re-create the project with `new`."
+msgstr ""
+
+#. E_OUTPUT_PATH
+#, python-brace-format
+msgid "Cannot write {path}: {reason}. Choose another -o folder."
+msgstr ""
+
+#. E_PROJECT_EXISTS
+#, python-brace-format
+msgid "{path} already exists. Delete it, or give another -o folder."
+msgstr ""
+
+#. I_STACKUP
+#, python-brace-format
+msgid "Stackup: {source}, dielectric {thickness_mm} mm, εr {epsilon_r}; mask {mask_mm} mm, εr {mask_epsilon_r}."
+msgstr ""
+
+#. I_STACKUP_NO_MASK
+#, python-brace-format
+msgid "Stackup: {source}, dielectric {thickness_mm} mm, εr {epsilon_r}; no mask."
+msgstr ""
+
+#. I_CLASSES
+#, python-brace-format
+msgid "GND nets: {gnd}. Power nets: {power}. Connectors: {connectors}. Shields: {shields}."
+msgstr ""
+
+#. I_CHAIN
+#, python-brace-format
+msgid "Chain {start} → {end}: series {series}; shunt {shunt}."
+msgstr ""
+
+#. I_PART
+#, python-brace-format
+msgid "Part {ref} {value}: {role}; package {package}, ESL {esl_nh} nH, ESR {esr_ohm} Ω."
+msgstr ""
+
+#. I_PART_NO_MODEL
+#, python-brace-format
+msgid "Part {ref} {value}: {role}; no package preset, so as a port a C, L or R takes its ideal value and any other part needs its S2P file (`retune PROJECT {ref}=file.s2p:series`, or :shunt)."
+msgstr ""
+
+#. I_PORT
+#, python-brace-format
+msgid "Port {name}: signal {signal}, reference {reference} ({rule})."
+msgstr ""
+
+#. I_PORT_POINT
+#, python-brace-format
+msgid "Port {name}: signal {signal}, reference ({x}, {y}) on {layer} ({rule})."
+msgstr ""
+
+#. I_PORT_NO_REFERENCE
+#, python-brace-format
+msgid "Port {name}: signal {signal}, no reference."
+msgstr ""
+
+#. I_F0
+#, python-brace-format
+msgid "f0 {f0_mhz} MHz, with {harmonics} harmonics."
+msgstr ""
+
+#. I_DEFAULTS
+#, python-brace-format
+msgid "Preset {preset} (provisional default), band factor {band_factor}, T_max {t_max_ns} ns, harmonics {harmonics}, mesh n {mesh_n}, region {expand_h} substrate heights past the chain, margin scale {margin_scale}, protected reach {reach_h} substrate heights."
+msgstr ""
+
+#. I_LID_ON
+msgid "Shield lid on: \"lid\": null in project.json means on when harmonics > 1; true or false forces it."
+msgstr ""
+
+#. I_LID_OFF
+msgid "Shield lid off: \"lid\": null in project.json means on when harmonics > 1; true or false forces it."
+msgstr ""
+
+#. W_FILLS_AS_SAVED
+msgid "Fills as saved — refill (B) in KiCad and save if you changed copper."
+msgstr ""
+
+#. W_LID_HEIGHT_MISSING
+#, python-brace-format
+msgid "Shield {refs} covers the simulated region and no --lid-height was given; set lid_height_mm in project.json before `run`, or \"lid\": false to leave the lid out."
+msgstr ""
+
+#. W_VALUE_UNREADABLE
+#, python-brace-format
+msgid "Cannot read the value of {refs}. Write values like 4.7pF, 4p7 or 15nH."
+msgstr ""
+
+#. W_PART_OPEN
+#, python-brace-format
+msgid "Left open in the simulated region: {refs}. Their self-resonance from the package preset is below 3·f2, or they are chokes or not C, L or R; make one a port in project.json if it matters (each port adds a run)."
+msgstr ""
+
+#. W_F0_RANGE
+#, python-brace-format
+msgid "f0 = {f0_hz} Hz is outside 1 MHz to 100 GHz. Did you forget the unit, as in 915MHz?"
+msgstr ""
+
+#. W_NO_REFERENCE
+#, python-brace-format
+msgid "No reference found for {signal}; set it in project.json before `run`."
+msgstr ""
+
+#. W_ABSOLUTE_BOARD_PATH
+msgid "The board is on another drive, so project.json stores its absolute path."
+msgstr ""
+
+#. I_WROTE
+#, python-brace-format
+msgid "Wrote {path}."
+msgstr ""
+
+#. E_SETTINGS_UNREADABLE
+#, python-brace-format
+msgid "Cannot read {path}: {reason}. Delete it; setup-openems and calibrate write it again."
+msgstr ""
+
+#. E_OPENEMS_MISSING
+#, python-brace-format
+msgid "openEMS is not installed for {python}. Install it: {command}"
+msgstr ""
+
+#. E_OPENEMS_OLD
+#, python-brace-format
+msgid "This Python has openEMS {openems} and CSXCAD {csxcad}; kicad-rf-studio needs openEMS 0.37 and CSXCAD 0.7 or newer. Install them: {command}"
+msgstr ""
+
+#. W_OPENEMS_UNTESTED
+#, python-brace-format
+msgid "openEMS {openems} is not 0.37.x, the version kicad-rf-studio is tested with, so results may differ. Install 0.37 for validated results: {command}"
+msgstr ""
+
+#. E_SETUP_OPENEMS_WINDOWS
+msgid "setup-openems is for Windows. On Linux, build openEMS with update_openEMS.sh <prefix> --python while this venv is active (see README)."
+msgstr ""
+
+#. E_SETUP_OPENEMS_DIR
+#, python-brace-format
+msgid "{dir} is not an openEMS package for this Python: it needs openEMS.exe and the openems and csxcad wheels for {tag} in its python folder. Give the folder of the official Windows package of openEMS 0.37."
+msgstr ""
+
+#. E_SETUP_OPENEMS_PIP
+#, python-brace-format
+msgid "pip could not install the openEMS wheels (exit code {exit_code}). Read pip's output above, then run setup-openems again."
+msgstr ""
+
+#. I_OPENEMS_INSTALLED
+#, python-brace-format
+msgid "Installed openEMS {openems} and CSXCAD {csxcad} from {dir}; the folder is recorded in {settings}."
+msgstr ""
+
+#. E_NO_PORTS
+msgid "project.json has no ports, so there is nothing to excite. Create the project with `new` between two pads."
+msgstr ""
+
+#. E_NO_REFERENCE
+#, python-brace-format
+msgid "Port {signal} has no reference. Set its \"reference\" in project.json to a pad or a point before running."
+msgstr ""
+
+#. E_REFERENCE_POINT
+#, python-brace-format
+msgid "Port {name}: no copper on {layer} lies at its reference point {point} mm. Set its \"reference\" in project.json to a point on the ground copper, or to a pad."
+msgstr ""
+
+#. E_REFERENCE_LAYER
+#, python-brace-format
+msgid "Port {name}: its reference is on {reference_layer} and its signal pad on {signal_layer}; Stage 1 builds horizontal ports only. Choose a reference on {signal_layer} in project.json."
+msgstr ""
+
+#. E_ROTATED_PART
+#, python-brace-format
+msgid "Part {ref} is not at a multiple of 90°, so its port would be a CurvePort, which P0-B measured outside the consistency limits against its 0° twin (max |ΔS| 0.194). Rotate it in KiCad, or set \"allow_curve_port\": true in project.json at your own risk."
+msgstr ""
+
+#. E_PORT_SPANS
+#, python-brace-format
+msgid "Port {name}: its two pads face each other neither along x nor along y, so no box joins them. Choose a reference straight across from the signal pad in project.json."
+msgstr ""
+
+#. E_PORT_BOX
+#, python-brace-format
+msgid "Port {name}: its box finds no mesh line inside its pads, or no copper-free mesh line between them with each end on its own pad's copper. Change mesh.n in project.json (another value moves the mesh lines), use larger pads, or clear other copper from between the pads."
+msgstr ""
+
+#. E_PART_VALUE
+#, python-brace-format
+msgid "Part {ref} is in the grid but its value \"{value}\" cannot be read. Fix its value in project.json, or set its role to \"open\" or \"port\"."
+msgstr ""
+
+#. E_GRID_KIND
+#, python-brace-format
+msgid "Part {ref} cannot sit in the grid: only a C or an R can. Set its role to \"port\" or \"open\" in project.json."
+msgstr ""
+
+#. E_LOCKED
+#, python-brace-format
+msgid "Another run of this project has been running since {started} in {run}. Wait for it, or create a file named STOP in that folder to stop it; if no run is going on, delete {lock}."
+msgstr ""
+
+#. E_RUN_DIR
+#, python-brace-format
+msgid "Cannot use {path} as the run folder: {reason}. Give another --run-dir."
+msgstr ""
+
+#. W_STALE_LOCK
+#, python-brace-format
+msgid "Reclaimed {lock}: the run in {run} ended without releasing it."
+msgstr ""
+
+#. E_OPENEMS_DLL
+#, python-brace-format
+msgid "openEMS could not load its libraries (CSXCAD_INSTALL_PATH is {value}). Install it again: {command}"
+msgstr ""
+
+#. E_SETUP_FAILED
+#, python-brace-format
+msgid "openEMS could not set up the model; see {log}. Look at the model with `preview`."
+msgstr ""
+
+#. E_WORKER_FAILED
+#, python-brace-format
+msgid "The {job} worker ended with code {exit_code}; see {log}. Report it if the log shows no cause."
+msgstr ""
+
+#. I_CALIBRATING
+msgid "Measuring this machine's simulation speed, once (20–30 s)…"
+msgstr ""
+
+#. I_CALIBRATED
+#, python-brace-format
+msgid "Calibrated: {pool} jobs at once with {threads} threads each, {speed} MC/s in all; `kicad-rf-studio calibrate` measures again."
+msgstr ""
+
+#. I_END
+#, python-brace-format
+msgid "The command ended with exit code {exit_code}."
+msgstr ""
+
+#. W_BOARD_CHANGED
+#, python-brace-format
+msgid "The board {path} changed since `new` wrote project.json; its chain, ports and parts may be stale. Re-create the project with `new` if you moved copper."
+msgstr ""
+
+#. W_OFF_TOP_LAYER
+#, python-brace-format
+msgid "Net {net} runs on {layer}, not on the top copper; the region, the cell size and dz0 use the top layer's substrate height (a Stage 1 limit). Check its fit2d result."
+msgstr ""
+
+#. E_PORT_OPEN
+#, python-brace-format
+msgid "Port {name}: its {end} end does not lie in its own pad's copper on the mesh. Check the port in project.json and look at it with `preview`."
+msgstr ""
+
+#. E_PORT_SHORT
+#, python-brace-format
+msgid "Port {name}: its signal and reference are one piece of copper on the mesh, a short. Check the copper between them in KiCad and with `preview`."
+msgstr ""
+
+#. I_COST_CELLS
+#, python-brace-format
+msgid "Cells: {nx} × {ny} × {nz} = {mcells} M (mesh n {n}, cell d {d_mm} mm)."
+msgstr ""
+
+#. I_COST_SMALLEST
+#, python-brace-format
+msgid "Smallest cell: {size_um} µm across {axis}, at {axis} = {at_mm} mm."
+msgstr ""
+
+#. I_COST_DT
+#, python-brace-format
+msgid "dt {dt} s (floor {floor} × {ref} s), set by the {axis} edge at ({x}, {y}, {z}) mm."
+msgstr ""
+
+#. I_COST_TIME
+#, python-brace-format
+msgid "Worst case: {time} for {runs} runs to T_max {t_max_ns} ns, {pool} at once with {threads} threads each."
+msgstr ""
+
+#. I_COST_PREDICTED
+#, python-brace-format
+msgid "Predicted from the last run's stop times: {time}."
+msgstr ""
+
+#. I_COST_RAM
+#, python-brace-format
+msgid "RAM: about {gb} GB ({pool} jobs at once)."
+msgstr ""
+
+#. I_COST_DRIVER_CELL
+#, python-brace-format
+msgid "Main cost: the {size_um} µm cell across {axis} at {at_mm} mm, under d/3, sets dt. Move or merge the copper edges there in KiCad."
+msgstr ""
+
+#. I_COST_DRIVER_RUNS
+#, python-brace-format
+msgid "Main cost: {runs} runs, one per port, {parts} of them part ports."
+msgstr ""
+
+#. I_COST_DRIVER_CELLS
+#, python-brace-format
+msgid "Main cost: the cell count. The cell d {d_mm} mm follows the narrowest width, gap or substrate height; a smaller region.expand_h shrinks it."
+msgstr ""
+
+#. W_NO_PORTS
+msgid "project.json has no ports, so cost stops after the 2D estimate. Create the project with `new` between two pads to simulate it."
+msgstr ""
+
+#. W_RAM
+#, python-brace-format
+msgid "One job needs about {need_gb} GB of RAM and {free_gb} GB is free, so jobs run one at a time and may still swap. Close other programs, or shrink the model (region.expand_h, mesh.n in project.json)."
+msgstr ""
+
+#. E_DT_FLOOR
+#, python-brace-format
+msgid "openEMS's timestep {dt} s is below {floor} × the reference {ref} s, set by the {axis} edge at ({x}, {y}, {z}) mm. A tiny cell there makes the run slow; move or merge the copper edges near it in KiCad."
+msgstr ""
+
+#. E_UNUSED_PRIMITIVE
+#, python-brace-format
+msgid "openEMS left part of {property} out of the model ({type}). A primitive type such as Box touches no mesh edge, \"none\" means the property holds no primitive, and \"outside\" means it lies outside the simulated region. So that port or part is not in the model. Look at it with `preview`."
+msgstr ""
+
+#. W_UNUSED_PRIMITIVE
+#, python-brace-format
+msgid "openEMS left part of {property} out of the model ({type}). A primitive type such as LinPoly is a sliver smaller than a cell, \"none\" means the property holds no primitive, and \"outside\" means it lies outside the simulated region. Look at it with `preview` if it should carry current."
+msgstr ""
+
+#. W_GATE_LIMITS
+#, python-brace-format
+msgid "project.json sets gates.fit2d_limit {fit2d_limit} and gates.dt_floor {dt_floor}, not 0.03 and 0.8, so this verdict is outside the validated limits. Set them back to 0.03 and 0.8 for a validated result."
+msgstr ""
+
+#. I_GATES_PASSED
+#, python-brace-format
+msgid "Gates passed: edge lint, fit2d, timestep floor (dt {dt} s), port connectivity and unused primitives."
+msgstr ""
+
+#. I_RUN_START
+#, python-brace-format
+msgid "Running {runs} jobs, {pool} at once, in {folder}. Create a file named STOP there, or press Ctrl+C, to stop."
+msgstr ""
+
+#. I_PROGRESS
+#, python-brace-format
+msgid "{port}: {t_ns} ns, residual {residual_db} dB, {speed_mcs} MC/s."
+msgstr ""
+
+#. I_JOB_CONVERGED
+#, python-brace-format
+msgid "{port}: converged at {t_ns} ns (residual {residual_db} dB)."
+msgstr ""
+
+#. W_JOB_FLAT
+#, python-brace-format
+msgid "{port}: not converged at {residual_db} dB; the residual stopped falling at {t_ns} ns. S is kept and flagged; look for a resonance or an open port with `preview`."
+msgstr ""
+
+#. W_JOB_T_MAX
+#, python-brace-format
+msgid "{port}: reached T_max ({t_ns} ns) at a residual of {residual_db} dB. S is kept and flagged; raise t_max_s in project.json for a converged result."
+msgstr ""
+
+#. E_JOB_DIVERGED
+#, python-brace-format
+msgid "{port}: diverged at {t_ns} ns (NaN or inf), so its S is not kept. Look for tiny cells with `cost` and at the model with `preview`."
+msgstr ""
+
+#. E_JOB_GROWTH
+#, python-brace-format
+msgid "{port}: the energy grew 20 dB after the pulse, at {t_ns} ns, so its S is not kept. Look at the model with `preview`."
+msgstr ""
+
+#. W_JOB_UNCLASSIFIED
+#, python-brace-format
+msgid "{port}: the worker ended before T_max without a verdict, so its S is not kept. See {log}."
+msgstr ""
+
+#. W_JOB_STOPPED
+#, python-brace-format
+msgid "{port}: stopped, so its S is not kept. Run `run` again for results."
+msgstr ""
+
+#. I_RESULTS
+#, python-brace-format
+msgid "{kept} of {runs} jobs kept S, in {wall}; results recorded in {path}."
+msgstr ""
+
+#. W_RUN_NOT_KEPT
+#, python-brace-format
+msgid "{kept} of {runs} jobs kept S, in {wall}, so project.json keeps its previous results and results/ is unchanged. The verdicts above, also in {folder}, say why; fix that and run `run` again."
+msgstr ""
+
+#. I_PREVIEW
+#, python-brace-format
+msgid "Opened {path} in AppCSXCAD."
+msgstr ""
+
+#. E_APPCSXCAD_MISSING
+#, python-brace-format
+msgid "AppCSXCAD was not found; open {path} in it by hand, or install openEMS with it: {command}"
+msgstr ""
+
+#. E_S_SINGULAR
+#, python-brace-format
+msgid "The run's excitations are not independent at {f_mhz} MHz (condition number {kappa}, limit {limit}), so S cannot be computed: a job's waves are dead or duplicated. Run `run` again."
+msgstr ""
+
+#. E_RESULTS_JOB
+#, python-brace-format
+msgid "The last run's job {port} ended {verdict}, so its S was not kept and the layout cannot be reduced. Run `run` again."
+msgstr ""
+
+#. E_RESULTS_WAVES
+#, python-brace-format
+msgid "{path} is missing: the last run's folder was moved or deleted. Run `run` again."
+msgstr ""
+
+#. E_PART_NO_VALUE
+#, python-brace-format
+msgid "Part {ref} has no value that reads (\"{value}\") and no S2P file, so its port cannot be closed. Give its S2P file with `retune PROJECT {ref}=file.s2p:series` (or :shunt), or, for a C, L or R, a value with `retune PROJECT {ref}=VALUE`."
+msgstr ""
+
+#. E_S2P_MISSING
+#, python-brace-format
+msgid "Part {ref}: its S2P file {path} does not exist. Name an existing file with `retune PROJECT {ref}=file.s2p:series` (or :shunt), or, for a C, L or R, give a value with `retune PROJECT {ref}=VALUE`."
+msgstr ""
+
+#. E_S2P_UNREADABLE
+#, python-brace-format
+msgid "Part {ref}: {path} is not a Touchstone file that can be read. Check the file, or, for a C, L or R, give a value with `retune PROJECT {ref}=VALUE`."
+msgstr ""
+
+#. E_S2P_PORTS
+#, python-brace-format
+msgid "Part {ref}: {path} has {ports} ports, and a part needs a 2-port measured in a series or a shunt fixture. Give its .s2p file."
+msgstr ""
+
+#. E_S2P_BAND
+#, python-brace-format
+msgid "Part {ref}: {path} covers {f_lo}–{f_hi} MHz, not the simulated band {f1}–{f2} MHz, and it is never extrapolated. Give a file that covers the band, or, for a C, L or R, a value with `retune PROJECT {ref}=VALUE`."
+msgstr ""
+
+#. W_S2P_FIXTURE
+#, python-brace-format
+msgid "Part {ref}: {path} fits a {fits}-thru measurement better than the :{named} it was given. The suffix names the fixture the vendor measured the part in, not its place on the board; if the vendor used {fits}-thru, give it again as `retune PROJECT {ref}=file.s2p:{fits}`."
+msgstr ""
+
+#. E_CBOX
+#, python-brace-format
+msgid "The last run recorded no usable C_box for part {ref} ({value}), so its port cannot be closed. Run `run` again, and look at the part's port with `preview` if this repeats."
+msgstr ""
+
+#. I_PASSIVITY
+#, python-brace-format
+msgid "Passivity: σ_max {sigma} at worst, at {f_mhz} MHz (|a| {a_db} dB); flagged above {limit}."
+msgstr ""
+
+#. W_PASSIVITY
+#, python-brace-format
+msgid "Passivity flagged: σ_max {sigma} at {f_mhz} MHz (|a| {a_db} dB) is above {limit}, so this S makes power. Check the verdicts above: a flat or T_max job is the usual cause, and a stricter preset the fix."
+msgstr ""
+
+#. I_RECIPROCITY
+#, python-brace-format
+msgid "Reciprocity: |Sij − Sji| {err} at worst, at {f_mhz} MHz (|a| {a_db} dB); flagged above {limit}."
+msgstr ""
+
+#. W_RECIPROCITY
+#, python-brace-format
+msgid "Reciprocity flagged: |Sij − Sji| {err} at {f_mhz} MHz (|a| {a_db} dB) is above {limit}. Check the verdicts above: a flat or T_max job is the usual cause, and a stricter preset the fix."
+msgstr ""
+
+#. I_LOSS_BUDGET
+#, python-brace-format
+msgid "Loss budget: {layout_pct} % unaccounted with the part losses removed, against {expected_pct} % expected dielectric loss, at worst at {f_mhz} MHz (|a| {a_db} dB); flagged {limit_pct} points above."
+msgstr ""
+
+#. W_LOSS_BUDGET
+#, python-brace-format
+msgid "Loss budget flagged: {layout_pct} % unaccounted at {f_mhz} MHz (|a| {a_db} dB) is more than {limit_pct} points above the {expected_pct} % expected dielectric loss. Radiation or power coupled into cut nets is the usual cause; look at the model with `preview`."
+msgstr ""
+
+#. E_RESULTS_WRITE
+#, python-brace-format
+msgid "Cannot write {path}: {reason}. Close the program that holds it open (a spreadsheet, say), then run `{command}` to write it again."
+msgstr ""
+
+#. I_MARKER
+#, python-brace-format
+msgid "{marker} = {f_mhz} MHz (|a| {a_db} dB): IL {il_db} dB and RL {rl_db} dB with layout; IL {il_ideal_db} dB and RL {rl_ideal_db} dB ideal schematic."
+msgstr ""
+
+#. I_MARKER_TRACE
+#, python-brace-format
+msgid "{marker} = {f_mhz} MHz (|a| {a_db} dB): IL {il_db} dB and RL {rl_db} dB."
+msgstr ""
+
+#. I_HR
+#, python-brace-format
+msgid "Harmonic rejection at {marker}: {hr_db} dB with layout, {hr_ideal_db} dB ideal schematic."
+msgstr ""
+
+#. I_HR_TRACE
+#, python-brace-format
+msgid "Harmonic rejection at {marker}: {hr_db} dB."
+msgstr ""
+
+#. I_BASIS
+#, python-brace-format
+msgid "Results of the run in {run_dir} at preset {preset}: {converged} jobs converged, {flat} flat, {t_max} at T_max."
+msgstr ""
+
+#. W_NOT_TWO_PORT
+#, python-brace-format
+msgid "The project has {ports} external ports, not 2, so the 2-port summary (PNG, CSV, IL, RL, harmonic rejection, loss budget, ideal schematic) is skipped; the Touchstone files and the passivity and reciprocity checks are written. Keep two ports in project.json for the summary."
+msgstr ""
+
+#. I_WHAT_IF
+#, python-brace-format
+msgid "Relative / what-if: the instant retune is not yet validated against a full simulation of a real board (spec 7.6), so read these chain results as relative. Check the final values with `{command}`."
+msgstr ""
+
+#. I_OUTPUTS
+#, python-brace-format
+msgid "Wrote {files} in {folder}."
+msgstr ""
+
+#. I_PLOT_TITLE
+#, python-brace-format
+msgid "{name}: relative to a 50 Ω source and load"
+msgstr ""
+
+#. I_PLOT_LAYOUT
+msgid "with layout"
+msgstr ""
+
+#. I_PLOT_IDEAL
+msgid "ideal schematic"
+msgstr ""
+
+#. I_PLOT_FREQUENCY
+msgid "Frequency (GHz)"
+msgstr ""
+
+#. I_LIMIT_MAGNETIC
+msgid "Limit: no magnetic coupling between part bodies."
+msgstr ""
+
+#. I_LIMIT_LID
+msgid "Limit: no interaction between part bodies and the lid."
+msgstr ""
+
+#. I_LIMIT_S2P_PLANE
+msgid "Limit: vendor S2P reference planes differ from the pad-gap box."
+msgstr ""
+
+#. I_LIMIT_PEC
+msgid "Limit: copper is PEC, so there is no conductor loss."
+msgstr ""
+
+#. I_LIMIT_WALLS
+msgid "Limit: the through-crop walls absorb most of the power coupled into cut nets, and reflect the rest."
+msgstr ""
+
+#. I_LIMIT_ACCURACY
+msgid "Limit: accuracy is reported as |ΔS| or as a null shift, never in dB at a null."
+msgstr ""
+
+#. I_LIMIT_50_OHM
+msgid "Limit: insertion loss, return loss and harmonic rejection are relative to a 50 Ω source and load."
+msgstr ""
+
+#. I_LIMIT_IDEAL
+msgid "Limit: the ideal schematic is the same part models (preset or S2P) joined ideally: no layout, no C_box, no traces."
+msgstr ""
+
+#. I_LIMIT_LOSS
+msgid "Limit: the expected dielectric loss is a lower bound from the measured straight sections."
+msgstr ""
+
+#. E_RETUNE_NO_PARTS
+msgid "This project has no part ports (a single trace), so there is nothing to retune; `run` writes its outputs."
+msgstr ""
+
+#. E_RETUNE_ARG
+#, python-brace-format
+msgid "Cannot read \"{arg}\": write REF=VALUE, as in C1=4.7pF, or REF=file.s2p:series (or :shunt)."
+msgstr ""
+
+#. E_RETUNE_TWICE
+#, python-brace-format
+msgid "{ref} is assigned twice; give each part once."
+msgstr ""
+
+#. E_RETUNE_UNKNOWN
+#, python-brace-format
+msgid "No part {ref} is a port of this project. The parts you can retune: {refs}."
+msgstr ""
+
+#. E_RETUNE_ROLE
+#, python-brace-format
+msgid "Part {ref} is {role} in the model, not a port, so retune cannot change it. To retune it, set its role to \"port\" in project.json and run `run` again (each port adds a run)."
+msgstr ""
+
+#. E_RETUNE_VALUE
+#, python-brace-format
+msgid "Cannot read \"{value}\" as the value of {ref}: a C, L or R takes a value in its own unit (4.7pF, 4p7, 15nH, 50R; a C above 0), and any part takes an S2P file as {ref}=file.s2p:series (or :shunt)."
+msgstr ""
+
+#. E_NO_RESULTS
+msgid "project.json has no results yet. Run `run` first."
+msgstr ""
+
+#. E_RESULTS_STALE
+msgid "The model changed since the last run (a board re-saved in KiCad can change it too), or that run is older than this version, so its results no longer apply. Run `run` again."
+msgstr ""
+
+#. E_VERIFY_VALUE
+#, python-brace-format
+msgid "verify puts each part in the grid at its value, but {ref} has \"{value}\": verify can place only a C, L or R whose value reads (a C above 0). Set {ref}'s \"value\" in project.json, which keeps its S2P file, then run verify again; `retune PROJECT {ref}=VALUE` sets it too but drops the S2P file."
+msgstr ""
+
+#. E_VERIFY_DUMP
+#, python-brace-format
+msgid "verify sizes each part's cell from the last run's operator dump {path}, which is missing. Run `run` again."
+msgstr ""
+
+#. E_VERIFY_K
+#, python-brace-format
+msgid "Part {ref}: its inductor in the grid resonates too fast for the time step (k {k}, limit {limit}), and the run would diverge. Check its value in project.json; a real inductor reads k near 0.01."
+msgstr ""
+
+#. E_VERIFY_NO_PARTS
+msgid "This project has no part ports (a single trace), so verify has nothing to put in the grid: `run` is already its full simulation."
+msgstr ""
+
+#. E_VERIFY_CURVE
+#, python-brace-format
+msgid "Part {ref} is rotated (a CurvePort), and verify cannot put a rotated part in the grid. Rotate it in KiCad to a multiple of 90° to verify this chain."
+msgstr ""
+
+#. E_VERIFY_PORTS
+#, python-brace-format
+msgid "verify compares S21 and S11, so it needs at least 2 external ports; this project has {ports}. Keep two ports in project.json."
+msgstr ""
+
+#. W_VERIFY_NOT_KEPT
+#, python-brace-format
+msgid "{kept} of {runs} verify jobs kept S, in {wall}, so nothing was compared or stored. The verdicts above, also in {folder}, say why; fix that and run `verify` again."
+msgstr ""
+
+#. I_VERIFY_RESULTS
+#, python-brace-format
+msgid "{runs} verify jobs kept S, in {wall}; the comparison is stored in {path}."
+msgstr ""
+
+#. I_VERIFY_COMPARE
+#, python-brace-format
+msgid "verify against the retune at the same ideal values: |ΔS21| {ds21_db} dB and |ΔS11| {ds11} at f0 = {f0_mhz} MHz (|a| {a_db} dB); max |ΔS| {ds_max} up to f2."
+msgstr ""
+
+#. I_VERIFY_NULL
+#, python-brace-format
+msgid "Null of |S21| at {f_mhz} MHz in verify (|a| {a_db} dB): null shift {shift_pct} % against the retune's."
+msgstr ""
+
+#. W_VERIFY_NULL_UNMATCHED
+#, python-brace-format
+msgid "Null of |S21| at {f_mhz} MHz in verify (|a| {a_db} dB) has no match within ±5 % in the retune at the same ideal values; the stated limits below say what that reduction leaves out."
+msgstr ""
+
+#. I_VERIFY_NO_NULLS
+msgid "No null of |S21| stands 20 dB out of the response, so there is no null shift to report."
+msgstr ""
+
+#. I_VERIFY_LOSS_BUDGET
+#, python-brace-format
+msgid "Loss budget: {layout_pct} % unaccounted with the parts in the grid (a resistor's loss counts here), against {expected_pct} % expected dielectric loss, at worst at {f_mhz} MHz (|a| {a_db} dB); flagged {limit_pct} points above."
+msgstr ""
+
+#. W_VERIFY_LOSS_BUDGET
+#, python-brace-format
+msgid "Loss budget flagged: {layout_pct} % unaccounted at {f_mhz} MHz (|a| {a_db} dB) is more than {limit_pct} points above the {expected_pct} % expected dielectric loss, with the parts in the grid. A resistor in the chain adds its own loss here; otherwise radiation or power coupled into cut nets is the usual cause; look at the model with `preview`."
+msgstr ""
+
+#. I_VERIFY_SCOPE
+msgid "verify checks the layout reduction, not the vendor part data: each part sat in the grid at its ideal value, against a retune at the same values. Its loss budget counts a resistor's loss in the grid as layout loss."
+msgstr ""
+
+#. E_INTERNAL
+#, python-brace-format
+msgid "Internal error: {detail}. Please report it."
+msgstr ""
+
+#. G_APP
+msgid "kicad-rf-studio"
+msgstr ""
+
+#. G_RUNNING
+#, python-brace-format
+msgid "Running in {folder}…"
+msgstr ""
+
+#. G_END_DONE
+#, python-brace-format
+msgid "Finished (exit code {exit_code})."
+msgstr ""
+
+#. G_END_REFUSED
+#, python-brace-format
+msgid "Refused (exit code {exit_code}): the message above says why and what to do."
+msgstr ""
+
+#. G_END_BLOCKED
+#, python-brace-format
+msgid "A gate blocked it (exit code {exit_code}): the verdicts above say which and what to change."
+msgstr ""
+
+#. G_END_NOT_KEPT
+#, python-brace-format
+msgid "Not every job kept S (exit code {exit_code}), so the previous results stay; the verdicts above say why."
+msgstr ""
+
+#. G_END_STOPPED
+#, python-brace-format
+msgid "Stopped (exit code {exit_code})."
+msgstr ""
+
+#. G_END_FAILED
+#, python-brace-format
+msgid "Failed (exit code {exit_code}): the message above says what happened. Please report it."
+msgstr ""
+
+#. G_END_EXITED
+#, python-brace-format
+msgid "The process in {folder} exited with code {exit_code} without recording how it ended: it was killed, or it failed at its start ({log} says why). Start it again; the next run reclaims any lock it left."
+msgstr ""
+
+#. G_END_LOST
+#, python-brace-format
+msgid "The process of {folder} ended without recording how (it was killed, or the PC restarted). Start it again; the next run reclaims any lock it left."
+msgstr ""
+
+#. G_ENDED
+#, python-brace-format
+msgid "The run in {folder}, started from another window or a terminal, has ended. Its verdicts are above, and the results it kept show in Results."
+msgstr ""
+
+#. G_LOCKED
+#, python-brace-format
+msgid "A run of this project, started at {started} from another window or a terminal, is going on in {run}. Stop stops it. If no run is going on (its process was killed and its number reused), delete {lock}."
+msgstr ""
+
+#. G_RUN_START
+#, python-brace-format
+msgid "Running {runs} jobs, {pool} at once, in {folder}. Stop stops them."
+msgstr ""
+
+#. G_WHAT_IF
+msgid "Relative / what-if: the instant retune is not yet validated against a full simulation of a real board (spec 7.6), so read these chain results as relative. Check the final values with Verify."
+msgstr ""
+
+#. G_NO_RESULTS
+msgid "No results yet: estimate the cost, then run."
+msgstr ""
+
+#. G_RESULTS_STALE
+msgid "The model changed since the last run (a board re-saved in KiCad can change it too), or that run is older than this version, so its results no longer apply. Estimate the cost and run again."
+msgstr ""
+
+#. G_TAB_PROJECT
+msgid "Project"
+msgstr ""
+
+#. G_TAB_COST
+msgid "Cost"
+msgstr ""
+
+#. G_TAB_RUN
+msgid "Run"
+msgstr ""
+
+#. G_TAB_RESULTS
+msgid "Results and retune"
+msgstr ""
+
+#. G_OPEN
+msgid "Open a project…"
+msgstr ""
+
+#. G_OPEN_FILTER
+msgid "Projects (*.json)"
+msgstr ""
+
+#. G_COST
+msgid "Estimate the cost"
+msgstr ""
+
+#. G_RUN
+msgid "Run…"
+msgstr ""
+
+#. G_STOP
+msgid "Stop"
+msgstr ""
+
+#. G_LOADING
+msgid "Reading the project and building its model…"
+msgstr ""
+
+#. G_PROJECT
+#, python-brace-format
+msgid "{path}: f0 {f0_mhz} MHz, {harmonics} harmonics, preset {preset}."
+msgstr ""
+
+#. G_NO_COST
+msgid "No cost of this model yet: estimate it, then Run… asks to start the run."
+msgstr ""
+
+#. G_COST_REUSED
+#, python-brace-format
+msgid "The cost in {folder} matches this model: Run… asks to start the run."
+msgstr ""
+
+#. G_CONFIRM_TITLE
+msgid "Start the run?"
+msgstr ""
+
+#. G_CONFIRM_RUN
+msgid "Start the run? Its cost:"
+msgstr ""
+
+#. G_START_FAILED
+#, python-brace-format
+msgid "Cannot start {program}: {reason}. Install kicad-rf-studio again."
+msgstr ""
+
+#. G_COL_PORT
+msgid "Port"
+msgstr ""
+
+#. G_COL_TIME
+msgid "t (ns)"
+msgstr ""
+
+#. G_COL_RESIDUAL
+msgid "Residual (dB)"
+msgstr ""
+
+#. G_COL_SPEED
+msgid "MC/s"
+msgstr ""
+
+#. G_COL_VERDICT
+msgid "Verdict"
+msgstr ""
+
+#. G_NEW
+msgid "New from a board"
+msgstr ""
+
+#. G_NEW_BOARD
+msgid "Board"
+msgstr ""
+
+#. G_NEW_START
+msgid "Start pad (REF.PAD)"
+msgstr ""
+
+#. G_NEW_END
+msgid "End pad (REF.PAD)"
+msgstr ""
+
+#. G_NEW_F0
+msgid "f0 (for example 915MHz)"
+msgstr ""
+
+#. G_NEW_HARMONICS
+msgid "Harmonics"
+msgstr ""
+
+#. G_NEW_PRESET
+msgid "Preset"
+msgstr ""
+
+#. G_NEW_STACKUP
+msgid "Stackup"
+msgstr ""
+
+#. G_NEW_LID
+msgid "Shield lid height (mm)"
+msgstr ""
+
+#. G_NEW_FOLDER
+msgid "Project folder"
+msgstr ""
+
+#. G_NEW_NO_FOLDER
+msgid "Choose the project folder: New writes project.json into it."
+msgstr ""
+
+#. G_BROWSE
+msgid "Browse…"
+msgstr ""
+
+#. G_BOARD_FILTER
+msgid "KiCad boards (*.kicad_pcb)"
+msgstr ""
+
+#. G_STACKUP_BOARD
+msgid "The board's own"
+msgstr ""
+
+#. G_CREATE
+msgid "Create the project"
+msgstr ""
+
+#. G_CREATING
+msgid "Reading the board and writing project.json…"
+msgstr ""
+
+#. G_PROJECT_EXISTS
+#, python-brace-format
+msgid "{path} already exists. Open it with Open a project…, or choose another project folder."
+msgstr ""
+
+#. G_OUTPUT_PATH
+#, python-brace-format
+msgid "Cannot write {path}: {reason}. Choose another project folder."
+msgstr ""
+
+#. G_NO_STACKUP
+msgid "The board has no stackup. Choose the stackup jlcpcb-2l, or kicad-default to accept KiCad's default rule."
+msgstr ""
+
+#. G_STACKUP_LAYERS
+#, python-brace-format
+msgid "The stackup has {stackup} copper layers but the board has {board}. Fix the board stackup in KiCad, or choose a matching stackup."
+msgstr ""
+
+#. G_LID_HEIGHT_MISSING
+#, python-brace-format
+msgid "Shield {refs} covers the simulated region and no lid height was given; set lid_height_mm in Advanced before you run, or set lid to false to leave the lid out."
+msgstr ""
+
+#. G_PART_NO_MODEL
+#, python-brace-format
+msgid "Part {ref} {value}: {role}; no package preset, so as a port a C, L or R takes its ideal value and any other part needs its S2P file, which its row in Results and retune takes."
+msgstr ""
+
+#. G_NO_REFERENCE
+#, python-brace-format
+msgid "No reference found for {signal}; set its port's reference (ports[].reference) in Advanced before you run."
+msgstr ""
+
+#. G_COL_PART
+msgid "Part"
+msgstr ""
+
+#. G_COL_VALUE
+msgid "Value"
+msgstr ""
+
+#. G_COL_SNAP
+msgid "Snapping"
+msgstr ""
+
+#. G_COL_S2P
+msgid "S2P file"
+msgstr ""
+
+#. G_COL_FIXTURE
+msgid "S2P fixture"
+msgstr ""
+
+#. G_SNAP_OFF
+msgid "off"
+msgstr ""
+
+#. G_SNAP_E12
+msgid "E12"
+msgstr ""
+
+#. G_SNAP_E24
+msgid "E24"
+msgstr ""
+
+#. G_FIXTURE_SERIES
+msgid "series"
+msgstr ""
+
+#. G_FIXTURE_SHUNT
+msgid "shunt"
+msgstr ""
+
+#. G_CHOOSE_S2P
+msgid "S2P file…"
+msgstr ""
+
+#. G_S2P_FILTER
+msgid "Touchstone 2-ports (*.s2p)"
+msgstr ""
+
+#. G_REVERT
+msgid "Revert"
+msgstr ""
+
+#. G_DROPPED
+msgid "project.json or its board changed on disk: the values you had not applied to the parts it changed, or to results that no longer apply, were dropped, and those parts show their stored values."
+msgstr ""
+
+#. G_RETUNE_VALUE
+#, python-brace-format
+msgid "Cannot read \"{value}\" as the value of {ref}: a C, L or R takes a value in its own unit (4.7pF, 4p7, 15nH, 50R; a C above 0), and any part takes an S2P file in its row."
+msgstr ""
+
+#. G_PART_NO_VALUE
+#, python-brace-format
+msgid "Part {ref} has no value that reads (\"{value}\") and no S2P file, so its port cannot be closed. Give it an S2P file in its row, or, for a C, L or R, a value."
+msgstr ""
+
+#. G_S2P_MISSING
+#, python-brace-format
+msgid "Part {ref}: its S2P file {path} does not exist. Choose an existing file in its row, or, for a C, L or R, clear the file to use its value."
+msgstr ""
+
+#. G_S2P_UNREADABLE
+#, python-brace-format
+msgid "Part {ref}: {path} is not a Touchstone file that can be read. Check the file, or, for a C, L or R, clear the file to use its value."
+msgstr ""
+
+#. G_S2P_BAND
+#, python-brace-format
+msgid "Part {ref}: {path} covers {f_lo}–{f_hi} MHz, not the simulated band {f1}–{f2} MHz, and it is never extrapolated. Choose a file that covers the band, or, for a C, L or R, clear the file to use its value."
+msgstr ""
+
+#. G_S2P_FIXTURE
+#, python-brace-format
+msgid "Part {ref}: {path} fits a {fits}-thru measurement better than the {named} fixture it was given. The fixture names how the vendor measured the part, not its place on the board; if the vendor used {fits}-thru, set its fixture to {fits}."
+msgstr ""
+
+#. G_APPLY
+msgid "Apply"
+msgstr ""
+
+#. G_APPLYING
+msgid "Applying: retune stores the changed values in project.json and writes results/…"
+msgstr ""
+
+#. G_APPLIED
+#, python-brace-format
+msgid "Applied: project.json holds these values, and {folder} holds their outputs."
+msgstr ""
+
+#. G_VERIFY
+msgid "Verify"
+msgstr ""
+
+#. G_VERIFY_NONE
+msgid "Not verified yet: Verify runs a full simulation of the stored values, with each part in the grid."
+msgstr ""
+
+#. G_VERIFY_STALE
+msgid "Verify is stale: the values or the model changed since the last verify."
+msgstr ""
+
+#. G_APPLY_FIRST
+msgid "Verify runs the values stored in project.json, and these are not applied yet. Apply them, then verify?"
+msgstr ""
+
+#. G_VERIFY_VALUE
+#, python-brace-format
+msgid "Verify puts each part in the grid at its value, but {ref} has \"{value}\": Verify can place only a C, L or R whose value reads (a C above 0). Set {ref}'s value in Advanced (under chain.series, chain.shunt or others), which keeps its S2P file, or clear the file in its row in Results and retune and type the value there, which Apply stores without the file; then press Verify again."
+msgstr ""
+
+#. G_TAB_ADVANCED
+msgid "Advanced"
+msgstr ""
+
+#. G_COL_FIELD
+msgid "Field"
+msgstr ""
+
+#. G_COL_DEFAULT
+msgid "Default"
+msgstr ""
+
+#. G_COL_UNIT
+msgid "Unit"
+msgstr ""
+
+#. G_SAVE
+msgid "Save"
+msgstr ""
+
+#. G_SAVE_FAILED
+#, python-brace-format
+msgid "Cannot save {path}: {reason}. Close the program that holds it open, then save again."
+msgstr ""
+
+#. G_PROJECT_FIELD
+#, python-brace-format
+msgid "{path}: {field} is missing or is not {expected}. Fix it in Advanced, or create the project again with New from a board."
+msgstr ""
+
+#. G_UNIT_HZ
+msgid "Hz"
+msgstr ""
+
+#. G_UNIT_S
+msgid "s"
+msgstr ""
+
+#. G_UNIT_MM
+msgid "mm"
+msgstr ""
+
+#. G_UNIT_SUBSTRATE
+msgid "substrate heights"
+msgstr ""
+
+#. G_UNIT_HENRY
+msgid "H"
+msgstr ""
+
+#. G_UNIT_OHM
+msgid "Ω"
+msgstr ""
+
+#. G_UNIT_FARAD
+msgid "F"
+msgstr ""
+
+#. G_MENU_HELP
+msgid "Help"
+msgstr ""
+
+#. G_ABOUT
+msgid "About kicad-rf-studio"
+msgstr ""
+
+#. G_ABOUT_QT
+msgid "About Qt"
+msgstr ""
+
+#. G_ABOUT_DEPENDENCY
+#, python-brace-format
+msgid "{name} {version}: {licence}"
+msgstr ""
+
+#. G_NOT_INSTALLED
+msgid "not installed"
+msgstr ""
+
+#. G_ABOUT_TEXT
+#, python-brace-format
+msgid ""
+"kicad-rf-studio {version}: simulates the RF parts of a KiCad board with openEMS.\n"
+"\n"
+"Copyright (C) 2026 the kicad-rf-studio contributors.\n"
+"\n"
+"This program is free software: you can redistribute it and/or modify it under the terms of the GNU General Public License as published by the Free Software Foundation, either version 3 of the License, or (at your option) any later version. This program comes with ABSOLUTELY NO WARRANTY. It includes a copy of CSXCAD's SmoothMeshLines under the GNU Lesser General Public License, version 3 or later. Both licences are at https://www.gnu.org/licenses/.\n"
+"\n"
+"Runtime dependencies (installed by pip, or by you for openEMS and CSXCAD; not included):\n"
+"{dependencies}"
+msgstr ""
+
+#. E_KICAD_UNREACHABLE
+msgid "Cannot reach KiCad: it was closed or restarted, or its API is off. In KiCad's PCB editor, with Preferences > Plugins > Enable KiCad API on, press the kicad-rf-studio button again."
+msgstr ""
+
+#. E_KICAD_BUSY
+msgid "KiCad stayed busy (a dialog, a tool or a zone fill is still open or running). Finish it in KiCad, then try again."
+msgstr ""
+
+#. E_KICAD_UNSUPPORTED
+msgid "This KiCad cannot answer a request the kicad-rf-studio button needs: the button needs KiCad 9.0.7 or later, or 10.x."
+msgstr ""
+
+#. E_KICAD_VERSION
+#, python-brace-format
+msgid "KiCad {version} is not supported: the kicad-rf-studio button needs KiCad 9.0.7 or later, or 10.x."
+msgstr ""
+
+#. E_KICAD_NO_BOARD
+msgid "KiCad's PCB editor has no saved board open. Open or save the board in KiCad's PCB editor, then press the kicad-rf-studio button again."
+msgstr ""
+
+#. E_HANDOFF_WRITE
+#, python-brace-format
+msgid "Cannot write {path}: {reason}. Check that this folder can be written, then press the kicad-rf-studio button again."
+msgstr ""
+
+#. E_GUI_START
+#, python-brace-format
+msgid "Cannot start {program}: {reason}. Install kicad-rf-studio again, then run kicad-rf-studio install-kicad-plugin."
+msgstr ""
+
+#. G_BUTTON_PLUGIN
+msgid "Simulates the RF parts of a KiCad board with openEMS."
+msgstr ""
+
+#. G_BUTTON_ACTION
+msgid "Opens kicad-rf-studio on this board, with the selected pads as the chain's start and end."
+msgstr ""
+
+#. I_PLUGIN_INSTALLED
+#, python-brace-format
+msgid "Installed the kicad-rf-studio button in {folder}."
+msgstr ""
+
+#. I_PLUGIN_NEXT
+msgid "One step is left, in KiCad: Preferences › Plugins › Enable KiCad API, then restart KiCad. The button then shows in the PCB editor's toolbar."
+msgstr ""
+
+#. I_PLUGIN_REMOVED
+#, python-brace-format
+msgid "Removed the kicad-rf-studio button from {folder}."
+msgstr ""
+
+#. I_PLUGIN_NONE
+#, python-brace-format
+msgid "There is no kicad-rf-studio button to remove under {folder}."
+msgstr ""
+
+#. E_NO_KICAD_FOLDER
+#, python-brace-format
+msgid "No KiCad 9.0 or 10.0 folder in {folder}: start KiCad once, so that it makes its folder there, or name the version with --kicad 9.0 or --kicad 10.0."
+msgstr ""
+
+#. E_PLUGIN_WRITE
+#, python-brace-format
+msgid "Cannot write or remove the kicad-rf-studio button in {path}: {reason}. Check that this folder can be written (Windows' Controlled folder access can block it), then run install-kicad-plugin again."
+msgstr ""
+
+#. E_PLUGIN_PYTHON
+#, python-brace-format
+msgid "This Python's path, {python}, has a character that launch.cmd cannot hold in the console's code page. Install kicad-rf-studio in a folder whose path has none, then run install-kicad-plugin again."
+msgstr ""
+
+#. G_SWAP
+msgid "Swap start and end"
+msgstr ""
+
+#. G_HANDOFF_UNSAVED
+#, python-brace-format
+msgid "{board} as saved lacks a pad or a part selected in KiCad, which holds edits not yet saved: save the board in KiCad and press the button again."
+msgstr ""
+
+#. G_HANDOFF_PADS
+#, python-brace-format
+msgid "{count} pads are selected in KiCad. Select only the chain's two end pads and press the button again, or pick start and end here."
+msgstr ""
+
+#. G_REFILL
+msgid "Refill zones and save in KiCad"
+msgstr ""
+
+#. G_REFILL_CONFIRM
+#, python-brace-format
+msgid "Refill every zone of {board} in KiCad, then save the board there? The save also writes every edit not yet saved in KiCad."
+msgstr ""
+
+#. G_REFILLING
+msgid "KiCad is refilling the zones and saving the board…"
+msgstr ""
+
+#. G_REFILLED
+#, python-brace-format
+msgid "KiCad refilled the zones and saved {board}."
+msgstr ""
+
+#. E_KICAD_OTHER_BOARD
+#, python-brace-format
+msgid "KiCad has {open} open, not {board}, so nothing was refilled or saved. Open {board} in KiCad and press the kicad-rf-studio button again."
+msgstr ""
+
+#. T_FILE_NOT_FOUND
+msgid "file not found"
+msgstr ""
+
+#. T_NOT_A_FILE
+msgid "not a file"
+msgstr ""
+
+#. T_PERMISSION_DENIED
+msgid "permission denied"
+msgstr ""
+
+#. T_EXISTS_AS_FILE
+msgid "already exists as a file"
+msgstr ""
+
+#. T_NOT_UTF8
+msgid "not UTF-8 text"
+msgstr ""
+
+#. T_NOT_JSON
+msgid "not JSON"
+msgstr ""
+
+#. T_CANNOT_READ
+msgid "cannot be read"
+msgstr ""
+
+#. T_CANNOT_WRITE
+msgid "cannot be written"
+msgstr ""
+
+#. T_CANNOT_START
+msgid "cannot be started"
+msgstr ""
+
+#. T_CANNOT_MAKE
+msgid "cannot be made"
+msgstr ""
+
+#. T_HOLDS_A_RUN
+msgid "already holds a run"
+msgstr ""
+
+#. T_NOT_A_JSON_OBJECT
+msgid "not a JSON object"
+msgstr ""
+
+#. T_JOB_SETUP
+msgid "setup"
+msgstr ""
+
+#. T_JOB_XML
+msgid "xml"
+msgstr ""
+
+#. T_JOB_CALIBRATION
+msgid "calibration"
+msgstr ""
+
+#. T_NONE
+msgid "none"
+msgstr ""
+
+#. T_UNKNOWN
+msgid "unknown"
+msgstr ""
+
+#. T_UNSET
+msgid "unset"
+msgstr ""
+
+#. T_MISSING
+msgid "missing"
+msgstr ""
+
+#. T_SOURCE_BOARD
+msgid "board"
+msgstr ""
+
+#. T_HATCHED_ZONE
+msgid "hatched zone"
+msgstr ""
+
+#. T_END_REFERENCE
+msgid "reference"
+msgstr ""
+
+#. T_END_SIGNAL
+msgid "signal"
+msgstr ""
+
+#. T_ON_EDGE
+msgid "on edge"
+msgstr ""
+
+#. T_INSIDE_TOO_CLOSE
+msgid "inside too close"
+msgstr ""
+
+#. T_OUTSIDE_CLOSER
+msgid "outside closer"
+msgstr ""
+
+#. T_DIVERGED
+msgid "diverged"
+msgstr ""
+
+#. T_GROWTH
+msgid "growth"
+msgstr ""
+
+#. T_UNCLASSIFIED
+msgid "unclassified"
+msgstr ""
+
+#. T_STOPPED
+msgid "stopped"
+msgstr ""
+
+#. T_INSTALL_WINDOWS
+msgid "kicad-rf-studio setup-openems <openEMS folder>"
+msgstr ""
+
+#. T_INSTALL_LINUX
+msgid "update_openEMS.sh <prefix> --python with this venv active (see README)"
+msgstr ""
+
+#. T_EXPECT_TEXT
+msgid "text"
+msgstr ""
+
+#. T_EXPECT_ABOVE_0
+msgid "a number above 0"
+msgstr ""
+
+#. T_EXPECT_FLAG
+msgid "true or false"
+msgstr ""
+
+#. T_EXPECT_TWO_NAMES
+msgid "two names"
+msgstr ""
+
+#. T_EXPECT_CLASS
+msgid "a list of names, or null (computed from the board)"
+msgstr ""
+
+#. T_EXPECT_ROLE
+msgid "port, copper, open, grid or curve_port"
+msgstr ""
+
+#. T_EXPECT_MODEL
+msgid "null, or package (text) with esl_h, esr_ohm and cp_f (numbers of 0 or more)"
+msgstr ""
+
+#. T_EXPECT_S2P
+msgid "null, or file (text) and connection (series or shunt)"
+msgstr ""
+
+#. T_EXPECT_PARTS
+msgid "a list of parts"
+msgstr ""
+
+#. T_EXPECT_WHOLE_ABOVE_0
+msgid "a whole number above 0"
+msgstr ""
+
+#. T_EXPECT_PRESET
+msgid "draft, normal or strict"
+msgstr ""
+
+#. T_EXPECT_MESH_N
+msgid "a whole number of 2 or more"
+msgstr ""
+
+#. T_EXPECT_KIND
+msgid "mask, copper or dielectric"
+msgstr ""
+
+#. T_EXPECT_0_OR_MORE
+msgid "a number of 0 or more"
+msgstr ""
+
+#. T_EXPECT_ABOVE_0_OR_NULL
+msgid "a number above 0, or null"
+msgstr ""
+
+#. T_EXPECT_0_OR_MORE_OR_NULL
+msgid "a number of 0 or more, or null"
+msgstr ""
+
+#. T_EXPECT_LAYERS
+msgid "a list of layers"
+msgstr ""
+
+#. T_EXPECT_LID_HEIGHT
+msgid "a number above 0, or null (\"lid\": false leaves the lid out)"
+msgstr ""
+
+#. T_EXPECT_LID
+msgid "true, false or null"
+msgstr ""
+
+#. T_EXPECT_NAMES
+msgid "a list of names"
+msgstr ""
+
+#. T_EXPECT_RULE
+msgid "connector, ic, copper or null"
+msgstr ""
+
+#. T_EXPECT_REFERENCE
+msgid "a pad, a point or null"
+msgstr ""
+
+#. T_EXPECT_PORTS
+msgid "a list of ports"
+msgstr ""
+
+#. T_EXPECT_DT_FLOOR
+msgid "a number above 0 and at most 1"
+msgstr ""
+
+#. T_EXPECT_OBJECT
+msgid "an object"
+msgstr ""
+
