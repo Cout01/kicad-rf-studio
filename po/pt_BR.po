@@ -550,7 +550,7 @@ msgstr "O openEMS deixou parte de {property} fora do modelo ({type}). Um tipo de
 #. E_METAL_IN_PML
 #, python-brace-format
 msgid "The model has metal, dielectric or a port within the PML or the 2 cells just inside its inner edge: along {axis} it reaches {at_mm} mm, past {limit_mm} mm. Copper or dielectric in the absorber makes the run unstable; widen the air gap around the board."
-msgstr "O modelo tem metal, dielétrico ou uma porta dentro da PML ou das 2 células logo depois dela: ao longo de {axis}, ele chega a {at_mm} mm, além de {limit_mm} mm. Cobre ou dielétrico no absorvedor deixa a execução instável; aumente o espaçamento de ar em volta da placa."
+msgstr "O modelo tem metal, dielétrico ou uma porta dentro da PML ou nas 2 células junto à sua borda interna, do lado do modelo: ao longo de {axis}, ele chega a {at_mm} mm, além de {limit_mm} mm. Cobre ou dielétrico no absorvedor deixa a execução instável; aumente o espaçamento de ar em volta da placa."
 
 #. W_GATE_LIMITS
 #, python-brace-format
