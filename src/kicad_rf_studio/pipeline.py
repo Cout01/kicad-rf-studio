@@ -40,6 +40,8 @@ from kicad_rf_studio.core.model.ports import ends, nominal_boxes, place
 from kicad_rf_studio.core.model.readers import read_log, read_probe, read_run_stats, read_stats
 from kicad_rf_studio.core.model.spec import (air_box, cell_split, grid_entry, metal_in_pml, model_spec, spec_hash,
                                              verify_spec)
+from kicad_rf_studio.core.post.antenna import (ANTENNA_LIMITS, ANTENNA_OUTPUTS, antenna_csv, antenna_png,
+                                               far_field_lines, far_field_of, farfield_csv, s11_lines)
 from kicad_rf_studio.core.post.chain import ideal_schematic, loads, part_impedances, terminate, z_part
 from kicad_rf_studio.core.post.checks import compare, indicator_lines, loss_budget, loss_expected
 from kicad_rf_studio.core.post.outputs import (LIMITS, OUTPUTS, VERIFY_OUTPUT, grid_lines, marker_lines, port_map,
@@ -470,7 +472,8 @@ def chain_results(path: Path, project: dict, *, errors_as_lines: bool = False,
     schematic, the loss budget, the marker and indicator lines, else the indicator lines and W_NOT_TWO_PORT (C-31). A
     part's refusal (E_PART_NO_VALUE, E_S2P_*, E_CBOX) is raised, or, with `errors_as_lines`, becomes the last line, with
     no chain. A given `lay` stands in for the layout N-port, which depends only on the run, never on the part values
-    (the GUI's retune session holds it, Stage 2 design 5.3). Raises layout's refusals and E_S_SINGULAR."""
+    (the GUI's retune session holds it, Stage 2 design 5.3). Raises layout's refusals and E_S_SINGULAR. An antenna,
+    one port by design, gets no W_NOT_TWO_PORT (Stage 3 design 5.6)."""
     results = project["results"]
     lay = layout(project, results) if lay is None else lay
     ext, refs = _split(lay)
@@ -499,8 +502,9 @@ def chain_results(path: Path, project: dict, *, errors_as_lines: bool = False,
             lines += [*marker_lines(lay, chain, ideal),
                       *indicator_lines(lay.f, lay.a_db, lay.s, p_layout, results["loss_expected"])]
         else:
-            lines += [*indicator_lines(lay.f, lay.a_db, lay.s, None, results["loss_expected"]),
-                      ("W_NOT_TWO_PORT", {"ports": len(ext)})]
+            lines += indicator_lines(lay.f, lay.a_db, lay.s, None, results["loss_expected"])
+            if not antenna(project):
+                lines.append(("W_NOT_TWO_PORT", {"ports": len(ext)}))
     return ChainResults(lay, ext, refs, chain, ideal, p_layout,
                         chain is not None and bool(refs) and not RETUNE_VALIDATED, lines)
 
@@ -518,7 +522,9 @@ def write_outputs(path: Path, project: dict, command: str, *,
     E_RESULTS_WRITE are raised, or, with `errors_as_lines`, each becomes a line: a part's refusal in the place of the
     chain's lines and files, so that the layout N-port is still written (C-26); E_RESULTS_WRITE in the place of
     I_OUTPUTS, so that the lines already computed and LIMITS are still reported (spec 7.5). Raises layout's refusals
-    and E_S_SINGULAR."""
+    and E_S_SINGULAR. An antenna's outputs are antenna_outputs' instead (Stage 3 design 5.6)."""
+    if antenna(project):
+        return antenna_outputs(path, project, command, errors_as_lines=errors_as_lines)
     res = chain_results(path, project, errors_as_lines=errors_as_lines)
     results, lay, ext = project["results"], res.lay, res.ext
     folder, n, p = path.parent / "results", len(lay.ports), len(ext)
@@ -543,6 +549,57 @@ def write_outputs(path: Path, project: dict, command: str, *,
     else:
         lines.append(("I_OUTPUTS", {"files": ", ".join(sorted(files)), "folder": str(folder)}))
     return [*lines, *((code, {}) for code in LIMITS)]
+
+
+def antenna_outputs(path: Path, project: dict, command: str, *,
+                    errors_as_lines: bool = False) -> list[tuple[str, dict]]:
+    """An antenna's outputs (Stage 3 design 5.5, 5.6), which write_outputs writes for it, in run and retune alike: v1's
+    layout.s{N}p, and chain.s1p when part ports are closed, with the what-if label as v1's; with results.far_field,
+    farfield.csv and antenna_summary.csv, from far_field_of with the job's waves and S11 at the sphere's frequencies
+    (the layout there, terminated as the chain is); and antenna_summary.png whenever there is a chain; all written to
+    results/ beside `path` (write, ANTENNA_OUTPUTS, with `command` as E_RESULTS_WRITE's advice). Returns the lines to
+    report: chain_results' (I_BASIS up to the indicators), s11_lines on the chain's S11, far_field_lines, the label's
+    line, then I_OUTPUTS and ANTENNA_LIMITS. Errors as write_outputs takes them, and far_field_of's E_RESULTS_WAVES
+    (the run folder moved or deleted) is one more such line, in the place of the far field's lines and files."""
+    res = chain_results(path, project, errors_as_lines=errors_as_lines)
+    results, lay, ext = project["results"], res.lay, res.ext
+    folder, n, run_dir = path.parent / "results", len(lay.ports), Path(results["run_dir"])
+    files = {f"layout.s{n}p": touchstone(lay.s, lay.f, [q["name"] for q in lay.ports],
+                                         port_map(project, results, lay, range(n)))}
+    what_if = {"command": command_line("kicad-rf-studio", "verify", str(path))}
+    if res.chain is not None and res.refs:
+        files["chain.s1p"] = touchstone(res.chain, lay.f, [lay.ports[k]["name"] for k in ext],
+                                        port_map(project, results, lay, ext)
+                                        + ([english("I_WHAT_IF", **what_if)] if res.what_if else []))
+    lines, far = [*res.lines], None
+    if res.chain is not None:
+        lines += s11_lines(project, lay.f, res.chain[:, 0, 0])
+        if results.get("far_field"):
+            try:
+                far = far_field_of({grid: run_dir / file for grid, file in results["far_field"].items()},
+                                   run_dir / results["jobs"][0]["waves"])
+            except KrsError as err:
+                if not errors_as_lines:
+                    raise
+                lines.append((err.code, err.params))
+            else:
+                up = np.argsort(far["sphere"].f)  # scikit-rf takes f ascending; the far field's leads with f0
+                at = layout(project, results, far["sphere"].f[up])
+                s11 = chain_results(path, project, lay=at).chain[np.argsort(up), 0, 0]  # back in the far field's order
+                files["farfield.csv"], files["antenna_summary.csv"] = farfield_csv(far), antenna_csv(far, s11)
+                lines += far_field_lines(far)
+        files["antenna_summary.png"] = antenna_png(lay.f, res.chain[:, 0, 0], project, far,
+                                                   path.absolute().parent.name)  # `run .` too
+    lines += [("I_WHAT_IF", what_if)] if res.what_if else []
+    try:
+        write(folder, files, ANTENNA_OUTPUTS, command)
+    except KrsError as err:  # E_RESULTS_WRITE: a file held open, say
+        if not errors_as_lines:
+            raise
+        lines.append((err.code, err.params))
+    else:
+        lines.append(("I_OUTPUTS", {"files": ", ".join(sorted(files)), "folder": str(folder)}))
+    return [*lines, *((code, {}) for code in ANTENNA_LIMITS)]
 
 
 def run(path: Path, run_dir: Path | None = None) -> int:
@@ -579,7 +636,9 @@ def _locked(path: Path, body: Callable[[Path, Path], int], run_dir: Path | None 
 
 
 def _run(path: Path, run_dir: Path) -> int:
-    """run() under the lock, with `run_dir` made."""
+    """run() under the lock, with `run_dir` made: an antenna run saves its S as v1 does, then, with no part port,
+    transforms its far field after its job and saves again; a transform that fails is an E_ line, and one stopped
+    leaves S kept (Stage 3 design 5.5)."""
     emit = partial(runs.emit, run_dir)  # (kind, code, params, job=None)
     if isinstance(built := _model_phase(path, emit), int):
         return built
@@ -598,9 +657,24 @@ def _run(path: Path, run_dir: Path) -> int:
     data["results"] = {"model_hash": spec_hash(model.spec), "run_dir": str(run_dir), "gates": gates, "preset": preset,
                        "loss_expected": loss, "dt": setup["dt"], "c_box": setup["c_box"], "wall_s": wall_s,
                        "jobs": done}
-    _save(path, data, command_line("kicad-rf-studio", "run", str(path)))
+    if antenna(project):
+        data["results"]["far_field"] = None
+    rerun = command_line("kicad-rf-studio", "run", str(path))
+    rewrite = command_line("kicad-rf-studio", "retune", str(path))
+    _save(path, data, rerun)
     emit("result", "I_RESULTS", {"kept": kept, "runs": len(done), "wall": duration(wall_s), "path": str(path)})
-    lines = write_outputs(path, data, command_line("kicad-rf-studio", "retune", str(path)), errors_as_lines=True)
+    lines = []
+    if "nf2ff" in model.spec:  # an antenna with no part port
+        # S's files first, their lines unsaid, so that a stopped transform leaves them
+        write_outputs(path, data, rewrite, errors_as_lines=True)
+        try:
+            paths = far_field(run_dir / Path(done[0]["waves"]).parent, project["far_field"]["step_deg"])
+            data["results"]["far_field"] = {grid: p.relative_to(run_dir).as_posix() for grid, p in paths.items()}
+            _save(path, data, rerun)
+        except KrsError as err:  # the transform's, or the save's E_RESULTS_WRITE: S kept, results/ as project.json says
+            data["results"]["far_field"] = None
+            lines.append((err.code, err.params))
+    lines += write_outputs(path, data, rewrite, errors_as_lines=True)
     for code, params in lines:
         emit("message" if code.startswith("E_") else "result", code, params)
     return 2 if any(code.startswith("E_") for code, _ in lines) else 0
