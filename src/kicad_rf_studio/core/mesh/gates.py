@@ -44,9 +44,11 @@ class Fit:
 def edge_lint(mesh: Mesh) -> list[LintHit]:
     """The in-plane protected copper edges of `mesh` (Mesh.edges; the copper's z faces carry lines and are exempt)
     that fail the edge lint on their axis's lines, with rule.lint_hits' reasons: a line on them, their nearest inside
-    line nearer than d/8, or their first outside line no farther than that inside line (a tie fails)."""
+    line nearer than d/8, or their first outside line no farther than that inside line (a tie fails), a third test that
+    Mesh.exempt's edges, an antenna's two-layer pairs, are spared."""
     return [LintHit(axis, e, reason) for axis in "xy"
-            for e, reason in lint_hits(getattr(mesh, axis), mesh.edges.get(axis, ()), mesh.d)]
+            for e, reason in lint_hits(getattr(mesh, axis), mesh.edges.get(axis, ()), mesh.d,
+                                       mesh.exempt.get(axis, ()))]
 
 
 def mesh_with_lint(geom: Geometry, prot: Protected, n: int) -> Mesh:

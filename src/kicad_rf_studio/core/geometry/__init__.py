@@ -28,7 +28,9 @@ class Geometry:
     protected set, the vias as rods, the masks by the outer copper layer they lie on (the F mask first; a side with
     none is absent), the measured sections, the shield lid (None without one), every warning and E_ gate entry in
     `notes`, `track_width`, the narrowest track of the measured nets, and `track_gap`, sections.staircase_gap (None
-    without a staircased track), which the d rule takes with the sections' widths and gaps."""
+    without a staircased track), which the d rule takes with the sections' widths and gaps. `antenna`: an antenna's
+    geometry (Stage 3 design 5.3), whose mesh exempts its two-layer pairs (core.mesh._pairs) from the edge lint's third
+    test."""
     region: Region
     zs: tuple[Slab, ...]
     pieces: list[Piece]
@@ -40,6 +42,7 @@ class Geometry:
     notes: list[tuple[str, dict]]
     track_width: float
     track_gap: float | None
+    antenna: bool = False
 
 
 def chain_of(project: dict) -> Chain:

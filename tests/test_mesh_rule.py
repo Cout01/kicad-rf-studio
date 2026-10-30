@@ -6,11 +6,12 @@ from pathlib import Path
 import numpy as np
 import pytest
 import shapely
+from shapely.geometry import box
 
 import kicad_rf_studio.core.mesh.rule as rule
 from kicad_rf_studio.core.cs2d import solve
 from kicad_rf_studio.core.geometry import Geometry
-from kicad_rf_studio.core.geometry.copper import copper_pieces
+from kicad_rf_studio.core.geometry.copper import Piece, copper_pieces
 from kicad_rf_studio.core.geometry.mask import mask_model
 from kicad_rf_studio.core.geometry.region import build_region, lambda_min
 from kicad_rf_studio.core.geometry.sections import Section, cross_section, sections, staircase_gap
@@ -18,11 +19,11 @@ from kicad_rf_studio.core.geometry.vias import via_rods
 from kicad_rf_studio.core.geometry.zstack import substrate_h, zstack
 from kicad_rf_studio.core.kicad import classify, load_board, trace_chain
 from kicad_rf_studio.core.kicad.tracer import Chain
-from kicad_rf_studio.core.mesh import Mesh, _edges, build_mesh
+from kicad_rf_studio.core.mesh import Mesh, _edges, _pairs, build_mesh
 from kicad_rf_studio.core.mesh.gates import mesh_with_lint
-from kicad_rf_studio.core.mesh.protect import protected_set
-from kicad_rf_studio.core.mesh.rule import (RATIO, _grade, _patterns, cell_size, dz0, edge_lines, merge, xy_lines,
-                                            z_lines)
+from kicad_rf_studio.core.mesh.protect import Protected, protected_set
+from kicad_rf_studio.core.mesh.rule import (RATIO, _grade, _patterns, cell_size, dz0, edge_lines, lint_hits, merge,
+                                            xy_lines, z_lines)
 from kicad_rf_studio.core.mesh.smooth import smooth_mesh_lines
 from kicad_rf_studio.core.project import REACH_H
 
@@ -194,6 +195,13 @@ def test_the_lint_fails_a_tie(e, a, side):
     assert lint(np.round(np.array([e - a, e + a]), 6), [(e, side)], 0.075)
 
 
+def test_an_exempt_edge_passes_the_third_test_alone():  # Stage 3 design 5.3; RF 3
+    lines, edges = np.array([5.425, 5.575]), [(5.5, -1), (5.5, 1)]  # each edge's inside line is the other's outside
+    assert lint_hits(lines, edges, 0.3) == [(5.5, "outside_closer"), (5.5, "outside_closer")]
+    assert lint_hits(lines, edges, 0.3, exempt={(5.5, -1), (5.5, 1)}) == []
+    assert lint_hits(np.array([5.5, 5.6]), edges, 0.3, exempt=set(edges)) == [(5.5, "on_edge"), (5.5, "on_edge")]
+
+
 def test_edge_pattern():
     d = 0.075
     assert edge_lines(1.0, -1, d) == pytest.approx((1.0 - d / 4, 1.0 + 3 * d / 4))  # metal at x < 1
@@ -357,6 +365,14 @@ def test_protected_edges_come_from_copper_outlines():
     assert same(m.edges["x"], [(99.5005, 1), (120.4995, -1)], 1e-3)  # the pours' ends (B.Cu's sheet ends there too)
     # the vertical cuts of the hole split are not edges: lpf915's GND pour was cut at x = 101.833481
     assert 101.833481 not in [e for e, _ in mesh("lpf915", "U1.1", "J1.1").edges["x"]]
+
+
+def test_only_opposite_edges_of_two_layers_within_20_um_are_paired():  # Stage 3 design 5.3: a two-layer helix; RF 3
+    prot = Protected(frozenset({"RF"}), {layer: box(-1, -1, 10, 2) for layer in ("F.Cu", "B.Cu")}, frozenset(), ())
+    top = Piece("F.Cu", "RF", box(0, 0, 5.5, 1), True)
+    assert _pairs([top, Piece("B.Cu", "RF", box(5.5, 0, 9, 1), True)], prot) == {"x": {(5.5, -1), (5.5, 1)}, "y": set()}
+    assert _pairs([top, Piece("B.Cu", "RF", box(5.53, 0, 9, 1), True)], prot) == {"x": set(), "y": set()}  # 30 µm
+    assert _pairs([top, Piece("F.Cu", "GND", box(5.5, 0, 9, 1), True)], prot) == {"x": set(), "y": set()}  # one layer
 
 
 @pytest.mark.parametrize("n", [2, 3])

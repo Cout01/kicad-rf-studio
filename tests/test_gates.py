@@ -77,6 +77,12 @@ def test_lint_outside_closer():
     assert edge_lint(lint_mesh([0.97, 1.02], [(1.0, -1)]))[0].reason == "outside_closer"
 
 
+def test_edge_lint_reads_the_meshs_exempt_edges():  # Stage 3 design 5.3
+    m = lint_mesh([0.97, 1.02], [(1.0, -1)])
+    assert edge_lint(m)[0].reason == "outside_closer" and m.exempt == {}  # v1's Mesh exempts nothing
+    assert edge_lint(replace(m, exempt={"x": frozenset({(1.0, -1)})})) == []
+
+
 @pytest.mark.parametrize(("e", "a", "side"), [(-100.889, 0.02, 1), (-100.778, 0.01875, -1), (110.0015, 0.01875, 1)])
 def test_lint_fails_a_tie_on_the_grid(e, a, side):
     # T7: a line pair symmetric about an edge ties the outer line to the metal under openEMS's inclusive rule (−6.7 % in

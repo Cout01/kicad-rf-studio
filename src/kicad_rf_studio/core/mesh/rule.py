@@ -100,7 +100,7 @@ def z_lines(zs: tuple[Slab, ...], d: float, t_m: float, h: float, z_walls: tuple
 
 def xy_lines(edges: list[Edge], extent: tuple[float, float], walls: tuple[float, float], free: Iterable[float],
              d: float, coarse: float, prefer: Collection[Edge] = (), force: Collection[Edge] = (),
-             h: float = math.inf) -> tuple[np.ndarray, np.ndarray]:
+             h: float = math.inf, exempt: Collection[Edge] = frozenset()) -> tuple[np.ndarray, np.ndarray]:
     """The lines of one in-plane axis from wall to wall, and the rule's own lines among them: the walls, the edge
     lines, the protected extent's ends and its fill.
     - Every protected copper edge, (position, inside sign), gets its lines from _patterns (`prefer`, `force` and `h`,
@@ -113,39 +113,43 @@ def xy_lines(edges: list[Edge], extent: tuple[float, float], walls: tuple[float,
       from every other line: a vertex line nearer than that would only make the grading refine back towards d.
     - smooth_mesh_lines grades the rest up to `coarse`, and _grade holds every pair of neighbouring cells within RATIO
       but where the larger holds an edge, which its pattern fixes. Only these lines (and the fill) are re-placed.
-    - The slot depth (plan 6) holds on an axis only where its lines pass the edge lint and the d/3 merge outright;
-      elsewhere, as where its grading does not converge, the axis keeps the lines of the rule as built."""
+    - The slot depth (plan 6) holds on an axis only where its lines pass the edge lint, as edge_lint runs it (the
+      `exempt` edges spared its third test), and the d/3 merge outright; elsewhere, as where its grading does not
+      converge, the axis keeps the lines of the rule as built."""
     if SLOT_IN is not None:  # ponytail: one failing check reverts the whole axis; per cell, if boards lose the depth so
         try:
             out = _axis(edges, extent, walls, free, d, coarse, prefer, force, h, True)
-            if not _faults(out[0], edges, d):
+            if not _faults(out[0], edges, d, exempt):
                 return out
         except RuntimeError:  # _grade's guard
             pass
     return _axis(edges, extent, walls, free, d, coarse, prefer, force, h, False)
 
 
-def lint_hits(lines: np.ndarray, edges: Iterable[Edge], d: float) -> list[tuple[float, str]]:
+def lint_hits(lines: np.ndarray, edges: Iterable[Edge], d: float,
+              exempt: Collection[Edge] = ()) -> list[tuple[float, str]]:
     """The protected copper `edges` of one axis that fail the edge lint of spec 5.5 on its `lines`, each with its
     reason: a line on it ("on_edge"), its nearest inside line nearer than d/8 ("inside_too_close"), or its first
     outside line no farther than that inside line ("outside_closer"): a tie ties the outer line to the metal under
     openEMS's inclusive rule (T7). The distances go to 1e-9 mm, so that a tie on the 1e-6 mm grid compares equal
-    (float noise put either line ahead)."""
+    (float noise put either line ahead). An edge of `exempt` (an antenna's two-layer pairs) is spared the third test,
+    which no line can pass for both edges of a pair."""
     hits = []
     for e, inside in edges:
         off = np.round((lines - e) * inside, 9)  # > 0 inside the metal
         near_in, near_out = off[off > 0].min(initial=np.inf), -off[off < 0].max(initial=-np.inf)
         reason = ("on_edge" if (off == 0).any() else "inside_too_close" if near_in < d / 8
-                  else "outside_closer" if near_out <= near_in else None)
+                  else "outside_closer" if near_out <= near_in and (e, inside) not in exempt else None)
         if reason:
             hits.append((e, reason))
     return hits
 
 
-def _faults(lines: np.ndarray, edges: list[Edge], d: float) -> bool:
-    """Whether an axis's `lines` fail the axes harness's own checks: the edge lint of its `edges`, or a cell under the
-    d/3 merge. No RATIO check: _grade returns only lines that pass it with the edges held."""
-    return bool(lint_hits(lines, edges, d)) or bool(np.diff(lines).min() < d / 3 - GRID_TOL)
+def _faults(lines: np.ndarray, edges: list[Edge], d: float, exempt: Collection[Edge] = ()) -> bool:
+    """Whether an axis's `lines` fail the axes harness's own checks: the edge lint of its `edges` (`exempt` spared its
+    third test, as in edge_lint), or a cell under the d/3 merge. No RATIO check: _grade returns only lines that pass it
+    with the edges held."""
+    return bool(lint_hits(lines, edges, d, exempt)) or bool(np.diff(lines).min() < d / 3 - GRID_TOL)
 
 
 def _axis(edges: list[Edge], extent: tuple[float, float], walls: tuple[float, float], free: Iterable[float], d: float,
