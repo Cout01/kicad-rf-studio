@@ -183,9 +183,10 @@ class Opened:
     """A project as open_project reads it: project.json, its model's spec_hash and the chain results while they apply,
     each None when not read; the first refusal met, as (code, params); the last cost of this model (last_cost) and the
     newest run or verify that ended; each None without one; the board file that project.json names
-    (core.project.board_file), None when project.json cannot be read or names no board; the last verify's
-    comparison (verify_lines), [] without one; and project.json as load_project reads it (`stored`), unchecked, so that
-    Advanced can fix a field the checks refuse, None when it cannot be read."""
+    (core.project.board_file), None when project.json cannot be read or names no board, or for an antenna project
+    until plan 5; the last verify's comparison (verify_lines), [] without one; and project.json as load_project reads
+    it (`stored`), unchecked, so that Advanced can fix a field the checks refuse, None when it cannot be read or for an
+    antenna project until plan 5."""
     project: dict | None
     spec_hash: str | None
     results: pipeline.ChainResults | None
