@@ -79,8 +79,8 @@ def build_csx(spec: dict, excite: int, t_max: float) -> tuple[object, object, ob
     box = None
     if (nf := spec.get("nf2ff")) is not None:
         f_hz, f1, f2 = nf["f_hz"], pulse["f1"], pulse["f2"]
-        # ponytail: a crash (E_WORKER_FAILED); far-field frequencies come from code until plan 2's project field, which
-        # gets its own refusal
+        # ponytail: a crash (E_WORKER_FAILED); an antenna's frequencies come from project.json's far_field.f_hz, which
+        # check_project refuses outside the pulse band first
         if not (0 < len(f_hz) <= NF2FF_MAX and all(f1 <= f <= f2 for f in f_hz)):
             raise ValueError(f"far-field frequencies {f_hz}: 1 to {NF2FF_MAX}, each from f1 {f1:g} to f2 {f2:g} Hz")
         # accumulated every Nyquist/4 steps, the port probes' rate: at openEMS's default Nyquist rate a frequency

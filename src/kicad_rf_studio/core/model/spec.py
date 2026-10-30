@@ -8,8 +8,10 @@ import hashlib
 import json
 import math
 from bisect import bisect_left, bisect_right
+from dataclasses import replace
 from typing import TYPE_CHECKING
 
+import numpy as np
 import scipy.constants
 import shapely
 from shapely.geometry import GeometryCollection, MultiPolygon
@@ -20,11 +22,15 @@ from kicad_rf_studio.core.geometry.mask import smeared_epsilon
 from kicad_rf_studio.core.geometry.region import band
 from kicad_rf_studio.core.kicad.tracer import signal_layer
 from kicad_rf_studio.core.kicad.values import part_kind, part_value, port_value
+from kicad_rf_studio.core.mesh.rule import RATIO
+from kicad_rf_studio.core.mesh.smooth import smooth_mesh_lines
 from kicad_rf_studio.core.messages import KrsError
 from kicad_rf_studio.core.model.csx import PML_CELLS
 from kicad_rf_studio.core.model.parts import COPPER
 from kicad_rf_studio.core.model.ports import _pad
 from kicad_rf_studio.core.model.readers import c_box
+from kicad_rf_studio.core.project import antenna
+from kicad_rf_studio.stoprule import flat_window
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -54,8 +60,10 @@ def pulse(f1: float, f2: float, t_max: float) -> dict:
 
 
 def excitation(project: dict) -> dict:
-    """pulse() over the band (f1, f2) of `project` (project.json), run to the project's T_max."""
-    return pulse(*band(project), project["t_max_s"])
+    """pulse() over the band (f1, f2) of `project` (project.json), run to the project's T_max; an antenna's also holds
+    its flat window "flat_s", flat_window() of its f0 (Stage 3 design 5.4)."""
+    exc = pulse(*band(project), project["t_max_s"])
+    return {**exc, "flat_s": flat_window(project["f0_hz"])} if antenna(project) else exc
 
 
 def with_pml(lines: list[float]) -> list[float]:
@@ -64,6 +72,17 @@ def with_pml(lines: list[float]) -> list[float]:
     lo, hi = lines[1] - lines[0], lines[-1] - lines[-2]
     return ([round(lines[0] - k * lo, 6) for k in range(PML_CELLS, 0, -1)] + list(lines)
             + [round(lines[-1] + k * hi, 6) for k in range(1, PML_CELLS + 1)])
+
+
+def air_box(mesh: Mesh, gap: float, cell: float, pml: bool) -> Mesh:
+    """`mesh` (an antenna's, wall to wall around the board) with each axis graded at RATIO up to `cell` through `gap` mm
+    of air past both its ends, the PML's inner edge (Stage 3 design 5.2, 5.3), then with_pml when `pml`; on the 1e-6 mm
+    grid. smooth_mesh_lines only adds lines, so the board's stay, and so do the Mesh's edges and exempt pairs."""
+    def graded(old: np.ndarray) -> np.ndarray:
+        lines = [round(float(v), 6) for v in smooth_mesh_lines(np.r_[old, old[0] - gap, old[-1] + gap], cell, RATIO)]
+        return np.array(with_pml(lines) if pml else lines)
+
+    return replace(mesh, x=graded(mesh.x), y=graded(mesh.y), z=graded(mesh.z))
 
 
 PML_CLEAR = 2  # the cells just inside the PML's inner edge that hold no structure either (design 5.2)
@@ -126,7 +145,11 @@ def _solids(g: BaseGeometry, z0: float, z1: float) -> list[dict]:
 
 def model_spec(project: dict, board: Board, geom: Geometry, mesh: Mesh, ports: list[dict], grid: list[dict]) -> dict:
     """The model of `geom` on `mesh` as plain JSON (C-19): the mesh's own lines (X-6), the excitation, the materials,
-    the metal, `ports` (the place() entries in job order) and `grid` (the grid_entry() entries).
+    the metal, `ports` (the place() entries in job order) and `grid` (the grid_entry() entries); then the antenna keys,
+    only for an antenna (Stage 3 design 5.2–5.5): "boundary", "pml_8" when project.json's boundary is; "nf2ff" when no
+    port is a part, project.json's far_field.f_hz about the board's centre, its outline's bounds' (else the crop's) at
+    the stack's mid-height; and "join" when the antenna has join pads, a box per pad: its bounds grown by d in x and y,
+    from the lowest copper slab's z0 to the highest's z1. The centre and the boxes go to 1e-6 mm.
     The materials, in this order: each dielectric slab, bottom up, at its εr and its κ at f0, and each copper slab
     between two dielectrics, at their mean εr and mean κ (C-8), all on the board (the crop cut to its outline) and
     named by their place in the list; then per mask, F first, its gap fill in the outer copper's slab and its coat
@@ -142,7 +165,8 @@ def model_spec(project: dict, board: Board, geom: Geometry, mesh: Mesh, ports: l
     def k(s: Slab) -> float:
         return kappa(s.eps_r, s.tan_d, f0)
 
-    area = clean(crop if board.outline is None else board.outline, crop)
+    outline = crop if board.outline is None else board.outline
+    area = clean(outline, crop)
     layers = [(s.eps_r, k(s), s) for s in zs if s.kind == "dielectric"]
     layers += [((a.eps_r + b.eps_r) / 2, (k(a) + k(b)) / 2, s)
                for a, s, b in zip(zs, zs[1:], zs[2:]) if s.kind == "copper" and a.kind == b.kind == "dielectric"]
@@ -171,7 +195,7 @@ def model_spec(project: dict, board: Board, geom: Geometry, mesh: Mesh, ports: l
     if geom.lid is not None:
         top = snap_lid(geom.lid, mesh.z)
         lid = {"plate": {**_ring(top.plate), "z": top.z1}, "walls": _solids(top.walls, top.z0, top.z1)}
-    return {"mesh": {"x": mesh.x.tolist(), "y": mesh.y.tolist(), "z": mesh.z.tolist()},
+    spec = {"mesh": {"x": mesh.x.tolist(), "y": mesh.y.tolist(), "z": mesh.z.tolist()},
             "excitation": excitation(project),
             "materials": materials,
             "metal": {"copper": copper, "lid": lid,
@@ -179,6 +203,18 @@ def model_spec(project: dict, board: Board, geom: Geometry, mesh: Mesh, ports: l
                       "curves": [{"at": list(r.at), "z": [r.z0, r.z1]} for r in mesh.snapped_rods if not r.solid]},
             "ports": ports,
             "grid": grid}
+    if antenna(project):
+        if project["boundary"] == "pml_8":
+            spec["boundary"] = "pml_8"
+        if not any(q["part"] for q in ports):
+            x0, y0, x1, y1 = outline.bounds
+            centre = ((x0 + x1) / 2, (y0 + y1) / 2, (zs[0].z0 + zs[-1].z1) / 2)
+            spec["nf2ff"] = {"f_hz": project["far_field"]["f_hz"], "center": [round(v, 6) for v in centre]}
+        if boxes := [_pad(board, name).polygon.bounds for name in project["antenna"]["join"]]:
+            d, z0, z1 = mesh.d, min(z for z, _ in cu.values()), max(z for _, z in cu.values())
+            spec["join"] = [[[round(v, 6) for v in (x0 - d, y0 - d, z0)], [round(v, 6) for v in (x1 + d, y1 + d, z1)]]
+                            for x0, y0, x1, y1 in boxes]
+    return spec
 
 
 def spec_hash(spec: dict) -> str:

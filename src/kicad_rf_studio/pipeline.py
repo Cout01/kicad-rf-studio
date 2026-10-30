@@ -28,6 +28,7 @@ import numpy as np
 from kicad_rf_studio import runs
 from kicad_rf_studio.core.cs2d import ShortError, solve
 from kicad_rf_studio.core.geometry import build_geometry
+from kicad_rf_studio.core.geometry.region import air_cell, band
 from kicad_rf_studio.core.geometry.sections import cross_section
 from kicad_rf_studio.core.kicad import load_board
 from kicad_rf_studio.core.kicad.tracer import adopt
@@ -37,7 +38,7 @@ from kicad_rf_studio.core.messages import KrsError, english, reason, render
 from kicad_rf_studio.core.model.parts import CURVE_PORT, GRID, PORT
 from kicad_rf_studio.core.model.ports import ends, nominal_boxes, place
 from kicad_rf_studio.core.model.readers import read_log, read_probe, read_run_stats, read_stats
-from kicad_rf_studio.core.model.spec import grid_entry, metal_in_pml, model_spec, spec_hash, verify_spec
+from kicad_rf_studio.core.model.spec import air_box, grid_entry, metal_in_pml, model_spec, spec_hash, verify_spec
 from kicad_rf_studio.core.post.chain import ideal_schematic, loads, part_impedances, terminate, z_part
 from kicad_rf_studio.core.post.checks import compare, indicator_lines, loss_budget, loss_expected
 from kicad_rf_studio.core.post.outputs import (LIMITS, OUTPUTS, VERIFY_OUTPUT, grid_lines, marker_lines, port_map,
@@ -111,9 +112,9 @@ def build_model(project: dict, board: Board, geom: Geometry) -> Model:
     """The model of `project` (spec 6.1 step 2, C-42): its port ends; the mesh, finest across their nominal boxes, with
     the edge lint (on E_EDGE_LINT no mesh and no spec, and that gate blocked); fit2d against gates.fit2d_limit (E_FIT2D,
     E_FIT2D_FINE or E_FIT2D_SHORT blocked, the model still built); the timestep floor's reference, from the mesh before
-    any port is placed on it; each end placed on the mesh, a grid part's through grid_entry with its entry in
-    project.json; then the model spec. Raises the refusals of ends, place and grid_entry; the caller handles stops()
-    of load()'s notes first."""
+    any port is placed on it; an antenna's mesh in its air box (Stage 3 design 5.2); each end placed on the mesh, a
+    grid part's through grid_entry with its entry in project.json; then the model spec. Raises the refusals of ends,
+    place and grid_entry; the caller handles stops() of load()'s notes first."""
     e = ends(board, project, geom.pieces)
     n = mesh_n(project)
     try:
@@ -126,6 +127,8 @@ def build_model(project: dict, board: Board, geom: Geometry) -> Model:
     except KrsError as err:  # E_FIT2D_SHORT from fit2d, E_FIT2D or E_FIT2D_FINE from check_fit2d
         blocked.append((err.code, err.params))
     dt_ref = dt_floor_reference(mesh)
+    if antenna(project):
+        mesh = air_box(mesh, project["air_gap_mm"], air_cell(band(project)[1]), project["boundary"] == "pml_8")
     by_ref = parts(project)
     ports, grid = [], []
     for end in e:

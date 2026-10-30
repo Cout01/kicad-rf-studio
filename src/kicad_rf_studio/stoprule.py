@@ -13,6 +13,7 @@ import numpy as np
 PRESETS = {"draft": (-50.0, 1e-2), "normal": (-60.0, 2e-3), "strict": (-70.0, 5e-4)}  # (residual level, S tolerance)
 GROWTH_DB = 20.0  # the rise of the energy envelope over its running minimum that is growth
 FLAT_DB, FLAT_S = 1.0, 5e-9  # a residual that spans no more than FLAT_DB over FLAT_S is flat
+FLAT_PERIODS = 20  # an antenna's flat window, in periods of f0 (Stage 3 design 5.4)
 WINDOW_S = 2e-9  # the window of the residual and of the energy envelope
 LAG_S = 1e-9  # the monitor compares S with S this much earlier
 N_FREQ = 101  # the monitor's frequencies across the band
@@ -51,11 +52,17 @@ def residual_db(rec: Records) -> np.ndarray:
         return 10 * np.log10(r / np.maximum.accumulate(p))
 
 
+def flat_window(f0: float) -> float:
+    """An antenna's flat window, in s: FLAT_PERIODS periods of `f0` (Hz), at least FLAT_S (Stage 3 design 5.4)."""
+    return max(FLAT_S, FLAT_PERIODS / f0)
+
+
 def stop_rule(rec: Records, k: int, preset: str, exc: dict) -> Verdict | None:
     """The earliest verdict on `rec`, a tie going to the first of diverged, growth, converged and flat, or None when
     there is none yet or `rec` has fewer than 2 samples. `k` is the 0-based row of the excited port, `preset` a key of
-    PRESETS and `exc` the spec's excitation (f1, f2, t0). Causal: a verdict at t uses no sample after t, so the verdict
-    on a prefix of a record is the earliest verdict of the whole record."""
+    PRESETS and `exc` the spec's excitation (f1, f2, t0, and an antenna's flat window "flat_s", else FLAT_S). Causal: a
+    verdict at t uses no sample after t, so the verdict on a prefix of a record is the earliest verdict of the whole
+    record."""
     # ponytail: each poll recomputes the rule on the whole record; fine below about 1e4 samples, make it incremental
     # if polls lag
     if len(rec.t_u) < 2:
@@ -67,7 +74,8 @@ def stop_rule(rec: Records, k: int, preset: str, exc: dict) -> Verdict | None:
     level, tol = PRESETS[preset]
     r_db = residual_db(rec)
     found = {"diverged": t_bad, "growth": _growth(rec, exc["t0"]),
-             "converged": _converged(rec, r_db, k, level, tol, exc), "flat": _flat(rec, r_db, level, exc["t0"])}
+             "converged": _converged(rec, r_db, k, level, tol, exc),
+             "flat": _flat(rec, r_db, level, exc["t0"], exc.get("flat_s", FLAT_S))}
     kind = min(found, key=found.get)  # the first of the earliest
     if found[kind] == np.inf:
         return None
@@ -123,12 +131,12 @@ def _converged(rec: Records, r_db: np.ndarray, k: int, level: float, tol: float,
     return t_u[hit[0]] if len(hit) else np.inf
 
 
-def _flat(rec: Records, r_db: np.ndarray, level: float, t0: float) -> float:
-    """The first t_u at or after 2·t0 + FLAT_S with the residual above `level` and spanning at most FLAT_DB over the
-    last FLAT_S; inf when none."""
+def _flat(rec: Records, r_db: np.ndarray, level: float, t0: float, window: float = FLAT_S) -> float:
+    """The first t_u at or after 2·t0 + `window` with the residual above `level` and spanning at most FLAT_DB over the
+    last `window` (s); inf when none."""
     t_u = rec.t_u
-    lo = np.searchsorted(t_u, t_u - FLAT_S, "right")
-    for n in np.flatnonzero((t_u >= 2 * t0 + FLAT_S) & (r_db > level)):
+    lo = np.searchsorted(t_u, t_u - window, "right")
+    for n in np.flatnonzero((t_u >= 2 * t0 + window) & (r_db > level)):
         if np.ptp(r_db[lo[n]:n + 1]) <= FLAT_DB:
             return t_u[n]
     return np.inf

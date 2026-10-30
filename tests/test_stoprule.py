@@ -5,7 +5,7 @@ from dataclasses import replace
 import numpy as np
 import pytest
 
-from kicad_rf_studio.stoprule import GROWTH_DB, Records, growth_rise, stop_rule
+from kicad_rf_studio.stoprule import GROWTH_DB, Records, flat_window, growth_rise, stop_rule
 from traces import trace
 
 EXC = {"f1": 457.5e6, "f2": 3.0195e9, "t0": 9 / (2 * math.pi * 1.281e9)}
@@ -45,3 +45,12 @@ def test_no_growth_before_the_pulse_ends():  # armed only after 2·t0
 
 def test_growth_rise_is_the_statistic_the_stop_rule_compares():  # D-38
     assert growth_rise(trace("growth"), EXC["t0"]) >= GROWTH_DB > 10 > growth_rise(trace("converge"), EXC["t0"])
+
+
+def test_an_antennas_flat_window_counts_20_periods_of_f0():  # design 5.4
+    exc = {"f1": 1.84e9, "f2": 2.99e9, "t0": 9 / (math.pi * 1.15e9)}
+    rec = trace("flat", 1, 0, 1.84e9, 2.99e9)
+    assert round(stop_rule(rec, 0, "normal", exc).t * 1e9, 3) == 17.179  # v1's 5 ns
+    v = stop_rule(rec, 0, "normal", {**exc, "flat_s": flat_window(2.44175e9)})
+    assert (v.kind, round(v.t * 1e9, 3)) == ("flat", 20.377)
+    assert (flat_window(5e9), flat_window(915e6)) == (5e-9, pytest.approx(21.858e-9, rel=1e-4))
