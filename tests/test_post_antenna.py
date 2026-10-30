@@ -10,9 +10,10 @@ import pytest
 from matplotlib.figure import Figure
 
 from kicad_rf_studio.core.messages import KrsError, render
-from kicad_rf_studio.core.post.antenna import (ANTENNA_LIMITS, antenna_csv, antenna_png, bandwidth, compare_s11,
-                                                dip_resonance, draw_antenna, eta_what_if_lines, far_field_lines,
-                                                far_field_of, farfield_csv, resonance, s11_lines, shown_zin, zin)
+from kicad_rf_studio.core.post.antenna import (ANTENNA_LIMITS, DELTA_COLUMNS, antenna_csv, antenna_png, bandwidth,
+                                                compare_s11, delta_lines, deltas, deltas_csv, dip_resonance,
+                                                draw_antenna, eta_what_if_lines, far_field_lines, far_field_of,
+                                                farfield_csv, resonance, s11_lines, shown_zin, zin)
 from kicad_rf_studio.core.post.waves import band_grid
 from test_project import antenna_dict
 
@@ -125,3 +126,69 @@ def test_the_what_if_total_efficiency_takes_eta_rad_from_the_far_field():  # des
                                    "delivered_pct": "75.0"}),
         ("I_ANTENNA_ETA_WHAT_IF", {"f_mhz": "2450.0", "eta_tot_pct": "79.2", "eta_rad_pct": "80.0",
                                    "delivered_pct": "99.0"})]
+
+
+def far(eta, gain):  # far_field_of's shape for the deltas: f0, f_lo and f_hi recorded, in that order
+    return {"sphere": SimpleNamespace(f=np.array([2.44175e9, 2.4e9, 2.4835e9])),
+            "eff": {"eta_tot": np.array(eta), "gain": np.array(gain)}}
+
+
+def up(db):  # 0.5 raised by db
+    return 0.5 * 10 ** (db / 10)
+
+
+def pair(f):  # a resonance 11.5 MHz up with a wider dip, η_tot +0.1, +0.3 and 0 dB at f_lo, f0 and f_hi, gain -0.25 dB
+    return ((dip(f, 2.438e9), far([0.5, 0.5, 0.5], [1.5, 1.0, 1.0])),
+            (dip(f, 2.4495e9, 0.12e9), far([up(0.3), up(0.1), 0.5], [1.5 * 10 ** -0.025, 1.0, 1.0])))
+
+
+def test_the_deltas_and_whether_each_is_resolved():  # design 5.8
+    d = antenna_dict()
+    f = band_grid(d)
+    rows = deltas(d, f, *pair(f))
+    assert [(r["quantity"], r["marker"], r["unit"], r["delta_unit"], r["resolved"]) for r in rows] == [
+        ("resonance", "", "MHz", "MHz", True), ("bandwidth_10db", "", "MHz", "MHz", True),
+        ("eta_tot", "f_lo", "%", "dB", False), ("eta_tot", "f0", "%", "dB", True),
+        ("eta_tot", "f_hi", "%", "dB", False), ("peak_gain", "f0", "dBi", "dB", True)]
+    assert (rows[0]["base"], rows[0]["variant"], rows[0]["delta"]) == pytest.approx((2438.0, 2449.5, 11.5), abs=1e-6)
+    assert rows[0]["threshold"] == pytest.approx(7.32525) and rows[2]["threshold"] == 0.2  # 0.3 % of f0; 0.2 dB
+    assert rows[1]["delta"] == pytest.approx(24.52, abs=0.05)  # 122.63 to 147.14 MHz, interpolated in dB
+    assert (rows[3]["f_hz"], rows[3]["base"], rows[3]["delta"]) == pytest.approx((2.44175e9, 50.0, 0.3))
+    assert rows[5]["delta"] == pytest.approx(-0.25) and rows[5]["base"] == pytest.approx(10 * np.log10(1.5))
+
+
+def test_far_field_deltas_need_both_far_fields():  # design 5.8; RF 5
+    d = antenna_dict()
+    f = band_grid(d)
+    rows = deltas(d, f, (dip(f, 2.438e9), far([0.5] * 3, [1.0] * 3)), (dip(f, 2.435125e9), None))
+    assert [r["quantity"] for r in rows] == ["resonance", "bandwidth_10db"]
+    assert rows[0]["delta"] == pytest.approx(-2.875, abs=1e-6) and rows[0]["resolved"] is False  # 0.12 % of f0
+    shallow = 0.9 - 0.5 * np.exp(-((f - 2.438e9) / 0.1e9) ** 2)  # lowest |S11| -8 dB: no -10 dB bandwidth
+    bw = deltas(d, f, (dip(f, 2.438e9), None), (shallow, None))[1]
+    assert bw["base"] == pytest.approx(122.63, abs=0.05) and (bw["variant"], bw["delta"], bw["resolved"]) == (
+        None, None, None)
+    flat = 0.9 - 0.3 * np.exp(-((f - 2.438e9) / 0.1e9) ** 2)  # lowest |S11| -4.4 dB: no resonance to judge
+    res = deltas(d, f, (dip(f, 2.438e9), None), (flat, None))[0]
+    assert (res["base"], res["variant"], res["delta"], res["resolved"]) == (pytest.approx(2438.0), None, None, None)
+
+
+def test_the_delta_lines_and_csv():  # design 5.8
+    d = antenna_dict()
+    f = band_grid(d)
+    rows = deltas(d, f, *pair(f))
+    lines = delta_lines(d, rows)
+    assert [code for code, _ in lines] == ["I_COMPARE_RESONANCE", "I_COMPARE_BANDWIDTH", "I_COMPARE_ETA",
+                                           "I_COMPARE_ETA", "I_COMPARE_ETA", "I_COMPARE_GAIN", "I_COMPARE_THRESHOLDS"]
+    assert lines[0][1] == {"base_mhz": "2438.0", "variant_mhz": "2449.5", "shift_mhz": "+11.5", "shift_pct": "+0.47",
+                           "verdict": "T_RESOLVED"}
+    assert lines[3][1] == {"marker": "f0", "f_mhz": "2441.8", "base_pct": "50.0", "variant_pct": "53.6",
+                           "delta_db": "+0.30", "verdict": "T_RESOLVED"}
+    assert lines[-1][1] == {"shift_pct": "0.3", "db": "0.2"}
+    shallow = 0.9 - 0.5 * np.exp(-((f - 2.438e9) / 0.1e9) ** 2)
+    flat = 0.9 - 0.3 * np.exp(-((f - 2.438e9) / 0.1e9) ** 2)
+    assert [code for code, _ in delta_lines(d, deltas(d, f, (dip(f, 2.438e9), None), (shallow, None)))] == [
+        "I_COMPARE_RESONANCE", "I_COMPARE_NO_BANDWIDTH", "I_COMPARE_NO_FAR_FIELD", "I_COMPARE_THRESHOLDS"]
+    assert [code for code, _ in delta_lines(d, deltas(d, f, (dip(f, 2.438e9), None), (flat, None)))][0] == (
+        "I_RESONANCE_NOT_COMPARED")
+    table = list(csv.reader(io.StringIO(deltas_csv(rows).decode())))
+    assert table[0] == list(DELTA_COLUMNS) and len(table) == 7 and table[1][-1] == "True"

@@ -164,6 +164,88 @@ def eta_what_if_lines(far: dict, p: np.ndarray) -> list[tuple[str, dict]]:
             for n in np.argsort(f)]
 
 
+# design 5.8: a delta is resolved above 0.3 % of f0 for a frequency and 0.2 dB for an efficiency or a gain
+# ponytail: the design's provisional defaults; plan 4's P3-D sets them at three times its measured noise floor
+SHIFT_LIMIT, DB_LIMIT = 0.003, 0.2
+DELTA_COLUMNS = ("quantity", "marker", "f_hz", "base", "variant", "unit", "delta", "delta_unit", "threshold",
+                 "resolved")
+
+
+def deltas(project: dict, f: np.ndarray, base: tuple[np.ndarray, dict | None],
+           variant: tuple[np.ndarray, dict | None]) -> list[dict]:
+    """The deltas of `variant` against `base` (Stage 3 design 5.8), each (S11 (F,) on f, far_field_of's dict or None),
+    as rows of DELTA_COLUMNS (None for no value): `unit` is base's and variant's, `delta_unit` the delta's and the
+    threshold's."""
+    def row(quantity, marker, f_hz, b, v, unit, delta, delta_unit, threshold):  # numbers as Python floats
+        f_hz, b, v, delta = (None if x is None else float(x) for x in (f_hz, b, v, delta))
+        return dict(zip(DELTA_COLUMNS, (quantity, marker, f_hz, b, v, unit, delta, delta_unit, threshold,
+                                        None if delta is None else abs(delta) > threshold)))
+
+    def res_mhz(s11):  # dip_resonance in MHz, None without a dip
+        f_res = dip_resonance(f, s11)
+        return None if f_res is None else f_res / 1e6
+
+    def bw_mhz(s11):  # the -10 dB bandwidth at the lowest |S11| in MHz, None unless bounded on both sides
+        crossings = bandwidth(f, s11, resonance(f, s11)[0], LEVELS_DB[0])
+        return None if crossings is None or None in crossings else (crossings[1] - crossings[0]) / 1e6
+
+    # ponytail: the bandwidth's change is judged by the frequency threshold; P3-D may give it its own
+    limit, rows = SHIFT_LIMIT * project["f0_hz"] / 1e6, []
+    for quantity, value in (("resonance", res_mhz), ("bandwidth_10db", bw_mhz)):
+        b, v = value(base[0]), value(variant[0])
+        rows.append(row(quantity, "", None, b, v, "MHz", None if b is None or v is None else v - b, "MHz", limit))
+    far_b, far_v = base[1], variant[1]
+    if far_b is None or far_v is None:
+        return rows
+    at_b, at_v = _markers(project, far_b["sphere"].f), _markers(project, far_v["sphere"].f)  # nearest recorded
+    for marker, n in at_b.items():
+        b, v = far_b["eff"]["eta_tot"][n], far_v["eff"]["eta_tot"][at_v[marker]]
+        rows.append(row("eta_tot", marker, far_b["sphere"].f[n], 100 * b, 100 * v, "%", 10 * np.log10(v / b), "dB",
+                        DB_LIMIT))
+    b, v = (10 * np.log10(far["eff"]["gain"][at["f0"]]) for far, at in ((far_b, at_b), (far_v, at_v)))
+    rows.append(row("peak_gain", "f0", far_b["sphere"].f[at_b["f0"]], b, v, "dBi", v - b, "dB", DB_LIMIT))
+    return rows
+
+
+def delta_lines(project: dict, rows: list[dict]) -> list[tuple[str, dict]]:
+    """compare's lines of `deltas`' rows (Stage 3 design 5.8), each with its verdict, T_RESOLVED or T_NOT_RESOLVED:
+    the resonance's shift in MHz and in % of f0, or I_RESONANCE_NOT_COMPARED; the -10 dB bandwidth's change, or
+    I_COMPARE_NO_BANDWIDTH; η_tot at each marker and the peak gain at f0, or I_COMPARE_NO_FAR_FIELD in their place;
+    then I_COMPARE_THRESHOLDS."""
+    def line(r):
+        verdict = "T_RESOLVED" if r["resolved"] else "T_NOT_RESOLVED"
+        if r["quantity"] == "resonance":
+            return ("I_RESONANCE_NOT_COMPARED", {}) if r["delta"] is None else (
+                "I_COMPARE_RESONANCE", {"base_mhz": f"{r['base']:.1f}", "variant_mhz": f"{r['variant']:.1f}",
+                                        "shift_mhz": f"{r['delta']:+.1f}",
+                                        "shift_pct": f"{100 * r['delta'] / (project['f0_hz'] / 1e6):+.2f}",
+                                        "verdict": verdict})
+        if r["quantity"] == "bandwidth_10db":
+            return ("I_COMPARE_NO_BANDWIDTH", {}) if r["delta"] is None else (
+                "I_COMPARE_BANDWIDTH", {"base_mhz": f"{r['base']:.1f}", "variant_mhz": f"{r['variant']:.1f}",
+                                        "change_mhz": f"{r['delta']:+.1f}", "verdict": verdict})
+        f_mhz, delta_db = f"{r['f_hz'] / 1e6:.1f}", f"{r['delta']:+.2f}"
+        if r["quantity"] == "eta_tot":
+            return "I_COMPARE_ETA", {"marker": r["marker"], "f_mhz": f_mhz, "base_pct": f"{r['base']:.1f}",
+                                     "variant_pct": f"{r['variant']:.1f}", "delta_db": delta_db, "verdict": verdict}
+        return "I_COMPARE_GAIN", {"f_mhz": f_mhz, "base_dbi": f"{r['base']:.2f}", "variant_dbi": f"{r['variant']:.2f}",
+                                  "delta_db": delta_db, "verdict": verdict}
+
+    lines = [line(r) for r in rows]
+    if not any(r["quantity"] == "peak_gain" for r in rows):  # deltas: no far-field rows unless both have a far field
+        lines.append(("I_COMPARE_NO_FAR_FIELD", {}))
+    return lines + [("I_COMPARE_THRESHOLDS", {"shift_pct": f"{100 * SHIFT_LIMIT:g}", "db": f"{DB_LIMIT:g}"})]
+
+
+def deltas_csv(rows: list[dict]) -> bytes:
+    """compare.csv: DELTA_COLUMNS, then the rows, None as empty, as plan 2's CSVs are written."""
+    out = io.StringIO()
+    writer = csv.DictWriter(out, DELTA_COLUMNS, lineterminator="\n")
+    writer.writeheader()
+    writer.writerows(rows)
+    return out.getvalue().encode("utf-8")
+
+
 def _csv(columns: tuple[str, ...], rows: np.ndarray) -> bytes:
     """A CSV file of `columns`, then the `rows` (n, len(columns)) by ascending frequency, their first column (a stable
     sort): comma-separated, "\\n" line ends, numbers as Python's repr."""

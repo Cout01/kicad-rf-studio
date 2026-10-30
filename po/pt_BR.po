@@ -1110,6 +1110,39 @@ msgstr "Sem campo distante para esta execução: uma execução com portas de co
 msgid "{f_mhz} MHz: total efficiency {eta_tot_pct} % what-if: the last verify's radiation efficiency {eta_rad_pct} % times the {delivered_pct} % of the incident power that this retune's network passes to the board (its mismatch efficiency less its parts' own loss); a lossless network that does not radiate leaves the radiation efficiency and the pattern as they are."
 msgstr "{f_mhz} MHz: eficiência total hipotética de {eta_tot_pct} %: a eficiência de radiação da última verificação, {eta_rad_pct} %, vezes os {delivered_pct} % da potência incidente que a rede deste ajuste entrega à placa (a eficiência de descasamento menos a perda dos próprios componentes); uma rede sem perdas que não irradia mantém a eficiência de radiação e o diagrama como estão."
 
+#. I_COMPARE_RESONANCE
+#, python-brace-format
+msgid "Resonance: {base_mhz} MHz to {variant_mhz} MHz, a shift of {shift_mhz} MHz ({shift_pct} % of f0): {verdict}."
+msgstr "Ressonância: de {base_mhz} MHz para {variant_mhz} MHz, um deslocamento de {shift_mhz} MHz ({shift_pct} % de f0): {verdict}."
+
+#. I_COMPARE_BANDWIDTH
+#, python-brace-format
+msgid "-10 dB bandwidth: {base_mhz} MHz to {variant_mhz} MHz, a change of {change_mhz} MHz: {verdict}."
+msgstr "Largura de banda a -10 dB: de {base_mhz} MHz para {variant_mhz} MHz, uma mudança de {change_mhz} MHz: {verdict}."
+
+#. I_COMPARE_NO_BANDWIDTH
+msgid "-10 dB bandwidth: not compared, as one of the two has none bounded inside the simulated band."
+msgstr "Largura de banda a -10 dB: não comparada, pois uma das duas não tem nenhuma delimitada dentro da banda simulada."
+
+#. I_COMPARE_ETA
+#, python-brace-format
+msgid "Total efficiency at {marker} = {f_mhz} MHz: {base_pct} % to {variant_pct} %, {delta_db} dB: {verdict}."
+msgstr "Eficiência total em {marker} = {f_mhz} MHz: de {base_pct} % para {variant_pct} %, {delta_db} dB: {verdict}."
+
+#. I_COMPARE_GAIN
+#, python-brace-format
+msgid "Peak gain at f0 = {f_mhz} MHz: {base_dbi} dBi to {variant_dbi} dBi, {delta_db} dB: {verdict}."
+msgstr "Ganho de pico em f0 = {f_mhz} MHz: de {base_dbi} dBi para {variant_dbi} dBi, {delta_db} dB: {verdict}."
+
+#. I_COMPARE_NO_FAR_FIELD
+msgid "The efficiencies and the gain are not compared: they need a far field in both projects (a run with no part on the chain, or a verify), and one of them has none."
+msgstr "As eficiências e o ganho não são comparados: eles precisam de um campo distante nos dois projetos (uma execução sem componente na cadeia, ou uma verificação), e um deles não tem nenhum."
+
+#. I_COMPARE_THRESHOLDS
+#, python-brace-format
+msgid "Resolved means larger than the significance threshold: {shift_pct} % of f0 for a frequency and {db} dB for an efficiency or a gain, both provisional until gate P3-D measures the model's noise floor and sets them at three times it."
+msgstr "Resolvido significa maior que o limiar de significância: {shift_pct} % de f0 para uma frequência e {db} dB para uma eficiência ou um ganho, ambos provisórios até a checagem prévia P3-D medir o piso de ruído do modelo e defini-los em três vezes ele."
+
 #. E_INTERNAL
 #, python-brace-format
 msgid "Internal error: {detail}. Please report it."
@@ -1829,6 +1862,14 @@ msgstr "sem veredito"
 #. T_STOPPED
 msgid "stopped"
 msgstr "interrupção"
+
+#. T_RESOLVED
+msgid "resolved"
+msgstr "resolvido"
+
+#. T_NOT_RESOLVED
+msgid "not resolved"
+msgstr "não resolvido"
 
 #. T_INSTALL_WINDOWS
 msgid "kicad-rf-studio setup-openems <openEMS folder>"
