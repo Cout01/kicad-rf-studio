@@ -203,8 +203,9 @@ def open_project(path: Path) -> Opened:
     spec), results_of and chain_results with errors as lines, the first KrsError stopping there as `problem`, any other
     exception E_INTERNAL; then `stored`, the project read when pipeline.load succeeded, else load_project alone,
     unchecked (a project the checks refuse, or whose board fails to load, still reads), and the board file it names,
-    each None when it raises, `stored` kept when only the board file does; then last_cost, the newest of ended() that
-    is a run or a verify, and verify_lines. Never raises; starts nothing."""
+    each None when it raises, `stored` kept when only the board file does, and both None for an antenna project until
+    plan 5 (Advanced would list v1's defaults); then last_cost, the newest of ended() that is a run or a verify, and
+    verify_lines. Never raises; starts nothing."""
     project = model_hash = results = problem = None
     try:
         # ponytail: plan 5 opens antenna projects; until then window.show_project would read their harmonics
@@ -224,6 +225,8 @@ def open_project(path: Path) -> Opened:
     with contextlib.suppress(Exception):  # project.json unreadable, or naming no board
         stored = project if project is not None else load_project(path)
         file = board_file(path, stored)
+    if stored is not None and antenna(stored):  # ponytail: plan 5's Advanced reads schema 2; until then it shows none
+        stored = file = None
     last = next((d for d, end in ended(path) if end["params"]["command"] in ("run", "verify")), None)
     return Opened(project, model_hash, results, problem, last_cost(path, model_hash), last, file,
                   verify_lines(project), stored)

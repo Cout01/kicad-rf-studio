@@ -431,6 +431,7 @@ def test_an_antenna_project_is_refused_until_plan_5(tmp_path, fake):  # Stage 3 
     save_project(p, antenna_dict())
     opened = control.open_project(p)
     assert opened.project is None and opened.problem == ("E_PROJECT_SCHEMA", {"path": str(p), "found": 2, "expected": 1})
+    assert opened.stored is None and opened.board is None  # final review G2: Advanced shows no v1 defaults
 
 
 def test_about_names_the_version_the_licence_notices_and_each_runtime_dependency(monkeypatch):  # design 5.3 About
