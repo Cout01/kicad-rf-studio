@@ -31,7 +31,7 @@ from kicad_rf_studio.core.geometry import build_geometry
 from kicad_rf_studio.core.geometry.region import air_cell, band
 from kicad_rf_studio.core.geometry.sections import cross_section
 from kicad_rf_studio.core.kicad import load_board
-from kicad_rf_studio.core.kicad.tracer import adopt
+from kicad_rf_studio.core.kicad.tracer import adopt, check_antenna
 from kicad_rf_studio.core.kicad.values import part_kind, port_value
 from kicad_rf_studio.core.mesh.gates import check_fit2d, dt_floor_reference, fit2d, mesh_with_lint
 from kicad_rf_studio.core.messages import KrsError, english, reason, render
@@ -85,12 +85,15 @@ def load(path: Path) -> tuple[dict, Board, Geometry, list[tuple[str, dict]]]:
     """The project at `path` (read_project), its board and its geometry, and the notes to report, in this order:
     W_BOARD_CHANGED when the board's sha256 is not the one `new` stored (C-30), the board's warnings, the geometry's
     notes (its E_ gate entries too, which stops() reads), then W_OFF_TOP_LAYER for each measured section off the top
-    copper (C-9). An antenna's netless copper takes the feed net, the chain's last (tracer.adopt, Stage 3 design 5.3),
-    before the geometry is built."""
+    copper (C-9). An antenna project's antenna is checked again as `new` checks it (tracer.check_antenna: an edited ref
+    or a re-annotated board raises E_ANTENNA_UNKNOWN, E_ANTENNA_MODULE, E_ANTENNA_CHIP or E_NOT_AN_ANTENNA); then its
+    netless copper takes the feed net, the chain's last (tracer.adopt, Stage 3 design 5.3), before the geometry is
+    built."""
     project = read_project(path)
     file = board_file(path, project)
     board = load_board(file)
     if antenna(project):
+        check_antenna(board, project["antenna"]["ref"])
         adopt(board, project["antenna"]["ref"], project["chain"]["nets"][-1])
     geom = build_geometry(board, project)
     notes = [("W_BOARD_CHANGED", {"path": str(file)})] if board_hash(file) != project["board"]["sha256"] else []

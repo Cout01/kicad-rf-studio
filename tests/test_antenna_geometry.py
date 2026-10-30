@@ -5,6 +5,7 @@ from pathlib import Path
 import pytest
 
 from kicad_rf_studio import cli, pipeline
+from kicad_rf_studio.core.messages import KrsError
 from kicad_rf_studio.core.project import load_project, save_project
 from test_antenna_kicad import fp
 from test_cli_antenna import FIX, IFA, antenna_project
@@ -77,3 +78,12 @@ def test_an_air_box_outside_the_tested_setting_is_warned(tmp_path):  # design 5.
     pj = antenna_project(tmp_path)
     save_project(pj, {**load_project(pj), "boundary": "mur", "air_gap_mm": 20.0})
     assert ("W_AIR_BOX", {"gap_mm": "20.0", "quarter_mm": "31.2", "boundary": "mur"}) in pipeline.load(pj)[3]
+
+
+def test_load_refuses_an_antenna_ref_that_is_no_longer_an_antenna(tmp_path):  # final review G3
+    pj = antenna_project(tmp_path / "p")
+    data = load_project(pj)
+    save_project(pj, {**data, "antenna": {**data["antenna"], "ref": "C1"}})
+    with pytest.raises(KrsError) as e:
+        pipeline.load(pj)
+    assert (e.value.code, e.value.params) == ("E_NOT_AN_ANTENNA", {"ref": "C1", "candidates": "AE1"})
