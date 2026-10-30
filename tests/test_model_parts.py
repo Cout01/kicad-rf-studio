@@ -88,3 +88,41 @@ def test_a_part_that_is_not_a_c_l_or_r_has_no_model():  # spec 5.7: a model is t
     b = replace(board, footprints=fps)
     others = project_parts(b, chain_of(p), classify(b, p["classes"]), fps["D4"].pads[0].polygon, *band(p))[2]
     assert [(q["ref"], q["model"]) for q in others] == [("D4", None)]
+
+
+# --- Stage 3 plan 2, task 3: the rest of an antenna's board ----------------------------------------------------
+G24, M915 = (1.84e9, 2.99e9), (693e6, 1.12e9)  # the pulse bands of 2400-2483.5 and 902-928 MHz
+
+
+@pytest.mark.parametrize(("kind", "value", "dnp", "angle", "place", "pulse", "expected"), [
+    ("C", 100e-9, False, 0, "board", G24, "copper"),   # a decoupling C: close to a short at RF
+    ("C", 10e-12, False, 45, "far", G24, "copper"),    # at any angle, anywhere on the board
+    ("C", 4.7e-12, False, 0, "board", G24, "copper"),  # 14.0 Ω − 7.6 Ω of ESL at 2.415 GHz: 6.4 Ω ≤ Z0/5
+    ("C", 2.2e-12, False, 0, "board", G24, "open"),    # 22.4 Ω, and its SRF of 4.8 GHz is under 3·f2
+    ("C", 1e-12, False, 0, "board", G24, "open"),      # 58 Ω: design 5.3's SRF wording would have shorted it
+    ("C", 0.4e-12, False, 90, "board", G24, "grid"),   # SRF 11.3 GHz: in the grid in the measured region
+    ("C", 0.4e-12, False, 90, "far", G24, "open"),     # but open past it
+    ("C", 22e-12, False, 0, "board", M915, "copper"),  # 5.1 Ω at 906.5 MHz
+    ("C", 4.7e-12, False, 0, "board", M915, "open"),   # 34.5 Ω, its SRF of 3.28 GHz under 3·f2 = 3.36 GHz
+    ("R", 1e3, False, 0, "board", G24, "grid"), ("R", 1e3, False, 0, "far", G24, "open"),
+    ("R", 0.0, False, 0, "far", G24, "copper"),        # a 0R
+    ("L", 1e-6, False, 0, "board", G24, "open"),       # an inductor is never a port here
+    ("C", None, False, 0, "board", G24, "open"),       # a value that does not read
+    (None, None, False, 0, "board", G24, "open"),      # a bead, a diode
+    ("C", 100e-9, True, 0, "board", G24, "open")])     # DNP
+def test_the_rest_of_an_antennas_board_is_never_a_port(kind, value, dnp, angle, place, pulse, expected):  # 5.3; RF 4
+    assert role(kind, value, C0402 if kind else None, dnp, angle, place, *pulse) == expected
+
+
+def test_an_antennas_parts_are_every_two_pad_part_off_the_chain(mini_board):  # design 5.3; RF 4
+    from shapely.geometry import box
+    from test_antenna_kicad import fp
+    from test_tracer import smd
+    from kicad_rf_studio.core.kicad.tracer import Chain
+    lib = "Resistor_SMD:R_0402_1005Metric"
+    b = mini_board(fp("R1", lib, smd(1, "N1"), smd(2, "GND", x=2), value="1k") +
+                   fp("R2", lib, smd(1, "N2"), smd(2, "GND", x=2), at="50 0", value="1k"))
+    _, _, others, notes = project_parts(b, Chain("A.1", "B.1", ("RF",), (), ()), classify(b), box(-5, -5, 5, 5),
+                                        1.84e9, 2.99e9, antenna=True)
+    assert [(q["ref"], q["role"]) for q in others] == [("R1", "grid"), ("R2", "open")]
+    assert notes == [("W_BOARD_PARTS_OPEN", {"refs": "R2"})]

@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """The simulated region (spec 5.1), in mm: the ROI around the chain, the walls past it and the through-crop past them.
-Copper, substrate and vias run through the walls to the crop, so no net is cut at the ROI."""
+Copper, substrate and vias run through the walls to the crop, so no net is cut at the ROI. An antenna's region holds
+the whole board (board_region, Stage 3 design 5.2)."""
 from __future__ import annotations
 
 import math
@@ -14,6 +15,7 @@ from kicad_rf_studio.core.kicad.board import OUTLINE_GRID, Board
 from kicad_rf_studio.core.kicad.shapes import pt
 from kicad_rf_studio.core.kicad.tracer import Chain
 from kicad_rf_studio.core.messages import KrsError
+from kicad_rf_studio.core.project import REACH_H, antenna, pulse_band
 
 C0 = 299_792_458.0  # m/s
 WALL_MM, WALL_CELLS = 4.0, 8  # the walls sit 4 mm and 8 coarse cells past the ROI, on all six faces (× margin_scale)
@@ -21,12 +23,18 @@ CROP_MM = 1.0  # the through-crop, past the walls
 
 
 def f_max(project: dict) -> float:
-    """The top of the band, in Hz."""
+    """The top of the band, in Hz: band(project)[1] for an antenna (Stage 3 design 5.4), else band_factor × harmonics
+    × f0."""
+    if antenna(project):
+        return band(project)[1]
     return project["band_factor"] * project["harmonics"] * project["f0_hz"]
 
 
 def band(project: dict) -> tuple[float, float]:
-    """The band (f1, f2), in Hz: from half of f0 to the top of the band (spec 5.8)."""
+    """The band (f1, f2), in Hz: an antenna's pulse band (pulse_band, Stage 3 design 5.4); else from half of f0 to the
+    top of the band (spec 5.8)."""
+    if antenna(project):
+        return pulse_band(project["band"]["f_lo_hz"], project["band"]["f_hi_hz"])
     return project["f0_hz"] / 2, f_max(project)
 
 
@@ -84,3 +92,29 @@ def build_region(board: Board, chain: Chain, ports: list[dict], zs: tuple[Slab, 
     walls = tuple(round(v, 6) for v in (x0 - m, x1 + m, y0 - m, y1 + m, zs[0].z0 - m, zs[-1].z1 + m))
     crop = box(walls[0] - CROP_MM, walls[2] - CROP_MM, walls[1] + CROP_MM, walls[3] + CROP_MM)
     return Region(roi, walls, shapely.set_precision(crop, 1e-6), coarse)
+
+
+def air_cell(f_max: float) -> float:
+    """An antenna's air cell, λ(f_max)/20, in mm (Stage 3 design 5.3)."""
+    return C0 * 1e3 / f_max / 20
+
+
+def air_gap(f_lo: float) -> float:
+    """An antenna's default air gap, λ/4 at f_lo, in mm (Stage 3 design 5.2)."""
+    return round(C0 * 1e3 / f_lo / 4, 6)
+
+
+def board_region(board: Board, chain: Chain, ports: list[dict], zs: tuple[Slab, ...], f_max: float,
+                 expand_h: float = REACH_H) -> Region:
+    """An antenna's region (Stage 3 design 5.2, 5.3): build_region's ROI at `expand_h`, which is the measured region
+    (the antenna's copper takes the feed net, a chain net); the walls are the board's box, its outline's and every
+    piece of its copper's bounds, grown by one coarse cell in x and y, and the stack's faces grown by one in z, so no
+    copper edge sits on a wall; the crop is the walls' box, which every piece of copper lies inside, so nothing is
+    clipped. Every coordinate goes to 1e-6 mm."""
+    measured = build_region(board, chain, ports, zs, f_max, expand_h)
+    copper = [t.polygon() for t in board.tracks] + [a.polygon for a in board.areas]
+    copper += [p.polygon for p in board.all_pads() if p.layers]
+    x0, y0, x1, y1 = shapely.total_bounds([board.outline, *copper])  # no outline (None) adds nothing
+    c = measured.coarse
+    walls = tuple(round(v, 6) for v in (x0 - c, x1 + c, y0 - c, y1 + c, zs[0].z0 - c, zs[-1].z1 + c))
+    return Region(measured.roi, walls, box(walls[0], walls[2], walls[1], walls[3]), c)

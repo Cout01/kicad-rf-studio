@@ -5,13 +5,15 @@ from pathlib import Path
 
 import pytest
 
-from kicad_rf_studio.core.geometry.region import WALL_CELLS, WALL_MM, build_region, coarse_cell, f_max
+from kicad_rf_studio.core.geometry.region import (WALL_CELLS, WALL_MM, air_cell, air_gap, band, board_region,
+                                                  build_region, coarse_cell, f_max)
 from kicad_rf_studio.core.geometry.zstack import substrate_h, zstack
-from kicad_rf_studio.core.kicad import load_board
+from kicad_rf_studio.core.kicad import load_board, trace_chain
 from kicad_rf_studio.core.kicad.stackup import Stackup, kicad_default, preset
-from kicad_rf_studio.core.kicad.tracer import Chain, ChainPart
+from kicad_rf_studio.core.kicad.tracer import Chain, ChainPart, adopt
 from kicad_rf_studio.core.messages import KrsError
 from test_gates import project_of
+from test_project import antenna_dict
 
 FIX = Path(__file__).parent / "fixtures"
 
@@ -105,3 +107,28 @@ def test_margin_scale_multiplies_the_wall_margin():  # D-12, spec 9.4 criterion 
     margin = WALL_MM + WALL_CELLS * one.coarse
     assert one.walls[1] - one.roi.bounds[2] == pytest.approx(margin, abs=2e-6)
     assert two.walls[1] - two.roi.bounds[2] == pytest.approx(2 * margin, abs=2e-6)
+
+
+# --- Stage 3 plan 2, task 3: an antenna's band and region ------------------------------------------------------
+
+
+def test_the_band_of_an_antenna_is_its_pulse_band():  # design 5.2, 5.4
+    d = antenna_dict()
+    assert band(d) == (1.84e9, 2.99e9) and f_max(d) == 2.99e9 and air_cell(2.99e9) == pytest.approx(5.01325, abs=1e-5)
+    assert air_gap(2.4e9) == 31.228381  # λ/4 at f_lo, to 1e-6 mm
+    v1 = {"f0_hz": 915e6, "harmonics": 3, "band_factor": 1.1}
+    assert band(v1) == (457.5e6, pytest.approx(3.0195e9)) and f_max(v1) == band(v1)[1]
+
+
+def test_an_antennas_region_is_the_whole_board_with_the_measured_region_as_its_roi():  # design 5.2, 5.3
+    b = load_board(FIX / "ifa2g4.kicad_pcb")
+    adopt(b, "AE1", "RF")
+    zs = zstack(b.stackup, b.copper_layers)
+    r = board_region(b, trace_chain(b, "U1.1", "AE1.1", antenna="AE1"),
+                     [{"signal": "U1.1", "reference": {"pad": "U1.2", "uuid": ""}}], zs, 2.99e9)
+    c = coarse_cell(2.99e9, 4.5)
+    assert r.coarse == c and r.walls == tuple(round(v, 6) for v in (87 - c, 127 + c, -124 - c, -94 + c,
+                                                                     zs[0].z0 - c, zs[-1].z1 + c))
+    assert r.crop.bounds == (r.walls[0], r.walls[2], r.walls[1], r.walls[3])
+    # the antenna, the feed and U1's pins 1-2, 6 substrate heights past them, cut at the outline (the prototype's)
+    assert r.roi.bounds == pytest.approx((87.0, -117.21, 106.81, -94.0), abs=1e-6)

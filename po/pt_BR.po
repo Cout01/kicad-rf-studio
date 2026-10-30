@@ -337,6 +337,11 @@ msgstr "Não foi possível ler o valor de {refs}. Escreva valores como 4.7pF, 4p
 msgid "Left open in the simulated region: {refs}. Their self-resonance from the package preset is below 3·f2, or they are chokes or not C, L or R; make one a port in project.json if it matters (each port adds a run)."
 msgstr "Deixados em aberto na região simulada: {refs}. A autorressonância deles pela predefinição de encapsulamento fica abaixo de 3·f2, ou são indutores de choque ou não são C, L ou R; torne um deles uma porta no project.json se ele fizer diferença (cada porta acrescenta uma execução)."
 
+#. W_BOARD_PARTS_OPEN
+#, python-brace-format
+msgid "Left open on the antenna's board: {refs}: inductors, beads, parts whose value does not read, capacitors neither close to a short nor fit for the grid, and resistors or capacitors past the measured region that would sit in the grid. The stated limits count them as approximations."
+msgstr "Deixados em aberto na placa da antena: {refs}: indutores, ferrites, componentes cujo valor não pode ser lido, capacitores que nem ficam perto de um curto nem cabem na grade, e resistores ou capacitores fora da região medida que ficariam na grade. Os limites declarados os contam como aproximações."
+
 #. W_F0_RANGE
 #, python-brace-format
 msgid "f0 = {f0_hz} Hz is outside 1 MHz to 100 GHz. Did you forget the unit, as in 915MHz?"
@@ -1771,4 +1776,28 @@ msgstr "um número maior que 0 e no máximo 1"
 #. T_EXPECT_OBJECT
 msgid "an object"
 msgstr "um objeto"
+
+#. T_EXPECT_ANTENNA
+msgid "the text \"antenna\""
+msgstr "o texto \"antenna\""
+
+#. T_EXPECT_BAND
+msgid "a number above f_lo_hz and at most twice it, one band a run"
+msgstr "um número acima de f_lo_hz e no máximo o dobro dele, uma banda por execução"
+
+#. T_EXPECT_F0_BAND
+msgid "a frequency in Hz from band.f_lo_hz to band.f_hi_hz"
+msgstr "uma frequência em Hz de band.f_lo_hz a band.f_hi_hz"
+
+#. T_EXPECT_BOUNDARY
+msgid "\"pml_8\" or \"mur\""
+msgstr "\"pml_8\" ou \"mur\""
+
+#. T_EXPECT_FAR_FIELD_HZ
+msgid "a list of 1 to 11 frequencies in Hz, f0_hz first, each inside the pulse's band, f_lo_hz/1.3 to 1.2·f_hi_hz"
+msgstr "uma lista de 1 a 11 frequências em Hz, f0_hz primeiro, cada uma dentro da banda do pulso, de f_lo_hz/1.3 a 1.2·f_hi_hz"
+
+#. T_EXPECT_STEP
+msgid "a whole number of degrees that divides 180"
+msgstr "um número inteiro de graus que divide 180"
 

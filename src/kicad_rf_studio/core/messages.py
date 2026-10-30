@@ -79,6 +79,7 @@ CATALOG: dict[str, str] = {
     "W_LID_HEIGHT_MISSING": "Shield {refs} covers the simulated region and no --lid-height was given; set lid_height_mm in project.json before `run`, or \"lid\": false to leave the lid out.",
     "W_VALUE_UNREADABLE": "Cannot read the value of {refs}. Write values like 4.7pF, 4p7 or 15nH.",
     "W_PART_OPEN": "Left open in the simulated region: {refs}. Their self-resonance from the package preset is below 3·f2, or they are chokes or not C, L or R; make one a port in project.json if it matters (each port adds a run).",
+    "W_BOARD_PARTS_OPEN": "Left open on the antenna's board: {refs}: inductors, beads, parts whose value does not read, capacitors neither close to a short nor fit for the grid, and resistors or capacitors past the measured region that would sit in the grid. The stated limits count them as approximations.",
     "W_F0_RANGE": "f0 = {f0_hz} Hz is outside 1 MHz to 100 GHz. Did you forget the unit, as in 915MHz?",
     "W_NO_REFERENCE": "No reference found for {signal}; set it in project.json before `run`.",
     "W_ABSOLUTE_BOARD_PATH": "The board is on another drive, so project.json stores its absolute path.",
@@ -397,6 +398,12 @@ CATALOG: dict[str, str] = {
     "T_EXPECT_PORTS": "a list of ports",
     "T_EXPECT_DT_FLOOR": "a number above 0 and at most 1",
     "T_EXPECT_OBJECT": "an object",
+    "T_EXPECT_ANTENNA": 'the text "antenna"',
+    "T_EXPECT_BAND": "a number above f_lo_hz and at most twice it, one band a run",
+    "T_EXPECT_F0_BAND": "a frequency in Hz from band.f_lo_hz to band.f_hi_hz",
+    "T_EXPECT_BOUNDARY": '"pml_8" or "mur"',
+    "T_EXPECT_FAR_FIELD_HZ": "a list of 1 to 11 frequencies in Hz, f0_hz first, each inside the pulse's band, f_lo_hz/1.3 to 1.2·f_hi_hz",
+    "T_EXPECT_STEP": "a whole number of degrees that divides 180",
 }
 
 

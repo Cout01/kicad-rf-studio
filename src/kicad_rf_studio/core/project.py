@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
-"""project.json, schema 1: the project and the job spec in one file. Its board path is relative to the project file
-and has forward slashes, so a project folder and its board can move together.
+"""project.json, schema 1 for a matching chain and schema 2 for an antenna (Stage 3 design 5.1): the project and the
+job spec in one file. Its board path is relative to the project file and has forward slashes, so a project folder and
+its board can move together.
 
 Coordinates in it are in KiCad's frame: mm, with y pointing down, as KiCad shows them and as a user types them in. The
 board as read (core.kicad) has y up, so a point [x, y] here is (x, -y) there, and the other way round.
@@ -21,12 +22,15 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from kicad_rf_studio.core.messages import KrsError, reason
+from kicad_rf_studio.core.model.csx import NF2FF_MAX
 
 if TYPE_CHECKING:  # the types only: project.py imports no board code
     from kicad_rf_studio.core.kicad.stackup import Stackup
     from kicad_rf_studio.core.kicad.tracer import Classes
 
 SCHEMA = 1
+SCHEMA_ANTENNA = 2  # an antenna project (Stage 3 design 5.1); v1's stay SCHEMA
+FAR_FIELD_STEP = 5  # the far field's full sphere is sampled every 5° (Stage 3 design 5.5)
 EXPAND_H = 3.0  # substrate heights the ROI grows by past the chain (spec 5.1)
 MARGIN_SCALE = 1.0  # the factor on the walls' margin past the ROI, WALL_MM + WALL_CELLS·coarse (D-12)
 MESH_N = {"draft": 2, "normal": 2, "strict": 3}  # the mesh rule's n by preset (spec 5.4, plan 2 Decisions)
@@ -37,6 +41,21 @@ DEFAULT_PRESET, HARMONICS, BAND_FACTOR, T_MAX_S = "normal", 3, 1.1, 40e-9
 # P0-A confirmed the fit2d limit and the floor on 2026-10-24 and again under plan 6's mesh rule on 2026-10-26
 # (docs/validation/2026-10-26-p0-a.md)
 GATES = {"fit2d_limit": 0.03, "dt_floor": 0.8}
+
+
+def antenna(data: dict) -> bool:
+    """Whether project.json `data` is an antenna's, schema SCHEMA_ANTENNA (Stage 3 design 5.1)."""
+    return data.get("schema") == SCHEMA_ANTENNA
+
+
+def pulse_band(f_lo: float, f_hi: float) -> tuple[float, float]:
+    """The pulse's band (f1, f2) of an antenna's band, in Hz (Stage 3 design 5.4): f_lo/1.3 rounded down and 1.2·f_hi
+    rounded up, each to 3 significant digits, as floats."""
+    def digits_3(v: float, to_whole) -> float:
+        unit = 10 ** (math.floor(math.log10(v)) - 2)
+        return float(to_whole(round(v / unit, 6)) * unit)  # round first: float noise cannot bump 300.0 to 301
+
+    return digits_3(f_lo / 1.3, math.floor), digits_3(1.2 * f_hi, math.ceil)
 
 
 def region_expand_h(data: dict) -> float:
@@ -99,6 +118,27 @@ def make_project(board_path: str, board_sha256: str, f0_hz: float, stackup: Stac
         "chain": chain, "others": others, "ports": ports, "gates": dict(GATES), "allow_curve_port": False}
 
 
+def make_antenna_project(board_path: str, board_sha256: str, f_lo_hz: float, f_hi_hz: float, stackup: Stackup,
+                         classes: Classes, chain: dict, others: list[dict], ports: list[dict], ref: str,
+                         join: list[str], *, t_max_s: float, air_gap_mm: float, preset: str = DEFAULT_PRESET,
+                         lid_height_mm: float | None = None) -> dict:
+    """project.json of an antenna (schema 2, Stage 3 design 5.1) as `new --antenna` writes it: make_project's dict but
+    harmonics and band_factor, with schema SCHEMA_ANTENNA, f0_hz the band's centre, `t_max_s`, region {"expand_h":
+    REACH_H} (the measured region reaches as far as the protected set) and lid true (every shield gets its lid, 5.3);
+    then kind, band, antenna {"ref", "join"}, `air_gap_mm`, boundary "pml_8" and far_field {"f_hz": f0 then 10
+    frequencies evenly from f_lo to f_hi, "step_deg": FAR_FIELD_STEP}."""
+    f0 = (f_lo_hz + f_hi_hz) / 2
+    data = make_project(board_path, board_sha256, f0, stackup, classes, chain, others, ports, preset=preset,
+                        lid_height_mm=lid_height_mm)
+    del data["harmonics"], data["band_factor"]
+    data.update(schema=SCHEMA_ANTENNA, t_max_s=t_max_s, region={"expand_h": REACH_H}, lid=True)  # in their places
+    data.update(kind="antenna", band={"f_lo_hz": f_lo_hz, "f_hi_hz": f_hi_hz}, antenna={"ref": ref, "join": join},
+                air_gap_mm=air_gap_mm, boundary="pml_8",
+                far_field={"f_hz": [f0, *(f_lo_hz + (f_hi_hz - f_lo_hz) * k / 9 for k in range(10))],
+                           "step_deg": FAR_FIELD_STEP})  # appended, in this order
+    return data
+
+
 def save_project(path: Path, data: dict) -> None:
     """Writes UTF-8 JSON, indented by 2 and with its non-ASCII text as it is. Lines end in "\\n" on every platform. The
     text goes to a temporary file next to `path`, which then replaces it, so a failed write never leaves half a
@@ -117,7 +157,8 @@ def save_project(path: Path, data: dict) -> None:
 
 def load_project(path: Path) -> dict:
     """The project as stored. Raises KrsError: E_PROJECT_UNREADABLE for a path that is not a file, or a file that is
-    not UTF-8 JSON (a hand edit can break it); E_PROJECT_SCHEMA for a file that is not of this schema."""
+    not UTF-8 JSON (a hand edit can break it); E_PROJECT_SCHEMA for a file of neither SCHEMA nor SCHEMA_ANTENNA, its
+    `expected` SCHEMA_ANTENNA, the newest it reads."""
     try:
         if not path.is_file():  # Windows reads a folder as PermissionError, so look before reading (as load_board)
             raise IsADirectoryError() if path.exists() else FileNotFoundError()
@@ -125,8 +166,8 @@ def load_project(path: Path) -> dict:
     except (OSError, ValueError) as e:  # ValueError: UnicodeError or json.JSONDecodeError
         raise KrsError("E_PROJECT_UNREADABLE", path=str(path), reason=reason(e)) from None
     found = data.get("schema") if isinstance(data, dict) else None
-    if found != SCHEMA:
-        raise KrsError("E_PROJECT_SCHEMA", path=str(path), found=found, expected=SCHEMA)
+    if found not in (SCHEMA, SCHEMA_ANTENNA):
+        raise KrsError("E_PROJECT_SCHEMA", path=str(path), found=found, expected=SCHEMA_ANTENNA)
     return data
 
 
@@ -199,6 +240,16 @@ _FIELDS = {
                "reference": (_reference, "T_EXPECT_REFERENCE")}, "T_EXPECT_PORTS"),
     "gates": {"fit2d_limit": _ABOVE_0, "dt_floor": (lambda v: _number(v) and 0 < v <= 1, "T_EXPECT_DT_FLOOR")},
     "allow_curve_port": _FLAG}
+_FIELDS_ANTENNA = {  # schema 2 (Stage 3 design 5.1): no harmonics or band_factor, then the antenna's fields
+    **{key: spec for key, spec in _FIELDS.items() if key not in ("harmonics", "band_factor")},
+    "kind": (lambda v: v == "antenna", "T_EXPECT_ANTENNA"),
+    "band": {"f_lo_hz": _ABOVE_0, "f_hi_hz": _ABOVE_0},
+    "antenna": {"ref": _TEXT, "join": (_names, "T_EXPECT_NAMES")},
+    "air_gap_mm": _ABOVE_0,
+    "boundary": (lambda v: v in ("pml_8", "mur"), "T_EXPECT_BOUNDARY"),
+    "far_field": {"f_hz": (lambda v: isinstance(v, list) and 0 < len(v) <= NF2FF_MAX and all(map(_number, v)),
+                           "T_EXPECT_FAR_FIELD_HZ"),
+                  "step_deg": (lambda v: type(v) is int and v > 0 and 180 % v == 0, "T_EXPECT_STEP")}}
 _MISSING = object()  # a key that is not there, which only an optional field accepts (null is a value)
 
 
@@ -219,11 +270,22 @@ def _check(value, spec, field: str, path: Path) -> None:
 
 
 def check_project(data: dict, path: Path) -> dict:
-    """`data`, the project read from `path`, when each field has the kind and range that `new` writes (_FIELDS); else
-    E_PROJECT_FIELD names the first that is missing or has not, with dots and [index] as in ports[0].reference (C-3).
-    So a hand edit never ends in E_INTERNAL further on, nor in a field read as something it is not. `results` is
-    optional, and an object."""
-    _check(data, _FIELDS, "", path)
+    """`data`, the project read from `path`, when each field has the kind and range that `new` writes (_FIELDS, or
+    _FIELDS_ANTENNA for an antenna); else E_PROJECT_FIELD names the first that is missing or has not, with dots and
+    [index] as in ports[0].reference (C-3). So a hand edit never ends in E_INTERNAL further on, nor in a field read as
+    something it is not. An antenna's band then holds f_lo < f_hi ≤ 2·f_lo (Stage 3 design 3: one band a run), its
+    f0_hz lies in the band, and its far field's first frequency is f0_hz (the worker draws the cuts at the first) and
+    each lies within pulse_band, in that order. `results` is optional, and an object."""
+    _check(data, _FIELDS_ANTENNA if antenna(data) else _FIELDS, "", path)
+    if antenna(data):
+        f_lo, f_hi, f0, far = data["band"]["f_lo_hz"], data["band"]["f_hi_hz"], data["f0_hz"], data["far_field"]["f_hz"]
+        f1, f2 = pulse_band(f_lo, f_hi)
+        for field, expected, ok in (("band.f_hi_hz", "T_EXPECT_BAND", f_lo < f_hi <= 2 * f_lo),
+                                    ("f0_hz", "T_EXPECT_F0_BAND", f_lo <= f0 <= f_hi),
+                                    ("far_field.f_hz", "T_EXPECT_FAR_FIELD_HZ",
+                                     far[0] == f0 and all(f1 <= f <= f2 for f in far))):
+            if not ok:
+                raise KrsError("E_PROJECT_FIELD", path=str(path), field=field, expected=expected)
     if not isinstance(data.get("results", {}), dict):
         raise KrsError("E_PROJECT_FIELD", path=str(path), field="results", expected="T_EXPECT_OBJECT")
     return data

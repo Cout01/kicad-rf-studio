@@ -61,15 +61,25 @@ def role(kind: str | None, value: float | None, model: dict | None, dnp: bool, a
     chain), from the first rule that holds (spec 5.7, C-12, C-13): a DNP part is open; an R of 0 is copper; a C or R
     off the chain is in the grid when it has a value and a model, sits at a multiple of 90° and resonates above 3·f2,
     else open; any other part off the chain but an L is open; a part at another angle is a curve port; a shunt or
-    other L that is a choke is open; the rest are ports. A value of 0 counts as none."""
+    other L that is a choke is open; the rest are ports. A value of 0 counts as none. A part of an antenna's board,
+    `place` "board" in its measured region and "far" past it (Stage 3 design 5.3), is never a port: a C close to a
+    short at the pulse's centre is copper, a C or R that v1 would put in the grid is in the grid on "board" and open on
+    "far", and any other part is open."""
     square = angle % 90 == 0
     if dnp:
         return OPEN
     if kind == "R" and value == 0:
         return COPPER
-    if place == "other" and kind in ("C", "R"):
-        return GRID if value and model and square and srf(kind, value, model) > 3 * f2 else OPEN
-    if place == "other" and kind != "L":
+    if place in ("board", "far") and kind == "C" and value:  # the rest of an antenna's board (Stage 3 design 5.3)
+        w = math.pi * (f1 + f2)  # 2π × the pulse's centre, near f0; the copper bridge stands for the package's ESL
+        if 1 / (w * value) - w * (model or {}).get("esl_h", 0.0) <= Z0 / 5:
+            # ponytail: past the measured region a bridge sits in coarse cells, which may resolve none of it
+            # (I_LIMIT_PARTS_OFF_CHAIN says so); its pads as free coordinates if that matters
+            return COPPER  # a decoupling capacitor is close to a short at RF
+    if place in ("other", "board", "far") and kind in ("C", "R"):
+        # ponytail: a grid part past the measured region is open; the whole board's fill would stretch to its pads
+        return GRID if place != "far" and value and model and square and srf(kind, value, model) > 3 * f2 else OPEN
+    if place in ("board", "far") or place == "other" and kind != "L":
         return OPEN
     if not square:
         return CURVE_PORT
@@ -78,14 +88,16 @@ def role(kind: str | None, value: float | None, model: dict | None, dnp: bool, a
     return PORT
 
 
-def project_parts(board: Board, chain: Chain, classes: Classes, roi: Polygon | MultiPolygon, f1: float, f2: float
-                  ) -> tuple[list[dict], list[dict], list[dict], list[tuple[str, dict]]]:
+def project_parts(board: Board, chain: Chain, classes: Classes, roi: Polygon | MultiPolygon, f1: float, f2: float,
+                  *, antenna: bool = False) -> tuple[list[dict], list[dict], list[dict], list[tuple[str, dict]]]:
     """The chain's series and shunt parts, the other parts and their notes, as project.json keeps them: a part is
     {"ref", "pads", "nets", "value", "dnp", "role", "model", "s2p"}, its value the footprint's text as written, its
     model the package preset of a C, L or R, else None, and its s2p None (no S2P file; C-18). The others are the
     two-pad parts (two netted copper pads on two nets, no connector or shield) with a pad in `roi` and neither pad on
-    a chain net, in reference order. W_VALUE_UNREADABLE names the C, L and R parts whose value does not read, DNP ones
-    too; W_PART_OPEN the other parts left open that are not DNP."""
+    a chain net, in reference order; with `antenna` (Stage 3 design 5.3), every such part anywhere on the board, placed
+    "board" when a pad meets `roi` (the measured region), else "far". W_VALUE_UNREADABLE names the C, L and R parts
+    whose value does not read, DNP ones too; W_PART_OPEN (W_BOARD_PARTS_OPEN with `antenna`) the other parts left open
+    that are not DNP."""
     def part(ref: str, pads, nets, place: str) -> dict:
         fp, kind = board.footprints[ref], part_kind(ref)
         model = model_of(fp.lib_id) if kind else None  # spec 5.7: the ideal value plus the preset; a diode has none
@@ -100,12 +112,13 @@ def project_parts(board: Board, chain: Chain, classes: Classes, roi: Polygon | M
         pads = _netted(board.footprints[ref])
         nets = [p.net for p in pads]
         if (len(pads) == 2 and nets[0] != nets[1] and ref not in not_parts and set(nets).isdisjoint(chain.nets)
-                and any(roi.intersects(p.polygon) for p in pads)):
-            others.append(part(ref, [p.name for p in pads], nets, "other"))
+                and ((inside := any(roi.intersects(p.polygon) for p in pads)) or antenna)):
+            place = ("board" if inside else "far") if antenna else "other"
+            others.append(part(ref, [p.name for p in pads], nets, place))
     notes = []
     if refs := sorted(q["ref"] for q in series + shunt + others
                       if part_kind(q["ref"]) and part_value(q["ref"], q["value"]) is None):
         notes.append(("W_VALUE_UNREADABLE", {"refs": ", ".join(refs)}))
     if refs := sorted(q["ref"] for q in others if q["role"] == OPEN and not q["dnp"]):
-        notes.append(("W_PART_OPEN", {"refs": ", ".join(refs)}))
+        notes.append(("W_BOARD_PARTS_OPEN" if antenna else "W_PART_OPEN", {"refs": ", ".join(refs)}))
     return series, shunt, others, notes

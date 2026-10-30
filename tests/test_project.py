@@ -1,12 +1,16 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 import hashlib
 import os
+from pathlib import Path
 
 import pytest
 
+from kicad_rf_studio.core.geometry.region import air_gap
+from kicad_rf_studio.core.kicad import classify, load_board
 from kicad_rf_studio.core.messages import KrsError, render
-from kicad_rf_studio.core.project import SCHEMA, board_file, board_hash, load_project, read_project, save_project
-from test_cli_new import run_new
+from kicad_rf_studio.core.project import (SCHEMA, SCHEMA_ANTENNA, antenna, board_file, board_hash, check_project,
+                                          load_project, make_antenna_project, pulse_band, read_project, save_project)
+from test_cli_new import FIX, run_new
 
 
 def test_schema_mismatch(tmp_path):
@@ -23,8 +27,10 @@ def test_schema_mismatch_names_the_file_and_both_versions(tmp_path):
     p = tmp_path / "project.json"; p.write_text('{"schema": 99}', encoding="utf-8")
     with pytest.raises(KrsError) as e:
         load_project(p)
-    assert e.value.params == {"path": str(p), "found": 99, "expected": SCHEMA}
-    assert "schema 99" in str(e.value) and "schema 1" in str(e.value)
+    assert e.value.params == {"path": str(p), "found": 99, "expected": SCHEMA_ANTENNA}  # the newest it reads (Stage 3)
+    assert "schema 99" in str(e.value) and "schema 2" in str(e.value)
+    p.write_text('{"schema": 2}', encoding="utf-8")
+    assert load_project(p) == {"schema": 2}  # an antenna project (Stage 3 design 5.1); check_project reads its fields
 
 
 @pytest.mark.parametrize("text", ["{}", '{"board": {}}', "[]", "null", "7"])
@@ -191,3 +197,50 @@ def test_a_parts_s2p_is_null_or_a_file_and_its_fixture(tmp_path, value, ok):  # 
     assert (e.value.code, {**e.value.params, "expected": render(e.value.params["expected"])}) == (
         "E_PROJECT_FIELD", {"path": str(pj), "field": "chain.series[0].s2p",
                             "expected": "null, or file (text) and connection (series or shunt)"})
+
+
+# --- Stage 3 plan 2, task 3: schema 2, an antenna project -----------------------------------------------------
+
+
+@pytest.mark.parametrize(("f_lo", "f_hi", "f1", "f2"), [(2.4e9, 2.4835e9, 1.84e9, 2.99e9), (902e6, 928e6, 693e6, 1.12e9),
+                                                        (863e6, 870e6, 663e6, 1.05e9), (2.4e9, 2.5e9, 1.84e9, 3.0e9)])
+def test_the_pulse_band_rounds_out_to_3_significant_digits(f_lo, f_hi, f1, f2):  # design 5.4
+    assert pulse_band(f_lo, f_hi) == (f1, f2) and all(type(v) is float for v in pulse_band(f_lo, f_hi))
+
+
+def antenna_dict():
+    b = load_board(FIX / "ifa2g4.kicad_pcb")
+    chain = {"start": "U1.1", "end": "AE1.1", "nets": ["RF"], "series": [], "shunt": []}
+    port = {"name": "P1", "signal": "U1.1", "signal_uuid": "u", "layer": "F.Cu", "rule": "ic",
+            "reference": {"pad": "U1.2", "uuid": ""}}
+    return make_antenna_project("ifa2g4.kicad_pcb", "0" * 64, 2.4e9, 2.4835e9, b.stackup, classify(b), chain, [],
+                                [port], "AE1", ["AE1.2"], t_max_s=30e-9, air_gap_mm=air_gap(2.4e9))
+
+
+def test_an_antenna_project_holds_the_design_fields():  # design 5.1, 5.2, 5.5
+    d = antenna_dict()
+    assert (d["schema"], d["kind"], d["band"], d["f0_hz"], d["t_max_s"]) == (
+        2, "antenna", {"f_lo_hz": 2.4e9, "f_hi_hz": 2.4835e9}, 2.44175e9, 30e-9)
+    assert "harmonics" not in d and "band_factor" not in d and d["lid"] is True and d["region"] == {"expand_h": 6.0}
+    assert (d["antenna"], d["boundary"], d["air_gap_mm"]) == ({"ref": "AE1", "join": ["AE1.2"]}, "pml_8", 31.228381)
+    f = d["far_field"]["f_hz"]
+    assert (len(f), f[0], f[1], f[-1], d["far_field"]["step_deg"]) == (11, 2.44175e9, 2.4e9, 2.4835e9, 5)
+    assert antenna(d) and not antenna({**d, "schema": 1}) and check_project(d, Path("p.json")) is d
+
+
+@pytest.mark.parametrize(("change", "field", "expected"), [
+    ({"kind": "chain"}, "kind", "T_EXPECT_ANTENNA"),
+    ({"band": {"f_lo_hz": 2.4e9, "f_hi_hz": 2.3e9}}, "band.f_hi_hz", "T_EXPECT_BAND"),
+    ({"band": {"f_lo_hz": 868e6, "f_hi_hz": 2.4835e9}}, "band.f_hi_hz", "T_EXPECT_BAND"),  # two bands: one a run
+    ({"f0_hz": 2.5e9}, "f0_hz", "T_EXPECT_F0_BAND"),
+    ({"boundary": "MUR"}, "boundary", "T_EXPECT_BOUNDARY"),
+    ({"far_field": {"f_hz": [3.1e9], "step_deg": 5}}, "far_field.f_hz", "T_EXPECT_FAR_FIELD_HZ"),
+    ({"far_field": {"f_hz": [2.44e9] * 12, "step_deg": 5}}, "far_field.f_hz", "T_EXPECT_FAR_FIELD_HZ"),
+    ({"far_field": {"f_hz": [2.4e9, 2.44175e9], "step_deg": 5}}, "far_field.f_hz", "T_EXPECT_FAR_FIELD_HZ"),  # f0 first
+    ({"far_field": {"f_hz": [2.44e9], "step_deg": 7}}, "far_field.step_deg", "T_EXPECT_STEP"),
+    ({"air_gap_mm": 0}, "air_gap_mm", "T_EXPECT_ABOVE_0"),
+    ({"antenna": {"ref": "AE1"}}, "antenna.join", "T_EXPECT_NAMES")])
+def test_a_schema_2_field_out_of_its_range_is_named(change, field, expected):  # design 5.1; RF 5
+    with pytest.raises(KrsError) as e:
+        check_project({**antenna_dict(), **change}, Path("p.json"))
+    assert (e.value.code, e.value.params["field"], e.value.params["expected"]) == ("E_PROJECT_FIELD", field, expected)

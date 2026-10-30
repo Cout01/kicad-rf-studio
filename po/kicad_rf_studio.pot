@@ -335,6 +335,11 @@ msgstr ""
 msgid "Left open in the simulated region: {refs}. Their self-resonance from the package preset is below 3·f2, or they are chokes or not C, L or R; make one a port in project.json if it matters (each port adds a run)."
 msgstr ""
 
+#. W_BOARD_PARTS_OPEN
+#, python-brace-format
+msgid "Left open on the antenna's board: {refs}: inductors, beads, parts whose value does not read, capacitors neither close to a short nor fit for the grid, and resistors or capacitors past the measured region that would sit in the grid. The stated limits count them as approximations."
+msgstr ""
+
 #. W_F0_RANGE
 #, python-brace-format
 msgid "f0 = {f0_hz} Hz is outside 1 MHz to 100 GHz. Did you forget the unit, as in 915MHz?"
@@ -1760,5 +1765,29 @@ msgstr ""
 
 #. T_EXPECT_OBJECT
 msgid "an object"
+msgstr ""
+
+#. T_EXPECT_ANTENNA
+msgid "the text \"antenna\""
+msgstr ""
+
+#. T_EXPECT_BAND
+msgid "a number above f_lo_hz and at most twice it, one band a run"
+msgstr ""
+
+#. T_EXPECT_F0_BAND
+msgid "a frequency in Hz from band.f_lo_hz to band.f_hi_hz"
+msgstr ""
+
+#. T_EXPECT_BOUNDARY
+msgid "\"pml_8\" or \"mur\""
+msgstr ""
+
+#. T_EXPECT_FAR_FIELD_HZ
+msgid "a list of 1 to 11 frequencies in Hz, f0_hz first, each inside the pulse's band, f_lo_hz/1.3 to 1.2·f_hi_hz"
+msgstr ""
+
+#. T_EXPECT_STEP
+msgid "a whole number of degrees that divides 180"
 msgstr ""
 

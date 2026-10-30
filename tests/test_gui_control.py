@@ -425,6 +425,14 @@ def test_open_project_keeps_project_json_as_stored_for_advanced(tmp_path, fake):
     assert control.open_project(tmp_path / "nope.json").stored is None
 
 
+def test_an_antenna_project_is_refused_until_plan_5(tmp_path, fake):  # Stage 3 plan 2: show_project reads harmonics
+    from test_project import antenna_dict
+    p = tmp_path / "project.json"
+    save_project(p, antenna_dict())
+    opened = control.open_project(p)
+    assert opened.project is None and opened.problem == ("E_PROJECT_SCHEMA", {"path": str(p), "found": 2, "expected": 1})
+
+
 def test_about_names_the_version_the_licence_notices_and_each_runtime_dependency(monkeypatch):  # design 5.3 About
     real = metadata.version
 

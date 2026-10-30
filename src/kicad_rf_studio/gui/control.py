@@ -23,7 +23,8 @@ from kicad_rf_studio.core.kicad.values import part_kind, port_value, snap, value
 from kicad_rf_studio.core.messages import KrsError, detail, render
 from kicad_rf_studio.core.model import spec
 from kicad_rf_studio.core.project import (BAND_FACTOR, DEFAULT_PRESET, EXPAND_H, GATES, HARMONICS, MARGIN_SCALE, MESH_N,
-                                          REACH_H, T_MAX_S, board_file, load_project, parts)
+                                          REACH_H, SCHEMA, SCHEMA_ANTENNA, T_MAX_S, antenna, board_file, load_project,
+                                          parts)
 
 END = {0: "G_END_DONE", 2: "G_END_REFUSED", 3: "G_END_BLOCKED", 4: "G_END_NOT_KEPT", 130: "G_END_STOPPED"}
 # the CLI's lines that the GUI words its own way, with the same params (design 5.3)
@@ -197,15 +198,18 @@ class Opened:
 
 
 def open_project(path: Path) -> Opened:
-    """The project file `path`, which the caller resolves, read off the GUI thread (design 5.1): pipeline.load, its
-    model, the model's spec_hash (None without a spec), results_of and chain_results with errors as lines, the first
-    KrsError stopping there as `problem`, any other exception E_INTERNAL; then `stored`, the project read when
-    pipeline.load succeeded, else load_project alone, unchecked (a project the checks refuse, or whose board fails to
-    load, still reads), and the board file it names, each None when it raises, `stored` kept when only the board file
-    does; then last_cost, the newest of ended() that is a run or a verify, and verify_lines. Never raises; starts
-    nothing."""
+    """The project file `path`, which the caller resolves, read off the GUI thread (design 5.1): an antenna project
+    refused as E_PROJECT_SCHEMA (Stage 3 plan 2), else pipeline.load, its model, the model's spec_hash (None without a
+    spec), results_of and chain_results with errors as lines, the first KrsError stopping there as `problem`, any other
+    exception E_INTERNAL; then `stored`, the project read when pipeline.load succeeded, else load_project alone,
+    unchecked (a project the checks refuse, or whose board fails to load, still reads), and the board file it names,
+    each None when it raises, `stored` kept when only the board file does; then last_cost, the newest of ended() that
+    is a run or a verify, and verify_lines. Never raises; starts nothing."""
     project = model_hash = results = problem = None
     try:
+        # ponytail: plan 5 opens antenna projects; until then window.show_project would read their harmonics
+        if antenna(load_project(path)):
+            raise KrsError("E_PROJECT_SCHEMA", path=str(path), found=SCHEMA_ANTENNA, expected=SCHEMA)
         project, board, geom, _ = pipeline.load(path)
         model = pipeline.build_model(project, board, geom)
         model_hash = None if model.spec is None else spec.spec_hash(model.spec)
