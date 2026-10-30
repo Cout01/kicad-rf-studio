@@ -7,7 +7,8 @@ import pytest
 
 from kicad_rf_studio.core.messages import KrsError
 from kicad_rf_studio.core.model.parts import model_of, srf
-from kicad_rf_studio.core.post.chain import ideal_schematic, loads, part_impedances, s2p_impedance, terminate, z_part
+from kicad_rf_studio.core.post.chain import (ideal_schematic, loads, part_impedances, s2p_impedance, terminate,
+                                             with_box, z_part, z_value)
 from kicad_rf_studio.core.post.waves import grid
 from kicad_rf_studio.core.project import parts
 from networks import C_BOX, star, terminate_np, write_s2p
@@ -142,6 +143,20 @@ def test_the_termination_is_scikit_rf_circuit_and_agrees_with_numpy():  # spec 7
     assert np.abs(zk[:, 1] - 1 / (1 / z_part("L", 15e-9, M0402, F) + 2j * np.pi * F * C_BOX)).max() <= 1e-9
     assert np.abs(terminate(star(F, 6), [0, 1], zk, F) - terminate_np(star(F, 6), [0, 1], zk)).max() <= 1e-12
     assert np.abs(terminate(star(F, 2), [0, 1], np.zeros((len(F), 0)), F) - star(F, 2)).max() <= 1e-15  # M = 0
+
+
+def test_an_antennas_bypass_closes_its_port_with_a_short_or_the_box_alone():  # Stage 3 design 5.7
+    f = np.linspace(1.84e9, 2.99e9, 5)
+    z = np.array([10 + 5j, 3 - 40j, 0, 1e3j, 50])
+    assert np.array_equal(with_box(z, f, C_BOX), z / (1 + 2j * np.pi * f * C_BOX * z))  # v1's, bit for bit
+    assert np.array_equal(with_box(np.full(5, np.inf + 0j), f, C_BOX), 1 / (2j * np.pi * f * C_BOX))
+    assert np.array_equal(z_value("L1", "0R", M0402, f, bypasses=True), np.zeros(5, complex))
+    assert np.isposinf(z_value("C2", "open", M0402, f, bypasses=True).real).all()
+    assert z_value("L1", "0R", M0402, f) is None and z_value("C2", "open", M0402, f) is None  # v1 reads no bypass
+    assert np.array_equal(z_value("C3", "1pF", M0402, f, bypasses=True), z_part("C", 1e-12, M0402, f))
+    zk = np.stack([with_box(z_value(ref, text, M0402, f, bypasses=True), f, C_BOX)
+                   for ref, text in (("L1", "0R"), ("C2", "open"), ("C3", "1pF"))], -1)
+    assert np.abs(terminate(star(f, 4), [0], zk, f) - terminate_np(star(f, 4), [0], zk)).max() <= 1e-12
 
 
 def test_the_ideal_schematic_of_a_butterworth_pi():  # C-30: the ABCD oracle in closed form; r6 §6

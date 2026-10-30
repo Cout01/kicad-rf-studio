@@ -32,7 +32,7 @@ from kicad_rf_studio.core.geometry.region import air_cell, band
 from kicad_rf_studio.core.geometry.sections import cross_section
 from kicad_rf_studio.core.kicad import load_board
 from kicad_rf_studio.core.kicad.tracer import adopt, check_antenna
-from kicad_rf_studio.core.kicad.values import part_kind, port_value
+from kicad_rf_studio.core.kicad.values import bypass, part_kind, port_value
 from kicad_rf_studio.core.mesh.gates import check_fit2d, dt_floor_reference, fit2d, mesh_with_lint
 from kicad_rf_studio.core.messages import KrsError, english, reason, render
 from kicad_rf_studio.core.model.parts import CURVE_PORT, GRID, PORT
@@ -831,7 +831,10 @@ def assign(project: dict, assignments: list[str], folder: Path) -> dict:
     FILE is read from the working directory, as `new` reads BOARD), its value and model kept; any other RIGHT is
     stored verbatim as its value, its s2p None, when port_value reads it (so a C of 0 is refused). Refusals, the first
     in argument order: E_RETUNE_ARG (no "="), E_RETUNE_TWICE, E_RETUNE_UNKNOWN (no such part; it names the retunable
-    ones, in project order), E_RETUNE_ROLE (copper, open or grid), E_RETUNE_VALUE."""
+    ones, in project order), E_RETUNE_ROLE (copper, open or grid), E_RETUNE_VALUE. For an antenna (Stage 3 design
+    5.7), a RIGHT that values.bypass reads is stored as typed too: 0 Ω on a series part or on a part across two chain
+    nets, open on a shunt part; E_RETUNE_SHORT_SHUNT (0 Ω to a net off the chain) and E_RETUNE_OPEN_SERIES refuse the
+    converse, and E_RETUNE_ANTENNA_VALUE, which names the bypass syntax, stands for E_RETUNE_VALUE."""
     # ponytail: a file on another drive is stored absolute without a warning; a moved project then meets E_S2P_MISSING
     new = copy.deepcopy(project)
     by_ref, seen = parts(new), set()
@@ -851,8 +854,17 @@ def assign(project: dict, assignments: list[str], folder: Path) -> dict:
         file, _, connection = right.rpartition(":")  # the last ":", so a drive's colon stays in the file
         if file and connection in ("series", "shunt"):
             part["s2p"] = {"file": relative_path(file, folder)[0], "connection": connection}
+        elif antenna(new) and (z := bypass(ref, right)) is not None:
+            # ponytail: the tracer's shunt list decides: a series part beside a parallel one is still refused open; a
+            # shunt 0R the board itself holds keeps its 0 Ω, so verify then meets E_PORT_SHORT; start it open in new
+            # if a board ships one
+            if z == 0 and part in new["chain"]["shunt"] and not set(part["nets"]) <= set(new["chain"]["nets"]):
+                raise KrsError("E_RETUNE_SHORT_SHUNT", ref=ref, net=part["nets"][1])
+            if z == math.inf and part in new["chain"]["series"]:
+                raise KrsError("E_RETUNE_OPEN_SERIES", ref=ref)
+            part["value"], part["s2p"] = right, None
         elif port_value(ref, right) is None:
-            raise KrsError("E_RETUNE_VALUE", ref=ref, value=right)
+            raise KrsError("E_RETUNE_ANTENNA_VALUE" if antenna(new) else "E_RETUNE_VALUE", ref=ref, value=right)
         else:
             part["value"], part["s2p"] = right, None
     return new

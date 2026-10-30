@@ -948,6 +948,21 @@ msgstr "O componente {ref} tem o papel \"{role}\" no modelo, não é porta, ent�
 msgid "Cannot read \"{value}\" as the value of {ref}: a C, L or R takes a value in its own unit (4.7pF, 4p7, 15nH, 50R; a C above 0), and any part takes an S2P file as {ref}=file.s2p:series (or :shunt)."
 msgstr "Não foi possível ler \"{value}\" como o valor de {ref}: um C, L ou R recebe um valor na própria unidade (4.7pF, 4p7, 15nH, 50R; um C maior que 0), e qualquer componente recebe um arquivo S2P como {ref}=file.s2p:series (ou :shunt)."
 
+#. E_RETUNE_SHORT_SHUNT
+#, python-brace-format
+msgid "{ref} joins the antenna's chain to {net}: 0 Ω there would short the chain to {net}. `{ref}=0R` replaces a series part with a short; `{ref}=open` removes a part like this one."
+msgstr "{ref} liga a cadeia da antena a {net}: 0 Ω ali poria a cadeia em curto com {net}. `{ref}=0R` troca um componente em série por um curto; `{ref}=open` retira um componente como este."
+
+#. E_RETUNE_OPEN_SERIES
+#, python-brace-format
+msgid "{ref} is a series part of the antenna's chain: open there would cut the antenna off its feed. `{ref}=0R` replaces it with a short; `open` removes a shunt part."
+msgstr "{ref} é um componente em série da cadeia da antena: em aberto ali, ele separaria a antena da alimentação. `{ref}=0R` o troca por um curto; `open` retira um componente shunt."
+
+#. E_RETUNE_ANTENNA_VALUE
+#, python-brace-format
+msgid "Cannot read \"{value}\" as the value of {ref}: on an antenna's chain a C, L or R takes a value in its own unit (4.7pF, 4p7, 15nH, 50R), `{ref}=0R` replaces a series part with a short and `{ref}=open` removes a shunt part (a C of 0 F could mean either, so it is refused), and any part takes an S2P file as {ref}=file.s2p:series (or :shunt)."
+msgstr "Não foi possível ler \"{value}\" como o valor de {ref}: na cadeia de uma antena, um C, L ou R recebe um valor na própria unidade (4.7pF, 4p7, 15nH, 50R), `{ref}=0R` troca um componente em série por um curto e `{ref}=open` retira um componente shunt (um C de 0 F poderia ser qualquer um dos dois, então é recusado), e qualquer componente recebe um arquivo S2P como {ref}=file.s2p:series (ou :shunt)."
+
 #. E_NO_RESULTS
 msgid "project.json has no results yet. Run `run` first."
 msgstr "O project.json ainda não tem resultados. Execute `run` primeiro."

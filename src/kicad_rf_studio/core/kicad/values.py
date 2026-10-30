@@ -82,6 +82,22 @@ def port_value(ref: str, text: str) -> float | None:
     return None if value == 0 and part_kind(ref) == "C" else value
 
 
+OPEN_VALUE = "open"  # an antenna chain part's value that removes it (Stage 3 design 5.7)
+
+
+def bypass(ref: str, text: str) -> float | None:
+    """The impedance in Ω that an antenna chain part's value text stands for when it bypasses or removes the part
+    (Stage 3 design 5.7): math.inf for OPEN_VALUE, in any case and with spaces around it; 0.0 for a 0 in ohms on any
+    part (parse_value gives (0.0, "R"): 0R, 0Ω, 0ohm) or a value that part_value reads as 0 for an L or an R (0, 0nH);
+    else None, for port_value. A C of 0 is no bypass: it stays port_value's open, which the retune refuses; nor is a 0
+    in a unit not the part's (0pF on an L)."""
+    if text.strip().lower() == OPEN_VALUE:
+        return math.inf
+    if parse_value(text) == (0.0, "R") or (part_kind(ref) in ("L", "R") and part_value(ref, text) == 0):
+        return 0.0
+    return None
+
+
 def parse_frequency(text: str) -> float:
     """A frequency such as `915MHz`, `0.915 GHz` or `915e6` in Hz. Text that is not one, or whose
     value is not finite and above zero, raises E_BAD_FREQUENCY. The k, M and G prefixes and the Hz

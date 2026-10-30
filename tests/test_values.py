@@ -1,9 +1,10 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
+import math
 import time
 
 import pytest
 
-from kicad_rf_studio.core.kicad.values import (E12, E24, parse_frequency, parse_value, part_kind, part_value,
+from kicad_rf_studio.core.kicad.values import (E12, E24, bypass, parse_frequency, parse_value, part_kind, part_value,
                                                port_value, snap, value_text)
 from kicad_rf_studio.core.messages import KrsError
 
@@ -187,6 +188,15 @@ def test_a_part_value_takes_its_kind_from_the_designator(ref, text, value):  # C
 
 def test_part_kind():
     assert [part_kind(r) for r in ("C1", "L2", "R10", "D1", "CN1", "RF1")] == ["C", "L", "R", None, None, None]
+
+
+@pytest.mark.parametrize(("ref", "text", "z"), [
+    ("L1", "0R", 0.0), ("C2", "0Ω", 0.0), ("C2", "0 ohm", 0.0), ("R1", "0", 0.0), ("L1", "0nH", 0.0),
+    ("C2", "open", math.inf), ("L1", " OPEN ", math.inf),
+    ("C2", "0", None), ("C2", "0pF", None), ("L1", "0pF", None), ("L1", "2.7nH", None), ("R1", "50R", None),
+    ("C2", "opened", None)])
+def test_a_bypass_reads_0_ohm_or_open(ref, text, z):  # Stage 3 design 5.7; RF 1: a C of 0 F stays port_value's open
+    assert bypass(ref, text) == z
 
 
 @pytest.mark.parametrize(("value", "series", "snapped"), [

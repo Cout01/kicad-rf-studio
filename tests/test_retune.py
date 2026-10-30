@@ -95,6 +95,27 @@ def test_a_part_with_no_kind_takes_only_an_s2p(tmp_path):  # C-15, M-5: FB1, a f
                                                                                 "connection": "series"}
 
 
+def test_an_antennas_retune_takes_0r_on_a_series_part_and_open_on_a_shunt_one(tmp_path):  # Stage 3 design 5.7; RF 1
+    from test_cli_antenna import FIX as ANTENNAS, antenna_project
+    p = load_project(antenna_project(tmp_path / "pi", ANTENNAS / "ifa2g4_pi.kicad_pcb"))
+    new = assign(p, ["L1=0R", "C2=open", "C3=OPEN"], tmp_path)
+    assert [(q["ref"], q["value"], q["s2p"]) for q in (*new["chain"]["series"], *new["chain"]["shunt"])] == [
+        ("L1", "0R", None), ("C2", "open", None), ("C3", "OPEN", None)]
+    for arg, code, params in [("C2=0R", "E_RETUNE_SHORT_SHUNT", {"ref": "C2", "net": "GND"}),
+                              ("L1=open", "E_RETUNE_OPEN_SERIES", {"ref": "L1"}),
+                              ("C2=0", "E_RETUNE_ANTENNA_VALUE", {"ref": "C2", "value": "0"})]:  # 0 F stays refused
+        with pytest.raises(KrsError) as e:
+            assign(p, [arg], tmp_path)
+        assert (e.value.code, e.value.params) == (code, params)
+    s2p = write_s2p(tmp_path / "c3.s2p", z_part("C", 1.2e-12, None, F), "shunt", F)  # S2P parts as in v1
+    assert parts(assign(p, [f"C3={s2p}:shunt"], tmp_path))["C3"]["s2p"] == {"file": "c3.s2p", "connection": "shunt"}
+    v1 = copy.deepcopy(project_of("lpf915", "U1.1", "J1.1", "--lid-height", "2.5")[1])
+    for arg in ("L1=0R", "C2=open"):  # v1's retune reads no bypass
+        with pytest.raises(KrsError) as e:
+            assign(v1, [arg], tmp_path)
+        assert (e.value.code, e.value.params) == ("E_RETUNE_VALUE", {"ref": arg[:2], "value": arg[3:]})
+
+
 def test_a_single_trace_has_no_retune(tmp_path, calibrated, capsys):  # spec 7.3, C-21
     assert main(["retune", str(coupon(tmp_path)), "C1=1pF"]) == 2
     assert capsys.readouterr().err == render("E_RETUNE_NO_PARTS") + "\n"

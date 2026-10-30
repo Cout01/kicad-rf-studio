@@ -9,10 +9,10 @@ import skrf as rf
 from skrf.circuit import Circuit
 
 from kicad_rf_studio.core.kicad.tracer import is_gnd, is_power
-from kicad_rf_studio.core.kicad.values import part_kind, port_value
+from kicad_rf_studio.core.kicad.values import bypass, part_kind, port_value
 from kicad_rf_studio.core.messages import KrsError
 from kicad_rf_studio.core.model.parts import COPPER, CURVE_PORT, PORT, Z0, c_box_of
-from kicad_rf_studio.core.project import parts
+from kicad_rf_studio.core.project import antenna, parts
 
 
 def z_part(kind: str, value: float, model: dict | None, f: np.ndarray) -> np.ndarray:
@@ -24,6 +24,16 @@ def z_part(kind: str, value: float, model: dict | None, f: np.ndarray) -> np.nda
         return esr + 1j * w * esl + 1 / (1j * w * value)
     zs = esr + 1j * w * value if kind == "L" else value + 1j * w * esl
     return zs / (1 + 1j * w * cp * zs)  # zs ∥ 1/(jωCp), finite at zs = 0
+
+
+def z_value(ref: str, text: str, model: dict | None, f: np.ndarray, *, bypasses: bool = False) -> np.ndarray | None:
+    """Z_part (F,) on f of the part `ref` from its value text `text` (spec 5.7, 7.2): with `bypasses` (an antenna's
+    part, Stage 3 design 5.7), a bypass first, 0 or inf at every f with no package model; else z_part of its kind,
+    port_value and `model`; None when the text reads as neither."""
+    if bypasses and (z := bypass(ref, text)) is not None:
+        return np.full(len(f), z, complex)
+    value = port_value(ref, text)
+    return None if value is None else z_part(part_kind(ref), value, model, f)
 
 
 def s2p_impedance(file: Path, connection: str, ref: str, f: np.ndarray) -> tuple[np.ndarray, str | None]:
@@ -63,9 +73,9 @@ def s2p_impedance(file: Path, connection: str, ref: str, f: np.ndarray) -> tuple
 def part_impedances(project: dict, folder: Path, refs: list[str], f: np.ndarray
                     ) -> tuple[dict[str, np.ndarray], list[tuple[str, dict]]]:
     """Z_part (F,) on f of each part in `refs` (C-13..C-15, spec 7.2): from its s2p file, read at folder / file
-    (folder: project.json's), when it names one, else z_part of its kind, port_value and model; and W_S2P_FIXTURE for
-    each file that fits the other fixture. Raises E_PART_NO_VALUE for a part with neither a file nor a port_value, and
-    s2p_impedance's refusals."""
+    (folder: project.json's), when it names one, else z_part of its kind, port_value and model, or an antenna's
+    bypasses (z_value); and W_S2P_FIXTURE for each file that fits the other fixture. Raises E_PART_NO_VALUE for a part
+    with neither a file nor a value that z_value reads, and s2p_impedance's refusals."""
     by_ref, z, notes = parts(project), {}, []
     for ref in refs:
         part = by_ref[ref]
@@ -76,17 +86,19 @@ def part_impedances(project: dict, folder: Path, refs: list[str], f: np.ndarray
                 notes.append(("W_S2P_FIXTURE", {"ref": ref, "path": str(file), "named": s2p["connection"],
                                                 "fits": fits}))
         else:
-            value = port_value(ref, part["value"])
-            if value is None:
+            z[ref] = z_value(ref, part["value"], part["model"], f, bypasses=antenna(project))
+            if z[ref] is None:
                 raise KrsError("E_PART_NO_VALUE", ref=ref, value=part["value"])
-            z[ref] = z_part(part_kind(ref), value, part["model"], f)
     return z, notes
 
 
 def with_box(z: np.ndarray, f: np.ndarray, c_box: float) -> np.ndarray:
     """The load (F,) that closes a part port: its Z_part `z` across its box's capacitance c_box (F),
-    z ∥ 1/(jω·c_box) = z/(1 + jω·c_box·z), finite at z = 0 (spec 7.2)."""
-    return z / (1 + 2j * np.pi * f * c_box * z)
+    z ∥ 1/(jω·c_box) = z/(1 + jω·c_box·z), finite at z = 0 (spec 7.2); an open part's (z inf, Stage 3 design 5.7) is
+    the box's capacitance alone, 1/(jω·c_box)."""
+    y = 2j * np.pi * f * c_box
+    with np.errstate(invalid="ignore"):  # inf·0j in the unused branch
+        return np.where(np.isinf(z), 1 / y, z / (1 + y * z))
 
 
 def loads(zparts: dict[str, np.ndarray], refs: list[str], c_box: dict, f: np.ndarray) -> np.ndarray:

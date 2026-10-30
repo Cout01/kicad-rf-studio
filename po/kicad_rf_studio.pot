@@ -946,6 +946,21 @@ msgstr ""
 msgid "Cannot read \"{value}\" as the value of {ref}: a C, L or R takes a value in its own unit (4.7pF, 4p7, 15nH, 50R; a C above 0), and any part takes an S2P file as {ref}=file.s2p:series (or :shunt)."
 msgstr ""
 
+#. E_RETUNE_SHORT_SHUNT
+#, python-brace-format
+msgid "{ref} joins the antenna's chain to {net}: 0 Ω there would short the chain to {net}. `{ref}=0R` replaces a series part with a short; `{ref}=open` removes a part like this one."
+msgstr ""
+
+#. E_RETUNE_OPEN_SERIES
+#, python-brace-format
+msgid "{ref} is a series part of the antenna's chain: open there would cut the antenna off its feed. `{ref}=0R` replaces it with a short; `open` removes a shunt part."
+msgstr ""
+
+#. E_RETUNE_ANTENNA_VALUE
+#, python-brace-format
+msgid "Cannot read \"{value}\" as the value of {ref}: on an antenna's chain a C, L or R takes a value in its own unit (4.7pF, 4p7, 15nH, 50R), `{ref}=0R` replaces a series part with a short and `{ref}=open` removes a shunt part (a C of 0 F could mean either, so it is refused), and any part takes an S2P file as {ref}=file.s2p:series (or :shunt)."
+msgstr ""
+
 #. E_NO_RESULTS
 msgid "project.json has no results yet. Run `run` first."
 msgstr ""
