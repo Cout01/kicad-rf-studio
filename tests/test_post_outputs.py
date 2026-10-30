@@ -13,6 +13,7 @@ import skrf
 from matplotlib.figure import Figure
 
 from kicad_rf_studio.core.messages import KrsError, render
+from kicad_rf_studio.core.post.antenna import ANTENNA_OUTPUTS
 from kicad_rf_studio.core.post.chain import ideal_schematic
 from kicad_rf_studio.core.post.outputs import (COLUMNS, LIMITS, OUTPUTS, draw_summary, marker_lines, port_map,
                                                retrace_summary, summary_csv, summary_png, touchstone, write)
@@ -130,8 +131,9 @@ def test_retrace_moves_the_curves_draw_summary_drew_in_place():  # Stage 2 desig
 
 
 def test_only_the_png_writer_imports_matplotlib():  # C-5
-    out = subprocess.run([sys.executable, "-I", "-c", "import sys, kicad_rf_studio.core.post.outputs; print(sorted("
-                          "m for m in ('matplotlib', 'pandas') if m in sys.modules))"], capture_output=True, text=True)
+    out = subprocess.run([sys.executable, "-I", "-c", "import sys, kicad_rf_studio.core.post.outputs, kicad_rf_studio."
+                          "core.post.antenna; print(sorted(m for m in ('matplotlib', 'pandas') if m in sys.modules))"],
+                         capture_output=True, text=True)
     assert out.stdout.strip() == "[]"
 
 
@@ -168,6 +170,13 @@ def test_a_file_another_program_holds_is_a_coded_refusal(tmp_path, monkeypatch, 
     assert (e.value.code, e.value.params) == ("E_RESULTS_WRITE", {
         "path": str(out / held), "reason": "T_PERMISSION_DENIED", "command": "kicad-rf-studio retune p"})
     assert {p.name: p.read_text() for p in out.iterdir()} == left  # no temporary file left
+
+
+def test_the_summaries_are_replaced_first(tmp_path, monkeypatch):  # spec C-27: a held summary refuses before anything
+    seen, real = [], os.replace
+    monkeypatch.setattr(os, "replace", lambda a, b: seen.append(Path(b).name) or real(a, b))
+    write(tmp_path, dict.fromkeys(("layout.s1p", "antenna_summary.png", "antenna_summary.csv"), b"x"), ANTENNA_OUTPUTS, "c")
+    assert seen == ["antenna_summary.csv", "antenna_summary.png", "layout.s1p"]
 
 
 def test_the_stated_limits_are_nine_lines():  # spec 7.5, C-32

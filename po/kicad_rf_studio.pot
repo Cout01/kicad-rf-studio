@@ -892,6 +892,31 @@ msgstr ""
 msgid "Limit: the expected dielectric loss is a lower bound from the measured straight sections."
 msgstr ""
 
+#. I_LIMIT_FREE_SPACE
+msgid "Limit: the board alone in free space."
+msgstr ""
+
+#. I_LIMIT_PEC_ETA
+msgid "Limit: copper is a perfect conductor, so the radiation efficiency reads high."
+msgstr ""
+
+#. I_LIMIT_SURROUNDINGS
+msgid "Limit: no enclosure, hand, battery or cable."
+msgstr ""
+
+#. I_LIMIT_BODIES
+msgid "Limit: the parts' bodies are absent; only their pads are in the board file."
+msgstr ""
+
+#. I_LIMIT_PARTS_OFF_CHAIN
+msgid "Limit: the parts off the chain are approximated: capacitors close to a short as copper, the rest open or in the grid, and past the measured region only as fine as its coarse mesh."
+msgstr ""
+
+#. I_PLOT_ANTENNA_TITLE
+#, python-brace-format
+msgid "{name}: antenna, relative results"
+msgstr ""
+
 #. E_RETUNE_NO_PARTS
 msgid "This project has no part ports (a single trace), so there is nothing to retune; `run` writes its outputs."
 msgstr ""
@@ -999,6 +1024,45 @@ msgstr ""
 
 #. I_VERIFY_SCOPE
 msgid "verify checks the layout reduction, not the vendor part data: each part sat in the grid at its ideal value, against a retune at the same values. Its loss budget counts a resistor's loss in the grid as layout loss."
+msgstr ""
+
+#. I_ANTENNA_RELATIVE
+msgid "Relative: these antenna results compare variants of one board under identical settings; they do not predict measured performance."
+msgstr ""
+
+#. I_ANTENNA_RESONANCE
+#, python-brace-format
+msgid "Resonance (lowest |S11|): {f_mhz} MHz, |S11| {s11_db} dB, Zin at {port} {zin} Ω."
+msgstr ""
+
+#. W_RESONANCE_EDGE
+#, python-brace-format
+msgid "|S11| is lowest at {f_mhz} MHz, the edge of the simulated band, so the antenna resonates outside it, far off tune for this band."
+msgstr ""
+
+#. I_ANTENNA_POINT
+#, python-brace-format
+msgid "{marker} = {f_mhz} MHz: |S11| {s11_db} dB, Zin at {port} {zin} Ω, mismatch efficiency {mismatch_pct} %."
+msgstr ""
+
+#. I_ANTENNA_BANDWIDTH
+#, python-brace-format
+msgid "{level_db} dB bandwidth: {f_lo_mhz} to {f_hi_mhz} MHz ({bw_mhz} MHz)."
+msgstr ""
+
+#. W_BANDWIDTH_EDGE
+#, python-brace-format
+msgid "{level_db} dB bandwidth: at least {f_lo_mhz} to {f_hi_mhz} MHz: |S11| stays below {level_db} dB to the edge of the simulated band, so its true edge lies outside it."
+msgstr ""
+
+#. I_ANTENNA_NO_BANDWIDTH
+#, python-brace-format
+msgid "{level_db} dB bandwidth: none, as |S11| stays above {level_db} dB."
+msgstr ""
+
+#. I_ANTENNA_FAR_FIELD
+#, python-brace-format
+msgid "{f_mhz} MHz: radiation efficiency {eta_rad_pct} %, total efficiency {eta_tot_pct} %, directivity {d_dbi} dBi, gain {gain_dbi} dBi, realized gain {realized_dbi} dBi."
 msgstr ""
 
 #. E_INTERNAL

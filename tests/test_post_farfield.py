@@ -29,6 +29,13 @@ def test_the_reader_reads_openems_0370s_far_field_layout():  # design 5.5; r3: t
     assert (s.d[:, 18].min(axis=1) > 0.99 * s.d_max).all()  # and its peak all round the θ = 90° ring
 
 
+def test_e_theta_and_e_phi_are_the_transforms_and_agree_with_d():  # design 5.6: the far-field CSV
+    s = read_far_field(FAR / "sphere.h5")
+    assert s.e_theta.shape == s.e_phi.shape == s.d.shape and s.e_theta.dtype == complex
+    power = (abs(s.e_theta) ** 2 + abs(s.e_phi) ** 2) / (2 * 376.730313668)  # W/sr at r = 1 m
+    assert np.allclose(power, s.d * s.p_rad[:, None, None] / (4 * np.pi), rtol=1e-6, atol=0)  # power is about 1e-28
+
+
 def test_the_cuts_are_the_three_principal_planes_at_f0():  # design 5.5: XZ and YZ as a θ sweep, XY as a φ sweep
     s, el, az = (read_far_field(FAR / f"{grid}.h5") for grid in ("sphere", "elevation", "azimuth"))
     assert np.allclose(el.f, s.f[:1], rtol=1e-6) and np.allclose(az.f, s.f[:1], rtol=1e-6)

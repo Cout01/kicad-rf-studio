@@ -197,12 +197,14 @@ def summary_png(lay: Layout, chain: np.ndarray, ideal: np.ndarray | None, name: 
 
 def write(folder: Path, files: dict[str, bytes], own: re.Pattern, command: str) -> None:
     """Writes `files` (name: bytes) into `folder`, made when missing (C-27): each to .{name}.tmp first, then each
-    replaces its name, summary.csv first, then summary.png, then the rest (a person keeps the summaries open, so a
-    held one refuses before anything changes); then each file whose whole name `own` matches and that `files` lacks,
-    a stale one, is removed. No other file is touched. Any OSError on the way removes the temporary files left and
-    raises E_RESULTS_WRITE for the file in hand, with `command` to run again."""
+    replaces its name, a name ending in summary.csv first (summary.csv, antenna_summary.csv), then one ending in
+    summary.png, then the rest (a person keeps the summaries open, so a held one refuses before anything changes);
+    then each file whose whole name `own` matches and that `files` lacks, a stale one, is removed. No other file is
+    touched. Any OSError on the way removes the temporary files left and raises E_RESULTS_WRITE for the file in hand,
+    with `command` to run again."""
     # ponytail: files replaced before a refused one keep their new contents; the advised command rewrites them all
-    order = sorted(files, key=lambda name: {"summary.csv": 0, "summary.png": 1}.get(name, 2))  # stable: the rest kept
+    order = sorted(files, key=lambda name: 0 if name.endswith("summary.csv") else 1 if name.endswith("summary.png")
+                   else 2)  # stable: the rest kept in order
     temporary = [folder / f".{name}.tmp" for name in order]
     path = folder
     try:

@@ -894,6 +894,31 @@ msgstr "Limite: o esquemático ideal são os mesmos modelos de componentes (pred
 msgid "Limit: the expected dielectric loss is a lower bound from the measured straight sections."
 msgstr "Limite: a perda dielétrica esperada é um limite inferior obtido dos trechos retos medidos."
 
+#. I_LIMIT_FREE_SPACE
+msgid "Limit: the board alone in free space."
+msgstr "Limite: a placa sozinha no espaço livre."
+
+#. I_LIMIT_PEC_ETA
+msgid "Limit: copper is a perfect conductor, so the radiation efficiency reads high."
+msgstr "Limite: o cobre é um condutor perfeito, então a eficiência de radiação fica alta demais."
+
+#. I_LIMIT_SURROUNDINGS
+msgid "Limit: no enclosure, hand, battery or cable."
+msgstr "Limite: sem gabinete, mão, bateria ou cabo."
+
+#. I_LIMIT_BODIES
+msgid "Limit: the parts' bodies are absent; only their pads are in the board file."
+msgstr "Limite: os corpos dos componentes não estão no modelo; só as ilhas deles estão no arquivo da placa."
+
+#. I_LIMIT_PARTS_OFF_CHAIN
+msgid "Limit: the parts off the chain are approximated: capacitors close to a short as copper, the rest open or in the grid, and past the measured region only as fine as its coarse mesh."
+msgstr "Limite: os componentes fora da cadeia são aproximados: capacitores perto de um curto como cobre, os demais em aberto ou na grade, e fora da região medida só tão finos quanto a malha grossa dela."
+
+#. I_PLOT_ANTENNA_TITLE
+#, python-brace-format
+msgid "{name}: antenna, relative results"
+msgstr "{name}: antena, resultados relativos"
+
 #. E_RETUNE_NO_PARTS
 msgid "This project has no part ports (a single trace), so there is nothing to retune; `run` writes its outputs."
 msgstr "Este projeto não tem portas de componentes (uma trilha única), então não há nada para ajustar; `run` grava as saídas dele."
@@ -1002,6 +1027,45 @@ msgstr "Balanço de perdas sinalizado: {layout_pct} % não contabilizados em {f_
 #. I_VERIFY_SCOPE
 msgid "verify checks the layout reduction, not the vendor part data: each part sat in the grid at its ideal value, against a retune at the same values. Its loss budget counts a resistor's loss in the grid as layout loss."
 msgstr "A verificação confere a redução do layout, não os dados de componente do fabricante: cada componente ficou na grade com o valor ideal dele, contra um ajuste com os mesmos valores. O balanço de perdas dela conta a perda de um resistor na grade como perda do layout."
+
+#. I_ANTENNA_RELATIVE
+msgid "Relative: these antenna results compare variants of one board under identical settings; they do not predict measured performance."
+msgstr "Relativo: estes resultados de antena comparam variantes de uma placa com configurações idênticas; eles não preveem o desempenho medido."
+
+#. I_ANTENNA_RESONANCE
+#, python-brace-format
+msgid "Resonance (lowest |S11|): {f_mhz} MHz, |S11| {s11_db} dB, Zin at {port} {zin} Ω."
+msgstr "Ressonância (menor |S11|): {f_mhz} MHz, |S11| {s11_db} dB, Zin em {port} {zin} Ω."
+
+#. W_RESONANCE_EDGE
+#, python-brace-format
+msgid "|S11| is lowest at {f_mhz} MHz, the edge of the simulated band, so the antenna resonates outside it, far off tune for this band."
+msgstr "|S11| é menor em {f_mhz} MHz, a borda da banda simulada, então a antena ressoa fora dela, muito fora de sintonia para esta banda."
+
+#. I_ANTENNA_POINT
+#, python-brace-format
+msgid "{marker} = {f_mhz} MHz: |S11| {s11_db} dB, Zin at {port} {zin} Ω, mismatch efficiency {mismatch_pct} %."
+msgstr "{marker} = {f_mhz} MHz: |S11| {s11_db} dB, Zin em {port} {zin} Ω, eficiência de descasamento {mismatch_pct} %."
+
+#. I_ANTENNA_BANDWIDTH
+#, python-brace-format
+msgid "{level_db} dB bandwidth: {f_lo_mhz} to {f_hi_mhz} MHz ({bw_mhz} MHz)."
+msgstr "Largura de banda a {level_db} dB: de {f_lo_mhz} a {f_hi_mhz} MHz ({bw_mhz} MHz)."
+
+#. W_BANDWIDTH_EDGE
+#, python-brace-format
+msgid "{level_db} dB bandwidth: at least {f_lo_mhz} to {f_hi_mhz} MHz: |S11| stays below {level_db} dB to the edge of the simulated band, so its true edge lies outside it."
+msgstr "Largura de banda a {level_db} dB: pelo menos de {f_lo_mhz} a {f_hi_mhz} MHz: |S11| fica abaixo de {level_db} dB até a borda da banda simulada, então a borda verdadeira fica fora dela."
+
+#. I_ANTENNA_NO_BANDWIDTH
+#, python-brace-format
+msgid "{level_db} dB bandwidth: none, as |S11| stays above {level_db} dB."
+msgstr "Largura de banda a {level_db} dB: nenhuma, pois |S11| fica acima de {level_db} dB."
+
+#. I_ANTENNA_FAR_FIELD
+#, python-brace-format
+msgid "{f_mhz} MHz: radiation efficiency {eta_rad_pct} %, total efficiency {eta_tot_pct} %, directivity {d_dbi} dBi, gain {gain_dbi} dBi, realized gain {realized_dbi} dBi."
+msgstr "{f_mhz} MHz: eficiência de radiação {eta_rad_pct} %, eficiência total {eta_tot_pct} %, diretividade {d_dbi} dBi, ganho {gain_dbi} dBi, ganho realizado {realized_dbi} dBi."
 
 #. E_INTERNAL
 #, python-brace-format

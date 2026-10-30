@@ -15,32 +15,36 @@ ETA_LIMIT = 1.02  # η_rad above it raises W_ETA_RAD (design 5.5)
 @dataclass(frozen=True)
 class FarField:
     """One transform's far field: f (F,) in Hz, the values stored (float32); theta (T,) and phi (P,) in degrees; p_rad
-    (F,), openEMS's radiated power in W; and the directivity, linear: d_max (F,), openEMS's Dmax, and d (F, T, P)."""
+    (F,), openEMS's radiated power in W; the directivity, linear: d_max (F,), openEMS's Dmax, and d (F, T, P); and
+    e_theta and e_phi (F, T, P), complex, openEMS's E_θ and E_φ in V/m at the transform's radius r."""
     f: np.ndarray
     theta: np.ndarray
     phi: np.ndarray
     p_rad: np.ndarray
     d_max: np.ndarray
     d: np.ndarray
+    e_theta: np.ndarray
+    e_phi: np.ndarray
 
 
 def read_far_field(path: Path) -> FarField:
     """The far field in the CalcNF2FF file `path`, in openEMS 0.37.0's layout: /Mesh/theta and /Mesh/phi in radians as
     float32 (returned in degrees, rounded to 1e-4), and /Mesh/r; /nf2ff's attributes Frequency, Prad and Dmax; per
-    frequency n, the real (θ, φ) dataset P_rad/FD/f{n}; and d = 4π·r²·P_rad/Prad. ValueError naming the file in
-    another layout: openEMS's legacy one (f0_real in E_theta/FD) or a P_rad dataset that is not (len θ, len φ). It
-    reads no E dataset: plan 2 adds E_θ and E_φ with the far-field CSV."""
+    frequency n, the real (θ, φ) dataset P_rad/FD/f{n}, then, past the layout check, the complex (θ, φ) datasets
+    E_theta/FD/f{n} and E_phi/FD/f{n}; and d = 4π·r²·P_rad/Prad. ValueError naming the file in another layout:
+    openEMS's legacy one (f0_real in E_theta/FD) or a P_rad dataset that is not (len θ, len φ)."""
     # ponytail: openEMS 0.37.0's layout only; W_OPENEMS_UNTESTED warns outside 0.37.x
     with h5py.File(path, "r") as h5:
         theta, phi, r = (np.asarray(h5["Mesh"][name], dtype=float) for name in ("theta", "phi", "r"))
         nf = h5["nf2ff"]
         f, p_rad, d_max = (np.asarray(nf.attrs[name], dtype=float) for name in ("Frequency", "Prad", "Dmax"))
-        legacy = "f0_real" in nf["E_theta/FD"]
         p = [nf[f"P_rad/FD/f{n}"][()] for n in range(len(f))]
-    if legacy or any(q.shape != (len(theta), len(phi)) for q in p):
-        raise ValueError(f"{path}: not openEMS 0.37.0's far-field layout (the legacy split, or P_rad not (θ, φ))")
+        if "f0_real" in nf["E_theta/FD"] or any(q.shape != (len(theta), len(phi)) for q in p):
+            raise ValueError(f"{path}: not openEMS 0.37.0's far-field layout (the legacy split, or P_rad not (θ, φ))")
+        e_theta, e_phi = (np.array([nf[f"{name}/FD/f{n}"][()] for n in range(len(f))], dtype=complex)
+                          for name in ("E_theta", "E_phi"))
     return FarField(f, np.round(np.degrees(theta), 4), np.round(np.degrees(phi), 4), p_rad, d_max,
-                    4 * np.pi * r ** 2 * np.array(p) / p_rad[:, None, None])
+                    4 * np.pi * r ** 2 * np.array(p) / p_rad[:, None, None], e_theta, e_phi)
 
 
 def port_powers(t_u: np.ndarray, u: np.ndarray, t_i: np.ndarray, i: np.ndarray,
