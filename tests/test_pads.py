@@ -2,6 +2,7 @@
 import json
 import math
 import typing
+from collections import Counter
 from pathlib import Path
 
 import pytest
@@ -15,7 +16,8 @@ FIX = Path(__file__).parent / "fixtures"
 MAX_ERR = 0.001  # mm, the arc tolerance of shapes.py
 
 
-@pytest.mark.parametrize("name", ["pads_zoo", "lpf915", "lpf915-45", "coupon_gcpw_pads"])
+@pytest.mark.parametrize("name", ["pads_zoo", "lpf915", "lpf915-45", "coupon_gcpw_pads", "ifa2g4", "ifa2g4_pi",
+                                  "meander915"])
 def test_pads_match_pcbnew(name):
     b = load_board(FIX / f"{name}.kicad_pcb")
     truth = json.loads((FIX / f"{name}.pads.json").read_text(encoding="utf-8"))
@@ -34,6 +36,25 @@ def test_lpf915_footprints():
     assert b.footprints["C1"].value == "100pF" and b.footprints["R2"].dnp and not b.footprints["R1"].dnp
     assert b.footprints["L1"].lib_id == "Inductor_SMD:L_0402_1005Metric"
     assert [p.net for p in b.pads("C2.1")] == ["RF_B"] and b.pads("U1.17")[0].net == "GND"
+
+
+def test_the_antenna_fixtures():  # Stage 3 design 5.11: KiCad's own RF_Antenna footprints on a stated ground
+    ifa, pi, mea = (load_board(FIX / f"{n}.kicad_pcb") for n in ("ifa2g4", "ifa2g4_pi", "meander915"))
+    assert ifa.footprints["AE1"].lib_id == pi.footprints["AE1"].lib_id == "RF_Antenna:Texas_SWRA117D_2.4GHz_Left"
+    assert mea.footprints["AE1"].lib_id == "RF_Antenna:Texas_SWRA416_868MHz_915MHz"
+    assert (ifa.outline.bounds, mea.outline.bounds) == ((87.0, -124.0, 127.0, -94.0), (89.0, -146.5, 129.0, -92.5))
+    for b in (ifa, pi):
+        assert [(p.net, p.kind) for p in b.footprints["AE1"].pads] == [("RF", "connect"), ("GND", "thru_hole")]
+    assert [(a.layer, a.net) for a in ifa.areas if a.source == "graphic"] == [("F.Cu", "")]
+    assert Counter(a.layer for a in mea.areas if a.source == "graphic") == {"F.Cu": 10, "B.Cu": 27}
+    assert [p.number for p in mea.footprints["AE1"].pads].count("") == 19
+    for b, x in ((ifa, 100.0), (pi, 100.0), (mea, 101.0)):
+        assert b.pads("U1.1")[0].center == pytest.approx((x, -111.975)) and b.pads("U1.2")[0].net == "GND"
+    assert {r: (fp.value, [p.net for p in fp.pads]) for r, fp in pi.footprints.items() if r in ("C2", "L1", "C3")} == {
+        "C2": ("1pF", ["RF_A", "GND"]), "L1": ("2.7nH", ["RF_A", "RF"]), "C3": ("1pF", ["RF", "GND"])}
+    assert ifa.footprints["C1"].value == "100nF" and "C1" not in mea.footprints
+    for b in (ifa, pi, mea):
+        assert {(a.layer, a.net) for a in b.areas if a.source == "zone"} == {("F.Cu", "GND"), ("B.Cu", "GND")}
 
 
 # --- beyond the brief's two tests: what pcbnew's pad truth cannot show --------------------------------

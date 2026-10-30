@@ -8,7 +8,8 @@ from kicad_rf_studio.core.kicad.sexpr import atom, child, children, parse, repai
 
 FIX = Path(__file__).parent / "fixtures"
 NAMES = ["lpf915", "lpf915-45", "coupon_ms", "coupon_ms_masked", "coupon_gcpw", "coupon_gcpw_masked",
-         "coupon_gcpw_pads", "coupon_dense", "coupon_gcpw_45", "coupon_gcpw_arc", "pads_zoo"]
+         "coupon_gcpw_pads", "coupon_dense", "coupon_gcpw_45", "coupon_gcpw_arc", "pads_zoo", "ifa2g4", "ifa2g4_pi",
+         "meander915"]
 
 
 @pytest.mark.parametrize("name", NAMES)

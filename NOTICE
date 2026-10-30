@@ -22,6 +22,18 @@ KiCad line-calculator formulas
              tests only (not installed with the package)
 
 
+KiCad footprint library
+  Upstream:  the footprint library installed with KiCad 9.0 (https://gitlab.com/kicad/libraries/kicad-footprints)
+  Licence:   Creative Commons Attribution-ShareAlike 4.0 (CC-BY-SA-4.0), with KiCad's exception for designs: "To the
+             extent that the creation of electronic designs that use 'Licensed Material' can be considered to be
+             'Adapted Material', then the copyright holder waives article 3 of the license with respect to these
+             designs and any generated files which use data provided as part of the 'Licensed Material'."
+             (https://www.kicad.org/libraries/license/)
+  Here:      the synthetic fixture boards tests/fixtures/*.kicad_pcb, which tools/make_fixtures.py builds from the
+             library's footprints, among them RF_Antenna's Texas_SWRA117D_2.4GHz_Left and Texas_SWRA416_868MHz_915MHz,
+             TI's antennas from its application notes SWRA117D and SWRA416, which are cited, not shipped
+
+
 Runtime dependencies (not included)
   kicad-rf-studio includes none of these: pip installs them with it from PyPI, and its setup-openems command installs
   openEMS and CSXCAD from openEMS's official Windows package (on Linux, you build them). Each is under its own

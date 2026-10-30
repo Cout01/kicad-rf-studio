@@ -4,9 +4,10 @@
 Dev-time only: it runs under KiCad 9's bundled Python, and the product never imports it. Regenerate
 from the repository root with
 
-    "%KICAD_PYTHON%" tools/make_fixtures.py tests/fixtures
+    "%KICAD_PYTHON%" tools/make_fixtures.py tests/fixtures [name ...]
 
-KICAD_PYTHON names python.exe in KiCad 9's bin folder. Before pcbnew loads, the script points
+KICAD_PYTHON names python.exe in KiCad 9's bin folder. With no names it builds every board in BOARDS; a
+rerun of named boards rewrites only those. Before pcbnew loads, the script points
 KICAD_CONFIG_HOME, KICAD_DOCUMENTS_HOME, KICAD_CACHE_HOME, TEMP and TMP at build/kicad-profile in this
 repository, creating it, whatever the caller's environment says, so KiCad reads and writes none of the
 user's settings. Run kicad-cli (to preview a fixture, say) with those five variables set the same way.
@@ -102,12 +103,12 @@ def via(b, at):
     b.Add(v)
 
 
-def zone(b, layer, corners):
-    """A GND zone joined solidly to GND pads, 0.15 mm from other nets (the GCPW gap)."""
+def zone(b, layer, corners, clearance=0.15):
+    """A GND zone joined solidly to GND pads, `clearance` mm from other nets (0.15: the GCPW gap)."""
     z = pcbnew.ZONE(b)
     z.SetLayer(layer)
     z.SetNet(net(b, "GND"))
-    z.SetLocalClearance(MM(0.15))
+    z.SetLocalClearance(MM(clearance))
     z.SetPadConnection(pcbnew.ZONE_CONNECTION_FULL)
     z.Outline().NewOutline()
     for c in corners:
@@ -161,17 +162,17 @@ def fence_points(path, offset, pitch=1.0):
                     yield cx + rr * math.cos(t), cy + rr * math.sin(t)
 
 
-def fence(b, points, box):
-    """GND vias at `points`, except where one would come within 0.2 mm of a pad or of a track of another
-    net, closer than 0.8 mm to a placed via, or within 0.8 mm of the board edge (KiCad's 0.5 mm
-    copper-to-edge clearance plus the via's radius)."""
+def fence(b, points, box, keep=0.5):
+    """GND vias at `points`, except where the centre of one would come within `keep` mm of a pad or of a
+    track of another net (0.5: the via's edge 0.2 mm off), closer than 0.8 mm to a placed via, or within
+    0.8 mm of the board edge (KiCad's 0.5 mm copper-to-edge clearance plus the via's radius)."""
     x0, y0, x1, y1 = box
     blockers = list(b.GetPads()) + [t for t in b.GetTracks() if t.GetNetname() != "GND"]
     placed = []
     for x, y in points:
         if (x0 + 0.8 <= x <= x1 - 0.8 and y0 + 0.8 <= y <= y1 - 0.8
                 and all(math.dist((x, y), q) >= 0.8 for q in placed)
-                and not any(i.HitTest(pt(x, y), MM(0.5)) for i in blockers)):
+                and not any(i.HitTest(pt(x, y), MM(keep)) for i in blockers)):
             via(b, (x, y))
             placed.append((x, y))
 
@@ -327,6 +328,60 @@ def pads_zoo(b):
          box.GetRight() / 1e6 + 1, box.GetBottom() / 1e6 + 1)
 
 
+# an antenna board's 50 Ω microstrip keeps its top ground 1 mm off: the fill's clearance, and the gap fit2d reads
+ANTENNA_RULES = '(version 1)\n(rule "microstrip gap" (constraint clearance (min 1mm)))\n'
+
+
+def radio(b, at, rf="RF"):
+    """U1, a SOIC-8 "RFIC" turned 270 degrees at `at`: pin 1 (`rf`) on top, 8 VDD, the rest GND."""
+    nets = {str(k): "GND" for k in range(2, 8)} | {"1": rf, "8": "VDD"}
+    return place(b, "Package_SO:SOIC-8_3.9x4.9mm_P1.27mm", "U1", "RFIC", at, 270, nets)
+
+
+def to_gnd(b, pad):
+    """A GND via 1.2 mm right of `pad` (x, y), and a 0.3 mm GND track to it."""
+    via(b, (pad[0] + 1.2, pad[1]))
+    track(b, "GND", 0.3, pad, (pad[0] + 1.2, pad[1]))
+
+
+def antenna_board(b, lib, ae_nets, ae_at, outline, ground_top, radio_y, pi=False, decap=True, pitch=5.0):
+    """A printed antenna on a rectangular ground (Stage 3 design 5.11): AE1 from `lib` at `ae_at`, the board `outline`
+    (x0, y0, x1, y1), GND zones on both layers from y = `ground_top` down, 0.5 mm inside the outline, 1 mm clear of
+    other nets; U1 straight below AE1's feed pad, pin 1's top end at `radio_y`, fed by a 1.35 mm microstrip and a 0.6
+    mm stub into pin 1, or with `pi` C3 (shunt), L1 (series) and C2 (shunt) on a 0.6 mm line; `decap` a 100 nF C1
+    beside pin 8; GND stitching vias every `pitch` mm over the ground."""
+    ae = place(b, lib, "AE1", lib.split(":")[1], ae_at, 0, ae_nets)
+    fx, fy = pad_at(ae, "1")
+    radio(b, (fx - 1.905, radio_y + 3.45), "RF_A" if pi else "RF")  # pin 1 at (fx, radio_y + 0.975)
+    x0, y0, x1, y1 = outline
+    rect(b, pcbnew.Edge_Cuts, *outline)
+    if pi:
+        c3 = place(b, "Capacitor_SMD:C_0402_1005Metric", "C3", "1pF", (fx + 0.48, fy + 4.0), 0, {"1": "RF", "2": "GND"})
+        l1 = place(b, "Inductor_SMD:L_0402_1005Metric", "L1", "2.7nH", (fx, fy + 6.0), 90, {"1": "RF_A", "2": "RF"})
+        c2 = place(b, "Capacitor_SMD:C_0402_1005Metric", "C2", "1pF", (fx + 0.48, fy + 8.0), 0,
+                   {"1": "RF_A", "2": "GND"})
+        track(b, "RF", 0.6, (fx, fy), pad_at(l1, "2"))
+        track(b, "RF_A", 0.6, pad_at(l1, "1"), (fx, radio_y + 0.975))
+        to_gnd(b, pad_at(c3, "2"))
+        to_gnd(b, pad_at(c2, "2"))
+    else:
+        track(b, "RF", 1.35, (fx, fy), (fx, radio_y - 1.0))
+        track(b, "RF", 0.6, (fx, radio_y - 1.0), (fx, radio_y + 0.975))
+    for layer in (pcbnew.F_Cu, pcbnew.B_Cu):
+        zone(b, layer, [(x0 + 0.5, ground_top), (x1 - 0.5, ground_top), (x1 - 0.5, y1 - 0.5), (x0 + 0.5, y1 - 0.5)],
+             clearance=1.0)
+    if decap:
+        c1 = place(b, "Capacitor_SMD:C_0402_1005Metric", "C1", "100nF", (fx + 2.0, radio_y + 5.925), 0,
+                   {"1": "VDD", "2": "GND"})
+        track(b, "VDD", 0.25, (fx, radio_y + 5.925), pad_at(c1, "1"))  # from pin 8
+        to_gnd(b, pad_at(c1, "2"))
+    fence(b, [(x0 + 2.5 + i * pitch, ground_top + 1.5 + j * pitch) for i in range(int((x1 - x0 - 4) / pitch) + 1)
+              for j in range(int((y1 - ground_top - 3) / pitch) + 1)], outline, keep=1.5)
+
+
+IFA = ("RF_Antenna:Texas_SWRA117D_2.4GHz_Left", {"1": "RF", "2": "GND"}, (100, 100), (87, 94, 127, 124), 99.75, 111.0)
+
+
 BOARDS = {
     "coupon_ms": lambda b: coupon(b, ms=True),
     "coupon_ms_masked": lambda b: coupon(b, ms=True, mask_open=False),
@@ -339,11 +394,16 @@ BOARDS = {
     "lpf915": lpf915,
     "lpf915-45": lambda b: lpf915(b, l1_angle=45),
     "pads_zoo": pads_zoo,
+    "ifa2g4": lambda b: antenna_board(b, *IFA),
+    "ifa2g4_pi": lambda b: antenna_board(b, *IFA, pi=True),
+    "meander915": lambda b: antenna_board(b, "RF_Antenna:Texas_SWRA416_868MHz_915MHz", {"1": "RF"}, (110, 100),
+                                          (89, 92.5, 129, 146.5), 106.5, 111.0, decap=False),
 }
 
 
-def new_board(path, seed):
-    """An empty 0.8 mm, 2-layer board with KiCad's default stackup, saved at `path` and loaded back."""
+def new_board(path, seed, rules=RULES):
+    """An empty 0.8 mm, 2-layer board with KiCad's default stackup, saved at `path` and loaded back under the
+    design `rules` (a .kicad_dru's text)."""
     pcbnew.KIID.SeedGenerator(seed)
     b = pcbnew.CreateEmptyBoard()
     b.GetDesignSettings().SetBoardThickness(MM(0.8))
@@ -351,12 +411,12 @@ def new_board(path, seed):
     text = path.read_text(encoding="utf-8")
     assert "\t(setup\n" in text, "KiCad's board format changed: splice the stackup elsewhere"
     path.write_text(text.replace("\t(setup\n", "\t(setup\n" + STACKUP, 1), encoding="utf-8", newline="\n")
-    rules = path.with_suffix(".kicad_dru")
-    rules.write_text(RULES, encoding="utf-8")
+    dru = path.with_suffix(".kicad_dru")
+    dru.write_text(rules, encoding="utf-8")
     try:
         return pcbnew.LoadBoard(str(path))
     finally:
-        rules.unlink()
+        dru.unlink()
 
 
 def mm_up(p):
@@ -389,16 +449,18 @@ def save(b, path):
     path.with_suffix(".pads.json").write_text(text, encoding="utf-8", newline="\n")
 
 
-def main(out):
+def main(out, names=()):
+    """Build the boards `names` (every one in BOARDS when empty) into the folder `out`."""
     out = Path(out)
     out.mkdir(parents=True, exist_ok=True)
-    for name, build in BOARDS.items():
+    for name in names or BOARDS:
         path = out / f"{name}.kicad_pcb"
-        b = new_board(path, zlib.crc32(name.encode()))
-        build(b)
+        rules = ANTENNA_RULES if name in ("ifa2g4", "ifa2g4_pi", "meander915") else RULES
+        b = new_board(path, zlib.crc32(name.encode()), rules)
+        BOARDS[name](b)
         save(b, path)
         print(name)
 
 
 if __name__ == "__main__":
-    main(sys.argv[1])
+    main(sys.argv[1], sys.argv[2:])
