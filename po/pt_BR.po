@@ -1082,6 +1082,11 @@ msgstr "Largura de banda a {level_db} dB: nenhuma, pois |S11| fica acima de {lev
 msgid "{f_mhz} MHz: radiation efficiency {eta_rad_pct} %, total efficiency {eta_tot_pct} %, directivity {d_dbi} dBi, gain {gain_dbi} dBi, realized gain {realized_dbi} dBi."
 msgstr "{f_mhz} MHz: eficiência de radiação {eta_rad_pct} %, eficiência total {eta_tot_pct} %, diretividade {d_dbi} dBi, ganho {gain_dbi} dBi, ganho realizado {realized_dbi} dBi."
 
+#. I_ANTENNA_NO_FAR_FIELD
+#, python-brace-format
+msgid "No far field for this run: a run with part ports records none, as its jobs hold ports where the matching parts sit; `{command}` runs one job with each part in the grid at its value, as an ideal part, and records it."
+msgstr "Sem campo distante para esta execução: uma execução com portas de componentes não registra nenhum, pois as tarefas dela têm portas onde ficam os componentes de casamento; `{command}` executa uma tarefa com cada componente na grade com o valor dele, como componente ideal, e o registra."
+
 #. E_INTERNAL
 #, python-brace-format
 msgid "Internal error: {detail}. Please report it."

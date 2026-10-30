@@ -25,7 +25,7 @@ from typing import TYPE_CHECKING
 
 import numpy as np
 
-from kicad_rf_studio import runs
+from kicad_rf_studio import __version__, runs
 from kicad_rf_studio.core.cs2d import ShortError, solve
 from kicad_rf_studio.core.geometry import build_geometry
 from kicad_rf_studio.core.geometry.region import air_cell, band
@@ -556,12 +556,14 @@ def write_outputs(path: Path, project: dict, command: str, *,
 
 def antenna_outputs(path: Path, project: dict, command: str, *,
                     errors_as_lines: bool = False) -> list[tuple[str, dict]]:
-    """An antenna's outputs (Stage 3 design 5.5, 5.6), which write_outputs writes for it, in run and retune alike: v1's
+    """An antenna's outputs (Stage 3 design 5.5–5.7), which write_outputs writes for it, in run and retune alike: v1's
     layout.s{N}p, and chain.s1p when part ports are closed, with the what-if label as v1's; with results.far_field,
     farfield.csv and antenna_summary.csv, from far_field_of with the job's waves and S11 at the sphere's frequencies
-    (the layout there, terminated as the chain is); and antenna_summary.png whenever there is a chain; all written to
-    results/ beside `path` (write, ANTENNA_OUTPUTS, with `command` as E_RESULTS_WRITE's advice). Returns the lines to
-    report: chain_results' (I_BASIS up to the indicators), s11_lines on the chain's S11, far_field_lines, the label's
+    (the layout there, terminated as the chain is); and antenna_summary.png whenever there is a chain, with the what-if
+    label, rendered, as the last line of its title, as v1's summary.png; all written to results/ beside `path` (write,
+    ANTENNA_OUTPUTS, with `command` as E_RESULTS_WRITE's advice). Returns the lines to report: chain_results' (I_BASIS
+    up to the indicators), s11_lines on the chain's S11, far_field_lines, or, with no far field and part ports,
+    I_ANTENNA_NO_FAR_FIELD, which offers `verify` (a part-port job records no far field, design 5.5), the label's
     line, then I_OUTPUTS and ANTENNA_LIMITS. Errors as write_outputs takes them, and far_field_of's E_RESULTS_WAVES
     (the run folder moved or deleted) is one more such line, in the place of the far field's lines and files."""
     res = chain_results(path, project, errors_as_lines=errors_as_lines)
@@ -570,6 +572,7 @@ def antenna_outputs(path: Path, project: dict, command: str, *,
     files = {f"layout.s{n}p": touchstone(lay.s, lay.f, [q["name"] for q in lay.ports],
                                          port_map(project, results, lay, range(n)))}
     what_if = {"command": command_line("kicad-rf-studio", "verify", str(path))}
+    label = render("I_WHAT_IF", **what_if) if res.what_if else None
     if res.chain is not None and res.refs:
         files["chain.s1p"] = touchstone(res.chain, lay.f, [lay.ports[k]["name"] for k in ext],
                                         port_map(project, results, lay, ext)
@@ -591,8 +594,10 @@ def antenna_outputs(path: Path, project: dict, command: str, *,
                 s11 = chain_results(path, project, lay=at).chain[np.argsort(up), 0, 0]  # back in the far field's order
                 files["farfield.csv"], files["antenna_summary.csv"] = farfield_csv(far), antenna_csv(far, s11)
                 lines += far_field_lines(far)
+        elif res.refs:
+            lines.append(("I_ANTENNA_NO_FAR_FIELD", what_if))
         files["antenna_summary.png"] = antenna_png(lay.f, res.chain[:, 0, 0], project, far,
-                                                   path.absolute().parent.name)  # `run .` too
+                                                   path.absolute().parent.name, label)  # `run .` too
     lines += [("I_WHAT_IF", what_if)] if res.what_if else []
     try:
         write(folder, files, ANTENNA_OUTPUTS, command)
@@ -639,9 +644,10 @@ def _locked(path: Path, body: Callable[[Path, Path], int], run_dir: Path | None 
 
 
 def _run(path: Path, run_dir: Path) -> int:
-    """run() under the lock, with `run_dir` made: an antenna run saves its S as v1 does, then, with no part port,
-    transforms its far field after its job and saves again; a transform that fails is an E_ line, and one stopped
-    leaves S kept (Stage 3 design 5.5)."""
+    """run() under the lock, with `run_dir` made: an antenna run saves its S as v1 does, its results with far_field
+    null and its settings fingerprint (fingerprint, Stage 3 design 5.8), then, with no part port, transforms its far
+    field after its job and saves again; a transform that fails is an E_ line, and one stopped leaves S kept (Stage 3
+    design 5.5)."""
     emit = partial(runs.emit, run_dir)  # (kind, code, params, job=None)
     if isinstance(built := _model_phase(path, emit), int):
         return built
@@ -662,6 +668,7 @@ def _run(path: Path, run_dir: Path) -> int:
                        "jobs": done}
     if antenna(project):
         data["results"]["far_field"] = None
+        data["results"]["fingerprint"] = fingerprint(project)
     rerun = command_line("kicad-rf-studio", "run", str(path))
     rewrite = command_line("kicad-rf-studio", "retune", str(path))
     _save(path, data, rerun)
@@ -823,6 +830,19 @@ def results_of(project: dict, model: Model) -> dict:
     if model.spec is None or spec_hash(model.spec) != results.get("model_hash") or "loss_expected" not in results:
         raise KrsError("E_RESULTS_STALE")
     return results
+
+
+def fingerprint(project: dict) -> dict:
+    """An antenna's settings fingerprint (Stage 3 design 5.8), recorded with each run's and verify's results:
+    project.json's fields that set the model or the far field but no part value, the lid height and the start pad among
+    them (typed per project, not in the board); the copper model; and the versions of this app and of openEMS as a
+    worker sees it (runs.openems_versions: metadata in an isolated subprocess, nothing imported)."""
+    keys = ("preset", "mesh", "region", "band", "f0_hz", "t_max_s", "air_gap_mm", "boundary", "far_field", "stackup",
+            "lid_height_mm")
+    # ponytail: Stage 1 5.3's solid copper is the only model; plan 4's P3-C adds all-sheet copper as a project field,
+    # read here
+    return {**{key: project[key] for key in keys}, "start": project["chain"]["start"], "copper": "solid",
+            "app": __version__, "openems": runs.openems_versions()[0]}
 
 
 def assign(project: dict, assignments: list[str], folder: Path) -> dict:

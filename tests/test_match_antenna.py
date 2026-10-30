@@ -1,7 +1,11 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
+import json
+from pathlib import Path
+
 import numpy as np
 
-from kicad_rf_studio import pipeline
+from kicad_rf_studio import __version__, pipeline
+from kicad_rf_studio.core.messages import render
 from kicad_rf_studio.core.model import spec as spec_module
 from kicad_rf_studio.core.post.chain import with_box, z_part
 from kicad_rf_studio.core.post.waves import band_grid
@@ -36,6 +40,11 @@ def chain_s11(pj):
     return read_s(pj.parent / "results" / "chain.s1p")[:, 0, 0]
 
 
+def result_lines(run_dir):
+    events = (Path(run_dir) / "events.jsonl").read_text(encoding="utf-8").splitlines()
+    return [(e["code"], e["params"]) for e in map(json.loads, events) if e["kind"] == "result"]
+
+
 def test_the_antenna_seen_through_its_feed_line(tmp_path, calibrated, monkeypatch):  # design 5.7; RF 2
     pj = pi_run(tmp_path, monkeypatch)
     assert pipeline.retune(pj, ["L1=0R", "C2=open", "C3=open"]) == 0  # the series part shorted, both shunts removed
@@ -57,3 +66,25 @@ def test_snapping_leaves_a_bypass_as_typed():  # design 5.7: E24 snapping as in 
     typed = {"L1": "3.1nH", "C2": "0.95pF", "C3": "1.25pF", "R1": "0R", "C4": "open", "L2": "0R"}
     assert {ref: snapped(ref, text, default_series(ref)) for ref, text in typed.items()} == {
         "L1": "3nH", "C2": "0.91pF", "C3": "1.3pF", "R1": "0R", "C4": "open", "L2": "0R"}
+
+
+def test_a_part_port_run_says_where_its_far_field_comes_from(tmp_path, calibrated, monkeypatch):  # design 5.5, 5.7
+    pj = pi_run(tmp_path, monkeypatch)
+    d = load_project(pj)
+    lines, verify = result_lines(d["results"]["run_dir"]), pipeline.command_line("kicad-rf-studio", "verify", str(pj))
+    codes = [code for code, _ in lines]
+    assert ("I_ANTENNA_NO_FAR_FIELD", {"command": verify}) in lines and d["results"]["far_field"] is None
+    assert codes.index("I_ANTENNA_RELATIVE") < codes.index("I_ANTENNA_NO_FAR_FIELD") < codes.index("I_WHAT_IF")
+    seen = []
+    monkeypatch.setattr(pipeline, "antenna_png", lambda f, s11, project, far, name, label=None: seen.append(label) or b"")
+    assert pipeline.retune(pj, []) == 0 and seen == [render("I_WHAT_IF", command=verify)]  # the PNG's label
+
+
+def test_an_antenna_run_records_its_settings_fingerprint(tmp_path, calibrated):  # design 5.8
+    pj = antenna_project(tmp_path / "p")
+    assert pipeline.run(pj) == 0
+    d = load_project(pj)
+    keys = ("preset", "mesh", "region", "band", "f0_hz", "t_max_s", "air_gap_mm", "boundary", "far_field", "stackup",
+            "lid_height_mm")
+    assert d["results"]["fingerprint"] == {**{key: d[key] for key in keys}, "start": "U1.1", "copper": "solid",
+                                           "app": __version__, "openems": "0.37.0"}  # fake_cli's openems_versions

@@ -165,13 +165,15 @@ def antenna_csv(far: dict, s11: np.ndarray) -> bytes:
     return _csv(ANTENNA_COLUMNS, np.column_stack(columns))
 
 
-def draw_antenna(fig, f: np.ndarray, s11: np.ndarray, project: dict, far: dict | None, name: str) -> None:
+def draw_antenna(fig, f: np.ndarray, s11: np.ndarray, project: dict, far: dict | None, name: str,
+                 label: str | None = None) -> None:
     """antenna_summary.png's plots (design 5.6) on the matplotlib Figure `fig` (antenna_png's, or plan 5's GUI
     canvas), as draw_summary draws v1's: |S11| in dB against GHz with the band [f_lo, f_hi] shaded and lines at
     LEVELS_DB, and S11 on a Smith chart with dots at f_lo, f0 and f_hi; with far_field_of's `far`, η_rad and η_tot in
     % against GHz and the cuts of D in dBi at f0, XY (θ 90°), XZ (φ 0°) and YZ (φ 90°), down to CUT_RANGE_DB below
-    their peak. Under I_PLOT_ANTENNA_TITLE with I_ANTENNA_RELATIVE as its second line, and with the rendered
-    ANTENNA_LIMITS, one a line, in the last of fig.texts, at the foot."""
+    their peak. Under I_PLOT_ANTENNA_TITLE with I_ANTENNA_RELATIVE as its second line and `label` (the what-if label,
+    D-15, as draw_summary's) as its third when given, and with the rendered ANTENNA_LIMITS, one a line, in the last of
+    fig.texts, at the foot."""
     rows, cols = (2, 3) if far else (1, 2)
     ax11, ax_smith = fig.add_subplot(rows, cols, 1), fig.add_subplot(rows, cols, 2)
     band, dots = project["band"], list(_markers(project, f).values())
@@ -186,8 +188,8 @@ def draw_antenna(fig, f: np.ndarray, s11: np.ndarray, project: dict, far: dict |
     if far:
         sphere, el, az = far["sphere"], far["elevation"], far["azimuth"]
         ax_eta, order = fig.add_subplot(rows, cols, 3), np.argsort(sphere.f)
-        for key, label in (("eta_rad", "η_rad"), ("eta_tot", "η_tot")):
-            ax_eta.plot(sphere.f[order] / 1e9, 100 * far["eff"][key][order], "o-", label=label)
+        for key, legend in (("eta_rad", "η_rad"), ("eta_tot", "η_tot")):
+            ax_eta.plot(sphere.f[order] / 1e9, 100 * far["eff"][key][order], "o-", label=legend)
         ax_eta.set(xlabel=render("I_PLOT_FREQUENCY"), ylabel="η (%)")
         ax_eta.legend()
         cuts = (("XY", az.phi, az.d[0, 0]), ("XZ", el.theta, el.d[0, :, 0]), ("YZ", el.theta, el.d[0, :, 1]))
@@ -199,17 +201,19 @@ def draw_antenna(fig, f: np.ndarray, s11: np.ndarray, project: dict, far: dict |
                 ax.set_theta_direction(-1)
             ax.plot(np.radians(angle), np.maximum(10 * np.log10(d), top - CUT_RANGE_DB))
             ax.set(title=plane, ylim=(top - CUT_RANGE_DB, top))
-    fig.suptitle(render("I_PLOT_ANTENNA_TITLE", name=name) + "\n" + render("I_ANTENNA_RELATIVE"), wrap=True)
+    fig.suptitle(render("I_PLOT_ANTENNA_TITLE", name=name) + "\n" + render("I_ANTENNA_RELATIVE")
+                 + ("\n" + label if label else ""), wrap=True)
     fig.supxlabel("\n".join(render(code) for code in ANTENNA_LIMITS), x=0.01, ha="left", fontsize="small", wrap=True)
 
 
-def antenna_png(f: np.ndarray, s11: np.ndarray, project: dict, far: dict | None, name: str) -> bytes:
+def antenna_png(f: np.ndarray, s11: np.ndarray, project: dict, far: dict | None, name: str,
+                label: str | None = None) -> bytes:
     """antenna_summary.png (design 5.6): draw_antenna on a Figure drawn by Agg, never a pyplot figure, as PNG at 100
-    dpi, as summary_png builds v1's."""
+    dpi, as summary_png builds v1's, `label` (the what-if label) passed through."""
     from matplotlib.figure import Figure  # here only: no other code of the core loads matplotlib (C-5)
 
     fig = Figure(figsize=(15, 10.5) if far else (15, 6), layout="constrained")
-    draw_antenna(fig, f, s11, project, far, name)
+    draw_antenna(fig, f, s11, project, far, name, label)
     out = io.BytesIO()
     fig.savefig(out, format="png", dpi=100)
     return out.getvalue()

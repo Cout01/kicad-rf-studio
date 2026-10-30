@@ -234,6 +234,7 @@ CATALOG: dict[str, str] = {
     "W_BANDWIDTH_EDGE": "{level_db} dB bandwidth: at least {f_lo_mhz} to {f_hi_mhz} MHz: |S11| stays below {level_db} dB to the edge of the simulated band, so its true edge lies outside it.",
     "I_ANTENNA_NO_BANDWIDTH": "{level_db} dB bandwidth: none, as |S11| stays above {level_db} dB.",
     "I_ANTENNA_FAR_FIELD": "{f_mhz} MHz: radiation efficiency {eta_rad_pct} %, total efficiency {eta_tot_pct} %, directivity {d_dbi} dBi, gain {gain_dbi} dBi, realized gain {realized_dbi} dBi.",
+    "I_ANTENNA_NO_FAR_FIELD": "No far field for this run: a run with part ports records none, as its jobs hold ports where the matching parts sit; `{command}` runs one job with each part in the grid at its value, as an ideal part, and records it.",
     "E_INTERNAL": "Internal error: {detail}. Please report it.",
     "G_APP": "kicad-rf-studio",
     "G_RUNNING": "Running in {folder}…",

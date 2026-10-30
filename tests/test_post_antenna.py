@@ -92,3 +92,12 @@ def test_the_summary_png_holds_the_label_and_the_limits():  # design 5.6; anti-g
         assert fig.get_suptitle() == render("I_PLOT_ANTENNA_TITLE", name="proj") + "\n" + render("I_ANTENNA_RELATIVE")
         assert all(render(code) in fig.texts[-1].get_text() for code in ANTENNA_LIMITS)
         assert antenna_png(f, dip(f).astype(complex), d, far, "proj").startswith(b"\x89PNG")
+
+
+def test_the_summary_png_carries_the_what_if_label():  # design 5.7: under Stage 1 7.6's label, as summary.png
+    d = antenna_dict()
+    f = band_grid(d)
+    fig = Figure()
+    draw_antenna(fig, f, dip(f).astype(complex), d, None, "proj", "label")
+    assert fig.get_suptitle() == (render("I_PLOT_ANTENNA_TITLE", name="proj") + "\n" + render("I_ANTENNA_RELATIVE")
+                                  + "\nlabel")

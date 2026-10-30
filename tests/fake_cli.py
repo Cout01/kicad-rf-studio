@@ -11,10 +11,11 @@ from kicad_rf_studio import cli, runs
 
 
 def patches(data: Path) -> dict:
-    """The fake's patches of runs: tests/fake_worker.py as the worker, fast polls, `data` as the data folder and an
-    openEMS check that passes."""
+    """The fake's patches of runs: tests/fake_worker.py as the worker, fast polls, `data` as the data folder, an
+    openEMS check that passes and openEMS 0.37.0 as the installed version."""
     return {"WORKER": ("-I", "-u", str(Path(__file__).with_name("fake_worker.py"))), "POLL_S": 0.02,
-            "ABORT_WAIT_S": 5.0, "data_dir": lambda: data, "check_openems": lambda: []}
+            "ABORT_WAIT_S": 5.0, "data_dir": lambda: data, "check_openems": lambda: [],
+            "openems_versions": lambda: ("0.37.0", "0.7.0")}
 
 
 if __name__ == "__main__":
