@@ -450,7 +450,10 @@ def save(b, path):
 
 
 def main(out, names=()):
-    """Build the boards `names` (every one in BOARDS when empty) into the folder `out`."""
+    """Build the boards `names` (every one in BOARDS when empty) into the folder `out`. An unknown name exits first,
+    before any board is written."""
+    if unknown := [n for n in names if n not in BOARDS]:
+        sys.exit(f"unknown boards: {' '.join(unknown)}; known: {' '.join(BOARDS)}")
     out = Path(out)
     out.mkdir(parents=True, exist_ok=True)
     for name in names or BOARDS:
