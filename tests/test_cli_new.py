@@ -564,6 +564,8 @@ def test_the_internal_error_is_cut_to_200_characters(tmp_path, monkeypatch, caps
     ["new"],  # no board
     ["new", "b.kicad_pcb", "--end", "J1.1", "--f0", "915MHz"],  # no --start
     ["new", "b.kicad_pcb", "--start", "U1.1", "--end", "J1.1"],  # no --f0
+    ["new", "b.kicad_pcb", "--start", "U1.1", "--antenna", "AE1"],  # no frequency or band
+    ["new", "b.kicad_pcb", "--start", "U1.1", "--end", "J1.1", "--antenna", "AE1", "--f0", "915MHz"],  # both ends
     ["new", "b.kicad_pcb", "--start", "U1.1", "--end", "J1.1", "--f0", "915MHz", "--preset", "fast"],
     *(["new", "b.kicad_pcb", "--start", "U1.1", "--end", "J1.1", "--f0", "915MHz", flag, value]
       for flag, value in [("--harmonics", "0"), ("--harmonics", "-2"), ("--harmonics", "two"),

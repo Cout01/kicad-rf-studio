@@ -95,6 +95,17 @@ def parse_frequency(text: str) -> float:
     raise KrsError("E_BAD_FREQUENCY", text=text)
 
 
+def parse_band(text: str) -> tuple[float, float]:
+    """A band such as `2400MHz:2483.5MHz`, (F_LO, F_HI) in Hz, each side read by parse_frequency (whose
+    E_BAD_FREQUENCY stands). Text without exactly one ":", or whose F_LO is not below its F_HI, raises E_BAD_BAND."""
+    sides = text.split(":")
+    if len(sides) == 2:
+        f_lo, f_hi = map(parse_frequency, sides)
+        if f_lo < f_hi:
+            return f_lo, f_hi
+    raise KrsError("E_BAD_BAND", text=text)
+
+
 # IEC 60063's E12 and E24 series, one decade each
 E12 = (1.0, 1.2, 1.5, 1.8, 2.2, 2.7, 3.3, 3.9, 4.7, 5.6, 6.8, 8.2)
 E24 = (1.0, 1.1, 1.2, 1.3, 1.5, 1.6, 1.8, 2.0, 2.2, 2.4, 2.7, 3.0,

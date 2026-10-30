@@ -310,6 +310,40 @@ msgstr "f0 {f0_mhz} MHz, harmônicos: {harmonics}."
 msgid "Preset {preset} (provisional default), band factor {band_factor}, T_max {t_max_ns} ns, harmonics {harmonics}, mesh n {mesh_n}, region {expand_h} substrate heights past the chain, margin scale {margin_scale}, protected reach {reach_h} substrate heights."
 msgstr "Predefinição {preset} (padrão provisório), fator de banda {band_factor}, T_max {t_max_ns} ns, harmônicos {harmonics}, malha n {mesh_n}, região de {expand_h} alturas de substrato além da cadeia, escala da margem {margin_scale}, alcance protegido de {reach_h} alturas de substrato."
 
+#. E_BAD_BAND
+#, python-brace-format
+msgid "Cannot read the band \"{text}\". Write it as F_LO:F_HI with F_LO below F_HI, like 2400MHz:2483.5MHz."
+msgstr "Não é possível ler a banda \"{text}\". Escreva-a como F_LO:F_HI com F_LO abaixo de F_HI, como 2400MHz:2483.5MHz."
+
+#. E_BAND_WIDE
+#, python-brace-format
+msgid "The band {f_lo_mhz} to {f_hi_mhz} MHz spans more than an octave. An antenna project simulates one band: make one project per band, such as one for 868 MHz and one for 2.4 GHz."
+msgstr "A banda de {f_lo_mhz} a {f_hi_mhz} MHz passa de uma oitava. Um projeto de antena simula uma banda: crie um projeto por banda, como um para 868 MHz e outro para 2.4 GHz."
+
+#. E_NEW_KIND
+msgid "`new` takes --end with --f0 (and --harmonics) for a matching chain, or --antenna with --band for an antenna."
+msgstr "`new` recebe --end com --f0 (e --harmonics) para uma cadeia de casamento, ou --antenna com --band para uma antena."
+
+#. I_ANTENNA
+#, python-brace-format
+msgid "Antenna {ref}, fed at pad {feed} on net {net}: its copper drawn without a net takes that net."
+msgstr "Antena {ref}, alimentada na ilha {feed} da rede {net}: o cobre dela desenhado sem rede recebe essa rede."
+
+#. I_ANTENNA_JOIN
+#, python-brace-format
+msgid "Antenna {ref} joins its feed to ground through {pads} by design, as an inverted-F does; the connectivity and port checks accept that join and no other."
+msgstr "A antena {ref} liga a alimentação ao GND por {pads} por projeto, como um F invertido; as checagens de conectividade e de porta aceitam essa ligação e nenhuma outra."
+
+#. I_BAND
+#, python-brace-format
+msgid "Band {f_lo_mhz} to {f_hi_mhz} MHz, f0 {f0_mhz} MHz; the pulse spans {f1_mhz} to {f2_mhz} MHz."
+msgstr "Banda de {f_lo_mhz} a {f_hi_mhz} MHz, f0 {f0_mhz} MHz; o pulso cobre de {f1_mhz} a {f2_mhz} MHz."
+
+#. I_ANTENNA_DEFAULTS
+#, python-brace-format
+msgid "Preset {preset} (provisional default), T_max {t_max_ns} ns (2·t0 + 60/f0), mesh n {mesh_n}, measured region {expand_h} substrate heights past the antenna and the chain, protected reach {reach_h} substrate heights, air gap {air_gap_mm} mm (λ/4 at f_lo) to a {boundary} absorber, far-field frequencies: {count}, on a {step_deg}° sphere."
+msgstr "Predefinição {preset} (padrão provisório), T_max {t_max_ns} ns (2·t0 + 60/f0), malha n {mesh_n}, região medida de {expand_h} alturas de substrato além da antena e da cadeia, alcance protegido de {reach_h} alturas de substrato, espaçamento de ar de {air_gap_mm} mm (λ/4 em f_lo) até um absorvedor {boundary}, frequências do campo distante: {count}, numa esfera de {step_deg}°."
+
 #. I_LID_ON
 msgid "Shield lid on: \"lid\": null in project.json means on when harmonics > 1; true or false forces it."
 msgstr "Tampa da blindagem ligada: \"lid\": null no project.json a liga quando harmônicos > 1; true a liga e false a desliga em qualquer caso."
