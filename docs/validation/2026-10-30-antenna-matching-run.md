@@ -46,7 +46,8 @@ The plan registered the checks before the run. This is not a gate: gates P3-B to
   - At `bb6c363` the suite passed (1964 passed, 5 skipped), and so did the GUI tests in pt-BR (36 passed, 2 skipped).
 - **Calibration:** fresh, made by the first `cost` in the isolated data folder.
   - 822.3 MC/s in aggregate, at a pool of 4 jobs × 4 threads.
-  - At 4 threads: one job alone ran at 586.6 MC/s, and four at once at 205.6 MC/s each. Two at once reached 678.4 MC/s in aggregate.
+  - At 4 threads: one job alone ran at 586.6 MC/s, and four at once at 205.6 MC/s each.
+  - Two at once, at 8 threads each, reached 678.4 MC/s in aggregate.
   - One job at 1, 2 and 16 threads: 184.7, 265.6 and 324.5 MC/s.
 - **The project, as `new` wrote it:**
   - **Band and time:** 2400–2483.5 MHz, f0 2441.75 MHz; the pulse over 1840–2990 MHz; T_max 30 ns; the Normal preset.
