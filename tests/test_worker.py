@@ -42,9 +42,11 @@ def test_run_keywords_never_carry_false(mode, parts, kw):  # spec 11: False drop
     assert got == kw and False not in got.values() and "exact_endcriteria" not in got
 
 
-def test_setup_mode_reads_the_log_and_the_dumps(tmp_path, monkeypatch):  # C-15, C-17, C-18, Review Focus 2
+@pytest.mark.parametrize("spec", [SMOKE, {**SMOKE, "join": [[[-0.3, -1.0, 0.4], [0.3, 1.0, 0.6]]]}],
+                         ids=["v1", "join"])  # the twin: an antenna's join, cut (Stage 3 design 5.3)
+def test_setup_mode_reads_the_log_and_the_dumps(tmp_path, monkeypatch, spec):  # C-15, C-17, C-18, Review Focus 2
     log = fake_openems(monkeypatch)
-    job = write_job(tmp_path, SMOKE, "setup")
+    job = write_job(tmp_path, spec, "setup")
     (job / worker.LOG).write_text(SETUP_LOG, encoding="utf-8")
     (job / worker.ERR).write_text("", encoding="utf-8")
     for f in DUMPS.iterdir():
@@ -54,7 +56,7 @@ def test_setup_mode_reads_the_log_and_the_dumps(tmp_path, monkeypatch):  # C-15,
     s = json.loads((job / "setup.json").read_text(encoding="utf-8"))
     assert (s["dt"], s["cells"], s["node"], s["unused"]) == (1.73972e-13, [65, 33, 16], [2, 0, 0, 6], [])
     assert s["dumps"] == ["PEC_dump.vtp", "operator_dump.vtr"]
-    assert s["pec"][0] == pec_roots(DUMPS / "PEC_dump.vtp", LINES, SMOKE["ports"][0]["nodes"])
+    assert s["pec"][0] == pec_roots(DUMPS / "PEC_dump.vtp", LINES, SMOKE["ports"][0]["nodes"], spec.get("join", ()))
     assert s["c_box"] == {"P1": pytest.approx(2.3796e-14, rel=1e-3)}
     assert ("Run", (".",), worker.run_kwargs("setup", 1, True)) in log
 
@@ -151,7 +153,8 @@ def transform_job(job):
 
 def test_nf2ff_mode_transforms_each_grid_afresh_into_a_file_of_its_own(tmp_path, monkeypatch):  # design 5.5; RF 2
     log = fake_openems(monkeypatch)
-    monkeypatch.chdir(transform_job(finished_job(tmp_path)))
+    folder = transform_job(finished_job(tmp_path))
+    monkeypatch.chdir(folder)
     assert worker.main(["job.json"]) == 0
     calls = [(args, kw) for name, args, kw in log if name == "CalcNF2FF"]
     assert list(worker.GRIDS) == ["sphere", "elevation", "azimuth"]
@@ -162,6 +165,14 @@ def test_nf2ff_mode_transforms_each_grid_afresh_into_a_file_of_its_own(tmp_path,
     assert [(len(args[2]), len(args[3])) for args, _ in calls] == [(37, 72), (360, 2), (1, 360)]
     assert (calls[1][0][2][0], list(calls[1][0][3]), list(calls[2][0][2])) == (-180, [0, 90], [90])
     assert "Run" not in [name for name, _, _ in log]  # no FDTD
+    job = json.loads((folder / "job.json").read_text(encoding="utf-8"))
+    (folder / "job.json").write_text(json.dumps({**job, "step_deg": 10}), encoding="utf-8")  # the project's step
+    log.clear()
+    assert worker.main(["job.json"]) == 0
+    stepped = [(args, kw) for name, args, kw in log if name == "CalcNF2FF"]
+    assert (len(stepped[0][0][2]), len(stepped[0][0][3])) == (19, 36)  # the sphere at 10°
+    for (a, k), (b, j) in zip(calls[1:], stepped[1:], strict=True):  # the two cuts unchanged, at 1°
+        assert a[:2] == b[:2] and k == j and all(np.array_equal(u, v) for u, v in zip(a[2:], b[2:], strict=True))
 
 
 def test_nf2ff_mode_refuses_a_job_whose_far_field_was_never_recorded(tmp_path, monkeypatch, capsys):  # RF 3
@@ -175,13 +186,13 @@ def test_nf2ff_mode_refuses_a_job_whose_far_field_was_never_recorded(tmp_path, m
 
 def test_far_field_transforms_in_a_folder_of_its_own_and_never_reuses_a_file(tmp_path, fake):  # 5.5; RF 2
     job = finished_job(tmp_path)
-    first, second = pipeline.far_field(job), pipeline.far_field(job)
+    first, second = pipeline.far_field(job), pipeline.far_field(job, 10)
     assert list(first) == list(second) == list(worker.GRIDS)
     assert all(p.parent == job and p.is_file() for p in (*first.values(), *second.values()))
     assert not set(first.values()) & set(second.values())
-    folders = sorted(job.parent.glob("job-0-nf2ff-*"))
-    assert len(folders) == 2 and {json.loads((f / "job.json").read_text(encoding="utf-8"))["dumps"]
-                                  for f in folders} == {"../job-1-P1"}
+    jobs = [json.loads((f / "job.json").read_text(encoding="utf-8")) for f in job.parent.glob("job-0-nf2ff-*")]
+    assert len(jobs) == 2 and {j["dumps"] for j in jobs} == {"../job-1-P1"}
+    assert sorted(j["step_deg"] for j in jobs) == [5, 10]  # the default step, then the one passed
     assert "openEMS" not in sys.modules and "CSXCAD" not in sys.modules  # Stage 1 3.1: a worker transformed it
 
 

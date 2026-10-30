@@ -1,11 +1,11 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """One openEMS job (spec 6), started as `<python> -I -u -m kicad_rf_studio.worker job.json` in its own job folder.
 job.json is {"spec": "../model.json", "port": the excited port (1-based), "mode": "run" | "setup" | "xml" | "nf2ff",
-"threads", "t_max"}, mode "nf2ff" adding "dumps" (the finished job's folder, relative) and "out" (the outputs' stem);
-the job writes waves.npz, setup.json, model.xml or, in mode "nf2ff" (the far-field transform, Stage 3 design 5.5),
-<dumps>/<out>-<grid>.h5 for each grid of GRIDS. It exits 0 when done, 2 when openEMS does not import and SETUP_FAILED
-when openEMS's setup fails; any other code is a crash. Standard library and numpy only: openEMS and CSXCAD load inside
-build_csx (spec 3.1)."""
+"threads", "t_max"}, mode "nf2ff" adding "dumps" (the finished job's folder, relative), "out" (the outputs' stem) and
+"step_deg" (the sphere's angle step, 5 without it); the job writes waves.npz, setup.json, model.xml or, in mode "nf2ff"
+(the far-field transform, Stage 3 design 5.5), <dumps>/<out>-<grid>.h5 for each grid of GRIDS. It exits 0 when done, 2
+when openEMS does not import and SETUP_FAILED when openEMS's setup fails; any other code is a crash. Standard library
+and numpy only: openEMS and CSXCAD load inside build_csx (spec 3.1)."""
 from __future__ import annotations
 
 import json
@@ -22,7 +22,7 @@ SETUP_FAILED = 10
 DUMPS = tuple(f"nf2ff_{q}_{n}.h5" for q in "EH" for n in range(6))  # the far-field box's E and H on each face
 # design 5.5: the full sphere at 5° at every recorded frequency; the XZ (φ 0°) and YZ (φ 90°) cuts as one θ sweep and
 # the XY cut (θ 90°) as a φ sweep, at 1° at f0
-# ponytail: fixed steps; plan 2's angle-step field passes its own
+# ponytail: the sphere's step comes from job.json; the cuts stay at 1°
 GRIDS: dict[str, tuple[np.ndarray, np.ndarray, bool]] = {  # θ in degrees, φ in degrees, f0 only
     "sphere": (np.arange(0, 181, 5), np.arange(0, 360, 5), False),
     "elevation": (np.arange(-180, 180, 1), np.array([0, 90]), True),
@@ -61,8 +61,8 @@ def _box(lines: list, port: dict) -> tuple[list, list, int]:
 
 def _setup(spec: dict) -> dict:
     """setup.json: dt, cells and node from the log; the properties stderr says place nothing (C-16); the dump files
-    written; the PEC roots of each port's nodes (C-15); the C_box of each port with a part at the log's dt (C-18), over
-    its box (_box)."""
+    written; the PEC roots of each port's nodes (C-15), an antenna's join cut (spec["join"], Stage 3 design 5.3); the
+    C_box of each port with a part at the log's dt (C-18), over its box (_box)."""
     log = read_log(Path(LOG).read_text(encoding="utf-8"))
     if (dt := log["dt"]) is None:
         raise RuntimeError(f"{LOG} holds no FDTD timestep")
@@ -71,7 +71,7 @@ def _setup(spec: dict) -> dict:
     return {"dt": dt, "cells": log["cells"], "node": log["node"],
             "unused": read_unused(Path(ERR).read_text(encoding="utf-8")),
             "dumps": sorted(f.name for f in Path().glob("*_dump.*")),
-            "pec": [pec_roots(Path("PEC_dump.vtp"), lines, p["nodes"]) for p in ports],
+            "pec": [pec_roots(Path("PEC_dump.vtp"), lines, p["nodes"], spec.get("join", ())) for p in ports],
             "c_box": {p["name"]: c_box(Path("operator_dump.vtr"), lines, *_box(lines, p), dt)
                       for p in ports if p["part"]}}
 
@@ -79,17 +79,18 @@ def _setup(spec: dict) -> dict:
 def _far_field(job: dict, spec: dict, box: object) -> None:
     """Mode "nf2ff" (Stage 3 design 5.5): the far field of the finished job in job["dumps"] (relative), one CalcNF2FF
     per grid of GRIDS, always read_cached=False, written to <dumps>/<job["out"]>-<grid>.h5, a name no other call uses:
-    the sphere at every recorded frequency, the cuts at f0 (the first), about spec["nf2ff"]["center"] (mm; CalcNF2FF
-    takes metres). FileNotFoundError naming the first missing dump, before any transform: CalcNF2FF skips a face whose
-    files are missing and integrates the rest."""
+    the sphere at every recorded frequency, at job["step_deg"] (5° without it), the cuts at f0 (the first), about
+    spec["nf2ff"]["center"] (mm; CalcNF2FF takes metres). FileNotFoundError naming the first missing dump, before any
+    transform: CalcNF2FF skips a face whose files are missing and integrates the rest."""
     for name in DUMPS:
         if not (path := Path(job["dumps"]) / name).is_file():
             msg = f"{path}: the job ended before its far field was recorded"
             print(msg, flush=True)  # the job's log.txt, which E_WORKER_FAILED names; the traceback goes to err.txt
             raise FileNotFoundError(msg)
-    nf = spec["nf2ff"]
+    nf, step = spec["nf2ff"], job.get("step_deg", 5)
     center = [c * 1e-3 for c in nf["center"]]
-    for grid, (theta, phi, f0_only) in GRIDS.items():
+    grids = {**GRIDS, "sphere": (np.arange(0, 181, step), np.arange(0, 360, step), False)}
+    for grid, (theta, phi, f0_only) in grids.items():
         box.CalcNF2FF(job["dumps"], nf["f_hz"][:1] if f0_only else nf["f_hz"], theta, phi, center=center,
                       outfile=f"{job['out']}-{grid}.h5", read_cached=False)
 

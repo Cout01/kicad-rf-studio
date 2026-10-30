@@ -132,11 +132,21 @@ def _flat(lines, xyz) -> list[int]:
     return (i + len(lines[0]) * (j + len(lines[1]) * k)).tolist()
 
 
-def pec_roots(path: Path, lines, nodes) -> list[int]:
+def pec_roots(path: Path, lines, nodes, cut=()) -> list[int]:
     """The union-find root of each of `nodes` ([x, y, z] in mm, on `lines`) over the edges of PEC_dump.vtp at `path`
-    (C-15); -1 for a node no PEC edge touches. A dump point (metres, float32) takes the nearest line per axis."""
+    (C-15); -1 for a node no PEC edge touches. A dump point (metres, float32) takes the nearest line per axis. `cut`
+    (boxes [[x0, y0, z0], [x1, y1, z1]] in mm) is an antenna's feed-to-ground join, cut at its mesh nodes so that the
+    port-short check sees any other short (Stage 3 design 5.3): an edge with an end whose node lies in a box, bounds
+    included, is skipped, the node read on the lines' own mm values, never on the dump's float32 metres."""
     d = read_vtk(path)
-    parent = list(range(len(d["Points"]) // 3))
+    lines = [np.asarray(a, dtype=float) for a in lines]
+    # each dump point's node, on the lines' own mm values
+    node = np.column_stack([a[_nearest(a * 1e-3, v)] for a, v in zip(lines, d["Points"].reshape(-1, 3).T)])
+    # ponytail: a real short inside the join's box is cut too; the box is the join pads' bounds grown by d
+    held = np.zeros(len(node), dtype=bool)
+    for lo, hi in cut:
+        held |= ((node >= lo) & (node <= hi)).all(axis=1)
+    parent = list(range(len(node)))
 
     def find(a: int) -> int:
         while parent[a] != a:
@@ -145,10 +155,10 @@ def pec_roots(path: Path, lines, nodes) -> list[int]:
         return a
 
     # ponytail: pure-Python union-find, about 1 s per million PEC edges; numpy label propagation if it shows
-    for a, b in d["Lines/connectivity"].reshape(-1, 2).tolist():
+    edges = d["Lines/connectivity"].reshape(-1, 2)
+    for a, b in edges[~held[edges].any(axis=1)].tolist():
         parent[find(a)] = find(b)
-    point = dict(zip(_flat([np.asarray(a, dtype=float) * 1e-3 for a in lines], d["Points"].reshape(-1, 3)),
-                     range(len(parent))))
+    point = dict(zip(_flat(lines, node), range(len(parent))))  # a node on the lines is its own nearest
     return [find(point[n]) if n in point else -1 for n in _flat(lines, nodes)]
 
 

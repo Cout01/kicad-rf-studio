@@ -698,16 +698,16 @@ def run_ports(model: Model, run_dir: Path, setup: dict, threads: int, pool: int,
     return done, speeds, wall_s
 
 
-def far_field(job: Path) -> dict[str, Path]:
+def far_field(job: Path, step_deg: int = 5) -> dict[str, Path]:
     """The far-field transform (Stage 3 design 5.5) of the finished job in folder `job`, whose model spec records a far
     field. One worker in mode "nf2ff", in a folder of its own beside the job (job-0-nf2ff-<token>, a new
     `secrets.token_hex(4)` at each call), reads the job's dumps and writes <job>/nf2ff-<token>-<grid>.h5 for each of
-    worker.GRIDS, so a second transform never reads or overwrites the first's. Returns those paths by grid. Raises what
-    check_job raises, naming the job T_JOB_FAR_FIELD."""
+    worker.GRIDS, the sphere at `step_deg`, so a second transform never reads or overwrites the first's. Returns those
+    paths by grid. Raises what check_job raises, naming the job T_JOB_FAR_FIELD."""
     finished = json.loads((job / "job.json").read_text(encoding="utf-8"))
     token, settings = secrets.token_hex(4), runs.load_settings()
     work = runs.write_job(runs.job_dir(job.parent, 0, f"nf2ff-{token}"), finished["port"], "nf2ff", 1,
-                          finished["t_max"], dumps=f"../{job.name}", out=f"nf2ff-{token}")
+                          finished["t_max"], dumps=f"../{job.name}", out=f"nf2ff-{token}", step_deg=step_deg)
     out = runs.run_jobs([work], 1, job.parent, settings)
     runs.check_job(work, out[work], "T_JOB_FAR_FIELD", settings)
     return {grid: job / f"nf2ff-{token}-{grid}.h5" for grid in GRIDS}

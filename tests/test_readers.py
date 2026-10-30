@@ -60,6 +60,15 @@ def test_pec_pieces_tell_the_strip_from_the_ground():  # C-15
     assert r[0] == r[2] != r[1] == r[3] and min(r[:4]) >= 0 and r[4] == -1
 
 
+def test_a_cut_join_separates_the_copper_it_held():  # Stage 3 design 5.3: the port-short check; RF 2
+    nodes = [[-5, 0, 0.5], [3, 0, 0.535], [-5, 0, 0]]  # the strip at both ends, the ground
+    whole = pec_roots(DUMPS / "PEC_dump.vtp", LINES, nodes)
+    cut = pec_roots(DUMPS / "PEC_dump.vtp", LINES, nodes, [[[-0.3, -1.0, 0.4], [0.3, 1.0, 0.6]]])
+    assert whole[0] == whole[1] != whole[2] and cut[0] != cut[1] and cut[2] == whole[2]
+    faces = [[[-0.3, -1.0, 0.4], [0.3, 1.0, 0.5]], [[-0.3, -1.0, 0.535], [0.3, 1.0, 0.6]]]  # each ends on a face's line
+    assert pec_roots(DUMPS / "PEC_dump.vtp", LINES, nodes, faces) == cut  # bounds included; float32 metres miss both
+
+
 def test_c_box_of_port_1():  # C-18: 4 layers of 5 z-edges in series
     c = c_box(DUMPS / "operator_dump.vtr", LINES, [-5, -0.5, 0], [-5, 0.5, 0.5], 2, 1.73972e-13)
     assert c == pytest.approx(2.3796e-14, rel=1e-3)
