@@ -244,3 +244,12 @@ def test_a_schema_2_field_out_of_its_range_is_named(change, field, expected):  #
     with pytest.raises(KrsError) as e:
         check_project({**antenna_dict(), **change}, Path("p.json"))
     assert (e.value.code, e.value.params["field"], e.value.params["expected"]) == ("E_PROJECT_FIELD", field, expected)
+
+
+def test_an_antenna_projects_lid_is_true_or_false(tmp_path):  # final review G1: a null lid read harmonics
+    p = tmp_path / "project.json"
+    with pytest.raises(KrsError) as e:
+        check_project({**antenna_dict(), "lid": None}, p)
+    assert (e.value.code, e.value.params) == ("E_PROJECT_FIELD", {"path": str(p), "field": "lid",
+                                                                  "expected": "T_EXPECT_FLAG"})
+    assert check_project({**antenna_dict(), "lid": False}, p)["lid"] is False

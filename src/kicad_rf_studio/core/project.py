@@ -242,6 +242,7 @@ _FIELDS = {
     "allow_curve_port": _FLAG}
 _FIELDS_ANTENNA = {  # schema 2 (Stage 3 design 5.1): no harmonics or band_factor, then the antenna's fields
     **{key: spec for key, spec in _FIELDS.items() if key not in ("harmonics", "band_factor")},
+    "lid": _FLAG,  # find_lid reads harmonics for a null lid, and schema 2 has none (the one-lid ruling)
     "kind": (lambda v: v == "antenna", "T_EXPECT_ANTENNA"),
     "band": {"f_lo_hz": _ABOVE_0, "f_hi_hz": _ABOVE_0},
     "antenna": {"ref": _TEXT, "join": (_names, "T_EXPECT_NAMES")},
