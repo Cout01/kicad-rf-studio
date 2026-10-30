@@ -11,9 +11,10 @@ from matplotlib.figure import Figure
 
 from kicad_rf_studio.core.messages import KrsError, render
 from kicad_rf_studio.core.post.antenna import (ANTENNA_LIMITS, DELTA_COLUMNS, antenna_csv, antenna_png, bandwidth,
-                                                compare_s11, delta_lines, deltas, deltas_csv, dip_resonance,
-                                                draw_antenna, eta_what_if_lines, far_field_lines, far_field_of,
-                                                farfield_csv, resonance, s11_lines, shown_zin, zin)
+                                                compare_png, compare_s11, delta_lines, deltas, deltas_csv,
+                                                dip_resonance, draw_antenna, draw_compare, eta_what_if_lines,
+                                                far_field_lines, far_field_of, farfield_csv, resonance, s11_lines,
+                                                shown_zin, zin)
 from kicad_rf_studio.core.post.waves import band_grid
 from test_project import antenna_dict
 
@@ -192,3 +193,19 @@ def test_the_delta_lines_and_csv():  # design 5.8
         "I_RESONANCE_NOT_COMPARED")
     table = list(csv.reader(io.StringIO(deltas_csv(rows).decode())))
     assert table[0] == list(DELTA_COLUMNS) and len(table) == 7 and table[1][-1] == "True"
+
+
+def test_the_compare_png_overlays_both_with_the_label_and_the_limits():  # design 5.8; anti-goal 1
+    d = antenna_dict()
+    f = band_grid(d)
+    for far_field in (far_of(), None):
+        fig = Figure()
+        draw_compare(fig, f, [("a", dip(f).astype(complex), far_field),
+                              ("b", dip(f, 2.45e9).astype(complex), far_field)], d)
+        assert fig.get_suptitle() == render("I_PLOT_COMPARE_TITLE", base="a", variant="b") + "\n" + render(
+            "I_ANTENNA_RELATIVE")
+        assert all(render(code) in fig.texts[-1].get_text() for code in ANTENNA_LIMITS)
+        assert len(fig.axes) == (6 if far_field else 2)  # S11, Smith; η and the three cuts where both have a far field
+        assert [line.get_label() for line in fig.axes[0].lines if not line.get_label().startswith("_")] == ["a", "b"]
+    assert compare_png(f, [("a", dip(f).astype(complex), None), ("b", dip(f).astype(complex), None)], d).startswith(
+        b"\x89PNG")

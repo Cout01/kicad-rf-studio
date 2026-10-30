@@ -8,7 +8,8 @@ every job kept S does it replace the results in project.json and write the outpu
 a retune at the same values (pipeline.verify). `preview` has a worker write the model's model.xml and opens it in
 AppCSXCAD (pipeline.preview).
 `new --antenna REF --band F_LO:F_HI` writes an antenna's project instead, schema 2, its chain from the start pad to the
-antenna's feed (new_antenna, Stage 3).
+antenna's feed (new_antenna, Stage 3). `compare BASE VARIANT` compares two antenna projects' full simulations
+(pipeline.compare_projects, Stage 3).
 `setup-openems` installs openEMS from the official Windows package into this Python, and `calibrate` measures this
 machine's simulation speed. `install-kicad-plugin` writes the KiCad toolbar button (button.install) into KiCad's
 plugin folders, or removes it. `cost`, `run` and `verify` take `--run-dir DIR`, the run folder to use instead of a new
@@ -293,6 +294,13 @@ def _verify(a: argparse.Namespace) -> int:
     return pipeline.verify(pipeline.project_path(a.project), a.run_dir)
 
 
+def _compare(a: argparse.Namespace) -> int:
+    from kicad_rf_studio import pipeline
+
+    return pipeline.compare_projects(pipeline.project_path(a.base), pipeline.project_path(a.variant),
+                                     a.output and Path(a.output))
+
+
 def _preview(a: argparse.Namespace) -> int:
     from kicad_rf_studio import pipeline
 
@@ -352,6 +360,11 @@ def _parser() -> argparse.ArgumentParser:
     verify.add_argument("project")
     verify.add_argument("--run-dir", type=Path, metavar="DIR")
     verify.set_defaults(func=_verify)
+    compare = commands.add_parser("compare")  # no --run-dir: it starts no worker, so main writes it no end event
+    compare.add_argument("base")
+    compare.add_argument("variant")
+    compare.add_argument("-o", dest="output", metavar="PATH")
+    compare.set_defaults(func=_compare)
     preview = commands.add_parser("preview")
     preview.add_argument("project")
     preview.set_defaults(func=_preview)

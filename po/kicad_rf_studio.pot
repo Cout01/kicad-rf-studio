@@ -917,6 +917,11 @@ msgstr ""
 msgid "{name}: antenna, relative results"
 msgstr ""
 
+#. I_PLOT_COMPARE_TITLE
+#, python-brace-format
+msgid "{base} against {variant}: antenna, relative results"
+msgstr ""
+
 #. E_RETUNE_NO_PARTS
 msgid "This project has no part ports (a single trace), so there is nothing to retune; `run` writes its outputs."
 msgstr ""
@@ -967,6 +972,21 @@ msgstr ""
 
 #. E_RESULTS_STALE
 msgid "The model changed since the last run (a board re-saved in KiCad can change it too), or that run is older than this version, so its results no longer apply. Run `run` again."
+msgstr ""
+
+#. E_COMPARE_KIND
+#, python-brace-format
+msgid "{path} is not an antenna project: `compare` compares two antenna projects, made with `new --antenna`."
+msgstr ""
+
+#. E_COMPARE_NO_RESULT
+#, python-brace-format
+msgid "{path} has no result that `compare` can use: a run of its current model, made by this version, with no part on the chain, or, with part ports, a verify of that run at the values project.json holds. Run `run` (a board re-saved since its run needs one), then `verify` for a project with part ports."
+msgstr ""
+
+#. E_COMPARE_SETTINGS
+#, python-brace-format
+msgid "The two projects were simulated with different settings ({fields}), so their differences would mix the boards' with the settings'. Make those settings the same in both, run both with the same versions of this app and of openEMS, and compare again."
 msgstr ""
 
 #. E_VERIFY_VALUE
@@ -1106,6 +1126,11 @@ msgstr ""
 #. I_ANTENNA_ETA_WHAT_IF
 #, python-brace-format
 msgid "{f_mhz} MHz: total efficiency {eta_tot_pct} % what-if: the last verify's radiation efficiency {eta_rad_pct} % times the {delivered_pct} % of the incident power that this retune's network passes to the board (its mismatch efficiency less its parts' own loss); a lossless network that does not radiate leaves the radiation efficiency and the pattern as they are."
+msgstr ""
+
+#. I_COMPARE_BASIS
+#, python-brace-format
+msgid "{role}: {path}, compared by its {source} in {run_dir}."
 msgstr ""
 
 #. I_COMPARE_RESONANCE
@@ -1859,6 +1884,22 @@ msgstr ""
 
 #. T_NOT_RESOLVED
 msgid "not resolved"
+msgstr ""
+
+#. T_BASE
+msgid "Base"
+msgstr ""
+
+#. T_VARIANT
+msgid "Variant"
+msgstr ""
+
+#. T_RUN
+msgid "run"
+msgstr ""
+
+#. T_VERIFY
+msgid "verify"
 msgstr ""
 
 #. T_INSTALL_WINDOWS

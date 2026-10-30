@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """An antenna's results (Stage 3 design 5.5, 5.6): S11's resonance, bandwidth and mismatch at the band's markers, the
 far field's efficiencies and gains, and the files of results/, each labelled relative with its stated limits; no loss
-budget, radiation being the "loss". matplotlib is imported inside antenna_png only (C-5)."""
+budget, radiation being the "loss". matplotlib is imported inside antenna_png and compare_png only (C-5)."""
 import csv
 import io
 import re
@@ -17,6 +17,7 @@ from kicad_rf_studio.core.post.farfield import efficiencies, eta_lines, port_pow
 ANTENNA_OUTPUTS = re.compile(r"(layout|chain)\.s\d+p|farfield\.csv|antenna_summary\.(png|csv)")  # matched whole
 # verify's files for an antenna (Stage 3 design 5.6, 5.7), which ANTENNA_OUTPUTS never matches, so a retune leaves them
 ANTENNA_VERIFY_OUTPUTS = re.compile(r"verify\.s1p|verify_(farfield\.csv|summary\.(png|csv))")
+COMPARE_OUTPUTS = re.compile(r"compare\.(png|csv)")  # compare's files (Stage 3 design 5.8), matched whole
 ANTENNA_LIMITS = ("I_LIMIT_FREE_SPACE", "I_LIMIT_PEC_ETA", "I_LIMIT_SURROUNDINGS", "I_LIMIT_BODIES",
                   "I_LIMIT_PARTS_OFF_CHAIN")  # design 5.6: stated after every antenna result
 LEVELS_DB = (-10.0, -6.0)  # the bandwidth's levels: -10 dB, and the -6 dB marker (design 5.6)
@@ -279,44 +280,76 @@ def antenna_csv(far: dict, s11: np.ndarray) -> bytes:
     return _csv(ANTENNA_COLUMNS, np.column_stack(columns))
 
 
-def draw_antenna(fig, f: np.ndarray, s11: np.ndarray, project: dict, far: dict | None, name: str,
-                 label: str | None = None) -> None:
-    """antenna_summary.png's plots (design 5.6) on the matplotlib Figure `fig` (antenna_png's, or plan 5's GUI
-    canvas), as draw_summary draws v1's: |S11| in dB against GHz with the band [f_lo, f_hi] shaded and lines at
-    LEVELS_DB, and S11 on a Smith chart with dots at f_lo, f0 and f_hi; with far_field_of's `far`, η_rad and η_tot in
-    % against GHz and the cuts of D in dBi at f0, XY (θ 90°), XZ (φ 0°) and YZ (φ 90°), down to CUT_RANGE_DB below
-    their peak. Under I_PLOT_ANTENNA_TITLE with I_ANTENNA_RELATIVE as its second line and `label` (the what-if label,
-    D-15, as draw_summary's) as its third when given, and with the rendered ANTENNA_LIMITS, one a line, in the last of
-    fig.texts, at the foot."""
-    rows, cols = (2, 3) if far else (1, 2)
+def _panels(fig, f: np.ndarray, curves: list[tuple[str, np.ndarray, dict | None]], project: dict) -> None:
+    """The plots of draw_antenna and draw_compare on the matplotlib Figure `fig`, each curve (name, S11 (F,) on `f`,
+    far_field_of's dict or None) drawn on every panel (Stage 3 design 5.6, 5.8): |S11| in dB against GHz, each curve
+    labelled with its name, with the band [f_lo, f_hi] shaded and lines at LEVELS_DB; S11 on a Smith chart with dots
+    at f_lo, f0 and f_hi; and only when every curve has a far field, η_rad and η_tot in % against GHz and the cuts of
+    D in dBi at f0, XY (θ 90°), XZ (φ 0°) and YZ (φ 90°), on one radial range down to CUT_RANGE_DB below the highest
+    peak. The η panel has a legend; with two curves every panel has one, and the η lines' labels start with the
+    curve's name."""
+    far_fields, two = all(far for _, _, far in curves), len(curves) > 1
+    rows, cols = (2, 3) if far_fields else (1, 2)
     ax11, ax_smith = fig.add_subplot(rows, cols, 1), fig.add_subplot(rows, cols, 2)
     band, dots = project["band"], list(_markers(project, f).values())
-    ax11.plot(f / 1e9, _db(s11))
+    rf.plotting.smith(ax=ax_smith, draw_labels=True)
+    for name, s11, _ in curves:
+        ax11.plot(f / 1e9, _db(s11), label=name)
+        line, = ax_smith.plot(s11.real, s11.imag, label=name)
+        ax_smith.plot(s11[dots].real, s11[dots].imag, "o", color=line.get_color())
     ax11.axvspan(band["f_lo_hz"] / 1e9, band["f_hi_hz"] / 1e9, color="grey", alpha=0.2)
     for level in LEVELS_DB:
         ax11.axhline(level, color="grey", linewidth=0.5)
     ax11.set(xlabel=render("I_PLOT_FREQUENCY"), ylabel="|S11| (dB)")
-    rf.plotting.smith(ax=ax_smith, draw_labels=True)
-    line, = ax_smith.plot(s11.real, s11.imag)
-    ax_smith.plot(s11[dots].real, s11[dots].imag, "o", color=line.get_color())
-    if far:
-        sphere, el, az = far["sphere"], far["elevation"], far["azimuth"]
-        ax_eta, order = fig.add_subplot(rows, cols, 3), np.argsort(sphere.f)
-        for key, legend in (("eta_rad", "η_rad"), ("eta_tot", "η_tot")):
-            ax_eta.plot(sphere.f[order] / 1e9, 100 * far["eff"][key][order], "o-", label=legend)
+    legends = [ax11, ax_smith] if two else []
+    if far_fields:
+        ax_eta = fig.add_subplot(rows, cols, 3)
+        for name, _, far in curves:
+            sphere, order = far["sphere"], np.argsort(far["sphere"].f)
+            for key, legend in (("eta_rad", "η_rad"), ("eta_tot", "η_tot")):
+                ax_eta.plot(sphere.f[order] / 1e9, 100 * far["eff"][key][order], "o-",
+                            label=f"{name} {legend}" if two else legend)
         ax_eta.set(xlabel=render("I_PLOT_FREQUENCY"), ylabel="η (%)")
-        ax_eta.legend()
-        cuts = (("XY", az.phi, az.d[0, 0]), ("XZ", el.theta, el.d[0, :, 0]), ("YZ", el.theta, el.d[0, :, 1]))
-        top = 10 * np.log10(max(d.max() for _, _, d in cuts))
-        for n, (plane, angle, d) in enumerate(cuts, 4):
+        legends.append(ax_eta)
+        cuts = [{"XY": (far["azimuth"].phi, far["azimuth"].d[0, 0]),  # each curve's (angles in °, D) by plane
+                 "XZ": (far["elevation"].theta, far["elevation"].d[0, :, 0]),
+                 "YZ": (far["elevation"].theta, far["elevation"].d[0, :, 1])} for _, _, far in curves]
+        top = 10 * np.log10(max(d.max() for cut in cuts for _, d in cut.values()))
+        for n, plane in enumerate(("XY", "XZ", "YZ"), 4):
             ax = fig.add_subplot(rows, cols, n, projection="polar")
             if plane != "XY":  # θ from the z axis, drawn up
                 ax.set_theta_zero_location("N")
                 ax.set_theta_direction(-1)
-            ax.plot(np.radians(angle), np.maximum(10 * np.log10(d), top - CUT_RANGE_DB))
+            for (name, _, _), cut in zip(curves, cuts):
+                angle, d = cut[plane]
+                ax.plot(np.radians(angle), np.maximum(10 * np.log10(d), top - CUT_RANGE_DB), label=name)
             ax.set(title=plane, ylim=(top - CUT_RANGE_DB, top))
+            legends += [ax] if two else []
+    for ax in legends:
+        ax.legend()
+
+
+def draw_antenna(fig, f: np.ndarray, s11: np.ndarray, project: dict, far: dict | None, name: str,
+                 label: str | None = None) -> None:
+    """antenna_summary.png's plots (design 5.6) on the matplotlib Figure `fig` (antenna_png's, or plan 5's GUI
+    canvas), as draw_summary draws v1's: _panels of the one curve `s11` named `name`, with far_field_of's `far` when
+    given. Under I_PLOT_ANTENNA_TITLE with I_ANTENNA_RELATIVE as its second line and `label` (the what-if label, D-15,
+    as draw_summary's) as its third when given, and with the rendered ANTENNA_LIMITS, one a line, in the last of
+    fig.texts, at the foot."""
+    _panels(fig, f, [(name, s11, far)], project)
     fig.suptitle(render("I_PLOT_ANTENNA_TITLE", name=name) + "\n" + render("I_ANTENNA_RELATIVE")
                  + ("\n" + label if label else ""), wrap=True)
+    fig.supxlabel("\n".join(render(code) for code in ANTENNA_LIMITS), x=0.01, ha="left", fontsize="small", wrap=True)
+
+
+def draw_compare(fig, f: np.ndarray, curves: list[tuple[str, np.ndarray, dict | None]], project: dict) -> None:
+    """compare.png's overlays (Stage 3 design 5.8) on the Figure `fig`: _panels of both curves, under
+    I_PLOT_COMPARE_TITLE {base, variant} (the curves' names) with I_ANTENNA_RELATIVE as its second line, and the
+    rendered ANTENNA_LIMITS at the foot, as draw_antenna."""
+    _panels(fig, f, curves, project)
+    (base, _, _), (variant, _, _) = curves
+    fig.suptitle(render("I_PLOT_COMPARE_TITLE", base=base, variant=variant) + "\n" + render("I_ANTENNA_RELATIVE"),
+                 wrap=True)
     fig.supxlabel("\n".join(render(code) for code in ANTENNA_LIMITS), x=0.01, ha="left", fontsize="small", wrap=True)
 
 
@@ -328,6 +361,18 @@ def antenna_png(f: np.ndarray, s11: np.ndarray, project: dict, far: dict | None,
 
     fig = Figure(figsize=(15, 10.5) if far else (15, 6), layout="constrained")
     draw_antenna(fig, f, s11, project, far, name, label)
+    out = io.BytesIO()
+    fig.savefig(out, format="png", dpi=100)
+    return out.getvalue()
+
+
+def compare_png(f: np.ndarray, curves: list[tuple[str, np.ndarray, dict | None]], project: dict) -> bytes:
+    """compare.png (Stage 3 design 5.8): draw_compare on a Figure drawn by Agg, never a pyplot figure, as PNG at 100
+    dpi, sized as antenna_png sizes it: taller when the far field's panels are drawn, which takes both far fields."""
+    from matplotlib.figure import Figure  # here only: no other code of the core loads matplotlib (C-5)
+
+    fig = Figure(figsize=(15, 10.5) if all(far for _, _, far in curves) else (15, 6), layout="constrained")
+    draw_compare(fig, f, curves, project)
     out = io.BytesIO()
     fig.savefig(out, format="png", dpi=100)
     return out.getvalue()

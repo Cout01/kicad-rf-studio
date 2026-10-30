@@ -919,6 +919,11 @@ msgstr "Limite: os componentes fora da cadeia são aproximados: capacitores pert
 msgid "{name}: antenna, relative results"
 msgstr "{name}: antena, resultados relativos"
 
+#. I_PLOT_COMPARE_TITLE
+#, python-brace-format
+msgid "{base} against {variant}: antenna, relative results"
+msgstr "{base} contra {variant}: antena, resultados relativos"
+
 #. E_RETUNE_NO_PARTS
 msgid "This project has no part ports (a single trace), so there is nothing to retune; `run` writes its outputs."
 msgstr "Este projeto não tem portas de componentes (uma trilha única), então não há nada para ajustar; `run` grava as saídas dele."
@@ -970,6 +975,21 @@ msgstr "O project.json ainda não tem resultados. Execute `run` primeiro."
 #. E_RESULTS_STALE
 msgid "The model changed since the last run (a board re-saved in KiCad can change it too), or that run is older than this version, so its results no longer apply. Run `run` again."
 msgstr "O modelo mudou desde a última execução (uma placa salva de novo no KiCad também pode mudá-lo), ou essa execução é anterior a esta versão, então os resultados dela não valem mais. Execute `run` de novo."
+
+#. E_COMPARE_KIND
+#, python-brace-format
+msgid "{path} is not an antenna project: `compare` compares two antenna projects, made with `new --antenna`."
+msgstr "{path} não é um projeto de antena: `compare` compara dois projetos de antena, criados com `new --antenna`."
+
+#. E_COMPARE_NO_RESULT
+#, python-brace-format
+msgid "{path} has no result that `compare` can use: a run of its current model, made by this version, with no part on the chain, or, with part ports, a verify of that run at the values project.json holds. Run `run` (a board re-saved since its run needs one), then `verify` for a project with part ports."
+msgstr "{path} não tem resultado que `compare` possa usar: uma execução do modelo atual dele, feita por esta versão, sem componente na cadeia ou, com portas de componentes, uma verificação dessa execução com os valores que o project.json guarda. Execute `run` (uma placa salva de novo desde a execução precisa de uma) e depois `verify` para um projeto com portas de componentes."
+
+#. E_COMPARE_SETTINGS
+#, python-brace-format
+msgid "The two projects were simulated with different settings ({fields}), so their differences would mix the boards' with the settings'. Make those settings the same in both, run both with the same versions of this app and of openEMS, and compare again."
+msgstr "Os dois projetos foram simulados com configurações diferentes ({fields}), então as diferenças deles misturariam as das placas com as das configurações. Deixe essas configurações iguais nos dois, execute os dois com as mesmas versões deste aplicativo e do openEMS e compare de novo."
 
 #. E_VERIFY_VALUE
 #, python-brace-format
@@ -1109,6 +1129,11 @@ msgstr "Sem campo distante para esta execução: uma execução com portas de co
 #, python-brace-format
 msgid "{f_mhz} MHz: total efficiency {eta_tot_pct} % what-if: the last verify's radiation efficiency {eta_rad_pct} % times the {delivered_pct} % of the incident power that this retune's network passes to the board (its mismatch efficiency less its parts' own loss); a lossless network that does not radiate leaves the radiation efficiency and the pattern as they are."
 msgstr "{f_mhz} MHz: eficiência total hipotética de {eta_tot_pct} %: a eficiência de radiação da última verificação, {eta_rad_pct} %, vezes os {delivered_pct} % da potência incidente que a rede deste ajuste entrega à placa (a eficiência de descasamento menos a perda dos próprios componentes); uma rede sem perdas que não irradia mantém a eficiência de radiação e o diagrama como estão."
+
+#. I_COMPARE_BASIS
+#, python-brace-format
+msgid "{role}: {path}, compared by its {source} in {run_dir}."
+msgstr "{role}: {path}, comparado pela {source} em {run_dir}."
 
 #. I_COMPARE_RESONANCE
 #, python-brace-format
@@ -1870,6 +1895,22 @@ msgstr "resolvido"
 #. T_NOT_RESOLVED
 msgid "not resolved"
 msgstr "não resolvido"
+
+#. T_BASE
+msgid "Base"
+msgstr "Base"
+
+#. T_VARIANT
+msgid "Variant"
+msgstr "Variante"
+
+#. T_RUN
+msgid "run"
+msgstr "execução"
+
+#. T_VERIFY
+msgid "verify"
+msgstr "verificação"
 
 #. T_INSTALL_WINDOWS
 msgid "kicad-rf-studio setup-openems <openEMS folder>"
