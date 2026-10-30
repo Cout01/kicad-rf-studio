@@ -2,10 +2,11 @@
 import numpy as np
 import pytest
 
+from kicad_rf_studio import runs
 from kicad_rf_studio.core.mesh import Mesh
 from kicad_rf_studio.core.model.spec import cell_split, spec_hash
 from kicad_rf_studio.core.project import GATES
-from kicad_rf_studio.pipeline import Model, cost_notes, driver, duration, port_gates, smallest_cell
+from kicad_rf_studio.pipeline import Model, cost_notes, driver, duration, port_gates, prepare, smallest_cell
 
 
 def test_cost_notes_follow_the_cost_model():  # spec 6.4
@@ -49,6 +50,19 @@ def test_an_antennas_cost_splits_its_cells_and_weights_the_pml():  # design 5.9;
     assert (notes["I_COST_TIME"]["time"], notes["I_COST_PREDICTED"]["time"]) == (duration(1000 * step), duration(500 * step))
     v1 = {**project, "schema": 1}
     assert "I_COST_SPLIT" not in dict(cost_notes(m, v1, {"dt": 1e-12, "node": [0, 1, 2, 3]}, 4, 1, 100.0))
+
+
+def test_a_small_lone_job_takes_the_calibrations_own_one_job_speed(calibrated):  # design 5.9; P3-A's decisions
+    lines = np.linspace(0.0, 9.0, 10)
+    m = Model(Mesh(lines, lines, lines, 1.0, 0.4, {}, {}), {"ports": [{"part": False}]}, [], 1.5e-12)
+    settings = runs.load_settings()
+    entry = settings["machines"][runs.machine_key()]  # 2 threads, one job timed at them: single {"2": 200.0}
+    entry["levels"] = {"1": 150.0}  # as a v1 run at pool 1 refreshes it
+    runs.save_settings(settings)
+    assert prepare(m, lambda *_: None, small=True) == (2, 1, 200.0) and prepare(m, lambda *_: None) == (2, 1, 150.0)
+    del entry["single"]  # a calibration that never timed one job at its threads
+    runs.save_settings(settings)
+    assert prepare(m, lambda *_: None, small=True) == (2, 1, 150.0)
 
 
 @pytest.mark.parametrize(("roots", "notes"), [
