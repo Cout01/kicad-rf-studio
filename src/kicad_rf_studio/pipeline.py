@@ -676,15 +676,16 @@ def _locked(path: Path, body: Callable[[Path, Path], int], run_dir: Path | None 
 
 def _run(path: Path, run_dir: Path) -> int:
     """run() under the lock, with `run_dir` made: an antenna run saves its S as v1 does, its results with far_field
-    null and its settings fingerprint (fingerprint, Stage 3 design 5.8), then, with no part port, transforms its far
-    field after its job and saves again; a transform that fails is an E_ line, and one stopped leaves S kept (Stage 3
-    design 5.5)."""
+    null and its settings fingerprint (fingerprint, Stage 3 design 5.8), taken before the jobs so that a failed
+    openEMS probe costs no job, then, with no part port, transforms its far field after its job and saves again; a
+    transform that fails is an E_ line, and one stopped leaves S kept (Stage 3 design 5.5)."""
     emit = partial(runs.emit, run_dir)  # (kind, code, params, job=None)
     if isinstance(built := _model_phase(path, emit), int):
         return built
     project, _, geom, model = built
     gates, preset = project["gates"], project["preset"]
     loss = expected_loss(geom, project["f0_hz"])  # before prepare: an error here costs no job
+    fp = fingerprint(project) if antenna(project) else None  # likewise a failed openEMS probe
     if (out := simulate(model, project, run_dir)) is None:
         return 3
     done, setup, wall_s = out
@@ -699,7 +700,7 @@ def _run(path: Path, run_dir: Path) -> int:
                        "jobs": done}
     if antenna(project):
         data["results"]["far_field"] = None
-        data["results"]["fingerprint"] = fingerprint(project)
+        data["results"]["fingerprint"] = fp
     rerun = command_line("kicad-rf-studio", "run", str(path))
     rewrite = command_line("kicad-rf-studio", "retune", str(path))
     _save(path, data, rerun)
@@ -1081,6 +1082,7 @@ def _verify(path: Path, run_dir: Path) -> int:
                         far_field=far_field_box(project, board, geom) if ant else None)
     zk = loads({ref: z_value(ref, values[ref], None, lay.f, bypasses=ant) for ref in refs}, refs,
                results["c_box"], lay.f)  # the ideal values, the part models and S2P files ignored (C-38)
+    fp = fingerprint(project) if ant else None  # as every refusal, before any job
     if (out := simulate(replace(model, spec=vspec), project, run_dir)) is None:
         return 3
     done, _, wall_s = out
@@ -1092,7 +1094,7 @@ def _verify(path: Path, run_dir: Path) -> int:
     own = layout(project, {"run_dir": str(run_dir), "jobs": done})
     if ant:
         return _verify_antenna(path, run_dir, project, vspec, values, own, terminate(lay.s, ext, zk, lay.f)[:, 0, 0],
-                               done, wall_s)
+                               done, wall_s, fp)
     k0, p = lay.markers[0], len(own.ports)
     # 10 × the S tolerance of the noisier preset, the run's or verify's own
     floor = 10 * max(PRESETS[results["preset"]][1], PRESETS[project["preset"]][1])
@@ -1141,11 +1143,12 @@ def _verify(path: Path, run_dir: Path) -> int:
 
 
 def _verify_antenna(path: Path, run_dir: Path, project: dict, vspec: dict, values: dict[str, str], own: Layout,
-                    retuned: np.ndarray, done: list[dict], wall_s: float) -> int:
+                    retuned: np.ndarray, done: list[dict], wall_s: float, fp: dict) -> int:
     """_verify's end for an antenna (Stage 3 design 5.5–5.7), with `own` verify's one-port layout and `retuned` the
     retune's S11 at the same ideal values; `results` is project["results"], as results_of checked it. The comparison
-    (compare_s11, k0 own's f0 marker) is stored in project.json's verify with far_field null and fingerprint(project),
-    and I_VERIFY_RESULTS emitted at once, as _run emits I_RESULTS before its transform. Then verify.s1p (port_map and
+    (compare_s11, k0 own's f0 marker) is stored in project.json's verify with far_field null and `fp`, the settings
+    fingerprint _verify took before the jobs (fingerprint(project): a failed openEMS probe costs no job), and
+    I_VERIFY_RESULTS emitted at once, as _run emits I_RESULTS before its transform. Then verify.s1p (port_map and
     grid_lines, as v1's) and verify_summary.png without a far field are written (ANTENNA_VERIFY_OUTPUTS), so that a
     stopped transform leaves them, as it leaves a run's S. Only when the comparison was stored, the far field is
     transformed from verify's job (far_field, the project's step), stored and read back (far_of), and all four files
@@ -1165,7 +1168,7 @@ def _verify_antenna(path: Path, run_dir: Path, project: dict, vspec: dict, value
         data = load_project(path)  # as it is now: only verify is replaced
         data["verify"] = {"model_hash": spec_hash(vspec), "base_hash": results["model_hash"], "values": values,
                           "run_dir": str(run_dir), "jobs": done, "compare": cmp, "far_field": None,
-                          "fingerprint": fingerprint(project)}
+                          "fingerprint": fp}
         _save(path, data, command)
     except KrsError as err:  # E_RESULTS_WRITE for project.json, or E_PROJECT_UNREADABLE after a hand edit meanwhile
         errors.append((err.code, err.params))

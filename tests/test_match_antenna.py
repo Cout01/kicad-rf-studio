@@ -19,6 +19,7 @@ from kicad_rf_studio.gui.control import default_series, snapped
 from networks import C_BOX, read_s, star, terminate_np
 from test_cli_antenna import FIX, antenna_project, placeholders
 from test_post_chain import M0402
+from test_run import lpf_project
 
 BAND = (2.4e9, 2.4835e9)
 OPEN = None  # a part port closed by its box's C alone
@@ -93,6 +94,17 @@ def test_an_antenna_run_records_its_settings_fingerprint(tmp_path, calibrated): 
             "lid_height_mm")
     assert d["results"]["fingerprint"] == {**{key: d[key] for key in keys}, "start": "U1.1", "copper": "solid",
                                            "app": __version__, "openems": "0.37.0"}  # fake_cli's openems_versions
+
+
+def test_an_antenna_takes_its_fingerprint_before_any_job(tmp_path, calibrated, monkeypatch):  # final review
+    pj = pi_run(tmp_path, monkeypatch)  # part ports and a run: verify has something to verify
+    calls = []
+    monkeypatch.setattr(pipeline, "fingerprint", lambda project: calls.append("fingerprint") or {})
+    monkeypatch.setattr(pipeline, "simulate", lambda *a, **k: calls.append("simulate"))  # None: the command ends at 3
+    assert pipeline.run(pj) == 3 and pipeline.verify(pj) == 3
+    assert calls == ["fingerprint", "simulate"] * 2  # a failed openEMS probe costs no job
+    calls.clear()
+    assert pipeline.run(lpf_project(tmp_path)) == 3 and calls == ["simulate"]  # v1: no fingerprint
 
 
 def test_verify_runs_an_antennas_network_in_one_job_and_records_its_far_field(tmp_path, calibrated, monkeypatch):
