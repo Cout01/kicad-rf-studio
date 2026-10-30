@@ -1,7 +1,7 @@
 # kicad-rf-studio — Stage 1 design: a validated simulation engine
 
 - **Date:** 2026-10-16
-- **Status:** design approved section by section in conversation, revised on 2026-10-19 after an independent review, and approved by the owner. On 2026-10-21 the owner confirmed one amendment to §5.4: the substrate height now counts in the cell size. On 2026-10-22, plan 5 amended §1.1, §7.6, §9.1, §9.2 and §9.6 (A-1 to A-4) as controller recommendations while the owner was unavailable; the owner reviews them. On 2026-10-24, D-45's fix amended §5.6 (A-6) and §7.6 (A-7) the same way. On 2026-10-25, P0-B's TX-side outcome amended §1.1 and §12 (A-5) the same way. On 2026-10-26, plan 6's mesh-rule calibration amended §5.4 and §12 (A-8) the same way. On 2026-10-27, Stage 2's plan 1 amended §3.2, §3.3, §3.4 and §6.1 (A-13 to A-15) the same way. On 2026-10-28, Stage 2's plan 3 amended §3.2, §3.4, §4.3 and §10 (A-16 to A-18) the same way. On 2026-10-28, Stage 2's plan 4 amended §3.4, §3.6, §9.1 and §12 (A-19 to A-21) the same way. On 2026-10-29, the pt-BR translation plan amended §1.1 and §3.5 (A-22) the same way. On 2026-10-29, Stage 3's plan 1 amended §2, §5.1 and §9 (A-23 to A-25) the same way.
+- **Status:** design approved section by section in conversation, revised on 2026-10-19 after an independent review, and approved by the owner. On 2026-10-21 the owner confirmed one amendment to §5.4: the substrate height now counts in the cell size. On 2026-10-22, plan 5 amended §1.1, §7.6, §9.1, §9.2 and §9.6 (A-1 to A-4) as controller recommendations while the owner was unavailable; the owner reviews them. On 2026-10-24, D-45's fix amended §5.6 (A-6) and §7.6 (A-7) the same way. On 2026-10-25, P0-B's TX-side outcome amended §1.1 and §12 (A-5) the same way. On 2026-10-26, plan 6's mesh-rule calibration amended §5.4 and §12 (A-8) the same way. On 2026-10-27, Stage 2's plan 1 amended §3.2, §3.3, §3.4 and §6.1 (A-13 to A-15) the same way. On 2026-10-28, Stage 2's plan 3 amended §3.2, §3.4, §4.3 and §10 (A-16 to A-18) the same way. On 2026-10-28, Stage 2's plan 4 amended §3.4, §3.6, §9.1 and §12 (A-19 to A-21) the same way. On 2026-10-29, the pt-BR translation plan amended §1.1 and §3.5 (A-22) the same way. On 2026-10-29, Stage 3's plan 1 amended §2, §5.1 and §9 (A-23 to A-25) the same way. On 2026-10-30, Stage 3's plan 2 amended §1.1, §3.2, §3.3, §5.1, §5.5, §6.3, §6.4, §7.4, §7.5 and §10 (A-26 to A-32) the same way.
 - **Scope:** Stage 1 of the project: the headless engine, the command-line orchestrator and the validation gates. The GUI and the KiCad toolbar button (Stage 2) get their own spec, written with Stage 1's results.
 
 ---
@@ -31,7 +31,7 @@ The users are hardware engineers who use KiCad and are not FDTD experts. The pro
 | Platforms | Windows 10/11 and Linux |
 | UI language | English, or Brazilian Portuguese where Windows' display language is Portuguese (Brazil) or the gettext variables name it; every user-facing string is a catalog code (A-22, pt-BR translation plan: controller recommendation, owner unavailable.) |
 | openEMS | Used as-is: openEMS 0.37.0 and CSXCAD 0.7.0, installed separately, never bundled in v1 |
-| Simulation domain | Always a selected region, never a whole board |
+| Simulation domain | Always a selected region, never a whole board, for the matching chain. An antenna project (Stage 3) simulates the whole board, every copper layer, the substrate, the mask and the lid, in an air box (A-26, Stage 3 plan 2: controller recommendation, owner unavailable.) |
 | Defaults | Safe automatic defaults. In Stage 1 every default is written to `project.json`, which serves as the advanced settings; Stage 2 adds an advanced panel |
 | Stackup | From the board file, or a confirmed preset. The first preset uses JLCPCB's published data |
 | Copper weight | Only 1 oz (35 µm) is validated |
@@ -116,6 +116,8 @@ The users are hardware engineers who use KiCad and are not FDTD experts. The pro
 | `kicad-rf-studio calibrate` | Re-runs the speed calibration. It also runs automatically before the first `cost` or `run` |
 | `kicad-rf-studio install-kicad-plugin [--kicad 9.0\|10.0] [--remove]` | Writes the KiCad toolbar button, an exec plugin (`plugin.json`, a launcher holding this environment's Python, and its icons), into `plugins/kicad-rf-studio` of each KiCad 9.0 and 10.0 documents folder that exists, honouring KICAD_DOCUMENTS_HOME, or of the one named; `--remove` deletes it. It never edits KiCad's settings, and prints the one step left: turn on the KiCad API under Preferences › Plugins, then restart KiCad. (A-17, Stage 2 plan 3: controller recommendation, owner unavailable.) |
 
+**Antennas** (Stage 3): `new BOARD --start REF.PAD --antenna REF --band F_LO:F_HI` writes an antenna project, with `--antenna` in place of `--end` and the band in place of `--f0` and `--harmonics`; `cost`, `run`, `retune` and `preview` work on it as on a v1 project. (A-32, Stage 3 plan 2: controller recommendation, owner unavailable.)
+
 **Stage 1 never prompts.** Whatever this spec calls asked or confirmed comes from a `new` option or a `project.json` field, and `run` refuses while a required value is missing.
 
 **Run folders given by the caller.** `cost`, `run` and `verify` take `--run-dir DIR`: the run folder to use instead of a new one in the data folder, made at the start (a relative DIR is read from the working folder; one that cannot be made or already holds a run is refused). With it, `cost` writes every line as an event there from its first. The first-use calibration runs inside the command's run folder, in `calibrate/`, and that folder's `STOP` stops it. Stage 2's GUI starts these commands detached, with a new folder each time. (A-14, Stage 2 plan 1: controller recommendation, owner unavailable.)
@@ -133,7 +135,8 @@ Stage 2's GUI calls the same functions, in the same order: `new`, then `cost`, t
   - the external ports, each a (signal pad, reference pad) pair;
   - the mesh parameters;
   - one hash over the model spec handed to the worker: geometry, stackup, mask, mesh, ports, part roles, port boxes and excitation;
-  - the results: the run folder, which holds the waves of each excitation, C_box for each part port, and the verdicts.
+  - the results: the run folder, which holds the waves of each excitation, C_box for each part port, and the verdicts;
+  - an antenna project (Stage 3) is schema 2 with `"kind": "antenna"`, without the harmonics and the band factor, and with the band, the antenna and its join pads, the air gap, the boundary and the far-field frequencies and angle step; v1 projects stay schema 1 (A-32).
 - **Run folders** live in the per-user data directory, never in the system temp directory:
   - Windows: `%LOCALAPPDATA%\kicad-rf-studio\runs\`;
   - Linux: `$XDG_DATA_HOME/kicad-rf-studio/runs/`.
@@ -249,6 +252,7 @@ Per footprint, the reader takes:
 - **Through-crop.** Copper, substrate and vias run through the walls. Nets are never cut at the ROI edge: an "island crop" was 2–80× worse in the research.
 - **PML_8 on all six faces** is for antennas only (Stage 3), where no copper enters the absorber; Stage 1 always uses MUR. Boundary types are never mixed per face: the per-face mix and PML_8 grew after 15–21 ns, while MUR at the outer wall stayed stable.
 - **The antenna boundary** (Stage 3): a model spec written for an antenna holds `"boundary": "pml_8"`: PML_8 on all six faces, its 8 cells added outside the air box at the outer cell size. A spec without the key, as every v1 spec is, keeps MUR on all six faces, so the two are never mixed. A setup gate, E_METAL_IN_PML, refuses a model with metal, dielectric or a lumped port within the PML or the 2 cells just inside its inner edge. (A-24, Stage 3 plan 1: controller recommendation, owner unavailable.)
+- **The antenna's region** (Stage 3): the measured region takes the ROI's place: the bounding box of the antenna footprint's copper (its netless copper takes the feed pad's net), of the chain from the start pad to the antenna's feed pad and of the port, grown by `region.expand_h` substrate heights, 6 by default, the protected set's reach. The cell d comes from the feed network's tracks and sections, as in v1; the antenna's copper gets the rule's edge lines. A short or an open inside the measured region is a gate and elsewhere on the board a warning, except the antenna's own feed-to-ground join through the pads `antenna.join`, which `new` records and which the port-short check also accepts by cutting the PEC edges at the mesh nodes within one cell of those pads. The walls are the board's box, its outline and copper, grown by one coarse cell; the air gap `air_gap_mm`, λ/4 at f_lo by default, runs from them to the PML's inner edge, graded at 1.3 up to λ(f2)/20 in air; nothing reaches a crop. The shield over most of the board gets its lid at the project's lid height, and a warning names any other. The rest of the board's parts are never ports: a capacitor whose capacitive reactance, less its package's inductive one, is at most Z0/5 at the pulse's centre is copper; a resistor or capacitor that v1 puts in the grid is in the grid inside the measured region and open outside it; any other part is open. (A-27, Stage 3 plan 2: controller recommendation, owner unavailable.)
 - **Connectivity.** A short or an open inside the ROI is a gate; in the margin it is a warning.
 - **Vias** in the protected set (§5.4) are solid PEC cylinders on the fine mesh. All other vias, in the ROI or the margin, become PEC curves snapped to the mesh; otherwise a 0.3 mm cylinder on 2.4 mm cells touches no mesh edge and vanishes.
 
@@ -310,7 +314,7 @@ Only the edge lint first tries one automatic re-mesh; the other gates block dire
   - the nearest inside line is closer than d/8;
   - the first outside line is closer to the edge than the nearest inside line.
 
-  Lines on edges measured −7 to −14 % in Z0. The pinned z faces of the copper are exempt. The lint's own tests include known-bad meshes: lines on the edge, and lines 1 µm inside the metal.
+  Lines on edges measured −7 to −14 % in Z0. The pinned z faces of the copper are exempt. The lint's own tests include known-bad meshes: lines on the edge, and lines 1 µm inside the metal. In an antenna project (Stage 3), an edge that another copper layer's opposite edge meets within 20 µm, the metal on its other side, as on a two-layer helical antenna, is exempt from the third test, which no line can pass for both edges. The exemption is computed only for an antenna, so every v1 model is built as before. (A-31, Stage 3 plan 2: controller recommendation, owner unavailable.)
 - **fit2d gate.** Each straight, axis-aligned section of a measured net is checked on the actual mesh against the 2D reference (cs2d), with the mask included in both. Above 3 % in Z0 the run is blocked; P0-A confirms the threshold. It takes about 0.1 s per section.
 - **Timestep floor.** The reference is the vacuum Courant step of the smallest cell that the rule itself places in x, y and z. The run is blocked if openEMS's dt falls below 0.8 × that reference (P0-A confirms the factor), and the limiting node is reported (setup-only, verbose = 2). One stray 10 µm cell once made a run 5.5× longer.
 - **Non-axis-aligned copper on measured nets** (45° segments, arcs). The user gets the warning "staircased, accuracy not validated" and an offer of local refinement. It is refused if P0-A shows errors above the budget.
@@ -406,6 +410,8 @@ The orchestrator polls each worker's port probe files at a fixed wall-clock rate
 | Normal | −60 dB | 2e-3 |
 | Strict | −70 dB | 5e-4 |
 
+**Antennas** (Stage 3): T_max defaults to 2·t0 + 60/f0, rounded up to a whole ns, f0 being the band's centre, and the flat window is max(5 ns, 20/f0); every other constant is v1's. (A-28, Stage 3 plan 2: controller recommendation, owner unavailable.)
+
 **Evidence.** On a real-board crop, the port residual reached −60 dB at 13.1–13.6 ns, and S cut there differed by at most 5.7e-3 from the full record.
 
 **Testing the rule.**
@@ -419,6 +425,7 @@ The orchestrator polls each worker's port probe files at a fixed wall-clock rate
 - **Calibration,** 20–30 s on a small built-in model, before the first `cost` or `run`:
   - it measures MC/s at 1, 2, 4 and N threads, and one job against 2–4 parallel jobs;
   - the results are stored per machine and refreshed from every run's `Speed` lines.
+- **Antennas** (Stage 3): `cost` splits the cells into board (inside the dielectric's box), air and PML (the nodes openEMS's UPML updates, 9 lines a face) and counts N − N_PML + 6.38·N_PML cells at 0.384 times the calibration's own one-job speed at its threads, gate P3-A's two corrections (`docs/validation/2026-10-29-p3-a.md`). These two ratios are the one exception to "no numeric constants for any particular PC": P3-A measured them on the development PC, and they stay provisional until gate P3-C refits them. An antenna run does not refresh the calibration. On 2026-10-30 the 2.4 GHz fixture's run took 25.0 min (1,502 s) against 28.2 min (1,695 s) predicted and the Stage 3 design's hope of 9–18 min; the PML held 43.8 % of the nodes, and the 35 µm copper cell set dt (`docs/validation/2026-10-30-antenna-first-run.md`). (A-29, Stage 3 plan 2: controller recommendation, owner unavailable.)
 - **Before calibration:** threads ≤ `os.cpu_count() // 2`, and the pool size follows from the cores and the RAM.
 - The code holds no numeric constants for any particular PC.
 - **The bracket for the output chain** on the development PC is 16 min to about 8 h for its 6 runs. Three unknowns set where it falls:
@@ -459,6 +466,7 @@ All P + M excitations always run, because the matrix A must be square: S = B·A�
 - **Passivity:** σ_max ≤ 1.02. P0 may tighten it.
 - **Reciprocity:** error ≤ 0.02.
 - **Loss budget:** the unaccounted power 1 − |S11|² − |S21|² of the combined chain, less the power the part models absorb themselves (ESR and S2P data, from the waves into each part port), against the expected dielectric loss: the quasi-TEM loss from εeff, εr and tanδ over each section's length. An excess above 2 % is flagged. `verify` keeps its parts in the grid, so its loss budget counts an in-grid resistor's loss as layout loss.
+- **Antennas** (Stage 3) have no loss budget: radiation is their "loss" (A-32).
 
 ### 7.5 Stated limits
 
@@ -468,6 +476,8 @@ These are printed with every result:
 - vendor S2P reference planes differ from the pad-gap box;
 - copper is PEC, so there is no conductor loss;
 - the through-crop walls absorb most of the power coupled into cut nets, and reflect the rest.
+
+An antenna's results (Stage 3) state their own limits instead, after the label that they are relative: the board alone in free space; copper as a perfect conductor, so the radiation efficiency reads high; no enclosure, hand, battery or cable; the parts' bodies absent; the parts off the chain approximated (A-32).
 
 Accuracy is reported as |ΔS| or as a null shift, never in dB at a null.
 
@@ -647,8 +657,8 @@ These are not in Stage 1 or v1:
 - Linux/GCC or GPU engine backends;
 - a bundled openEMS or PyInstaller build;
 - macOS;
-- antennas and NF2FF (Stage 3);
-- SI and differential pairs.
+- SI and differential pairs;
+- the Stage 3 design's non-goals (its §3): chip and module antennas; the enclosure, a hand or body, the battery, cables, screws and the parts' bodies; automatic placement; an instant far-field retune; two bands, two antennas or external wire antennas in one run; a 3D pattern view; absolute performance claims (A-30, Stage 3 plan 2: controller recommendation, owner unavailable.)
 
 ---
 
