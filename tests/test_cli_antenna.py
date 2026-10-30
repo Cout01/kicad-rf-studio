@@ -80,3 +80,24 @@ def test_end_goes_with_f0_and_antenna_with_band(tmp_path, capsys):  # design 5.1
                  ["--antenna", "AE1", "--band", "2.4GHz:2.5GHz", "--harmonics", "3"]):  # harmonics do not apply
         assert main(["new", str(IFA), "--start", "U1.1", *argv, "-o", str(tmp_path)]) == 2
         assert render("E_NEW_KIND") in capsys.readouterr().err
+
+
+def placeholders(folder: Path) -> Path:
+    """ifa2g4_pi with L1 made R1, a 0R, and C2 made DNP: a chain with both placeholders (Stage 3 design 5.1)."""
+    text = (FIX / "ifa2g4_pi.kicad_pcb").read_text(encoding="utf-8")
+    text = text.replace('(property "Reference" "L1"', '(property "Reference" "R1"', 1).replace(
+        '(property "Value" "2.7nH"', '(property "Value" "0R"', 1)
+    i = text.index("(attr smd)", text.index('(property "Reference" "C2"'))
+    board = folder / "pi_placeholders.kicad_pcb"
+    board.write_text(text[:i] + "(attr smd dnp)" + text[i + len("(attr smd)"):], encoding="utf-8")
+    return board
+
+
+def test_new_makes_every_chain_part_a_port(tmp_path):  # Stage 3 design 5.1
+    pj, notes = cli.new_antenna(placeholders(tmp_path), "U1.1", "AE1", (2.4e9, 2.4835e9), output=tmp_path / "p")
+    d = load_project(pj)
+    assert [(q["ref"], q["role"], q["value"], q["dnp"]) for q in d["chain"]["series"] + d["chain"]["shunt"]] == [
+        ("R1", "port", "0R", False), ("C2", "port", "open", True), ("C3", "port", "1pF", False)]
+    assert [(p["ref"], p["value"], p["role"]) for code, p in notes if code == "I_PART"][:3] == [
+        ("R1", "0R", "port"), ("C2", "open", "port"), ("C3", "1pF", "port")]  # new says so, part by part
+    assert "W_VALUE_UNREADABLE" not in [code for code, _ in notes]

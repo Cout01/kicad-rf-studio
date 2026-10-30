@@ -126,3 +126,33 @@ def test_an_antennas_parts_are_every_two_pad_part_off_the_chain(mini_board):  # 
                                         1.84e9, 2.99e9, antenna=True)
     assert [(q["ref"], q["role"]) for q in others] == [("R1", "grid"), ("R2", "open")]
     assert notes == [("W_BOARD_PARTS_OPEN", {"refs": "R2"})]
+
+
+# --- Stage 3 plan 3, task 2: every chain part a port -----------------------------------------------------------
+
+
+def test_every_part_on_an_antennas_chain_is_a_port(mini_board):  # Stage 3 design 5.1: whatever its value
+    from shapely.geometry import box
+    from test_antenna_kicad import fp
+    from test_tracer import smd
+    from kicad_rf_studio.core.kicad.tracer import Chain, ChainPart
+    lib = {k: f"{n}_SMD:{k}_0402_1005Metric" for k, n in (("R", "Resistor"), ("C", "Capacitor"), ("L", "Inductor"))}
+    b = mini_board(fp("R9", lib["R"], smd(1, "RF"), smd(2, "RF2", x=2), value="0R")
+                   + fp("C9", lib["C"], smd(1, "RF2"), smd(2, "GND", x=2), "(attr smd dnp)", at="5 0", value="1pF")
+                   + fp("L8", lib["L"], smd(1, "RF2"), smd(2, "GND", x=2), at="10 0", value="22uH")  # a choke
+                   + fp("L9", lib["L"], smd(1, "RF2"), smd(2, "GND", x=2), at="15 0 45", value="2.7nH")
+                   + fp("C10", lib["C"], smd(1, "RF2"), smd(2, "GND", x=2), at="20 0", value="open"))  # typed as one
+
+    def on(ref, nets):
+        return ChainPart(ref, (f"{ref}.1", f"{ref}.2"), nets)
+
+    chain = Chain("U1.1", "AE1.1", ("RF", "RF2"), (on("R9", ("RF", "RF2")),),
+                  tuple(on(ref, ("RF2", "GND")) for ref in ("C9", "L8", "L9", "C10")))
+    for antenna, expected, unreadable in (
+            (True, [("R9", "port", "0R"), ("C9", "port", "open"), ("L8", "port", "22uH"), ("L9", "curve_port", "2.7nH"),
+                    ("C10", "port", "open")], []),
+            (False, [("R9", "copper", "0R"), ("C9", "open", "1pF"), ("L8", "open", "22uH"),  # v1's roles and notes
+                     ("L9", "curve_port", "2.7nH"), ("C10", "port", "open")], [("W_VALUE_UNREADABLE", {"refs": "C10"})])):
+        series, shunt, _, notes = project_parts(b, chain, classify(b), box(-5, -5, 25, 5), 70e6, 100e6, antenna=antenna)
+        assert [(q["ref"], q["role"], q["value"]) for q in series + shunt] == expected
+        assert [note for note in notes if note[0] == "W_VALUE_UNREADABLE"] == unreadable

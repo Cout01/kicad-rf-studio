@@ -8,7 +8,7 @@ from shapely.geometry import MultiPolygon, Polygon
 
 from kicad_rf_studio.core.kicad.board import Board
 from kicad_rf_studio.core.kicad.tracer import Chain, Classes, _netted
-from kicad_rf_studio.core.kicad.values import part_kind, part_value
+from kicad_rf_studio.core.kicad.values import OPEN_VALUE, bypass, part_kind, part_value
 from kicad_rf_studio.core.messages import KrsError
 from kicad_rf_studio.core.project import ROLES
 
@@ -95,14 +95,21 @@ def project_parts(board: Board, chain: Chain, classes: Classes, roi: Polygon | M
     model the package preset of a C, L or R, else None, and its s2p None (no S2P file; C-18). The others are the
     two-pad parts (two netted copper pads on two nets, no connector or shield) with a pad in `roi` and neither pad on
     a chain net, in reference order; with `antenna` (Stage 3 design 5.3), every such part anywhere on the board, placed
-    "board" when a pad meets `roi` (the measured region), else "far". W_VALUE_UNREADABLE names the C, L and R parts
-    whose value does not read, DNP ones too; W_PART_OPEN (W_BOARD_PARTS_OPEN with `antenna`) the other parts left open
-    that are not DNP."""
+    "board" when a pad meets `roi` (the measured region), else "far". With `antenna` (Stage 3 design 5.1), every chain
+    part is a port, a curve port off a multiple of 90°, whatever its value (no 0R, DNP or choke rule), and a DNP one's
+    value is OPEN_VALUE. W_VALUE_UNREADABLE names the C, L and R parts whose value does not read, DNP ones too, except
+    an antenna's chain part whose value values.bypass reads (0 Ω or open); W_PART_OPEN (W_BOARD_PARTS_OPEN with
+    `antenna`) the other parts left open that are not DNP."""
     def part(ref: str, pads, nets, place: str) -> dict:
         fp, kind = board.footprints[ref], part_kind(ref)
         model = model_of(fp.lib_id) if kind else None  # spec 5.7: the ideal value plus the preset; a diode has none
-        return {"ref": ref, "pads": list(pads), "nets": list(nets), "value": fp.value, "dnp": fp.dnp,
-                "role": role(kind, part_value(ref, fp.value), model, fp.dnp, fp.angle, place, f1, f2),
+        if antenna and place in ("series", "shunt"):
+            # every part on an antenna's chain is a port, whatever its value: a 0R, a DNP placeholder, a choke
+            # (Stage 3 design 5.1)
+            value, part_role = OPEN_VALUE if fp.dnp else fp.value, CURVE_PORT if fp.angle % 90 else PORT
+        else:
+            value, part_role = fp.value, role(kind, part_value(ref, fp.value), model, fp.dnp, fp.angle, place, f1, f2)
+        return {"ref": ref, "pads": list(pads), "nets": list(nets), "value": value, "dnp": fp.dnp, "role": part_role,
                 "model": model, "s2p": None}
 
     series = [part(p.ref, p.pads, p.nets, "series") for p in chain.series]
@@ -116,8 +123,10 @@ def project_parts(board: Board, chain: Chain, classes: Classes, roi: Polygon | M
             place = ("board" if inside else "far") if antenna else "other"
             others.append(part(ref, [p.name for p in pads], nets, place))
     notes = []
-    if refs := sorted(q["ref"] for q in series + shunt + others
-                      if part_kind(q["ref"]) and part_value(q["ref"], q["value"]) is None):
+    # W_VALUE_UNREADABLE leaves out an antenna's chain part whose value bypass reads, 0 Ω or open (Stage 3 design 5.7)
+    bypassed = {q["ref"] for q in series + shunt if bypass(q["ref"], q["value"]) is not None} if antenna else set()
+    if refs := sorted(q["ref"] for q in series + shunt + others if q["ref"] not in bypassed
+                      and part_kind(q["ref"]) and part_value(q["ref"], q["value"]) is None):
         notes.append(("W_VALUE_UNREADABLE", {"refs": ", ".join(refs)}))
     if refs := sorted(q["ref"] for q in others if q["role"] == OPEN and not q["dnp"]):
         notes.append(("W_BOARD_PARTS_OPEN" if antenna else "W_PART_OPEN", {"refs": ", ".join(refs)}))
