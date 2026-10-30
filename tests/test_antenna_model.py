@@ -7,9 +7,11 @@ import pytest
 from kicad_rf_studio import pipeline, runs
 from kicad_rf_studio.core.geometry.region import air_cell
 from kicad_rf_studio.core.mesh.gates import edge_lint
+from kicad_rf_studio.core.messages import KrsError
+from kicad_rf_studio.core.model import spec as spec_module
 from kicad_rf_studio.core.model.csx import PML_CELLS
-from kicad_rf_studio.core.model.spec import metal_in_pml
-from kicad_rf_studio.core.project import load_project, save_project
+from kicad_rf_studio.core.model.spec import far_field_box, metal_in_pml, verify_spec
+from kicad_rf_studio.core.project import load_project, parts, save_project
 from kicad_rf_studio.stoprule import flat_window
 from test_antenna_geometry import model_of
 from test_cli_antenna import FIX, antenna_project
@@ -49,6 +51,37 @@ def test_part_ports_record_no_far_field_and_mur_adds_no_pml(tmp_path):  # design
     model, _, _ = model_of(pj)
     # provisional: MUR is the untested fallback (W_AIR_BOX), which plan 4's P3-C tests and may re-pin
     assert "boundary" not in model.spec and [len(model.spec["mesh"][a]) for a in "xyz"] == [119, 121, 55]
+
+
+def test_verify_puts_an_antennas_network_in_the_grid_and_records_its_far_field(tmp_path, monkeypatch):  # 5.5, 5.7
+    project, board, geom, _ = pipeline.load(antenna_project(tmp_path, FIX / "ifa2g4_pi.kicad_pcb"))
+    spec = pipeline.build_model(project, board, geom).spec
+    box = far_field_box(project, board, geom)
+    assert box == {"f_hz": project["far_field"]["f_hz"], "center": [107.0, -109.0, 0.39]}  # the board's centre
+    m0, b0, g0, _ = pipeline.load(antenna_project(tmp_path / "m0"))
+    assert far_field_box(m0, b0, g0) == pipeline.build_model(m0, b0, g0).spec["nf2ff"]  # model_spec's, factored out
+    by_ref = parts(project)
+    by_ref["L1"]["value"], by_ref["C2"]["value"] = "0R", "open"  # the series part shorted, a shunt removed
+    dump = tmp_path / "operator_dump.vtr"
+    dump.write_bytes(b"")
+    monkeypatch.setattr(spec_module, "c_box", lambda *a: 6e-16)
+    out = verify_spec(spec, by_ref, dump, 1e-13, far_field=box)
+    assert [q["name"] for q in out["ports"]] == ["P1"] and [g["name"] for g in out["grid"]] == ["C3"]
+    assert (out["nf2ff"], out["boundary"], out["join"]) == (box, "pml_8", spec["join"])
+    l1 = next(q for q in spec["ports"] if q["name"] == "L1")
+    lo, hi = ([f(a, b) for a, b in zip(l1["start"], l1["stop"])] for f in (min, max))
+    assert out["metal"]["copper"][len(spec["metal"]["copper"])] == {  # L1 at 0 Ω: copper over its whole box
+        "x": [lo[0], hi[0], hi[0], lo[0]], "y": [lo[1], lo[1], hi[1], hi[1]], "z": [lo[2], hi[2]]}
+    with pytest.raises(KrsError) as e:  # a bypass is an antenna's: without the far-field box, v1's refusal
+        verify_spec(spec, by_ref, dump, 1e-13)
+    assert (e.value.code, e.value.params) == ("E_VERIFY_VALUE", {"ref": "L1", "value": "0R"})
+    by_ref["C2"]["s2p"] = {"file": "c2.s2p", "connection": "shunt"}  # a placeholder given an S2P file is fitted
+    with pytest.raises(KrsError) as e:  # and has no value verify can place, as v1 refuses one
+        verify_spec(spec, by_ref, dump, 1e-13, far_field=box)
+    assert (e.value.code, e.value.params) == ("E_VERIFY_VALUE", {"ref": "C2", "value": "open"})
+    by_ref["C2"]["s2p"], by_ref["C3"]["value"] = None, "open"
+    dump.unlink()  # nothing left in the grid, so no cell C to read
+    assert verify_spec(spec, by_ref, dump, 1e-13, far_field=box)["grid"] == []
 
 
 def codes(run_dir):

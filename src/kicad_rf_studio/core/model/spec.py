@@ -21,7 +21,7 @@ from kicad_rf_studio.core.geometry.lid import snap_lid
 from kicad_rf_studio.core.geometry.mask import smeared_epsilon
 from kicad_rf_studio.core.geometry.region import band
 from kicad_rf_studio.core.kicad.tracer import signal_layer
-from kicad_rf_studio.core.kicad.values import part_kind, part_value, port_value
+from kicad_rf_studio.core.kicad.values import bypass, part_kind, part_value, port_value
 from kicad_rf_studio.core.mesh.rule import RATIO
 from kicad_rf_studio.core.mesh.smooth import smooth_mesh_lines
 from kicad_rf_studio.core.messages import KrsError
@@ -158,13 +158,22 @@ def _solids(g: BaseGeometry, z0: float, z1: float) -> list[dict]:
     return [{**_ring(q), "z": [z0, z1]} for p in shapely.get_parts(g) for q in split_holes(p)]
 
 
+def far_field_box(project: dict, board: Board, geom: Geometry) -> dict:
+    """An antenna's far-field box as the model spec's "nf2ff" holds it (Stage 3 design 5.5): project.json's
+    far_field.f_hz about the board's centre, its outline's bounds' (else geom's crop's) centre at the stack's
+    mid-height, to 1e-6 mm. model_spec writes it when no port is a part; verify, whose one job holds the network as
+    applied, always (verify_spec)."""
+    x0, y0, x1, y1 = (geom.region.crop if board.outline is None else board.outline).bounds
+    centre = ((x0 + x1) / 2, (y0 + y1) / 2, (geom.zs[0].z0 + geom.zs[-1].z1) / 2)
+    return {"f_hz": project["far_field"]["f_hz"], "center": [round(v, 6) for v in centre]}
+
+
 def model_spec(project: dict, board: Board, geom: Geometry, mesh: Mesh, ports: list[dict], grid: list[dict]) -> dict:
     """The model of `geom` on `mesh` as plain JSON (C-19): the mesh's own lines (X-6), the excitation, the materials,
     the metal, `ports` (the place() entries in job order) and `grid` (the grid_entry() entries); then the antenna keys,
     only for an antenna (Stage 3 design 5.2–5.5): "boundary", "pml_8" when project.json's boundary is; "nf2ff" when no
-    port is a part, project.json's far_field.f_hz about the board's centre, its outline's bounds' (else the crop's) at
-    the stack's mid-height; and "join" when the antenna has join pads, a box per pad: its bounds grown by d in x and y,
-    from the lowest copper slab's z0 to the highest's z1. The centre and the boxes go to 1e-6 mm.
+    port is a part, far_field_box(); and "join" when the antenna has join pads, a box per pad: its bounds grown by d in
+    x and y, from the lowest copper slab's z0 to the highest's z1, to 1e-6 mm.
     The materials, in this order: each dielectric slab, bottom up, at its εr and its κ at f0, and each copper slab
     between two dielectrics, at their mean εr and mean κ (C-8), all on the board (the crop cut to its outline) and
     named by their place in the list; then per mask, F first, its gap fill in the outer copper's slab and its coat
@@ -222,9 +231,7 @@ def model_spec(project: dict, board: Board, geom: Geometry, mesh: Mesh, ports: l
         if project["boundary"] == "pml_8":
             spec["boundary"] = "pml_8"
         if not any(q["part"] for q in ports):
-            x0, y0, x1, y1 = outline.bounds
-            centre = ((x0 + x1) / 2, (y0 + y1) / 2, (zs[0].z0 + zs[-1].z1) / 2)
-            spec["nf2ff"] = {"f_hz": project["far_field"]["f_hz"], "center": [round(v, 6) for v in centre]}
+            spec["nf2ff"] = far_field_box(project, board, geom)
         if boxes := [_pad(board, name).polygon.bounds for name in project["antenna"]["join"]]:
             d, z0, z1 = mesh.d, min(z for z, _ in cu.values()), max(z for _, z in cu.values())
             spec["join"] = [[[round(v, 6) for v in (x0 - d, y0 - d, z0)], [round(v, 6) for v in (x1 + d, y1 + d, z1)]]
@@ -247,7 +254,7 @@ def _cell(lines: list[float], lo: float, hi: float) -> tuple[float, float]:
     return lines[i], lines[i + 1]
 
 
-def verify_spec(spec: dict, parts: dict[str, dict], dump: Path, dt: float) -> dict:
+def verify_spec(spec: dict, parts: dict[str, dict], dump: Path, dt: float, *, far_field: dict | None = None) -> dict:
     """verify's model (spec 7.6, C-36, C-37, D-45): a copy of the run's `spec` whose part ports, all lumped, leave
     `ports` for `grid`, after the run's own grid parts, each at its value in `parts` (project.json's parts by ref), on
     the same lines: in one cell of its box along the box's axis, at its middle and in its copper slab, a C or an R
@@ -255,19 +262,28 @@ def verify_spec(spec: dict, parts: dict[str, dict], dump: Path, dt: float) -> di
     in `metal.copper`. The cell's own capacitance, from the operator dump `dump` at the time step `dt` (s), is added to
     a C (a grid C replaces it) and is an L's explicit C (without one, openEMS 0.37 lowers it); an R keeps it. Raises,
     part by part in port order, E_VERIFY_VALUE for a part that is not a C, L or R whose value reads, E_VERIFY_DUMP
-    when `dump` is missing, then for an L E_VERIFY_K when k = dt/(2·√(L·C)) is above K_MAX."""
+    when `dump` is missing, then for an L E_VERIFY_K when k = dt/(2·√(L·C)) is above K_MAX.
+    For an antenna (Stage 3 design 5.5, 5.7), `far_field` is its far-field box (far_field_box), which the copy records
+    as "nf2ff", and a part whose value is a bypass (values.bypass) and that has no S2P file leaves the grid: at 0 Ω it
+    is copper over its whole port box, open it is left out. A placeholder given an S2P file is a fitted part, refused
+    as any value verify cannot place."""
     out = copy.deepcopy(spec)
     lines, copper = [out["mesh"][a] for a in "xyz"], out["metal"]["copper"]
     moved, out["ports"] = [q for q in out["ports"] if q["part"]], [q for q in out["ports"] if not q["part"]]
     for port in moved:
         ref = port["name"]
         kind, text = part_kind(ref), parts[ref]["value"]
+        # per axis, the smaller and the larger end: a box can start at its higher end
+        lo, hi = ([f(a, b) for a, b in zip(port["start"], port["stop"])] for f in (min, max))
+        if far_field is not None and parts[ref]["s2p"] is None and (z := bypass(ref, text)) is not None:
+            if z == 0:  # shorted: copper over the whole port box
+                copper.append({"x": [lo[0], hi[0], hi[0], lo[0]], "y": [lo[1], lo[1], hi[1], hi[1]],
+                               "z": [lo[2], hi[2]]})
+            continue  # an open part leaves nothing, and neither reads the dump
         if (value := port_value(ref, text)) is None:
             raise KrsError("E_VERIFY_VALUE", ref=ref, value=text)
         if not dump.is_file():
             raise KrsError("E_VERIFY_DUMP", path=str(dump))
-        # per axis, the smaller and the larger end: a box can start at its higher end
-        lo, hi = ([f(a, b) for a, b in zip(port["start"], port["stop"])] for f in (min, max))
         p = "xyz".index(port["dir"])
         cell = [(lo[n], hi[n]) for n in range(3)]
         for n in (0, 1) if kind == "L" else (p,):  # D-45: a C or an R spans its box's width, an L one cell
@@ -283,4 +299,6 @@ def verify_spec(spec: dict, parts: dict[str, dict], dump: Path, dt: float) -> di
             if span[0] < span[1]:
                 (x0, x1), (y0, y1), z = (span if n == p else cell[n] for n in range(3))
                 copper.append({"x": [x0, x1, x1, x0], "y": [y0, y0, y1, y1], "z": list(z)})
+    if far_field is not None:
+        out["nf2ff"] = far_field
     return out
