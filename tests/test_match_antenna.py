@@ -237,7 +237,13 @@ def test_after_verify_the_retune_shows_the_what_if_total_efficiency(tmp_path, ca
     p = loss_budget(star(ff, 4), [0], zk)  # the fake's layout is star(f, 4) at any f
     got = [params for code, params in lines if code == "I_ANTENNA_ETA_WHAT_IF"]
     assert [float(g["delivered_pct"]) for g in got] == pytest.approx(100 * p[up], abs=0.06)
-    assert [g["eta_rad_pct"] for g in got] == [f"{100 * x:.1f}" for x in far["eff"]["eta_rad"][up]]
+    seen = []
+    with monkeypatch.context() as m:  # what antenna_outputs hands eta_what_if_lines (pipeline.py:627)
+        m.setattr(pipeline, "eta_what_if_lines", lambda far_, p_: seen.append((far_, p_)) or [])
+        retune("C3=1.2pF")
+    ((handed, p_handed),) = seen
+    assert np.array_equal(handed["eff"]["eta_rad"], far["eff"]["eta_rad"]) and np.array_equal(handed["sphere"].f, ff)
+    assert p_handed == pytest.approx(p, abs=1e-6)  # in the far field's order, as s11_at returns it
     assert "I_ANTENNA_NO_FAR_FIELD" not in [code for code, _ in lines]
     for verify in ({**v, "far_field": None}, {**v, "base_hash": "0" * 64}):  # its transform failed; another run's
         save_project(pj, {**d, "verify": verify})
