@@ -56,10 +56,10 @@ PML_WEIGHT and SMALL_SPEED stay as gate P3-A set them; plan 4's P3-C refits them
   - P3-C, its seven runs, about 4.5 h;
   - P3-D, four to five runs, about 2 h;
   - P3-E, about 1 h.
-- **The meander's seven P3-C runs** decide the total:
-  - **About 25 h** if its job converges at the same third of its T_max as this one did, about 2.5 h a job.
-  - **About 75 h** if a job rings to its 79 ns T_max, about 7.4 h a job. Its run to 3 × the stop time alone would then take about 22 h.
-- **The plan 4 re-estimate:** 35 to 85 machine hours, 70–90 % of it the meander's P3-C. r4's range holds only in the first case, at its top.
+- **The meander's seven P3-C runs** decide the total. A meander job to its 79 ns T_max takes about 6.7 h: §7's cost prediction, 7 h 35 min, divided by this run's measured ratio, 1.128.
+  - **About 24 h** if its job converges at the same third of its T_max as this one did, about 2.2 h a job.
+  - **About 70 h** if a job rings to its T_max. Its run to 3 × the stop time alone would then take about 20 h.
+- **The plan 4 re-estimate:** 30 to 80 machine hours, 70–90 % of it the meander's P3-C. r4's range holds only in the first case, near its top.
 - **Two levers for plan 4:**
   - Measure the meander's first job before scheduling the rest.
   - Run P3-C's all-sheet comparison first. If all-sheet copper passes, every later run is 5–6 times cheaper (design §1).
@@ -135,7 +135,9 @@ Limit: the parts off the chain are approximated: capacitors close to a short as 
 | RAM | about 1.1 GB | about 0.5 GB |
 | exit codes | `new` 0, `cost` 0 | `new` 0, `cost` 0 |
 
-- **The pi variant's four ports** (P1, L1, C2 and C3) passed `cost`'s setup gate, which blocks on E_PORT_SHORT, E_PORT_OPEN and E_PORT_BOX. Its shunt ports C2 and C3 stand on RF and GND, which the antenna's join ties, so they rely on the join cut, and the cut holds.
+- **The pi variant's four ports** (P1, L1, C2 and C3) passed `cost`'s setup gate, which blocks on E_PORT_SHORT, E_PORT_OPEN and E_PORT_BOX.
+  - Its shunt port C3 stands on RF and GND, which the antenna's join ties, so it relies on the join cut, and the cut holds. The setup gate's PEC roots keep C3's two ends apart, as they keep L1's RF end apart from its RF_A end.
+  - C2 stands on RF_A and GND, across L1 from the join, so it does not rely on the cut. Task 12's brief had named both shunts.
   - Its worst case takes SMALL_SPEED at the calibration's 4-job level, 185.3 MC/s, but no run has measured that correction at a pool above 1.
   - With part ports it has no far field: the one-port branch and the what-if retune are plan 3's.
 - **The meander** matches the plan's prototype: 2.61 M nodes, 38 % PML, T_max 79 ns, and a worst case near 7 h.
