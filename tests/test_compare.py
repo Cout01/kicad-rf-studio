@@ -103,6 +103,17 @@ def test_compare_reads_a_part_port_projects_verify_at_its_values(tmp_path, calib
     assert (e.value.code, e.value.params) == ("E_COMPARE_NO_RESULT", {"path": str(a)})
 
 
+def test_compare_refuses_a_run_whose_folder_is_gone(tmp_path, calibrated):  # final review; the ruling
+    a = antenna_project(tmp_path / "a")
+    assert pipeline.run(a) == 0
+    b = twin(a, tmp_path / "b")
+    shutil.rmtree(load_project(a)["results"]["run_dir"])  # both projects' run folder
+    with pytest.raises(KrsError) as e:
+        pipeline.compare_projects(a, b, tmp_path / "out")
+    assert (e.value.code, e.value.params) == ("E_COMPARE_NO_RESULT", {"path": str(a)})
+    assert not (tmp_path / "out").exists()
+
+
 def test_compare_without_a_far_field_on_one_side_compares_s11_alone(tmp_path, calibrated):  # design 5.8; RF 5
     a = antenna_project(tmp_path / "a")
     assert pipeline.run(a) == 0

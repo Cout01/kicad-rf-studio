@@ -970,8 +970,8 @@ def antenna_result(path: Path) -> dict:
     the part ports' values project.json holds. Its S11 on the band grid (that record's one-port layout), its far field
     (far_of, None without one), its fingerprint, its source (T_RUN or T_VERIFY) and its run folder.
     E_COMPARE_NO_RESULT {path} for no results or stale ones (results_of's E_NO_RESULTS and E_RESULTS_STALE, the model
-    built outside that catch), no such record, or one with no fingerprint (made before this version). It starts no
-    worker."""
+    built outside that catch), no such record, one with no fingerprint (made before this version), or a record whose
+    files are gone (layout's or far_of's E_RESULTS_WAVES). It starts no worker."""
     if not antenna(read_project(path)):
         raise KrsError("E_COMPARE_KIND", path=str(path))
     project, board, geom, _ = load(path)
@@ -992,8 +992,13 @@ def antenna_result(path: Path) -> dict:
             record = None
     if record is None or "fingerprint" not in record:
         raise KrsError("E_COMPARE_NO_RESULT", path=str(path))
-    lay = layout(project, record)
-    return {"path": path, "project": project, "f": lay.f, "s11": lay.s[:, 0, 0], "far": far_of(record),
+    try:  # a run folder moved or deleted since: nothing compare can use, as a deleted verify folder
+        lay, far = layout(project, record), far_of(record)
+    except KrsError as err:
+        if err.code != "E_RESULTS_WAVES":
+            raise
+        raise KrsError("E_COMPARE_NO_RESULT", path=str(path)) from None
+    return {"path": path, "project": project, "f": lay.f, "s11": lay.s[:, 0, 0], "far": far,
             "fingerprint": record["fingerprint"], "source": source, "run_dir": record["run_dir"]}
 
 
