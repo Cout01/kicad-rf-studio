@@ -239,6 +239,7 @@ CATALOG: dict[str, str] = {
     "I_ANTENNA_NO_BANDWIDTH": "{level_db} dB bandwidth: none, as |S11| stays above {level_db} dB.",
     "I_ANTENNA_FAR_FIELD": "{f_mhz} MHz: radiation efficiency {eta_rad_pct} %, total efficiency {eta_tot_pct} %, directivity {d_dbi} dBi, gain {gain_dbi} dBi, realized gain {realized_dbi} dBi.",
     "I_ANTENNA_NO_FAR_FIELD": "No far field for this run: a run with part ports records none, as its jobs hold ports where the matching parts sit; `{command}` runs one job with each part in the grid at its value, as an ideal part, and records it.",
+    "I_ANTENNA_ETA_WHAT_IF": "{f_mhz} MHz: total efficiency {eta_tot_pct} % what-if: the last verify's radiation efficiency {eta_rad_pct} % times the {delivered_pct} % of the incident power that this retune's network passes to the board (its mismatch efficiency less its parts' own loss); a lossless network that does not radiate leaves the radiation efficiency and the pattern as they are.",
     "E_INTERNAL": "Internal error: {detail}. Please report it.",
     "G_APP": "kicad-rf-studio",
     "G_RUNNING": "Running in {folder}…",

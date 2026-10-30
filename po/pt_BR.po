@@ -1105,6 +1105,11 @@ msgstr "{f_mhz} MHz: eficiência de radiação {eta_rad_pct} %, eficiência tota
 msgid "No far field for this run: a run with part ports records none, as its jobs hold ports where the matching parts sit; `{command}` runs one job with each part in the grid at its value, as an ideal part, and records it."
 msgstr "Sem campo distante para esta execução: uma execução com portas de componentes não registra nenhum, pois as tarefas dela têm portas onde ficam os componentes de casamento; `{command}` executa uma tarefa com cada componente na grade com o valor dele, como componente ideal, e o registra."
 
+#. I_ANTENNA_ETA_WHAT_IF
+#, python-brace-format
+msgid "{f_mhz} MHz: total efficiency {eta_tot_pct} % what-if: the last verify's radiation efficiency {eta_rad_pct} % times the {delivered_pct} % of the incident power that this retune's network passes to the board (its mismatch efficiency less its parts' own loss); a lossless network that does not radiate leaves the radiation efficiency and the pattern as they are."
+msgstr "{f_mhz} MHz: eficiência total hipotética de {eta_tot_pct} %: a eficiência de radiação da última verificação, {eta_rad_pct} %, vezes os {delivered_pct} % da potência incidente que a rede deste ajuste entrega à placa (a eficiência de descasamento menos a perda dos próprios componentes); uma rede sem perdas que não irradia mantém a eficiência de radiação e o diagrama como estão."
+
 #. E_INTERNAL
 #, python-brace-format
 msgid "Internal error: {detail}. Please report it."

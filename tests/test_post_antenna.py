@@ -3,6 +3,7 @@ import csv
 import io
 import math
 from pathlib import Path
+from types import SimpleNamespace
 
 import numpy as np
 import pytest
@@ -10,8 +11,8 @@ from matplotlib.figure import Figure
 
 from kicad_rf_studio.core.messages import KrsError, render
 from kicad_rf_studio.core.post.antenna import (ANTENNA_LIMITS, antenna_csv, antenna_png, bandwidth, compare_s11,
-                                                dip_resonance, draw_antenna, far_field_lines, far_field_of,
-                                                farfield_csv, resonance, s11_lines, shown_zin, zin)
+                                                dip_resonance, draw_antenna, eta_what_if_lines, far_field_lines,
+                                                far_field_of, farfield_csv, resonance, s11_lines, shown_zin, zin)
 from kicad_rf_studio.core.post.waves import band_grid
 from test_project import antenna_dict
 
@@ -115,3 +116,12 @@ def test_verify_compares_s11_and_the_resonance_with_the_retune():  # design 5.7;
     assert dip_resonance(f, flat) is None and dip_resonance(f, dip(f, 1.0e9, 0.3e9)) is None  # shallow; band's edge
     cmp = compare_s11(a, flat, f, k0)
     assert (cmp["f_res_hz"], cmp["f_res_retune_hz"], cmp["shift"]) == (pytest.approx(2.4495e9, abs=1), None, None)
+
+
+def test_the_what_if_total_efficiency_takes_eta_rad_from_the_far_field():  # design 5.7
+    far = {"sphere": SimpleNamespace(f=np.array([2.45e9, 2.4e9])), "eff": {"eta_rad": np.array([0.8, 0.9])}}
+    assert eta_what_if_lines(far, np.array([0.99, 0.75])) == [
+        ("I_ANTENNA_ETA_WHAT_IF", {"f_mhz": "2400.0", "eta_tot_pct": "67.5", "eta_rad_pct": "90.0",
+                                   "delivered_pct": "75.0"}),
+        ("I_ANTENNA_ETA_WHAT_IF", {"f_mhz": "2450.0", "eta_tot_pct": "79.2", "eta_rad_pct": "80.0",
+                                   "delivered_pct": "99.0"})]

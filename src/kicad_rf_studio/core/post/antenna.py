@@ -152,6 +152,18 @@ def far_field_lines(far: dict) -> list[tuple[str, dict]]:
     return lines + eta_lines(f, eff["eta_rad"])
 
 
+def eta_what_if_lines(far: dict, p: np.ndarray) -> list[tuple[str, dict]]:
+    """The instant retune's total efficiency where the project has a current verify with a far field (Stage 3 design
+    5.7): one I_ANTENNA_ETA_WHAT_IF per frequency of far_field_of's `far`, ascending, η_tot = η_rad·p, with η_rad from
+    `far` and `p` (in far's order) the share of the incident power this retune's network passes to the board,
+    loss_budget's P_layout: the design's 1 − |S11|² for a lossless network, less the parts' own loss otherwise;
+    labelled what-if, as a lossless network that does not radiate leaves η_rad and the pattern as they are."""
+    f, eta_rad = far["sphere"].f, far["eff"]["eta_rad"]
+    return [("I_ANTENNA_ETA_WHAT_IF", {"f_mhz": f"{f[n] / 1e6:.1f}", "eta_tot_pct": f"{100 * eta_rad[n] * p[n]:.1f}",
+                                       "eta_rad_pct": f"{100 * eta_rad[n]:.1f}", "delivered_pct": f"{100 * p[n]:.1f}"})
+            for n in np.argsort(f)]
+
+
 def _csv(columns: tuple[str, ...], rows: np.ndarray) -> bytes:
     """A CSV file of `columns`, then the `rows` (n, len(columns)) by ascending frequency, their first column (a stable
     sort): comma-separated, "\\n" line ends, numbers as Python's repr."""

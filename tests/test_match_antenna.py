@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 import json
 import os
+import shutil
 from pathlib import Path
 
 import numpy as np
@@ -9,10 +10,11 @@ import pytest
 from kicad_rf_studio import __version__, pipeline
 from kicad_rf_studio.core.messages import KrsError, render
 from kicad_rf_studio.core.model import spec as spec_module
-from kicad_rf_studio.core.post.antenna import ANTENNA_LIMITS
+from kicad_rf_studio.core.post.antenna import ANTENNA_LIMITS, eta_what_if_lines
 from kicad_rf_studio.core.post.chain import with_box, z_part
+from kicad_rf_studio.core.post.checks import loss_budget
 from kicad_rf_studio.core.post.waves import band_grid
-from kicad_rf_studio.core.project import load_project
+from kicad_rf_studio.core.project import load_project, save_project
 from kicad_rf_studio.gui.control import default_series, snapped
 from networks import C_BOX, read_s, star, terminate_np
 from test_cli_antenna import FIX, antenna_project, placeholders
@@ -200,6 +202,40 @@ def test_a_stopped_verify_transform_keeps_the_comparison(tmp_path, calibrated, m
     assert [code for code, _ in result_lines(v["run_dir"])] == ["I_VERIFY_RESULTS"]  # said before the transform
     assert (pj.parent / "results" / "verify.s1p").is_file()
     assert not (pj.parent / "results" / "verify_farfield.csv").exists()
+
+
+def test_after_verify_the_retune_shows_the_what_if_total_efficiency(tmp_path, calibrated, monkeypatch):  # 5.7; RF 4
+    pj = pi_run(tmp_path, monkeypatch)
+    assert pipeline.verify(pj) == 0
+
+    def retune(*assignments):
+        lines = []
+        assert pipeline.retune(pj, list(assignments), lambda code, params: lines.append((code, params))) == 0
+        return lines
+
+    lines = retune("C3=1.2pF")
+    d = load_project(pj)
+    v = d["verify"]
+    assert pipeline.current_verify(d) == v and {"verify.s1p", "verify_farfield.csv", "verify_summary.csv",
+                                                "verify_summary.png"} <= {p.name for p in (pj.parent / "results").iterdir()}
+    far = pipeline.far_of(v)
+    ff, up = far["sphere"].f, np.argsort(far["sphere"].f)  # the lines run by ascending frequency
+    zk = np.stack([with_box(z_part(k, x, M0402, ff), ff, C_BOX)
+                   for k, x in (("L", 2.7e-9), ("C", 1e-12), ("C", 1.2e-12))], -1)  # the retune's presets
+    p = loss_budget(star(ff, 4), [0], zk)  # the fake's layout is star(f, 4) at any f
+    got = [params for code, params in lines if code == "I_ANTENNA_ETA_WHAT_IF"]
+    assert [float(g["delivered_pct"]) for g in got] == pytest.approx(100 * p[up], abs=0.06)
+    assert [g["eta_rad_pct"] for g in got] == [f"{100 * x:.1f}" for x in far["eff"]["eta_rad"][up]]
+    assert "I_ANTENNA_NO_FAR_FIELD" not in [code for code, _ in lines]
+    for verify in ({**v, "far_field": None}, {**v, "base_hash": "0" * 64}):  # its transform failed; another run's
+        save_project(pj, {**d, "verify": verify})
+        assert (pipeline.current_verify(load_project(pj)) is None) is (verify["base_hash"] != v["base_hash"])
+        assert "I_ANTENNA_NO_FAR_FIELD" in [code for code, _ in retune()]
+    save_project(pj, {**d, "verify": v})
+    shutil.rmtree(v["run_dir"])  # verify's folder deleted
+    codes = [code for code, _ in retune()]
+    assert pipeline.current_verify(load_project(pj)) is None
+    assert "I_ANTENNA_NO_FAR_FIELD" in codes and "I_ANTENNA_ETA_WHAT_IF" not in codes
 
 
 # --- beyond the brief's tests ------------------------------------------------------------------------------------
