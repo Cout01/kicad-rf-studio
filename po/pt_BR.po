@@ -88,6 +88,16 @@ msgstr "As redes {nets} se tocam na margem da região simulada, o que pode afeta
 msgid "Net {net} has copper that is not axis-aligned (45° segments or arcs), which the mesh staircases. P0-A measured a staircased 45° line 4.6 % off its axis-aligned twin in Z0 at mesh n 2, within the 5 % budget, so the run goes on, but its accuracy is not validated. For a validated result, route the measured nets with horizontal and vertical tracks. A finer mesh lowers the error: set \"mesh\": {{\"n\": 3}} in project.json."
 msgstr "A rede {net} tem cobre que não está alinhado aos eixos (segmentos a 45° ou arcos), que a malha aproxima em degraus. O P0-A mediu, com malha n 2, uma linha a 45° em degraus cujo Z0 fica 4.6 % distante do da gêmea alinhada aos eixos, dentro da tolerância de 5 %; então a execução continua, mas a precisão dela não é validada. Para um resultado validado, roteie as redes medidas com trilhas horizontais e verticais. Uma malha mais fina reduz o erro: defina \"mesh\": {{\"n\": 3}} no project.json."
 
+#. W_LIDS_LEFT_OUT
+#, python-brace-format
+msgid "Shields {refs} on the antenna's board get no lid: one lid is modelled, over {ref}, the shield over most of the board."
+msgstr "As blindagens {refs} na placa da antena ficam sem tampa: uma só tampa é modelada, sobre {ref}, a blindagem sobre a maior parte da placa."
+
+#. W_AIR_BOX
+#, python-brace-format
+msgid "The antenna's air box is outside the tested setting: an air gap of {gap_mm} mm (λ/4 at f_lo is {quarter_mm} mm) to a {boundary} absorber. Only PML_8 at λ/4 or more has passed a gate (P3-A); a MUR twin's energy rose 16 dB at 0.53 λ, and gate P3-C tests the rest."
+msgstr "A caixa de ar da antena está fora da configuração testada: espaçamento de ar de {gap_mm} mm (λ/4 em f_lo é {quarter_mm} mm) até um absorvedor {boundary}. Só a PML_8 a λ/4 ou mais passou numa checagem prévia (P3-A); a energia de uma gêmea com MUR subiu 16 dB a 0.53 λ, e a checagem prévia P3-C testa o resto."
+
 #. E_LID_HEIGHT
 #, python-brace-format
 msgid "Shield {refs} covers the simulated region but project.json has no lid_height_mm. Set lid_height_mm in project.json, or set \"lid\": false to leave the lid out."

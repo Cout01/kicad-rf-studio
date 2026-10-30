@@ -49,7 +49,8 @@ def find_lid(board: Board, classes: Classes, region: Region, zs: tuple[Slab, ...
     height = project.get("lid_height_mm")  # hand-edited: 0 put the plate on the traces, NaN on the bottom wall
     if height is None or not 0 < height < np.inf:
         return None, [("E_LID_HEIGHT", {"refs": ", ".join(covering)})]
-    # ponytail: one lid, the shield over most of the ROI; a second one over it is left out (Geometry holds one Lid)
+    # ponytail: one lid, the shield over most of the ROI, or of the board for an antenna (Geometry holds one Lid); an
+    # antenna's other shields are named in W_LIDS_LEFT_OUT
     ref = max(covering, key=lambda r: covering[r][0])
     _, plate, frame = covering[ref]
     return Lid(ref, clean(plate, region.crop).geoms[0], clean(frame, region.crop), top.z1,

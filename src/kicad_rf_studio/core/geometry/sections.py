@@ -3,6 +3,7 @@
 2D readout of `cost` check, and the cross-section cut across each one where it is bare line."""
 from __future__ import annotations
 
+import math
 from collections import defaultdict
 from collections.abc import Iterable
 from dataclasses import dataclass, replace
@@ -23,6 +24,7 @@ REACH = 1e4  # mm, half the cut a gap is looked for along: past any crop
 BOX_H = 10  # cross_section's default box_h: the box runs this many substrate heights past the line and the stack
 NEAR = 1.0  # track widths past a run's edges within which its copper must not change where it is cut
 MODES = ("none", "exact", "smeared")
+STAIR_MM = 0.5  # mm: antenna copper with an edge this long along neither axis is staircased (Stage 3 design 5.3)
 
 
 @dataclass(frozen=True)
@@ -180,6 +182,20 @@ def staircase_gap(board: Board, nets: Iterable[str], pieces: list[Piece]) -> flo
             other = [pc.polygon for pc in pieces if pc.layer == t.layer and pc.net != t.net]
             gaps += [g for g in shapely.distance(t.polygon(), other) if g > 0]
     return round(float(min(gaps)), 6) if gaps else None
+
+
+def staircased(polygons: Iterable[BaseGeometry]) -> bool:
+    """Whether `polygons` have an edge at least STAIR_MM long that runs along neither axis, by the mesh's ALONG test:
+    each of its |dx| and |dy| is above 1/50 of the other. An antenna's copper is no track, so sections() never reads it
+    (Stage 3 design 5.3). The 1/50 restates core.mesh.ALONG, which is not imported: core.mesh is built on
+    core.geometry."""
+    # ponytail: long straight off-axis edges only; an arc or a circle whose chords are all under STAIR_MM is not flagged
+    for ring in shapely.get_rings(shapely.get_parts(list(polygons))):
+        xy = shapely.get_coordinates(ring)
+        for dx, dy in abs(xy[1:] - xy[:-1]):
+            if math.hypot(dx, dy) >= STAIR_MM and dx > dy / 50 and dy > dx / 50:
+                return True
+    return False
 
 
 def cross_section(sec: Section, pieces: list[Piece], zs: tuple[Slab, ...], mask: MaskModel | None, mode: str,

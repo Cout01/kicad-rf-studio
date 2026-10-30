@@ -6,7 +6,7 @@ import shapely
 from shapely import unary_union
 from shapely.geometry import LineString, Point, Polygon, box
 
-from kicad_rf_studio.core.geometry.copper import clean, copper_pieces, is_solid, split_holes
+from kicad_rf_studio.core.geometry.copper import Piece, clean, connectivity, copper_pieces, is_solid, split_holes
 from kicad_rf_studio.core.geometry.region import build_region
 from kicad_rf_studio.core.geometry.zstack import zstack
 from kicad_rf_studio.core.kicad import load_board
@@ -146,3 +146,12 @@ def test_copper_lost_in_cleanup_warns(mini_board):
     pieces, w = copper_pieces(mini_board(sliver), BIG, T)
     assert ("W_COPPER_EMPTIED", {"net": "N1", "layer": "F.Cu"}) in w and pieces == []
     assert copper_pieces(mini_board(sliver), box(10, 10, 20, 20), T)[1] == []  # copper outside the crop is no loss
+
+
+def test_a_join_accepts_touches_within_it_and_no_other():  # Stage 3 design 5.3; RF 2
+    rf, gnd = Piece("F.Cu", "RF", box(0, 0, 4, 1), True), Piece("F.Cu", "GND", box(3.5, 0, 6, 1), True)
+    roi, crop, join = box(-10, -10, 10, 10), box(-20, -20, 20, 20), box(3.4, -0.1, 4.1, 1.1)
+    assert connectivity([rf, gnd], [], roi, ["RF"], crop) == [("E_SHORT_IN_ROI", {"nets": "GND, RF"})]
+    assert connectivity([rf, gnd], [], roi, ["RF"], crop, join=join) == []
+    other = Piece("F.Cu", "GND", box(-1, 0, 0.2, 1), True)  # a second touch, outside the join
+    assert connectivity([rf, gnd, other], [], roi, ["RF"], crop, join=join) == [("E_SHORT_IN_ROI", {"nets": "GND, RF"})]

@@ -86,6 +86,16 @@ msgstr ""
 msgid "Net {net} has copper that is not axis-aligned (45° segments or arcs), which the mesh staircases. P0-A measured a staircased 45° line 4.6 % off its axis-aligned twin in Z0 at mesh n 2, within the 5 % budget, so the run goes on, but its accuracy is not validated. For a validated result, route the measured nets with horizontal and vertical tracks. A finer mesh lowers the error: set \"mesh\": {{\"n\": 3}} in project.json."
 msgstr ""
 
+#. W_LIDS_LEFT_OUT
+#, python-brace-format
+msgid "Shields {refs} on the antenna's board get no lid: one lid is modelled, over {ref}, the shield over most of the board."
+msgstr ""
+
+#. W_AIR_BOX
+#, python-brace-format
+msgid "The antenna's air box is outside the tested setting: an air gap of {gap_mm} mm (λ/4 at f_lo is {quarter_mm} mm) to a {boundary} absorber. Only PML_8 at λ/4 or more has passed a gate (P3-A); a MUR twin's energy rose 16 dB at 0.53 λ, and gate P3-C tests the rest."
+msgstr ""
+
 #. E_LID_HEIGHT
 #, python-brace-format
 msgid "Shield {refs} covers the simulated region but project.json has no lid_height_mm. Set lid_height_mm in project.json, or set \"lid\": false to leave the lid out."

@@ -144,13 +144,14 @@ def copper_pieces(board: Board, crop: Polygon,
 
 
 def connectivity(pieces: list[Piece], rods: list[Rod], roi: BaseGeometry, nets: Collection[str],
-                 crop: Polygon) -> list[tuple[str, dict]]:
+                 crop: Polygon, join: BaseGeometry | None = None) -> list[tuple[str, dict]]:
     """The opens and shorts of `nets`. Pieces on one layer that touch are joined, and a rod joins the pieces its
     barrel touches. The pieces are clipped to `crop`, so a net's parts that run out of it may join outside it: they
     count as one. A net of `nets` in two or more parts is open: E_OPEN_IN_ROI when two of them reach `roi`, else
     W_OPEN_IN_MARGIN. Copper of another net touching theirs is a short: E_SHORT_IN_ROI when the touch lies in `roi`,
-    else W_SHORT_IN_MARGIN. Copper with no net floats, so it is never open and shorts nothing. Opens come first, by
-    net, then shorts, by pair of nets."""
+    else W_SHORT_IN_MARGIN. Copper with no net floats, so it is never open and shorts nothing. `join` (None: none) is
+    where an antenna's own copper joins its feed to ground (Stage 3 design 5.3): a touch that lies within it is no
+    short. Opens come first, by net, then shorts, by pair of nets."""
     # ponytail: a rod joins every layer, as a through via does; a blind or buried via needs its layer span here
     geoms = [pc.polygon for pc in pieces] + [Point(r.at).buffer(r.radius) for r in rods]
     layers = [pc.layer for pc in pieces] + [None] * len(rods)
@@ -175,6 +176,8 @@ def connectivity(pieces: list[Piece], rods: list[Rod], roi: BaseGeometry, nets: 
     shorts: dict[tuple[str, ...], bool] = {}
     for i, j in touch:
         if names[i] != names[j] and names[i] and names[j] and (names[i] in nets or names[j] in nets):
+            if join is not None and geoms[i].intersection(geoms[j]).within(join):
+                continue
             pair = tuple(sorted((names[i], names[j])))
             shorts[pair] = shorts.get(pair, False) or geoms[i].intersection(geoms[j]).intersects(roi)
     return notes + [("E_SHORT_IN_ROI" if hit else "W_SHORT_IN_MARGIN", {"nets": ", ".join(pair)})
