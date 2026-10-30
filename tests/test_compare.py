@@ -56,7 +56,8 @@ def test_compare_two_runs_with_the_same_settings(tmp_path, calibrated, capsys): 
     assert render("I_ANTENNA_RELATIVE") in capsys.readouterr().out.splitlines()
 
 
-def test_compare_refuses_other_settings_another_kind_and_no_result(tmp_path, calibrated, capsys):  # 5.8; RF 4, 5
+def test_compare_refuses_other_settings_another_kind_and_no_result(
+        tmp_path, calibrated, capsys, monkeypatch):  # 5.8; RF 4, 5
     a = antenna_project(tmp_path / "a")
     assert pipeline.run(a) == 0
     b, old, stale = twin(a, tmp_path / "b"), twin(a, tmp_path / "old"), twin(a, tmp_path / "stale")
@@ -67,8 +68,16 @@ def test_compare_refuses_other_settings_another_kind_and_no_result(tmp_path, cal
     save_project(old, d)
     save_project(stale, {**load_project(stale), "t_max_s": 31e-9})  # T_max is in the model: its results are stale
     lpf, fresh = lpf_project(tmp_path), antenna_project(tmp_path / "fresh")
+
+    def board_read(*_):
+        raise AssertionError("a board was read")
+
+    with monkeypatch.context() as m:  # the kind is checked before any board is read
+        m.setattr(pipeline, "load", board_read)
+        with pytest.raises(KrsError) as e:  # lpf as the base, which compare reads first
+            pipeline.compare_projects(lpf, a, tmp_path / "out")
+        assert (e.value.code, e.value.params) == ("E_COMPARE_KIND", {"path": str(lpf)})
     for variant, code, params in [(b, "E_COMPARE_SETTINGS", {"fields": "air_gap_mm, openems, preset"}),
-                                  (lpf, "E_COMPARE_KIND", {"path": str(lpf)}),
                                   (fresh, "E_COMPARE_NO_RESULT", {"path": str(fresh)}),
                                   (old, "E_COMPARE_NO_RESULT", {"path": str(old)}),
                                   (stale, "E_COMPARE_NO_RESULT", {"path": str(stale)})]:
