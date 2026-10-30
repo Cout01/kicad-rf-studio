@@ -9,9 +9,9 @@ import pytest
 from matplotlib.figure import Figure
 
 from kicad_rf_studio.core.messages import KrsError, render
-from kicad_rf_studio.core.post.antenna import (ANTENNA_LIMITS, antenna_csv, antenna_png, bandwidth, draw_antenna,
-                                                far_field_lines, far_field_of, farfield_csv, resonance, s11_lines,
-                                                shown_zin, zin)
+from kicad_rf_studio.core.post.antenna import (ANTENNA_LIMITS, antenna_csv, antenna_png, bandwidth, compare_s11,
+                                                dip_resonance, draw_antenna, far_field_lines, far_field_of,
+                                                farfield_csv, resonance, s11_lines, shown_zin, zin)
 from kicad_rf_studio.core.post.waves import band_grid
 from test_project import antenna_dict
 
@@ -101,3 +101,17 @@ def test_the_summary_png_carries_the_what_if_label():  # design 5.7: under Stage
     draw_antenna(fig, f, dip(f).astype(complex), d, None, "proj", "label")
     assert fig.get_suptitle() == (render("I_PLOT_ANTENNA_TITLE", name="proj") + "\n" + render("I_ANTENNA_RELATIVE")
                                   + "\nlabel")
+
+
+def test_verify_compares_s11_and_the_resonance_with_the_retune():  # design 5.7; RF 5: a shallow minimum is no dip
+    f = band_grid(antenna_dict())
+    a, b = dip(f, 2.4495e9).astype(complex), dip(f, 2.438e9).astype(complex)  # each resonance on a grid point
+    k0 = int(np.flatnonzero(f == 2.44175e9)[0])
+    assert compare_s11(a, b, f, k0) == {
+        "ds11_f0": pytest.approx(abs(a[k0] - b[k0])), "ds11_max": pytest.approx(np.abs(a - b).max()),
+        "f_res_hz": pytest.approx(2.4495e9, abs=1), "f_res_retune_hz": pytest.approx(2.438e9, abs=1),
+        "shift": pytest.approx(11.5e6 / 2.438e9, rel=1e-6)}
+    flat = (0.9 - 0.3 * np.exp(-((f - 2.438e9) / 0.1e9) ** 2)).astype(complex)  # lowest |S11| -4.4 dB
+    assert dip_resonance(f, flat) is None and dip_resonance(f, dip(f, 1.0e9, 0.3e9)) is None  # shallow; band's edge
+    cmp = compare_s11(a, flat, f, k0)
+    assert (cmp["f_res_hz"], cmp["f_res_retune_hz"], cmp["shift"]) == (pytest.approx(2.4495e9, abs=1), None, None)

@@ -1,12 +1,15 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 import json
+import os
 from pathlib import Path
 
 import numpy as np
+import pytest
 
 from kicad_rf_studio import __version__, pipeline
-from kicad_rf_studio.core.messages import render
+from kicad_rf_studio.core.messages import KrsError, render
 from kicad_rf_studio.core.model import spec as spec_module
+from kicad_rf_studio.core.post.antenna import ANTENNA_LIMITS
 from kicad_rf_studio.core.post.chain import with_box, z_part
 from kicad_rf_studio.core.post.waves import band_grid
 from kicad_rf_studio.core.project import load_project
@@ -88,3 +91,126 @@ def test_an_antenna_run_records_its_settings_fingerprint(tmp_path, calibrated): 
             "lid_height_mm")
     assert d["results"]["fingerprint"] == {**{key: d[key] for key in keys}, "start": "U1.1", "copper": "solid",
                                            "app": __version__, "openems": "0.37.0"}  # fake_cli's openems_versions
+
+
+def test_verify_runs_an_antennas_network_in_one_job_and_records_its_far_field(tmp_path, calibrated, monkeypatch):
+    pj = pi_run(tmp_path, monkeypatch)  # design 5.1, 5.5, 5.7
+    m0 = antenna_project(tmp_path / "m0")
+    with pytest.raises(KrsError) as e:  # no part on the chain: its run is its far-field run
+        pipeline.verify(m0)
+    assert e.value.code == "E_VERIFY_NO_PARTS"
+    with pytest.raises(KrsError) as e:  # nor anything to retune: v1's refusals stand (design 5.1)
+        pipeline.retune(m0, ["C1=1pF"])
+    assert e.value.code == "E_RETUNE_NO_PARTS"
+    before = load_project(pj)["results"]
+    assert pipeline.verify(pj) == 0  # one external port: no E_VERIFY_PORTS for an antenna
+    d = load_project(pj)
+    v, run_dir = d["verify"], Path(d["verify"]["run_dir"])
+    assert d["results"] == before and set(v) == {"model_hash", "base_hash", "values", "run_dir", "jobs", "compare",
+                                                 "far_field", "fingerprint"}
+    assert v["values"] == {"L1": "2.7nH", "C2": "1pF", "C3": "1pF"} and v["fingerprint"] == before["fingerprint"]
+    assert [(j["port"], j["verdict"]) for j in v["jobs"]] == [("P1", "converged")]
+    model = json.loads((run_dir / "model.json").read_text(encoding="utf-8"))
+    assert [q["name"] for q in model["ports"]] == ["P1"] and [g["name"] for g in model["grid"]] == ["L1", "C2", "C3"]
+    assert model["nf2ff"]["f_hz"] == d["far_field"]["f_hz"] and list(v["far_field"]) == [
+        "sphere", "elevation", "azimuth"]
+    assert all((run_dir / p).is_file() for p in v["far_field"].values())
+    f = band_grid(d)
+    retuned = oracle(f, *(z_part(k, x, None, f) for k, x in (("L", 2.7e-9), ("C", 1e-12), ("C", 1e-12))))  # ideal
+    assert v["compare"]["ds11_max"] == pytest.approx(np.abs(star(f, 1)[:, 0, 0] - retuned).max(), abs=1e-4)
+    assert v["compare"]["shift"] is None  # star(f, 1) has no dip: its |S11| is 0.9025 at every f
+    assert sorted(p.name for p in (pj.parent / "results").iterdir()) == [
+        "antenna_summary.png", "chain.s1p", "layout.s4p", "verify.s1p", "verify_farfield.csv", "verify_summary.csv",
+        "verify_summary.png"]
+    codes = [code for code, _ in result_lines(run_dir)]
+    assert codes[0] == "I_VERIFY_RESULTS" and codes.index("I_ANTENNA_RELATIVE") < codes.index("I_VERIFY_COMPARE_S11")
+    assert codes[codes.index("I_VERIFY_COMPARE_S11") + 1] == "I_RESONANCE_NOT_COMPARED"
+    assert codes.count("I_ANTENNA_FAR_FIELD") == 2  # the fixture's 2 f
+    assert not {"I_VERIFY_LOSS_BUDGET", "W_VERIFY_LOSS_BUDGET"} & set(codes)
+    assert codes[-7:] == ["I_OUTPUTS", "I_VERIFY_SCOPE_ANTENNA", *ANTENNA_LIMITS]
+
+
+def test_verify_of_the_antenna_through_its_feed_line(tmp_path, calibrated, monkeypatch):  # design 5.7; RF 2
+    pj = pi_run(tmp_path, monkeypatch)
+    assert pipeline.retune(pj, ["L1=0R", "C2=open", "C3=open"]) == 0
+    monkeypatch.setattr(spec_module, "c_box", None)  # nothing in the grid: verify reads no cell C
+    assert pipeline.verify(pj) == 0
+    d = load_project(pj)
+    run = json.loads((Path(d["results"]["run_dir"]) / "model.json").read_text(encoding="utf-8"))
+    model = json.loads((Path(d["verify"]["run_dir"]) / "model.json").read_text(encoding="utf-8"))
+    assert model["grid"] == [] and len(model["metal"]["copper"]) == len(run["metal"]["copper"]) + 1  # L1's box
+    assert d["verify"]["values"] == {"L1": "0R", "C2": "open", "C3": "open"}
+
+
+@pytest.mark.parametrize(("held", "stored", "written"), [
+    ("verify_summary.png", True, None),  # stored with its far field; the second write refused, so no I_OUTPUTS
+    ("project.json", False, "verify.s1p, verify_summary.png")])  # nothing stored, so no transform; the first write's
+def test_a_held_file_costs_an_antennas_verify_only_that_file(tmp_path, calibrated, monkeypatch, held, stored, written):
+    pj = pi_run(tmp_path, monkeypatch)  # RF 3; as test_verify's HELD
+    real = os.replace
+
+    def replace(src, dst):  # another program holds the file: an image viewer, an indexer
+        if Path(dst).name == held:
+            raise PermissionError(13, "in use")
+        real(src, dst)
+
+    monkeypatch.setattr(os, "replace", replace)
+    assert pipeline.verify(pj) == 2
+    d = load_project(pj)
+    assert ("verify" in d) is stored
+    assert not stored or list(d["verify"]["far_field"]) == ["sphere", "elevation", "azimuth"]
+    (own,) = [p for p in (calibrated / "runs").iterdir() if str(p) != d["results"]["run_dir"]]  # verify's run folder
+    events = [json.loads(line) for line in (own / "events.jsonl").read_text(encoding="utf-8").splitlines()]
+    assert [e["kind"] for e in events if e["code"] == "E_RESULTS_WRITE"] == ["message"]  # one, the write that stands
+    lines = result_lines(own)
+    assert ("I_VERIFY_RESULTS" in [code for code, _ in lines]) is stored
+    assert [p["files"] for code, p in lines if code == "I_OUTPUTS"] == ([written] if written else [])
+    assert [code for code, _ in lines][-6:] == ["I_VERIFY_SCOPE_ANTENNA", *ANTENNA_LIMITS]
+
+
+def test_a_verify_whose_transform_fails_keeps_its_comparison(tmp_path, calibrated, monkeypatch):  # RF 3
+    pj = pi_run(tmp_path, monkeypatch)
+
+    def fail(*_, **__):
+        raise KrsError("E_WORKER_FAILED", job="T_JOB_FAR_FIELD", exit_code=1, log="log.txt")
+
+    monkeypatch.setattr(pipeline, "far_field", fail)
+    assert pipeline.verify(pj) == 2
+    v = load_project(pj)["verify"]
+    events = [json.loads(line)
+              for line in (Path(v["run_dir"]) / "events.jsonl").read_text(encoding="utf-8").splitlines()]
+    assert v["far_field"] is None and "ds11_f0" in v["compare"]
+    assert [e["kind"] for e in events if e["code"] == "E_WORKER_FAILED"] == ["message"]
+    written = sorted(p.name for p in (pj.parent / "results").iterdir())
+    assert {"verify.s1p", "verify_summary.png"} <= set(written) and "verify_farfield.csv" not in written
+    assert [p["files"] for c, p in result_lines(v["run_dir"]) if c == "I_OUTPUTS"] == ["verify.s1p, verify_summary.png"]
+
+
+def test_a_stopped_verify_transform_keeps_the_comparison(tmp_path, calibrated, monkeypatch):  # RF 3; Stage 1 7.8
+    pj = pi_run(tmp_path, monkeypatch)
+
+    def stop(*_, **__):
+        raise KeyboardInterrupt  # STOP or Ctrl+C during the transform
+
+    monkeypatch.setattr(pipeline, "far_field", stop)
+    with pytest.raises(KeyboardInterrupt):
+        pipeline.verify(pj)
+    v = load_project(pj)["verify"]
+    assert v["far_field"] is None and [j["verdict"] for j in v["jobs"]] == ["converged"]
+    assert [code for code, _ in result_lines(v["run_dir"])] == ["I_VERIFY_RESULTS"]  # said before the transform
+    assert (pj.parent / "results" / "verify.s1p").is_file()
+    assert not (pj.parent / "results" / "verify_farfield.csv").exists()
+
+
+# --- beyond the brief's tests ------------------------------------------------------------------------------------
+
+
+def test_verify_reports_the_resonance_shift(tmp_path, calibrated, monkeypatch):  # design 5.7: the fake has no dip
+    pj = pi_run(tmp_path, monkeypatch)
+    cmp = {"ds11_f0": 0.01, "ds11_max": 0.02, "f_res_hz": 2.4495e9, "f_res_retune_hz": 2.438e9,
+           "shift": 11.5e6 / 2.438e9}
+    monkeypatch.setattr(pipeline, "compare_s11", lambda *a: cmp)
+    assert pipeline.verify(pj) == 0
+    lines = result_lines(load_project(pj)["verify"]["run_dir"])
+    assert lines[[code for code, _ in lines].index("I_VERIFY_COMPARE_S11") + 1] == (
+        "I_VERIFY_SHIFT", {"f_res_mhz": "2449.5", "f_res_retune_mhz": "2438.0", "shift_pct": "+0.47"})

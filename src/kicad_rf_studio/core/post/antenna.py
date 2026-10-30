@@ -15,6 +15,8 @@ from kicad_rf_studio.core.model.parts import Z0
 from kicad_rf_studio.core.post.farfield import efficiencies, eta_lines, port_powers, read_far_field
 
 ANTENNA_OUTPUTS = re.compile(r"(layout|chain)\.s\d+p|farfield\.csv|antenna_summary\.(png|csv)")  # matched whole
+# verify's files for an antenna (Stage 3 design 5.6, 5.7), which ANTENNA_OUTPUTS never matches, so a retune leaves them
+ANTENNA_VERIFY_OUTPUTS = re.compile(r"verify\.s1p|verify_(farfield\.csv|summary\.(png|csv))")
 ANTENNA_LIMITS = ("I_LIMIT_FREE_SPACE", "I_LIMIT_PEC_ETA", "I_LIMIT_SURROUNDINGS", "I_LIMIT_BODIES",
                   "I_LIMIT_PARTS_OFF_CHAIN")  # design 5.6: stated after every antenna result
 LEVELS_DB = (-10.0, -6.0)  # the bandwidth's levels: -10 dB, and the -6 dB marker (design 5.6)
@@ -50,6 +52,24 @@ def resonance(f: np.ndarray, s11: np.ndarray) -> tuple[int, float]:
         return k, float(f[k])
     a, b, _ = np.polyfit(f[k - 1:k + 2] - f[k], db[k - 1:k + 2], 2)
     return k, float(f[k] - b / (2 * a))
+
+
+def dip_resonance(f: np.ndarray, s11: np.ndarray) -> float | None:
+    """The refined resonance (resonance) of `s11` on `f` when its lowest |S11| marks a dip: at or below the −6 dB
+    marker (LEVELS_DB) at a point inside the grid; else None, as the argmin of a shallow minimum, or one at the grid's
+    edge, moves with the model's noise (Stage 3 plan 3)."""
+    # ponytail: a depth screen; a broad -7 dB minimum still passes it, and P3-D's noise floor decides
+    k, f_res = resonance(f, s11)
+    return f_res if 0 < k < len(f) - 1 and _db(s11[k]) <= LEVELS_DB[1] else None
+
+
+def compare_s11(a: np.ndarray, b: np.ndarray, f: np.ndarray, k0: int) -> dict:
+    """How the retune's S11 `b` differs from verify's `a`, each (F,) on f (Stage 3 design 5.7), as checks.compare does
+    for v1: |ΔS11| at the grid index k0 (f0), the largest |ΔS11| over f (up to f2), each one's dip_resonance and, only
+    when both have one, the shift (f_a − f_b)/f_b; plain floats, None for a resonance or a shift there is not."""
+    fa, fb = dip_resonance(f, a), dip_resonance(f, b)
+    return {"ds11_f0": float(abs(a[k0] - b[k0])), "ds11_max": float(np.abs(a - b).max()), "f_res_hz": fa,
+            "f_res_retune_hz": fb, "shift": None if fa is None or fb is None else (fa - fb) / fb}
 
 
 def bandwidth(f: np.ndarray, s11: np.ndarray, k: int, level_db: float) -> tuple[float | None, float | None] | None:

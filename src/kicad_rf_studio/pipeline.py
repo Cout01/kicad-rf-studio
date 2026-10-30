@@ -32,17 +32,18 @@ from kicad_rf_studio.core.geometry.region import air_cell, band
 from kicad_rf_studio.core.geometry.sections import cross_section
 from kicad_rf_studio.core.kicad import load_board
 from kicad_rf_studio.core.kicad.tracer import adopt, check_antenna
-from kicad_rf_studio.core.kicad.values import bypass, part_kind, port_value
+from kicad_rf_studio.core.kicad.values import bypass, port_value
 from kicad_rf_studio.core.mesh.gates import check_fit2d, dt_floor_reference, fit2d, mesh_with_lint
 from kicad_rf_studio.core.messages import KrsError, english, reason, render
 from kicad_rf_studio.core.model.parts import CURVE_PORT, GRID, PORT
 from kicad_rf_studio.core.model.ports import ends, nominal_boxes, place
 from kicad_rf_studio.core.model.readers import read_log, read_probe, read_run_stats, read_stats
-from kicad_rf_studio.core.model.spec import (air_box, cell_split, grid_entry, metal_in_pml, model_spec, spec_hash,
-                                             verify_spec)
-from kicad_rf_studio.core.post.antenna import (ANTENNA_LIMITS, ANTENNA_OUTPUTS, antenna_csv, antenna_png,
-                                               far_field_lines, far_field_of, farfield_csv, s11_lines)
-from kicad_rf_studio.core.post.chain import ideal_schematic, loads, part_impedances, terminate, z_part
+from kicad_rf_studio.core.model.spec import (air_box, cell_split, far_field_box, grid_entry, metal_in_pml, model_spec,
+                                             spec_hash, verify_spec)
+from kicad_rf_studio.core.post.antenna import (ANTENNA_LIMITS, ANTENNA_OUTPUTS, ANTENNA_VERIFY_OUTPUTS, antenna_csv,
+                                               antenna_png, compare_s11, far_field_lines, far_field_of, farfield_csv,
+                                               s11_lines)
+from kicad_rf_studio.core.post.chain import ideal_schematic, loads, part_impedances, terminate, z_value
 from kicad_rf_studio.core.post.checks import compare, indicator_lines, loss_budget, loss_expected
 from kicad_rf_studio.core.post.outputs import (LIMITS, OUTPUTS, VERIFY_OUTPUT, grid_lines, marker_lines, port_map,
                                                summary_csv, summary_png, touchstone, write)
@@ -651,7 +652,7 @@ def _run(path: Path, run_dir: Path) -> int:
     emit = partial(runs.emit, run_dir)  # (kind, code, params, job=None)
     if isinstance(built := _model_phase(path, emit), int):
         return built
-    project, geom, model = built
+    project, _, geom, model = built
     gates, preset = project["gates"], project["preset"]
     loss = expected_loss(geom, project["f0_hz"])  # before prepare: an error here costs no job
     if (out := simulate(model, project, run_dir)) is None:
@@ -690,11 +691,11 @@ def _run(path: Path, run_dir: Path) -> int:
     return 2 if any(code.startswith("E_") for code, _ in lines) else 0
 
 
-def _model_phase(path: Path, emit: Callable[..., None]) -> tuple[dict, Geometry, Model] | int:
-    """The model phase that run and verify share under the lock (spec 6.1, C-42): the project at `path`, its geometry
-    and its model, with W_FILLS_AS_SAVED and load()'s notes as message events through `emit` (runs.emit bound to the
-    run folder). Instead the exit code where it stops: stops()'s, or 3 when a mesh gate blocks, its gates as verdict
-    events followed by gate_lines (C-10)."""
+def _model_phase(path: Path, emit: Callable[..., None]) -> tuple[dict, Board, Geometry, Model] | int:
+    """The model phase that run and verify share under the lock (spec 6.1, C-42): the project at `path`, its board,
+    its geometry and its model, with W_FILLS_AS_SAVED and load()'s notes as message events through `emit` (runs.emit
+    bound to the run folder). Instead the exit code where it stops: stops()'s, or 3 when a mesh gate blocks, its gates
+    as verdict events followed by gate_lines (C-10)."""
     project, board, geom, notes = load(path)
     for code, params in [("W_FILLS_AS_SAVED", {}), *notes]:
         emit("message", code, params)
@@ -707,7 +708,7 @@ def _model_phase(path: Path, emit: Callable[..., None]) -> tuple[dict, Geometry,
         for code, params in gate_lines(project["gates"]):  # C-10
             emit("message", code, params)
         return 3
-    return project, geom, model
+    return project, board, geom, model
 
 
 def simulate(model: Model, project: dict, run_dir: Path) -> tuple[list[dict], dict, float] | None:
@@ -819,6 +820,17 @@ def far_field(job: Path, step_deg: int = 5) -> dict[str, Path]:
     return {grid: job / f"nf2ff-{token}-{grid}.h5" for grid in GRIDS}
 
 
+def far_of(record: dict) -> dict | None:
+    """far_field_of of the run `record` holds, project.json's results or its verify (Stage 3 design 5.5): its far_field
+    files and its first job's waves, in its run_dir; None when it records no far field. Raises far_field_of's
+    E_RESULTS_WAVES."""
+    if not record.get("far_field"):
+        return None
+    run_dir = Path(record["run_dir"])
+    return far_field_of({grid: run_dir / file for grid, file in record["far_field"].items()},
+                        run_dir / record["jobs"][0]["waves"])
+
+
 def results_of(project: dict, model: Model) -> dict:
     """The results in `project` when they are the last run's of `model` (spec 7.8, C-22, C-23): E_NO_RESULTS without
     any; E_RESULTS_STALE when the model has no spec (E_EDGE_LINT), its spec_hash is not the one the run recorded, or
@@ -922,20 +934,20 @@ def retune(path: Path, assignments: list[str], emit: Callable[[str, dict], None]
 def verify(path: Path, run_dir: Path | None = None) -> int:
     """`verify` on the project at `path` (spec 3.2, 7.6, C-36..C-38), returning its exit code as run does (C-22).
     Before the lock: E_VERIFY_NO_PARTS when no part is a port or a curve_port (a single trace), E_VERIFY_CURVE for the
-    first curve_port, E_NO_RESULTS, E_VERIFY_PORTS for fewer than 2 external ports. Then as in run, under the lock in
-    a fresh run folder whose events.jsonl gets every line, with any KrsError a message event and exit 2:
-    W_FILLS_AS_SAVED and load()'s notes, stopping with stops(); the model, 3 when a mesh gate blocks; results_of and
-    the run's layout N-port; verify's model (verify_spec) and the part ports' loads at their ideal values, the part
-    models and S2P files ignored (C-38), every refusal before any job. Then simulate on verify's model, its external
-    ports the only jobs: 3 when its setup gate blocks, and unless every job kept S, W_VERIFY_NOT_KEPT and 4 with
-    nothing stored. Else verify's own N-port is compared with the run's closed by those loads, the noisier of the
-    run's and the project's presets setting the null floor; the comparison goes to project.json's verify (its results
-    kept), then verify.s{P}p to results/ with its port map and grid lines, a refusal of either an E_ line, so that a
-    held file costs only that file. The lines follow: I_VERIFY_RESULTS when the comparison was stored,
-    I_VERIFY_COMPARE, I_VERIFY_NULL or W_VERIFY_NULL_UNMATCHED for each null (I_VERIFY_NO_NULLS for none), the
-    indicator lines with a 2-port's loss budget in its verify form (the parts in the grid, no part loss removed), the
-    E_ lines as message events, I_OUTPUTS when verify.s{P}p was written, I_VERIFY_SCOPE and LIMITS; then 0, or 2
-    after an E_ line. A given `run_dir` stands in for the fresh run folder."""
+    first curve_port, E_NO_RESULTS, E_VERIFY_PORTS for fewer than 2 external ports, an antenna's one external port
+    excepted (Stage 3 design 5.7). Then as in run, under the lock in a fresh run folder whose events.jsonl gets every
+    line, with any KrsError a message event and exit 2: W_FILLS_AS_SAVED and load()'s notes, stopping with stops(); the
+    model, 3 when a mesh gate blocks; results_of and the run's layout N-port; verify's model (verify_spec) and the part
+    ports' loads at their ideal values, the part models and S2P files ignored (C-38), every refusal before any job. Then
+    simulate on verify's model, its external ports the only jobs: 3 when its setup gate blocks, and unless every job
+    kept S, W_VERIFY_NOT_KEPT and 4 with nothing stored. Else verify's own N-port is compared with the run's closed by
+    those loads, the noisier of the run's and the project's presets setting the null floor; the comparison goes to
+    project.json's verify (its results kept), then verify.s{P}p to results/ with its port map and grid lines, a refusal
+    of either an E_ line, so that a held file costs only that file. The lines follow: I_VERIFY_RESULTS when the
+    comparison was stored, I_VERIFY_COMPARE, I_VERIFY_NULL or W_VERIFY_NULL_UNMATCHED for each null (I_VERIFY_NO_NULLS
+    for none), the indicator lines with a 2-port's loss budget in its verify form (the parts in the grid, no part loss
+    removed), the E_ lines as message events, I_OUTPUTS when verify.s{P}p was written, I_VERIFY_SCOPE and LIMITS; then
+    0, or 2 after an E_ line. A given `run_dir` stands in for the fresh run folder."""
     project = read_project(path)  # before the lock, as in run
     by_ref = parts(project)
     if not any(q["role"] in (PORT, CURVE_PORT) for q in by_ref.values()):
@@ -944,24 +956,28 @@ def verify(path: Path, run_dir: Path | None = None) -> int:
         raise KrsError("E_VERIFY_CURVE", ref=curve)
     if "results" not in project:
         raise KrsError("E_NO_RESULTS")
-    if len(project["ports"]) < 2:  # the external ports, as _split counts them; compare() reads S21 and S11
+    # the external ports, as _split counts them; compare() reads S21 and S11, compare_s11 an antenna's S11 alone
+    if len(project["ports"]) < 2 and not antenna(project):
         raise KrsError("E_VERIFY_PORTS", ports=len(project["ports"]))
     return _locked(path, _verify, run_dir)
 
 
 def _verify(path: Path, run_dir: Path) -> int:
-    """verify() under the lock, with `run_dir` made."""
+    """verify() under the lock, with `run_dir` made; an antenna's verify model records its far field (far_field_box),
+    its loads read its bypasses, and _verify_antenna ends it (Stage 3 design 5.5–5.7)."""
     emit = partial(runs.emit, run_dir)  # (kind, code, params, job=None)
     if isinstance(built := _model_phase(path, emit), int):
         return built
-    project, _, model = built
+    project, board, geom, model = built
+    ant = antenna(project)
     results = results_of(project, model)
     lay = layout(project, results)
     by_ref, (ext, refs) = parts(project), _split(lay)
     values = {ref: by_ref[ref]["value"] for ref in refs}
     dump = runs.job_dir(Path(results["run_dir"]), 0, "setup") / "operator_dump.vtr"
-    vspec = verify_spec(model.spec, by_ref, dump, results["dt"])
-    zk = loads({ref: z_part(part_kind(ref), port_value(ref, values[ref]), None, lay.f) for ref in refs}, refs,
+    vspec = verify_spec(model.spec, by_ref, dump, results["dt"],
+                        far_field=far_field_box(project, board, geom) if ant else None)
+    zk = loads({ref: z_value(ref, values[ref], None, lay.f, bypasses=ant) for ref in refs}, refs,
                results["c_box"], lay.f)  # the ideal values, the part models and S2P files ignored (C-38)
     if (out := simulate(replace(model, spec=vspec), project, run_dir)) is None:
         return 3
@@ -972,6 +988,9 @@ def _verify(path: Path, run_dir: Path) -> int:
                                              "folder": str(run_dir)})
         return 4
     own = layout(project, {"run_dir": str(run_dir), "jobs": done})
+    if ant:
+        return _verify_antenna(path, run_dir, project, vspec, values, own, terminate(lay.s, ext, zk, lay.f)[:, 0, 0],
+                               done, wall_s)
     k0, p = lay.markers[0], len(own.ports)
     # 10 × the S tolerance of the noisier preset, the run's or verify's own
     floor = 10 * max(PRESETS[results["preset"]][1], PRESETS[project["preset"]][1])
@@ -1017,6 +1036,84 @@ def _verify(path: Path, run_dir: Path) -> int:
     for code, params in lines:
         emit("message" if code.startswith("E_") else "result", code, params)
     return 2 if errors else 0
+
+
+def _verify_antenna(path: Path, run_dir: Path, project: dict, vspec: dict, values: dict[str, str], own: Layout,
+                    retuned: np.ndarray, done: list[dict], wall_s: float) -> int:
+    """_verify's end for an antenna (Stage 3 design 5.5–5.7), with `own` verify's one-port layout and `retuned` the
+    retune's S11 at the same ideal values; `results` is project["results"], as results_of checked it. The comparison
+    (compare_s11, k0 own's f0 marker) is stored in project.json's verify with far_field null and fingerprint(project),
+    and I_VERIFY_RESULTS emitted at once, as _run emits I_RESULTS before its transform. Then verify.s1p (port_map and
+    grid_lines, as v1's) and verify_summary.png without a far field are written (ANTENNA_VERIFY_OUTPUTS), so that a
+    stopped transform leaves them, as it leaves a run's S. Only when the comparison was stored, the far field is
+    transformed from verify's job (far_field, the project's step), stored and read back (far_of), and all four files
+    written again with it, S11 at the far field's frequencies from verify's own layout there (no part port: layout
+    gives it in any order). That second write supersedes the first, whose refusal is said only when no second write
+    follows. A refusal of a store, a write or the transform is an E_ line; a stopped transform propagates, the
+    comparison stored and verify's S file kept. The lines after I_VERIFY_RESULTS: s11_lines of verify's S11,
+    I_VERIFY_COMPARE_S11, I_VERIFY_SHIFT or I_RESONANCE_NOT_COMPARED, far_field_lines, indicator_lines with no loss
+    budget, the E_ lines, I_OUTPUTS naming the files of the write that stands when it succeeded,
+    I_VERIFY_SCOPE_ANTENNA and ANTENNA_LIMITS; each emitted as v1's are; 0, or 2 after an E_ line."""
+    emit = partial(runs.emit, run_dir)  # (kind, code, params, job=None)
+    results, k0, s11 = project["results"], own.markers[0], own.s[:, 0, 0]
+    cmp = compare_s11(s11, retuned, own.f, k0)
+    command = command_line("kicad-rf-studio", "verify", str(path))
+    errors = []  # the store's and the transform's refusals
+    try:
+        data = load_project(path)  # as it is now: only verify is replaced
+        data["verify"] = {"model_hash": spec_hash(vspec), "base_hash": results["model_hash"], "values": values,
+                          "run_dir": str(run_dir), "jobs": done, "compare": cmp, "far_field": None,
+                          "fingerprint": fingerprint(project)}
+        _save(path, data, command)
+    except KrsError as err:  # E_RESULTS_WRITE for project.json, or E_PROJECT_UNREADABLE after a hand edit meanwhile
+        errors.append((err.code, err.params))
+        data = None
+    else:
+        emit("result", "I_VERIFY_RESULTS", {"runs": len(done), "wall": duration(wall_s), "path": str(path)})
+    folder, name = path.parent / "results", path.absolute().parent.name  # `verify .` too
+    basis = {**results, "run_dir": str(run_dir), "jobs": done, "preset": project["preset"]}
+    # ponytail: verify.s1p's grid lines name the grid parts only; a bypassed part is in project.json's verify.values
+    comments = port_map(project, basis, own, [0]) + grid_lines(vspec["grid"], values)
+    files = {"verify.s1p": touchstone(own.s, own.f, [q["name"] for q in own.ports], comments),
+             "verify_summary.png": antenna_png(own.f, s11, project, None, name)}  # no label: verify is no what-if
+
+    def write_files() -> tuple[str, dict]:
+        """`files` written into results/: I_OUTPUTS naming them, else write's E_RESULTS_WRITE (a file held open)."""
+        try:
+            write(folder, files, ANTENNA_VERIFY_OUTPUTS, command)
+        except KrsError as err:
+            return err.code, err.params
+        return "I_OUTPUTS", {"files": ", ".join(sorted(files)), "folder": str(folder)}
+
+    written, far = write_files(), None
+    if data is not None:  # with project.json refused, the far field could not be recorded
+        try:
+            paths = far_field(run_dir / Path(done[0]["waves"]).parent, project["far_field"]["step_deg"])
+            data["verify"]["far_field"] = {grid: p.relative_to(run_dir).as_posix() for grid, p in paths.items()}
+            _save(path, data, command)
+            far = far_of(data["verify"])
+        except KrsError as err:  # the transform's, the save's or far_of's: the first write stands
+            errors.append((err.code, err.params))
+        else:
+            files["verify_farfield.csv"] = farfield_csv(far)
+            files["verify_summary.csv"] = antenna_csv(far, layout(project, basis, far["sphere"].f).s[:, 0, 0])
+            files["verify_summary.png"] = antenna_png(own.f, s11, project, far, name)
+            written = write_files()  # supersedes the first write
+    if cmp["shift"] is None:
+        dip_line = ("I_RESONANCE_NOT_COMPARED", {})
+    else:
+        dip_line = ("I_VERIFY_SHIFT", {"f_res_mhz": f"{cmp['f_res_hz'] / 1e6:.1f}",
+                                       "f_res_retune_mhz": f"{cmp['f_res_retune_hz'] / 1e6:.1f}",
+                                       "shift_pct": f"{100 * cmp['shift']:+.2f}"})
+    lines = [*s11_lines(project, own.f, s11),
+             ("I_VERIFY_COMPARE_S11", {"f0_mhz": f"{own.f[k0] / 1e6:g}", "a_db": f"{own.a_db[k0]:.1f}",
+                                       "ds11": f"{cmp['ds11_f0']:.4f}", "ds11_max": f"{cmp['ds11_max']:.4f}"}),
+             dip_line, *(far_field_lines(far) if far else ()),
+             *indicator_lines(own.f, own.a_db, own.s, None, results["loss_expected"]),
+             *errors, written, ("I_VERIFY_SCOPE_ANTENNA", {}), *((code, {}) for code in ANTENNA_LIMITS)]
+    for code, params in lines:
+        emit("message" if code.startswith("E_") else "result", code, params)
+    return 2 if any(code.startswith("E_") for code, _ in lines) else 0
 
 
 def appcsxcad(settings: dict) -> str | None:

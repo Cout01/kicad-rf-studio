@@ -1041,6 +1041,24 @@ msgstr ""
 msgid "verify checks the layout reduction, not the vendor part data: each part sat in the grid at its ideal value, against a retune at the same values. Its loss budget counts a resistor's loss in the grid as layout loss."
 msgstr ""
 
+#. I_VERIFY_COMPARE_S11
+#, python-brace-format
+msgid "verify against the retune at the same ideal values: |ΔS11| {ds11} at f0 = {f0_mhz} MHz (|a| {a_db} dB) and {ds11_max} at most up to f2."
+msgstr ""
+
+#. I_VERIFY_SHIFT
+#, python-brace-format
+msgid "Resonance at {f_res_mhz} MHz in verify against {f_res_retune_mhz} MHz in the retune: a shift of {shift_pct} %."
+msgstr ""
+
+#. I_RESONANCE_NOT_COMPARED
+msgid "Resonance: not compared, as the lowest |S11| of one of the two stays above -6 dB or sits at the edge of the simulated band, where it would move with the model's noise."
+msgstr ""
+
+#. I_VERIFY_SCOPE_ANTENNA
+msgid "verify checks the layout reduction, not the vendor part data: each part sat in the grid at its value as an ideal part, without the package ESL, ESR and Cp or the S2P data the retune applies, a 0 Ω part as copper and an open part left out, against a retune at the same ideal values; its far field holds that ideal network."
+msgstr ""
+
 #. I_ANTENNA_RELATIVE
 msgid "Relative: these antenna results compare variants of one board under identical settings; they do not predict measured performance."
 msgstr ""

@@ -1043,6 +1043,24 @@ msgstr "Balanço de perdas sinalizado: {layout_pct} % não contabilizados em {f_
 msgid "verify checks the layout reduction, not the vendor part data: each part sat in the grid at its ideal value, against a retune at the same values. Its loss budget counts a resistor's loss in the grid as layout loss."
 msgstr "A verificação confere a redução do layout, não os dados de componente do fabricante: cada componente ficou na grade com o valor ideal dele, contra um ajuste com os mesmos valores. O balanço de perdas dela conta a perda de um resistor na grade como perda do layout."
 
+#. I_VERIFY_COMPARE_S11
+#, python-brace-format
+msgid "verify against the retune at the same ideal values: |ΔS11| {ds11} at f0 = {f0_mhz} MHz (|a| {a_db} dB) and {ds11_max} at most up to f2."
+msgstr "Verificação contra o ajuste com os mesmos valores ideais: |ΔS11| {ds11} em f0 = {f0_mhz} MHz (|a| {a_db} dB) e no máximo {ds11_max} até f2."
+
+#. I_VERIFY_SHIFT
+#, python-brace-format
+msgid "Resonance at {f_res_mhz} MHz in verify against {f_res_retune_mhz} MHz in the retune: a shift of {shift_pct} %."
+msgstr "Ressonância em {f_res_mhz} MHz na verificação contra {f_res_retune_mhz} MHz no ajuste: um deslocamento de {shift_pct} %."
+
+#. I_RESONANCE_NOT_COMPARED
+msgid "Resonance: not compared, as the lowest |S11| of one of the two stays above -6 dB or sits at the edge of the simulated band, where it would move with the model's noise."
+msgstr "Ressonância: não comparada, pois o |S11| mínimo de uma das duas fica acima de -6 dB ou na borda da banda simulada, onde mudaria com o ruído do modelo."
+
+#. I_VERIFY_SCOPE_ANTENNA
+msgid "verify checks the layout reduction, not the vendor part data: each part sat in the grid at its value as an ideal part, without the package ESL, ESR and Cp or the S2P data the retune applies, a 0 Ω part as copper and an open part left out, against a retune at the same ideal values; its far field holds that ideal network."
+msgstr "A verificação confere a redução do layout, não os dados de componente do fabricante: cada componente ficou na grade com o valor dele como componente ideal, sem o ESL, o ESR e o Cp do encapsulamento nem os dados S2P que o ajuste aplica, um componente de 0 Ω como cobre e um em aberto deixado de fora, contra um ajuste com os mesmos valores ideais; o campo distante dela contém essa rede ideal."
+
 #. I_ANTENNA_RELATIVE
 msgid "Relative: these antenna results compare variants of one board under identical settings; they do not predict measured performance."
 msgstr "Relativo: estes resultados de antena comparam variantes de uma placa com configurações idênticas; eles não preveem o desempenho medido."
