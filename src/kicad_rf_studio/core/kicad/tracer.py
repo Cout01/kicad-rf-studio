@@ -7,7 +7,7 @@ import difflib
 import math
 import re
 from collections import deque
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
 import shapely
 from shapely.geometry import Point
@@ -126,17 +126,19 @@ def _resolve(board: Board, classes: Classes, name: str) -> list[Pad]:
     return pads
 
 
-def trace_chain(board: Board, start: str, end: str, classes: Classes | None = None) -> Chain:
+def trace_chain(board: Board, start: str, end: str, classes: Classes | None = None,
+                antenna: str | None = None) -> Chain:
     """The chain from pad `start` to pad `end`: the nets on the way, the series parts between them and the shunt
     parts that touch them, DNP ones too. The walk is breadth first, so it takes the fewest parts, trying the parts of
     a net in ref order. A part is a footprint with exactly two pads with a net, on two nets; a connector or a shield
-    is none. Raises KrsError: E_SAME_PADS, E_UNKNOWN_PAD, E_AMBIGUOUS_PAD, E_START_ON_GND, E_NO_CHAIN."""
+    is none. Given `antenna`, the antenna footprint (Stage 3 design 5.1) ends the chain and is never a part. Raises
+    KrsError: E_SAME_PADS, E_UNKNOWN_PAD, E_AMBIGUOUS_PAD, E_START_ON_GND, E_NO_CHAIN."""
     if start == end:
         raise KrsError("E_SAME_PADS", name=start)
     classes = classify(board) if classes is None else classes
     start_net = _resolve(board, classes, start)[0].net
     end_net = _resolve(board, classes, end)[0].net
-    blocked, not_parts = classes.gnd | classes.power, classes.connectors | classes.shields
+    blocked, not_parts = classes.gnd | classes.power, classes.connectors | classes.shields | {antenna}
     parts: dict[str, list[Pad]] = {}  # by ref: the footprints with exactly two pads with a net, on two nets
     for ref in sorted(board.footprints):
         pads = _netted(board.footprints[ref])
@@ -227,3 +229,76 @@ def choose_reference(board: Board, classes: Classes, signal: str, rank: int = 0)
         order += sorted((nearest_points(here, q)[1] for q in pieces),
                         key=lambda p: (round(here.distance(p), TIE_DECIMALS), p.x, p.y))
     return Reference("copper", None, None, order[rank].coords[0], layer) if rank < len(order) else None
+
+
+def antenna_kind(board: Board, ref: str) -> str | None:
+    """What footprint `ref` is as an antenna (Stage 3 design 5.1), the first that holds: "module" for an RF_Module:
+    library id; "printed" when the copper graphics it draws cover more area than its copper pads, a radiator and never
+    a net-tie stub; "chip" for an AE reference or an RF_Antenna: library id, keep-outs or not; "module" for any other
+    footprint with a keep-out; else None."""
+    # ponytail: a custom-library module that draws more copper than its pads reads printed, and a connector or
+    # converter with a keep-out reads module in antenna_kinds (check_antenna's candidates list only printed ones); a
+    # class test if plan 5's list shows them
+    fp = board.footprints[ref]
+    if fp.lib_id.startswith("RF_Module:"):
+        return "module"
+    if sum(a.polygon.area for a in board.areas if a.ref == ref) > sum(p.polygon.area for p in _copper(fp)):
+        return "printed"
+    if _prefix(ref) == "AE" or fp.lib_id.startswith("RF_Antenna:"):
+        return "chip"
+    return "module" if fp.keepout else None
+
+
+def antenna_kinds(board: Board) -> dict[str, str]:
+    """The kind of each footprint that `antenna_kind` reads as an antenna, by reference, in reference order."""
+    return {ref: kind for ref in sorted(board.footprints) if (kind := antenna_kind(board, ref))}
+
+
+def _no_kind(board: Board, code: str, ref: str) -> KrsError:
+    """The refusal `code` of footprint `ref`, which names no antenna kind, with the printed antennas on the board as
+    its candidates (T_NONE when there is none)."""
+    printed = [r for r, kind in antenna_kinds(board).items() if kind == "printed"]
+    return KrsError(code, ref=ref, candidates=", ".join(printed) or "T_NONE")
+
+
+def check_antenna(board: Board, ref: str) -> None:
+    """Refuses footprint `ref` as a project's antenna unless `antenna_kind` reads it as printed (Stage 3 design 5.1).
+    Raises KrsError: E_ANTENNA_UNKNOWN for a ref not on the board, E_ANTENNA_MODULE or E_ANTENNA_CHIP by its kind and
+    E_NOT_AN_ANTENNA for a footprint of no kind; the first and the last name the printed antennas on the board."""
+    if ref not in board.footprints:
+        raise _no_kind(board, "E_ANTENNA_UNKNOWN", ref)
+    kind = antenna_kind(board, ref)
+    if kind == "module":
+        raise KrsError("E_ANTENNA_MODULE", ref=ref)
+    if kind == "chip":
+        raise KrsError("E_ANTENNA_CHIP", ref=ref)
+    if kind is None:
+        raise _no_kind(board, "E_NOT_AN_ANTENNA", ref)
+
+
+def feed_pad(board: Board, classes: Classes, ref: str) -> Pad:
+    """The feed pad of antenna `ref` (Stage 3 design 5.1): the first by number of its copper pads on its one signal
+    net, a net that is neither empty, GND nor power. Raises KrsError E_ANTENNA_FEED, naming its signal nets (T_NONE
+    for none), when it has not exactly one."""
+    pads = [p for p in _netted(board.footprints[ref]) if p.net not in classes.gnd | classes.power]
+    nets = sorted({p.net for p in pads})
+    if len(nets) != 1:
+        raise KrsError("E_ANTENNA_FEED", ref=ref, nets=", ".join(nets) or "T_NONE")
+    # ponytail: pad numbers compare as text ("10" before "2"); it only matters for an antenna with two feed pads
+    return min(pads, key=lambda p: p.number)
+
+
+def adopt(board: Board, ref: str, net: str) -> None:
+    """Gives the antenna footprint `ref`'s netless copper, its copper graphics and its pads with no net, the net `net`,
+    in place (Stage 3 design 5.3), and drops those graphics' W_NETLESS_COPPER. E_ANTENNA_UNKNOWN for a ref not on the
+    board."""
+    # ponytail: every netless piece of the footprint takes the feed net; a floating parasitic element would then read as
+    # an open of it (E_OPEN_IN_ROI); adopt only the copper the feed pad reaches if one appears
+    if ref not in board.footprints:
+        raise _no_kind(board, "E_ANTENNA_UNKNOWN", ref)
+    drawn = {a.uuid for a in board.areas if a.ref == ref and not a.net}
+    board.areas = [replace(a, net=net) if a.ref == ref and not a.net else a for a in board.areas]
+    fp = board.footprints[ref]
+    board.footprints[ref] = replace(fp, pads=tuple(p if p.net else replace(p, net=net) for p in fp.pads))
+    board.warnings = [(code, params) for code, params in board.warnings
+                      if not (code == "W_NETLESS_COPPER" and params["uuid"] in drawn)]

@@ -64,6 +64,7 @@ class CopperArea:
     polygon: Polygon
     source: str  # "zone" or "graphic"
     uuid: str
+    ref: str = ""  # the footprint whose copper graphic it is; "" for a board item
 
 
 @dataclass(frozen=True)
@@ -102,6 +103,7 @@ class Footprint:
     dnp: bool
     pads: tuple[Pad, ...]
     mask_margin: float | None
+    keepout: bool = False  # whether one of its zones is a keep-out (a rule area)
 
 
 @dataclass
@@ -204,10 +206,10 @@ def _zone(b: Board, node: list, table: dict[str, str]) -> None:
 
 
 def _graphic(b: Board, node: list, table: dict[str, str], edge: list[LineString],
-             at: XY = (0.0, 0.0), angle: float = 0.0) -> None:
+             at: XY = (0.0, 0.0), angle: float = 0.0, ref: str = "") -> None:
     """A board graphic is outline linework on Edge.Cuts, a copper area on a copper layer (with a warning
     when it has no net) or a mask opening on a mask layer. On any other layer it is left alone. A footprint's
-    graphic is the same, once `at` and `angle` have placed it."""
+    graphic is the same, once `at` and `angle` have placed it, and its copper areas record the footprint's `ref`."""
     layer = _text(node, "layer")
     if layer != "Edge.Cuts" and layer not in b.copper_layers and layer not in _MASK:
         return  # not even read: drawings on the silkscreen and the like can be anything
@@ -219,7 +221,7 @@ def _graphic(b: Board, node: list, table: dict[str, str], edge: list[LineString]
         net, uuid = _net(node, table), _text(node, "uuid")
         if not net:
             b.warnings.append(("W_NETLESS_COPPER", {"uuid": uuid, "layer": layer}))
-        b.areas += [CopperArea(layer, net, p, "graphic", uuid) for p in covered(node, shape, filled)]
+        b.areas += [CopperArea(layer, net, p, "graphic", uuid, ref) for p in covered(node, shape, filled)]
     else:
         b.mask_graphics[_MASK[layer]] += covered(node, shape, filled)
 
@@ -265,10 +267,11 @@ def _pad_layers(pad: list, copper: tuple[str, ...]) -> tuple[tuple[str, ...], tu
 
 
 def _footprint(b: Board, node: list, table: dict[str, str], edge: list[LineString], copies: set[str]) -> None:
-    """A footprint with its pads. Its graphics go where a board graphic's would, with no net, its zones
-    follow the board-zone rules, and its text and Bezier curves on copper are a warning. A reference
-    already taken (an unannotated REF**, a repeated logo) is kept as REF#2, REF#3, ... in file order,
-    and the original goes into `copies`."""
+    """A footprint with its pads. Its graphics go where a board graphic's would, with no net, and their copper
+    areas record its reference, the final one below; its zones follow the board-zone rules, and a keep-out among
+    them sets `keepout`; its text and Bezier curves on copper are a warning. A reference already taken (an
+    unannotated REF**, a repeated logo) is kept as REF#2, REF#3, ... in file order, and the original goes into
+    `copies`."""
     at, angle = xy(node, "at"), num(node, "at", 3, 0.0)
     props = {str(p[1]): str(p[2]) for p in children(node, "property") if len(p) > 2}
     ref = props.get("Reference", "")
@@ -288,7 +291,7 @@ def _footprint(b: Board, node: list, table: dict[str, str], edge: list[LineStrin
         pads.append(pad)
     for g in node:
         if isinstance(g, list) and g and g[0] in _FP_GRAPHICS:
-            _graphic(b, g, table, edge, at, angle)
+            _graphic(b, g, table, edge, at, angle, ref)
         elif isinstance(g, list) and g and g[0] == "zone":
             # ponytail: assumes KiCad writes a footprint's zone outline and fills in board coordinates, as a board
             # zone's, so only (x, -y) applies, not the footprint's placement. If a KiCad version stores them in the
@@ -298,9 +301,10 @@ def _footprint(b: Board, node: list, table: dict[str, str], edge: list[LineStrin
             _dropped(b, g)
     mpn = next((v for k, v in props.items() if k.lower() in _MPN), None)
     dnp = "dnp" in (child(node, "attr") or [])[1:] or atom(node, "dnp") == "yes"
+    keepout = any(child(z, "keepout") is not None for z in children(node, "zone"))
     b.footprints[ref] = Footprint(ref, props.get("Value", ""), mpn, str(node[1]), _text(node, "uuid"),
                                   _text(node, "layer"), at, angle, dnp, tuple(pads),
-                                  num(node, "solder_mask_margin", 1, None))
+                                  num(node, "solder_mask_margin", 1, None), keepout)
 
 
 def _outline(lines: list[LineString]) -> Polygon | None:

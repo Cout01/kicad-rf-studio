@@ -203,6 +203,31 @@ msgstr ""
 msgid "No chain from {start} to {end}: the walk stopped at nets {reached}. A DNP part, a connector, a shield, a GND or power net, or a part with three or more pads is in the way."
 msgstr ""
 
+#. E_ANTENNA_UNKNOWN
+#, python-brace-format
+msgid "Footprint {ref} is not on the board. Antenna footprints on it: {candidates}."
+msgstr ""
+
+#. E_ANTENNA_MODULE
+#, python-brace-format
+msgid "{ref} is a module (an RF_Module: footprint, or one with a keep-out and no radiator drawn): its antenna's copper is inside the module, not in the board file, so it cannot be simulated as an antenna. The matching chain up to the module's pad still can: `new BOARD --start REF.PAD --end {ref}.PAD --f0 F`."
+msgstr ""
+
+#. E_ANTENNA_CHIP
+#, python-brace-format
+msgid "{ref} is a chip antenna: its radiator is inside the part's body and the board file holds only its pads, at most with a stub between them, so it cannot be simulated as an antenna. The matching chain up to its pad still can: `new BOARD --start REF.PAD --end {ref}.PAD --f0 F`."
+msgstr ""
+
+#. E_NOT_AN_ANTENNA
+#, python-brace-format
+msgid "{ref} is not an antenna footprint: its reference does not start with AE, its library is not RF_Antenna and it draws no radiator, copper graphics larger than its pads. Antenna footprints on this board: {candidates}."
+msgstr ""
+
+#. E_ANTENNA_FEED
+#, python-brace-format
+msgid "Antenna {ref} needs one pad on a signal net, its feed, and has {nets}. Connect its feed pad to the RF net in the schematic, update the PCB from it in KiCad and save the board."
+msgstr ""
+
 #. E_PROJECT_SCHEMA
 #, python-brace-format
 msgid "{path} uses project schema {found}; this version reads schema {expected}."
