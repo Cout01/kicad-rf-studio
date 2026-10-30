@@ -313,7 +313,8 @@ def test_the_pt_br_catalog_keeps_the_glossarys_nevers():  # design 6.1 (preenche
                        r"|o usuário)\b", re.I)
     assert all(never.search(w) for w in ("rodar", "roda", "rodam", "rodou", "rodando")) and not never.search("rodapé")
     assert [msgid for msgid, msgstr in pt.items() if never.search(msgstr)] == []
-    gates = [CATALOG[code] for code in ("I_GATES_PASSED", "G_END_BLOCKED") if CATALOG[code] in pt]  # a gate, in prose
+    gates = [CATALOG[code] for code in ("I_GATES_PASSED", "I_GATES_PASSED_PML", "G_END_BLOCKED")
+             if CATALOG[code] in pt]  # a gate, in prose
     assert [m for m in gates if "checage" not in pt[m].lower() or "verifica" in pt[m].lower()] == []
 
 

@@ -557,6 +557,11 @@ msgstr "Porta {name}: o sinal e a referência dela são uma só peça de cobre n
 msgid "Cells: {nx} × {ny} × {nz} = {mcells} M (mesh n {n}, cell d {d_mm} mm)."
 msgstr "Células: {nx} × {ny} × {nz} = {mcells} M (malha n {n}, célula d {d_mm} mm)."
 
+#. I_COST_SPLIT
+#, python-brace-format
+msgid "Cells: {board} M in the board, {air} M of air and {pml} M of PML; the time counts a PML cell as {weight} cells and runs this model at {ratio} × the calibrated speed (gate P3-A)."
+msgstr "Células: {board} M na placa, {air} M de ar e {pml} M de PML; o tempo conta uma célula de PML como {weight} células e executa este modelo a {ratio} × a velocidade calibrada (checagem prévia P3-A)."
+
 #. I_COST_SMALLEST
 #, python-brace-format
 msgid "Smallest cell: {size_um} µm across {axis}, at {axis} = {at_mm} mm."
@@ -635,6 +640,11 @@ msgstr "O project.json define gates.fit2d_limit {fit2d_limit} e gates.dt_floor {
 #, python-brace-format
 msgid "Gates passed: edge lint, fit2d, timestep floor (dt {dt} s), port connectivity and unused primitives."
 msgstr "Checagens prévias aprovadas: edge lint, fit2d, piso do passo de tempo (dt {dt} s), conectividade das portas e primitivas não usadas."
+
+#. I_GATES_PASSED_PML
+#, python-brace-format
+msgid "Gates passed: edge lint, fit2d, timestep floor (dt {dt} s), the absorber (nothing within the PML or the 2 cells inside it), port connectivity and unused primitives."
+msgstr "Checagens prévias aprovadas: edge lint, fit2d, piso do passo de tempo (dt {dt} s), o absorvedor (nada dentro da PML ou nas 2 células junto à sua borda interna), conectividade das portas e primitivas não usadas."
 
 #. I_RUN_START
 #, python-brace-format

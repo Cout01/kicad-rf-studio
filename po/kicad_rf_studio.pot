@@ -555,6 +555,11 @@ msgstr ""
 msgid "Cells: {nx} × {ny} × {nz} = {mcells} M (mesh n {n}, cell d {d_mm} mm)."
 msgstr ""
 
+#. I_COST_SPLIT
+#, python-brace-format
+msgid "Cells: {board} M in the board, {air} M of air and {pml} M of PML; the time counts a PML cell as {weight} cells and runs this model at {ratio} × the calibrated speed (gate P3-A)."
+msgstr ""
+
 #. I_COST_SMALLEST
 #, python-brace-format
 msgid "Smallest cell: {size_um} µm across {axis}, at {axis} = {at_mm} mm."
@@ -632,6 +637,11 @@ msgstr ""
 #. I_GATES_PASSED
 #, python-brace-format
 msgid "Gates passed: edge lint, fit2d, timestep floor (dt {dt} s), port connectivity and unused primitives."
+msgstr ""
+
+#. I_GATES_PASSED_PML
+#, python-brace-format
+msgid "Gates passed: edge lint, fit2d, timestep floor (dt {dt} s), the absorber (nothing within the PML or the 2 cells inside it), port connectivity and unused primitives."
 msgstr ""
 
 #. I_RUN_START

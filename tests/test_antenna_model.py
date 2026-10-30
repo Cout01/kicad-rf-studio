@@ -1,7 +1,10 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
+import json
+
 import numpy as np
 import pytest
 
+from kicad_rf_studio import pipeline, runs
 from kicad_rf_studio.core.geometry.region import air_cell
 from kicad_rf_studio.core.mesh.gates import edge_lint
 from kicad_rf_studio.core.model.csx import PML_CELLS
@@ -46,3 +49,27 @@ def test_part_ports_record_no_far_field_and_mur_adds_no_pml(tmp_path):  # design
     model, _, _ = model_of(pj)
     # provisional: MUR is the untested fallback (W_AIR_BOX), which plan 4's P3-C tests and may re-pin
     assert "boundary" not in model.spec and [len(model.spec["mesh"][a]) for a in "xyz"] == [119, 121, 55]
+
+
+def codes(run_dir):
+    return [json.loads(line)["code"] for line in (run_dir / "events.jsonl").read_text(encoding="utf-8").splitlines()]
+
+
+def test_an_antenna_runs_its_gates_with_the_absorber_and_leaves_the_calibration(tmp_path, calibrated):  # P3-A
+    project, board, geom, _ = pipeline.load(antenna_project(tmp_path / "p"))
+    model = pipeline.build_model(project, board, geom)
+    before = runs.load_settings()
+    done, _, _ = pipeline.simulate(model, project, tmp_path / "run")
+    seen = codes(tmp_path / "run")
+    assert "I_GATES_PASSED_PML" in seen and "I_GATES_PASSED" not in seen and "I_COST_SPLIT" in seen
+    assert [j["verdict"] for j in done] == ["converged"] and runs.load_settings() == before
+
+
+def test_cost_and_preview_take_an_antenna_project(tmp_path, calibrated, monkeypatch):  # design 5.1
+    pj = antenna_project(tmp_path / "p")
+    assert pipeline.cost(pj, tmp_path / "cost") == 0 and "I_COST_SPLIT" in codes(tmp_path / "cost")
+    opened = []
+    monkeypatch.setattr(pipeline, "appcsxcad", lambda settings: "AppCSXCAD")
+    monkeypatch.setattr(pipeline, "open_viewer", lambda exe, job: opened.append(job))
+    assert pipeline.preview(pj) == 0
+    assert "boundary" in json.loads((opened[0].parent / "model.json").read_text(encoding="utf-8"))

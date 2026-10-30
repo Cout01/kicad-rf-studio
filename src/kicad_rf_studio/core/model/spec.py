@@ -114,6 +114,21 @@ def metal_in_pml(spec: dict) -> list[tuple[str, dict]]:
     return out
 
 
+def cell_split(spec: dict) -> tuple[int, int, int]:
+    """An antenna mesh's nodes as cost counts cells, (board, air, PML) (Stage 3 design 5.9): the PML's, the nodes
+    openEMS's UPML updates, PML_CELLS + 1 lines in from each face, none without "boundary"; the board's, the nodes
+    inside the box of every material solid (the dielectric, the masks included); the air's, the rest."""
+    solids = [s for m in spec["materials"] for s in m["solids"]]
+    total = inner = board = 1
+    for axis in "xyz":
+        lines, coords = spec["mesh"][axis], [c for s in solids for c in s[axis]]
+        total *= len(lines)
+        inner *= len(lines) - 2 * (PML_CELLS + 1)
+        board *= bisect_right(lines, max(coords)) - bisect_left(lines, min(coords))  # the lines inside, inclusive
+    pml = total - inner if "boundary" in spec else 0
+    return board, total - board - pml, pml
+
+
 def kappa(eps_r: float, tan_d: float | None, f0: float) -> float:
     """The conductivity that gives a dielectric of εr `eps_r` the loss tangent `tan_d` at `f0` (spec 5.3: a constant
     κ, set at f0); 0 when the stackup gives no loss tangent."""

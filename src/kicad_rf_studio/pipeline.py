@@ -38,7 +38,8 @@ from kicad_rf_studio.core.messages import KrsError, english, reason, render
 from kicad_rf_studio.core.model.parts import CURVE_PORT, GRID, PORT
 from kicad_rf_studio.core.model.ports import ends, nominal_boxes, place
 from kicad_rf_studio.core.model.readers import read_log, read_probe, read_run_stats, read_stats
-from kicad_rf_studio.core.model.spec import air_box, grid_entry, metal_in_pml, model_spec, spec_hash, verify_spec
+from kicad_rf_studio.core.model.spec import (air_box, cell_split, grid_entry, metal_in_pml, model_spec, spec_hash,
+                                             verify_spec)
 from kicad_rf_studio.core.post.chain import ideal_schematic, loads, part_impedances, terminate, z_part
 from kicad_rf_studio.core.post.checks import compare, indicator_lines, loss_budget, loss_expected
 from kicad_rf_studio.core.post.outputs import (LIMITS, OUTPUTS, VERIFY_OUTPUT, grid_lines, marker_lines, port_map,
@@ -200,21 +201,30 @@ def cost_notes(model: Model, project: dict, setup: dict, threads: int, pool: int
                per_job_mcs: float) -> list[tuple[str, dict]]:
     """The cost lines (spec 6.4) of a built `model`, from openEMS's setup (setup.json: its dt and the node [n, i, j, k]
     of the smallest timestep) and `pool` jobs at once with `threads` threads each at `per_job_mcs` MC/s a job: the
-    cells; the smallest cell; dt against its floor, with the edge that sets it in KiCad's frame; the worst case, every
-    run to T_max, in ceil(runs / pool) rounds; the time predicted from the longest stop time of the last run's jobs
-    that kept S, when that run was of this model; the RAM; the main cost (driver)."""
+    cells; an antenna's split of them into board, air and PML (cell_split, Stage 3 design 5.9); the smallest cell; dt
+    against its floor, with the edge that sets it in KiCad's frame; the worst case, every run to T_max, in
+    ceil(runs / pool) rounds; the time predicted from the longest stop time of the last run's jobs that kept S, when
+    that run was of this model; the RAM; the main cost (driver). An antenna's two times take gate P3-A's corrections:
+    each PML cell counts as runs.PML_WEIGHT cells, at runs.SMALL_SPEED × `per_job_mcs`; its RAM counts the cells."""
     mesh, ports, dt = model.mesh, model.spec["ports"], setup["dt"]
     nx, ny, nz = len(mesh.x), len(mesh.y), len(mesh.z)
     cells, n_runs = nx * ny * nz, len(ports)
+    weighted, mcs, split = cells, per_job_mcs, []  # the cells a timestep costs, at mcs MC/s a job
+    if antenna(project):
+        board, air, pml = cell_split(model.spec)
+        weighted, mcs = cells + (runs.PML_WEIGHT - 1) * pml, per_job_mcs * runs.SMALL_SPEED
+        split = [("I_COST_SPLIT", {"board": f"{board / 1e6:.2f}", "air": f"{air / 1e6:.2f}", "pml": f"{pml / 1e6:.2f}",
+                                   "weight": f"{runs.PML_WEIGHT:g}", "ratio": f"{runs.SMALL_SPEED:g}"})]
 
     def time(t_stop: float) -> str:
-        return duration(math.ceil(n_runs / pool) * cells * (t_stop / dt) / (per_job_mcs * 1e6))
+        return duration(math.ceil(n_runs / pool) * weighted * (t_stop / dt) / (mcs * 1e6))
 
     size, axis, at = smallest_cell(mesh)
     t_max = project["t_max_s"]
     notes = [
         ("I_COST_CELLS", {"nx": nx, "ny": ny, "nz": nz, "mcells": f"{cells / 1e6:.2f}", "n": mesh_n(project),
                           "d_mm": f"{mesh.d:.4f}"}),
+        *split,
         ("I_COST_SMALLEST", {"size_um": f"{size * 1e3:.1f}", "axis": axis, "at_mm": f"{at:.3f}"}),
         ("I_COST_DT", dt_params(model, project["gates"]["dt_floor"], setup)),
         ("I_COST_TIME", {"time": time(t_max), "runs": n_runs, "t_max_ns": f"{t_max * 1e9:g}", "pool": pool,
@@ -223,18 +233,23 @@ def cost_notes(model: Model, project: dict, setup: dict, threads: int, pool: int
     t_stops = [j["t_stop"] for j in results.get("jobs", ()) if j["verdict"] in KEPT and j["t_stop"] is not None]
     if t_stops and results.get("model_hash") == spec_hash(model.spec):  # another model stops elsewhere
         notes.append(("I_COST_PREDICTED", {"time": time(max(t_stops))}))
+    # ponytail: RAM counts the cells, not the far-field dumps (12 MB at 2.4 GHz, r1); add them if W_RAM misleads
     gb = pool * (runs.MB_PER_MCELL * cells / 1e6 + runs.MB_PER_WORKER) / 1024
     return [*notes, ("I_COST_RAM", {"gb": f"{gb:.1f}", "pool": pool}),
             driver(mesh, n_runs, sum(q["part"] for q in ports))]
 
 
-def prepare(model: Model, emit: Callable[[str, dict], None], run_dir: Path | None = None) -> tuple[int, int, float]:
+def prepare(model: Model, emit: Callable[[str, dict], None], run_dir: Path | None = None, *,
+            small: bool = False) -> tuple[int, int, float]:
     """What the jobs of a built `model` (one with a mesh) run with: (threads, pool, per-job MC/s), from this machine's
     calibration, measured first on a machine that has none (spec 6.4), inside the command's `run_dir` when it has one
     (runs.calibrate), the pool no larger than the number of runs, so that the cost lines count only jobs that run at
-    once, and the per-job MC/s at that level (runs.per_job_mcs, D-16). Calls `emit(code, params)` with
-    check_openems()'s warnings, before any worker (C-31), and with W_RAM when one job needs more RAM than is free.
-    Raises check_openems()'s refusals and what calibrate raises."""
+    once, and the per-job MC/s at that level (runs.per_job_mcs, D-16). With `small` (an antenna's model, Stage 3
+    design 5.9) and a pool of 1, the per-job MC/s is the calibration's own one-job speed at its threads ("single"),
+    when it holds one, else per_job_mcs at 1: gate P3-A measured runs.SMALL_SPEED against that speed, which no run
+    refreshes, while a v1 run at pool 1 refreshes levels["1"]. Calls `emit(code, params)` with check_openems()'s
+    warnings, before any worker (C-31), and with W_RAM when one job needs more RAM than is free. Raises
+    check_openems()'s refusals and what calibrate raises."""
     for code, params in runs.check_openems():
         emit(code, params)
     entry = runs.ensure_calibrated(runs.load_settings(), run_dir)
@@ -245,7 +260,10 @@ def prepare(model: Model, emit: Callable[[str, dict], None], run_dir: Path | Non
     if need > free:
         emit("W_RAM", {"need_gb": f"{need / 1024:.1f}", "free_gb": f"{free / 1024:.1f}"})
     pool = min(pool, len(model.spec["ports"]))
-    return threads, pool, runs.per_job_mcs(entry, pool)
+    mcs = runs.per_job_mcs(entry, pool)
+    if small and pool == 1:
+        mcs = entry.get("single", {}).get(str(threads), mcs)
+    return threads, pool, mcs
 
 
 def setup_gate(model: Model, project: dict, run_dir: Path, settings: dict, threads: int) -> tuple[dict, list, list]:
@@ -351,7 +369,7 @@ def cost(path: Path, run_dir: Path | None = None) -> int:
         say("verdict", code, params)
     if model.spec is None:  # E_EDGE_LINT left no mesh to set up
         return 3
-    threads, pool, per_job_mcs = prepare(model, partial(say, "message"), run_dir)
+    threads, pool, per_job_mcs = prepare(model, partial(say, "message"), run_dir, small=antenna(project))
     settings = runs.load_settings()
     setup, blocked, warnings = setup_gate(model, project, run_dir, settings, threads)
     for code, params in blocked:
@@ -610,15 +628,16 @@ def _model_phase(path: Path, emit: Callable[..., None]) -> tuple[dict, Geometry,
 
 def simulate(model: Model, project: dict, run_dir: Path) -> tuple[list[dict], dict, float] | None:
     """The job phase of a built `model` (one with a spec) in `run_dir`, which run and verify share (spec 6.1): prepare
-    and the setup gate, its blocking gates as verdict events and its warnings as message events, then gate_lines and
-    None when it blocks; else I_GATES_PASSED, gate_lines and the cost lines, then run_ports on every port of the model
-    at the project's preset, and the per-job speed of the level it ran at refreshed in the calibration (D-16).
-    Returns (the jobs as project.json's results records them, setup.json, the job phase's wall time in s). STOP or
-    Ctrl+C before the jobs start propagates as KeyboardInterrupt; once they run, it stops them, and their verdicts say
-    so."""
+    (small for an antenna) and the setup gate, its blocking gates as verdict events and its warnings as message
+    events, then gate_lines and None when it blocks; else I_GATES_PASSED (I_GATES_PASSED_PML for a spec with a
+    boundary, whose gates include the absorber), gate_lines and the cost lines, then run_ports on every port of the
+    model at the project's preset, and the per-job speed of the level it ran at refreshed in the calibration (D-16),
+    except by an antenna's run (Stage 3 design 5.9). Returns (the jobs as project.json's results records them,
+    setup.json, the job phase's wall time in s). STOP or Ctrl+C before the jobs start propagates as KeyboardInterrupt;
+    once they run, it stops them, and their verdicts say so."""
     emit = partial(runs.emit, run_dir)  # (kind, code, params, job=None)
     gates = project["gates"]
-    threads, pool, per_job_mcs = prepare(model, partial(emit, "message"), run_dir)
+    threads, pool, per_job_mcs = prepare(model, partial(emit, "message"), run_dir, small=antenna(project))
     setup, blocked, warnings = setup_gate(model, project, run_dir, runs.load_settings(), threads)
     for code, params in blocked:
         emit("verdict", code, params, 0)
@@ -628,13 +647,16 @@ def simulate(model: Model, project: dict, run_dir: Path) -> tuple[list[dict], di
         for code, params in gate_lines(gates):  # C-10
             emit("message", code, params)
         return None
-    emit("message", "I_GATES_PASSED", {"dt": f"{setup['dt']:.4e}"})
+    emit("message", "I_GATES_PASSED_PML" if "boundary" in model.spec else "I_GATES_PASSED",
+         {"dt": f"{setup['dt']:.4e}"})
     for code, params in gate_lines(gates):
         emit("message", code, params)
     for code, params in cost_notes(model, project, setup, threads, pool, per_job_mcs):
         emit("cost", code, params)
     done, speeds, wall_s = run_ports(model, run_dir, setup, threads, pool, project["preset"], gates)
-    if speeds:  # spec 6.4: refreshed from the run's Speed lines; a run whose every job died measured nothing
+    # spec 6.4: refreshed from the run's Speed lines; a run whose every job died measured nothing; and an antenna's
+    # speed holds the PML and the small model, which cost applies to the calibration's own (Stage 3 design 5.9)
+    if speeds and not antenna(project):
         settings = runs.load_settings()
         # D-16: only the level this run used; aggregate_mcs stays the calibration's
         settings["machines"][runs.machine_key()].setdefault("levels", {})[str(pool)] = sum(speeds) / len(speeds) / 1e6
