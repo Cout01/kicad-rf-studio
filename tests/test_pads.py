@@ -17,7 +17,7 @@ MAX_ERR = 0.001  # mm, the arc tolerance of shapes.py
 
 
 @pytest.mark.parametrize("name", ["pads_zoo", "lpf915", "lpf915-45", "coupon_gcpw_pads", "ifa2g4", "ifa2g4_pi",
-                                  "meander915"])
+                                  "meander915", "ifa2g4_pi_shift", "ifa2g4_pi_dxp", "ifa2g4_pi_dxm", "ifa2g4_pi_pour"])
 def test_pads_match_pcbnew(name):
     b = load_board(FIX / f"{name}.kicad_pcb")
     truth = json.loads((FIX / f"{name}.pads.json").read_text(encoding="utf-8"))

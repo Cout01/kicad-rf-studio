@@ -13,7 +13,9 @@ from test_tracer import smd
 
 FIX = Path(__file__).parent / "fixtures"
 IFA = FIX / "ifa2g4.kicad_pcb"
-BANDS = {"ifa2g4": (2.4e9, 2.4835e9), "ifa2g4_pi": (2.4e9, 2.4835e9), "meander915": (902e6, 928e6)}
+BANDS = {"ifa2g4": (2.4e9, 2.4835e9), "ifa2g4_pi": (2.4e9, 2.4835e9), "meander915": (902e6, 928e6),
+         "ifa2g4_pi_shift": (2.4e9, 2.4835e9), "ifa2g4_pi_dxp": (2.4e9, 2.4835e9), "ifa2g4_pi_dxm": (2.4e9, 2.4835e9),
+         "ifa2g4_pi_pour": (2.4e9, 2.4835e9)}
 
 
 def antenna_project(folder: Path, board: Path = IFA, band=None) -> Path:

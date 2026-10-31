@@ -443,7 +443,7 @@ def test_fixture_loads_whole_and_without_warnings(path):
     b = load_board(path)
     root = parse(repair(path.read_text(encoding="utf-8"))[0])
     # but an antenna board's footprint draws netless copper, which warns until `load` adopts it (Stage 3 design 5.3)
-    drawn = [a for a in b.areas if a.source == "graphic"] if path.stem in ("ifa2g4", "ifa2g4_pi", "meander915") else []
+    drawn = [a for a in b.areas if a.source == "graphic"] if path.stem.startswith(("ifa2g4", "meander915")) else []
     assert b.warnings == [("W_NETLESS_COPPER", {"uuid": a.uuid, "layer": a.layer}) for a in drawn]
     assert b.outline is not None and b.outline.is_valid
     assert len(b.tracks) == len(children(root, "segment")) + len(children(root, "arc"))

@@ -1,10 +1,15 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
+import json
 from dataclasses import replace
 from pathlib import Path
 
+import numpy as np
 import pytest
+import shapely
 
+import p0
 from kicad_rf_studio import cli, pipeline
+from kicad_rf_studio.core.kicad import load_board
 from kicad_rf_studio.core.messages import KrsError
 from kicad_rf_studio.core.project import load_project, save_project
 from test_antenna_kicad import fp
@@ -19,7 +24,8 @@ def model_of(pj: Path):
     return pipeline.build_model(project, board, geom), geom, notes
 
 
-@pytest.mark.parametrize("name", ["ifa2g4", "ifa2g4_pi", "meander915"])
+@pytest.mark.parametrize("name", ["ifa2g4", "ifa2g4_pi", "meander915", "ifa2g4_pi_shift", "ifa2g4_pi_dxp",
+                                  "ifa2g4_pi_dxm", "ifa2g4_pi_pour"])
 def test_each_antenna_fixture_builds_its_model(tmp_path, name):  # design 5.3; RF 3
     model, geom, notes = model_of(antenna_project(tmp_path, FIX / f"{name}.kicad_pcb"))
     assert model.blocked == [] and model.mesh.d == 0.3 and pipeline.stops(notes) == 0 and geom.antenna
@@ -87,3 +93,58 @@ def test_load_refuses_an_antenna_ref_that_is_no_longer_an_antenna(tmp_path):  # 
     with pytest.raises(KrsError) as e:
         pipeline.load(pj)
     assert (e.value.code, e.value.params) == ("E_NOT_AN_ANTENNA", {"ref": "C1", "candidates": "AE1"})
+
+
+BAND = (2.4e9, 2.4835e9)
+D = 0.3  # make_fixtures.D_MOVE: one fine cell of the pi board at P3-C's n (Task 11 Step 1 re-sets both)
+EDITS: dict = {}  # P3-C's edits_2g4 for the 2.4 GHz boards (Task 11 Step 1 copies p3c.json's in)
+
+
+def built(tmp_path, name):
+    pj = antenna_project(tmp_path / name, FIX / f"{name}.kicad_pcb", BAND)
+    save_project(pj, p0.edit(load_project(pj), EDITS))
+    return model_of(pj)[0]
+
+
+def centres(name):  # pcbnew's pad centres by name, y up (the uuids differ: each board's seed is its name)
+    return {v["name"]: v["center"] for v in json.loads((FIX / f"{name}.pads.json").read_text(encoding="utf-8")).values()}
+
+
+def test_one_fine_cell_is_the_pi_boards_d(tmp_path):  # ruling 8: d is the fine cell at the copper under P3-C's n
+    assert D == round(built(tmp_path, "ifa2g4_pi").mesh.d, 6)
+
+
+def test_the_shifted_board_is_the_base_translated(tmp_path):  # design 5.11 P3-D; ruling 8
+    base, shift = built(tmp_path, "ifa2g4_pi"), built(tmp_path, "ifa2g4_pi_shift")
+    for axis, d in (("x", D), ("y", -D), ("z", 0.0)):  # KiCad's +D in y is -D with y up
+        a, b = getattr(base.mesh, axis), getattr(shift.mesh, axis)
+        assert len(a) == len(b) and np.abs(b - (a + d)).max() <= 1e-6 + 1e-9  # one 1e-6 mm quantum, float slack
+    c0, c1 = centres("ifa2g4_pi"), centres("ifa2g4_pi_shift")
+    assert c0.keys() == c1.keys() and len(c0) == 18
+    assert all(abs(c1[k][0] - c0[k][0] - D) <= 1e-6 and abs(c1[k][1] - c0[k][1] + D) <= 1e-6 for k in c0)
+    assert shift.blocked == []
+
+
+def test_the_moved_front_end_keeps_the_ground_the_fence_and_the_mesh_across(tmp_path):  # ruling 8; r3 Q3
+    base = built(tmp_path, "ifa2g4_pi")
+    vias = {name: {tuple(v.at) for v in load_board(FIX / f"{name}.kicad_pcb").vias}
+            for name in ("ifa2g4_pi", "ifa2g4_pi_dxp", "ifa2g4_pi_dxm")}
+    for name, d in (("ifa2g4_pi_dxp", D), ("ifa2g4_pi_dxm", -D)):
+        m = built(tmp_path, name)
+        assert m.blocked == [] and np.array_equal(m.mesh.y, base.mesh.y) and np.array_equal(m.mesh.z, base.mesh.z)
+        assert {round(100 + d + v, 6) for v in LOCAL_X} <= {e for e, _ in m.mesh.edges["x"]}  # AE1 moved by d
+        gone, new = vias["ifa2g4_pi"] - vias[name], vias[name] - vias["ifa2g4_pi"]
+        assert len(gone) == 3 and sorted((round(x + d, 6), y) for x, y in gone) == sorted(new)  # the to_gnd vias
+        assert m.dt_ref == pytest.approx(base.dt_ref, rel=0.01)
+
+
+def test_the_pour_stays_a_millimetre_from_the_antenna(tmp_path):  # design 5.11 P3-E; r3 Q4
+    def gnd(name, layer):  # the GND zone fills on `layer`
+        return shapely.union_all([a.polygon for a in load_board(FIX / f"{name}.kicad_pcb").areas
+                                  if a.source == "zone" and a.net == "GND" and a.layer == layer])
+    b = load_board(FIX / "ifa2g4_pi_pour.kicad_pcb")
+    antenna = shapely.union_all([a.polygon for a in b.areas if a.ref == "AE1"] + [p.polygon for p in b.pads("AE1.1")])
+    for layer in ("F.Cu", "B.Cu"):
+        pour = gnd("ifa2g4_pi_pour", layer).difference(gnd("ifa2g4_pi", layer))
+        assert 6.4 <= pour.area <= 6.7 and pour.distance(antenna) >= 0.999  # 8.65 × 0.76 mm above the main zone
+    assert built(tmp_path, "ifa2g4_pi_pour").blocked == []

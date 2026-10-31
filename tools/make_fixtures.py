@@ -344,12 +344,15 @@ def to_gnd(b, pad):
     track(b, "GND", 0.3, pad, (pad[0] + 1.2, pad[1]))
 
 
-def antenna_board(b, lib, ae_nets, ae_at, outline, ground_top, radio_y, pi=False, decap=True, pitch=5.0):
+def antenna_board(b, lib, ae_nets, ae_at, outline, ground_top, radio_y, pi=False, decap=True, pitch=5.0, dx=0.0,
+                  pour=None):
     """A printed antenna on a rectangular ground (Stage 3 design 5.11): AE1 from `lib` at `ae_at`, the board `outline`
     (x0, y0, x1, y1), GND zones on both layers from y = `ground_top` down, 0.5 mm inside the outline, 1 mm clear of
     other nets; U1 straight below AE1's feed pad, pin 1's top end at `radio_y`, fed by a 1.35 mm microstrip and a 0.6
     mm stub into pin 1, or with `pi` C3 (shunt), L1 (series) and C2 (shunt) on a 0.6 mm line; `decap` a 100 nF C1
-    beside pin 8; GND stitching vias every `pitch` mm over the ground."""
+    beside pin 8; GND stitching vias every `pitch` mm over the ground. `dx` then moves the front end (AE1, U1, the
+    parts, their tracks and to_gnd vias) along x, leaving the ground, the outline and the stitching vias in place;
+    `pour` adds a GND zone with those corners on both layers, 1 mm clear of other nets."""
     ae = place(b, lib, "AE1", lib.split(":")[1], ae_at, 0, ae_nets)
     fx, fy = pad_at(ae, "1")
     radio(b, (fx - 1.905, radio_y + 3.45), "RF_A" if pi else "RF")  # pin 1 at (fx, radio_y + 0.975)
@@ -370,16 +373,35 @@ def antenna_board(b, lib, ae_nets, ae_at, outline, ground_top, radio_y, pi=False
     for layer in (pcbnew.F_Cu, pcbnew.B_Cu):
         zone(b, layer, [(x0 + 0.5, ground_top), (x1 - 0.5, ground_top), (x1 - 0.5, y1 - 0.5), (x0 + 0.5, y1 - 0.5)],
              clearance=1.0)
+        if pour:
+            zone(b, layer, pour, clearance=1.0)
     if decap:
         c1 = place(b, "Capacitor_SMD:C_0402_1005Metric", "C1", "100nF", (fx + 2.0, radio_y + 5.925), 0,
                    {"1": "VDD", "2": "GND"})
         track(b, "VDD", 0.25, (fx, radio_y + 5.925), pad_at(c1, "1"))  # from pin 8
         to_gnd(b, pad_at(c1, "2"))
+    front = [*b.GetFootprints(), *b.GetTracks()]  # AE1, U1, the parts, their tracks and to_gnd vias
+    # the fence at the base's positions: after a +0.3 mm move it would drop the via at (104.5, 116.25) by C1 (r3)
     fence(b, [(x0 + 2.5 + i * pitch, ground_top + 1.5 + j * pitch) for i in range(int((x1 - x0 - 4) / pitch) + 1)
               for j in range(int((y1 - ground_top - 3) / pitch) + 1)], outline, keep=1.5)
+    for item in front:
+        item.Move(pcbnew.VECTOR2I(MM(dx), 0))
+
+
+def moved(ae_at, outline, ground_top, radio_y, dx, dy):
+    """`antenna_board`'s placement offset by (dx, dy) mm: AE1, the outline, the ground's top and the radio, and with
+    them the fence grid derived from them."""
+    x0, y0, x1, y1 = outline
+    return (ae_at[0] + dx, ae_at[1] + dy), (x0 + dx, y0 + dy, x1 + dx, y1 + dy), ground_top + dy, radio_y + dy
 
 
 IFA = ("RF_Antenna:Texas_SWRA117D_2.4GHz_Left", {"1": "RF", "2": "GND"}, (100, 100), (87, 94, 127, 124), 99.75, 111.0)
+# one fine cell at the antenna's copper at mesh n 2 (the 0.6 mm stub over n, r3); 0.2 at n 3, which Task 11 regenerates
+# when P3-C sets n 3
+D_MOVE = 0.3
+# P3-E's ground pour, GND on both layers 1.0 mm from AE1's open end and meander bottoms, overlapping the main zone by
+# 0.5 mm so the fills join (r3 Q4)
+POUR = [(89.65, 98.99), (98.3, 98.99), (98.3, 100.25), (89.65, 100.25)]
 
 
 BOARDS = {
@@ -396,6 +418,10 @@ BOARDS = {
     "pads_zoo": pads_zoo,
     "ifa2g4": lambda b: antenna_board(b, *IFA),
     "ifa2g4_pi": lambda b: antenna_board(b, *IFA, pi=True),
+    "ifa2g4_pi_shift": lambda b: antenna_board(b, *IFA[:2], *moved(*IFA[2:], D_MOVE, D_MOVE), pi=True),
+    "ifa2g4_pi_dxp": lambda b: antenna_board(b, *IFA, pi=True, dx=D_MOVE),
+    "ifa2g4_pi_dxm": lambda b: antenna_board(b, *IFA, pi=True, dx=-D_MOVE),
+    "ifa2g4_pi_pour": lambda b: antenna_board(b, *IFA, pi=True, pour=POUR),
     "meander915": lambda b: antenna_board(b, "RF_Antenna:Texas_SWRA416_868MHz_915MHz", {"1": "RF"}, (110, 100),
                                           (89, 92.5, 129, 146.5), 106.5, 111.0, decap=False),
 }
@@ -458,7 +484,7 @@ def main(out, names=()):
     out.mkdir(parents=True, exist_ok=True)
     for name in names or BOARDS:
         path = out / f"{name}.kicad_pcb"
-        rules = ANTENNA_RULES if name in ("ifa2g4", "ifa2g4_pi", "meander915") else RULES
+        rules = ANTENNA_RULES if name.startswith(("ifa2g4", "meander915")) else RULES
         b = new_board(path, zlib.crc32(name.encode()), rules)
         BOARDS[name](b)
         save(b, path)
