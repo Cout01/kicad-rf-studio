@@ -1,0 +1,294 @@
+{
+  "gate": "P3-B",
+  "versions": {
+    "commit": "945ec86",
+    "code": "cab329ccb9ccbf29f9d034d93f842f5d73c2c413",
+    "python": "3.14.2",
+    "openems": "0.37.0",
+    "csxcad": "0.7.0",
+    "os": "Windows-11-10.0.26200-SP0",
+    "cpus": 16
+  },
+  "criteria": {
+    "source": "Stage 3 design 5.11, gate P3-B; plan 4 ruling 1 (r1): f_res is the refined lowest |S11| over the simulated band on each side, the hand's interpolated onto the product's grid; a miss on an unconditioned minimum (not both inside the grid at or below -6 dB) is explained when max |dS11| over [f_lo, f_hi] is within its shift-equivalent, the largest |dS11| that shifting the hand's S11 by f_res_rel makes there (the controller's amendment at commit); D at f0 and eta_rad at every recorded frequency stay binding; the hand run is valid when it hit its end criterion or its last 2 ns sit decay_db or more under its peak, and the product's job converged; a fail is diagnosed by the first of diagnoses whose two runs pass f_res, D and eta, else a product bug is presumed; a hand-f1 run that is not valid either stops for a ruling",
+    "f_res_rel": 0.01,
+    "d_db": 0.3,
+    "eta_db": 0.3,
+    "conditioned_db": -6.0,
+    "decay_db": 40.0,
+    "xor_f_cu_mm2": 1.0,
+    "xor_b_cu_mm2": 0.2,
+    "diagnoses": [
+      [
+        "boundary",
+        "hand",
+        "product-mur"
+      ],
+      [
+        "mesh",
+        "hand-030",
+        "product"
+      ],
+      [
+        "boundary and mesh",
+        "hand-030",
+        "product-mur"
+      ]
+    ]
+  },
+  "reference": {
+    "cells": [
+      147,
+      157,
+      51
+    ],
+    "t_end": 7.51236023313e-09,
+    "criterion_hit": true,
+    "decay_db": -24.27443575746745,
+    "fine_mm": 0.2,
+    "wall_mm": 62.456762,
+    "wall_s": 274.0581141000148,
+    "versions": {
+      "openems": "0.37.0",
+      "csxcad": "0.7.0",
+      "python": "3.14.2",
+      "os": "Windows-11-10.0.26200-SP0"
+    },
+    "script_sha256": "85f1f88d26dd85d126643c308976e72e8edd313c7fb6a7c352d4045b47d0c274"
+  },
+  "calibration": {
+    "aggregate_mcs": 873.7764953927143,
+    "pool": 4,
+    "threads": 4,
+    "single": {
+      "1": 180.90611577628388,
+      "2": 237.6796110639462,
+      "4": 601.5430887929908,
+      "16": 318.2811540299823
+    },
+    "levels": {
+      "4": 218.44412384817858,
+      "1": 601.5430887929908
+    }
+  },
+  "hand": {
+    "band": [
+      2400000000.0,
+      2483500000.0
+    ],
+    "f_res_hz": 2386572175.9616,
+    "depth_db": -6.882743197058051,
+    "d_dbi": 2.4012543743964425,
+    "far_f_hz": [
+      2441750000.0,
+      2400000000.0,
+      2409277777.7777777,
+      2418555555.5555553,
+      2427833333.3333335,
+      2437111111.111111,
+      2446388888.888889,
+      2455666666.6666665,
+      2464944444.4444447,
+      2474222222.2222223,
+      2483500000.0
+    ],
+    "eta_rad": [
+      0.8106344836760107,
+      0.8107190975817816,
+      0.8111972200056261,
+      0.8114134968952208,
+      0.8113418546439551,
+      0.8109548671304148,
+      0.8102250097800406,
+      0.8091259946431489,
+      0.8076355747987437,
+      0.8057350526388193,
+      0.803413883561526
+    ],
+    "criterion_hit": true,
+    "decay_db": -24.27443575746745,
+    "cells": [
+      147,
+      157,
+      51
+    ],
+    "t_end": 7.51236023313e-09,
+    "wall_s": 274.0581141000148
+  },
+  "product": {
+    "exit": 0,
+    "cells": 1313145,
+    "dt": 1.15012e-13,
+    "dt_ratio": 1.048978475009121,
+    "pool": 1,
+    "jobs": [
+      {
+        "t_stop": 9.85281609765e-09,
+        "port": "P1",
+        "verdict": "converged",
+        "t_cut": 9.8110668769e-09,
+        "residual_db": -62.54211565329108,
+        "growth_db": 0.0
+      }
+    ],
+    "wall_s": 1486.9571221000515,
+    "predicted_s": 1634.734146062447,
+    "worst_s": 4977.462676236334,
+    "indicators": {
+      "sigma": 0.9127,
+      "recip": 0.0,
+      "loss_pct": null,
+      "expected_pct": null
+    },
+    "warnings": [],
+    "lid_mm": null,
+    "run_dir": "ifa2g4-solid-n2-20261031-045728-7611",
+    "split": [
+      100298,
+      637621,
+      575226
+    ],
+    "cal_mcs": 601.5430887929908,
+    "speeds_mcs": [
+      76.23787773705594
+    ],
+    "band": [
+      2400000000.0,
+      2483500000.0
+    ],
+    "f_res_hz": 2388231181.43154,
+    "depth_db": -5.872659268991113,
+    "conditioned": false,
+    "far_f_hz": [
+      2441750016.0,
+      2400000000.0,
+      2409277696.0,
+      2418555648.0,
+      2427833344.0,
+      2437111040.0,
+      2446388992.0,
+      2455666688.0,
+      2464944384.0,
+      2474222336.0,
+      2483500032.0
+    ],
+    "d_dbi": 2.569066207458181,
+    "eta_rad": [
+      0.808578011296289,
+      0.8101458099007165,
+      0.8103154109216927,
+      0.8101822162409259,
+      0.8097540241737716,
+      0.8090397198335579,
+      0.8080486056108673,
+      0.8067897200029494,
+      0.80527305756191,
+      0.803509544039753,
+      0.8015076215087096
+    ],
+    "eta_tot": [
+      0.5826748278715859,
+      0.599720087206487,
+      0.5979591535645312,
+      0.5949779860707185,
+      0.5908478405244757,
+      0.5856486916836942,
+      0.5794666427495011,
+      0.5723918584963277,
+      0.5645165553925952,
+      0.5559335661079404,
+      0.5467331451942886
+    ]
+  },
+  "geometry": {
+    "xor_mm2": {
+      "F.Cu": 0.16245212873186465,
+      "B.Cu": 0.05872737963830762
+    },
+    "port": {
+      "hand": [
+        [
+          99.03,
+          -112.95,
+          0.745
+        ],
+        [
+          99.7,
+          -111.0,
+          0.78
+        ]
+      ],
+      "product": [
+        [
+          98.98,
+          -112.89812,
+          0.745
+        ],
+        [
+          99.787503,
+          -111.07688,
+          0.78
+        ]
+      ]
+    }
+  },
+  "decisions": {
+    "f_res": {
+      "f_res": [
+        2386572175.9616,
+        2388231181.43154
+      ],
+      "depth_db": [
+        -6.882743197058051,
+        -5.872659268991113
+      ],
+      "f_rel": 0.0006951415451207704,
+      "conditioned": false,
+      "ds11": 0.055860092003364885,
+      "ds11_shift": 0.14710744413525662,
+      "pass": true,
+      "explained": false,
+      "d_db": 0.16781183306173864,
+      "eta_db": 0.012722716123626432
+    },
+    "d": {
+      "value": 0.16781183306173864,
+      "pass": true
+    },
+    "eta": {
+      "value": 0.012722716123626432,
+      "pass": true
+    },
+    "valid": {
+      "value": {
+        "criterion_hit": true,
+        "decay_db": -24.27443575746745,
+        "product": [
+          "converged"
+        ]
+      },
+      "pass": true
+    },
+    "geometry": {
+      "value": {
+        "F.Cu": 0.16245212873186465,
+        "B.Cu": 0.05872737963830762
+      },
+      "pass": true
+    },
+    "verdict": {
+      "value": "pass",
+      "fails": [],
+      "diagnosis": null
+    }
+  },
+  "machine": {
+    "steps": 2,
+    "machine_hours": 0.42643975958334823,
+    "loaded": [],
+    "elapsed_days": 9
+  },
+  "hand_wall_s": {
+    "hand": 274.0581141000148
+  }
+}
