@@ -73,3 +73,15 @@ def test_p3d_runs_retunes_copies_and_verifies(gates, monkeypatch):  # design 5.1
     pj = p3d.configure(gates, "ifa2g4_pi")
     assert pj.parent.name == "r-ifa2g4_pi" and (load_project(pj)["mesh"]["n"],
                                                 load_project(pj)["gates"]["fit2d_limit"]) == (3, 0.05)
+
+
+def test_a_pair_is_judged_only_at_one_set_of_values(gates, monkeypatch):  # VALUES: one set on every board; P3E-1
+    monkeypatch.setenv("KRS_FAKE", "network")
+    monkeypatch.setattr(spec_module, "c_box", lambda *a: 6e-16)
+    p0.save(gates / "p3c" / "p3c.json", {"decisions": {"edits_2g4": {}}})
+    assert p3d.main(["--out", str(gates), "--steps", "ifa2g4_pi"]) == 0
+    assert p3d.write(gates)["pairs"]["repeat"] is not None  # the base and the repeat at one set: judged
+    rep = p3.project_path(gates, "d-ifa2g4_pi-rep")
+    assert p0.cli("retune", str(rep), "C2=0.1pF")[0] == 0  # one side only, as a board not rerun on VALUES' branch
+    p3.run_step(gates, "d-ifa2g4_pi-rep", "verify")  # each side now current at its own values
+    assert p3d.write(gates)["pairs"]["repeat"] is None  # never compared across two sets

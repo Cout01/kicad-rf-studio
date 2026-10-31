@@ -291,7 +291,7 @@ def tables_e(result: dict) -> str:
                                                           "the grid"),
              ("resolved_db", cell(result["resolved_db"]), f"each dB delta over db {cell(t['db'])}, reported"),
              ("pass", cell(result["pass"]), "resolved and conditioned; – while P3-D sets no thresholds or the pour "
-                                            "is not verified")]
+                                            "is not verified at the base's values")]
     return "\n\n".join([
         "## P3E-1 The ground pour\n\n" + p0.table([dict(zip(("item", "value", "rule"), r)) for r in rules],
                                                   ["item", "value", "rule"]),
@@ -300,21 +300,25 @@ def tables_e(result: dict) -> str:
 
 def write(out: Path) -> dict:
     """p3.records over the recorded steps first (SystemExit on two product codes), then the pairs (pair; None while
-    either side has no current verify) and decide_d of <out>: <out>/p3d/p3d.json through p0.save, with the versions,
-    CRITERIA, VALUES and REFINE (the deviations), this machine's calibration (p3.calibration), decide_d's result, "runs"
-    (each recorded step's p3.measure but the pour's, without f_hz and s11) and their machine time (p0.machine); p3d.md
-    beside it. With the pour's verify recorded, <out>/p3e/p3e.json likewise, with P3-D's "thresholds", decide_e of the
-    base against the pour at them and the pour's runs; p3e.md beside it. Returns P3-D's JSON as saved."""
+    either side has no current verify or the two were verified at different values) and decide_d of <out>:
+    <out>/p3d/p3d.json through p0.save, with the versions, CRITERIA, VALUES and REFINE (the deviations), this machine's
+    calibration (p3.calibration), decide_d's result, "runs" (each recorded step's p3.measure but the pour's, without
+    f_hz and s11) and their machine time (p0.machine); p3d.md beside it. With the pour's verify recorded,
+    <out>/p3e/p3e.json likewise, with P3-D's "thresholds", decide_e of the base against the pour at them and the pour's
+    runs; p3e.md beside it. Returns P3-D's JSON as saved."""
     ids = {p3.step_id(*s): s for s in _steps()}
     recs = p3.records(out, list(ids))
     runs = {sid: {k: x for k, x in m.items() if k not in ("f_hz", "s11")}
             for sid, s in ids.items() if (m := p3.measure(out, *s)) is not None}
 
     def paired(a: str, b: str) -> dict | None:
+        pa, pb = p3.project_path(out, a), p3.project_path(out, b)
         try:
-            return pair(p3.project_path(out, a), p3.project_path(out, b))
+            p = pair(pa, pb)
         except KrsError:  # E_COMPARE_NO_RESULT: not verified at its current values yet, or its project not made
             return None
+        # a board not rerun on VALUES' branch keeps a current verify at the old set: never compared across two sets
+        return p if load_project(pa)["verify"]["values"] == load_project(pb)["verify"]["values"] else None
 
     base, (shift, dxp, dxm), pour = project_name(BOARDS[0]), map(project_name, BOARDS[1:]), project_name(POUR)
     d = decide_d({"repeat": paired(base, _repeat()), "shift": paired(base, shift), "dxp": paired(base, dxp),
