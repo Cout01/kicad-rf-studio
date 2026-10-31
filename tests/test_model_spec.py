@@ -16,7 +16,7 @@ from kicad_rf_studio.core.kicad import load_board
 from kicad_rf_studio.core.mesh.gates import mesh_with_lint
 from kicad_rf_studio.core.messages import KrsError
 from kicad_rf_studio.core.model.csx import PML_CELLS
-from kicad_rf_studio.core.model.ports import place
+from kicad_rf_studio.core.model.ports import ends, nominal_boxes, place
 from kicad_rf_studio.core.model.readers import c_box
 from kicad_rf_studio.core.model.spec import (K_MAX, PML_CLEAR, excitation, grid_entry, kappa, metal_in_pml,
                                              model_spec, pulse, spec_hash, verify_spec, with_pml)
@@ -151,6 +151,18 @@ def test_a_material_with_no_solids_is_left_out():  # openEMS warns on a property
     g = build_geometry(board, p)
     s = model_spec(p, board, g, mesh_with_lint(g, g.protected, 2), [], [])
     assert [x["name"] for x in s["materials"]] == ["substrate_0", "mask_B_fill", "mask_B_coat"]  # F mask open everywhere
+
+
+def test_a_v1_model_of_zero_thickness_copper_keeps_every_material():  # v1 byte for byte: a 0 mm copper builds today
+    board, p = project_of("lpf915", "U1.1", "J1.1", "--lid-height", "2.5")
+    p = {**p, "stackup": {**p["stackup"], "layers": [{**layer, "thickness_mm": 0.0} if layer["kind"] == "copper"
+                                                      else layer for layer in p["stackup"]["layers"]]}}
+    g = build_geometry(board, p)
+    e = ends(board, p, g.pieces)
+    m = mesh_with_lint(g, replace(g.protected, boxes=nominal_boxes(e)), 2)
+    s = model_spec(p, board, g, m, [place(x, m, g.zs, g.pieces) for x in e], [])
+    assert "copper" not in s and [x["name"] for x in s["materials"]] == [
+        "substrate_0", "mask_F_fill", "mask_F_coat", "mask_B_fill", "mask_B_coat"]  # its 0-thick fills kept
 
 
 def test_inner_copper_slabs_are_filled_at_the_mean_of_their_neighbours(mini_board_file):  # C-8, X-1

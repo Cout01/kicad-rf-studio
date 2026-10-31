@@ -9,7 +9,8 @@ from kicad_rf_studio.core.geometry.region import air_gap
 from kicad_rf_studio.core.kicad import classify, load_board
 from kicad_rf_studio.core.messages import KrsError, render
 from kicad_rf_studio.core.project import (SCHEMA, SCHEMA_ANTENNA, antenna, board_file, board_hash, check_project,
-                                          load_project, make_antenna_project, pulse_band, read_project, save_project)
+                                          copper_model, load_project, make_antenna_project, pulse_band, read_project,
+                                          save_project)
 from test_cli_new import FIX, run_new
 
 
@@ -239,7 +240,9 @@ def test_an_antenna_project_holds_the_design_fields():  # design 5.1, 5.2, 5.5
     ({"far_field": {"f_hz": [2.4e9, 2.44175e9], "step_deg": 5}}, "far_field.f_hz", "T_EXPECT_FAR_FIELD_HZ"),  # f0 first
     ({"far_field": {"f_hz": [2.44e9], "step_deg": 7}}, "far_field.step_deg", "T_EXPECT_STEP"),
     ({"air_gap_mm": 0}, "air_gap_mm", "T_EXPECT_ABOVE_0"),
-    ({"antenna": {"ref": "AE1"}}, "antenna.join", "T_EXPECT_NAMES")])
+    ({"antenna": {"ref": "AE1"}}, "antenna.join", "T_EXPECT_NAMES"),
+    ({"copper": "foil"}, "copper", "T_EXPECT_COPPER"),
+    ({"flat_s": 0}, "flat_s", "T_EXPECT_ABOVE_0")])
 def test_a_schema_2_field_out_of_its_range_is_named(change, field, expected):  # design 5.1; RF 5
     with pytest.raises(KrsError) as e:
         check_project({**antenna_dict(), **change}, Path("p.json"))
@@ -253,3 +256,11 @@ def test_an_antenna_projects_lid_is_true_or_false(tmp_path):  # final review G1:
     assert (e.value.code, e.value.params) == ("E_PROJECT_FIELD", {"path": str(p), "field": "lid",
                                                                   "expected": "T_EXPECT_FLAG"})
     assert check_project({**antenna_dict(), "lid": False}, p)["lid"] is False
+
+
+def test_an_antennas_copper_is_solid_or_sheet_and_optional():  # design 5.3; ruling 3
+    d = antenna_dict()
+    assert d["copper"] == "solid" and copper_model(d) == "solid" and "flat_s" not in d
+    assert check_project({**d, "copper": "sheet", "flat_s": 4.4e-8}, Path("p.json"))["copper"] == "sheet"
+    old = {k: v for k, v in d.items() if k != "copper"}  # a project made before this version
+    assert check_project(old, Path("p.json")) is old and copper_model(old) == "solid"

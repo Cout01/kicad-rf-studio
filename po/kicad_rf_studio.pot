@@ -2034,3 +2034,7 @@ msgstr ""
 msgid "a whole number of degrees that divides 180"
 msgstr ""
 
+#. T_EXPECT_COPPER
+msgid "\"solid\" or \"sheet\""
+msgstr ""
+

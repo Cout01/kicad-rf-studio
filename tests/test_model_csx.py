@@ -4,7 +4,7 @@ import types
 
 import pytest
 
-from kicad_rf_studio.core.model.csx import METAL_PRIORITY, build_csx
+from kicad_rf_studio.core.model.csx import METAL_PRIORITY, _prism, build_csx
 from kicad_rf_studio.core.model.spec import excitation
 
 
@@ -99,6 +99,25 @@ def test_the_lid_and_the_vias_are_metal_primitives(monkeypatch):  # C-39, C-40, 
     assert ("AddLinPoly", ([SQUARE["x"], SQUARE["y"]], "z", 2.0, 1.0), {"priority": METAL_PRIORITY}) in log
     assert ("AddCylinder", ([1.0, 1.0, 0.0], [1.0, 1.0, 2.0], 0.15), {"priority": METAL_PRIORITY}) in log
     assert ("AddCurve", ([[3.0, 3.0], [3.0, 3.0], [0.0, 2.0]],), {}) in log
+
+
+def test_a_sheet_of_no_thickness_is_a_polygon_in_its_plane():  # design 5.3: sheet copper, antenna only
+    calls = []
+
+    class Prop:
+        def AddLinPoly(self, *a, **k):
+            calls.append(("linpoly", a, k))
+
+        def AddPolygon(self, *a, **k):
+            calls.append(("polygon", a, k))
+
+    xy = {"x": [0.0, 1.0, 1.0], "y": [0.0, 0.0, 1.0]}
+    _prism(Prop(), {**xy, "z": [0.71, 0.71]}, 1000, True)
+    _prism(Prop(), {**xy, "z": [0.0, 0.035]}, 1000, True)
+    _prism(Prop(), {**xy, "z": [0.71, 0.71]}, 1000)  # without the spec's key, as every v1 model: as before
+    assert calls == [("polygon", ([xy["x"], xy["y"]], "z", 0.71), {"priority": 1000}),
+                     ("linpoly", ([xy["x"], xy["y"]], "z", 0.0, 0.035), {"priority": 1000}),
+                     ("linpoly", ([xy["x"], xy["y"]], "z", 0.71, 0.0), {"priority": 1000})]
 
 
 def test_grid_parts_are_lumped_elements_named_for_the_gate(monkeypatch):  # C-16

@@ -10,7 +10,7 @@ import shapely
 
 from kicad_rf_studio.core.kicad.stackup import Stackup
 from kicad_rf_studio.core.kicad.tracer import Chain, ChainPart, classify
-from kicad_rf_studio.core.project import antenna, mesh_reach_h, region_expand_h, region_margin_scale
+from kicad_rf_studio.core.project import antenna, copper_model, mesh_reach_h, region_expand_h, region_margin_scale
 
 if TYPE_CHECKING:  # the types only: importing a submodule must not pull in the others
     from kicad_rf_studio.core.geometry.copper import Piece
@@ -68,7 +68,8 @@ def build_geometry(board: Board, project: dict) -> Geometry:
     A touch within its join pads (antenna.join), grown by 2·SIMPLIFY, is no short. W_STAIRCASED names the feed net,
     the chain's last, when the antenna's copper graphics are staircased (sections.staircased) and the sections have
     not named it. Every top-side shield on the board is a lid candidate, and W_LIDS_LEFT_OUT names those the one lid
-    leaves out. W_AIR_BOX comes last when the air box is not the tested one, PML_8 with a gap of λ/4 at f_lo or more."""
+    leaves out. W_AIR_BOX comes last when the air box is not the tested one, PML_8 with a gap of λ/4 at f_lo or more.
+    An antenna's sheet copper (Stage 3 design 5.3) is a stack whose copper layers have no thickness."""
     # imported here, so that importing a submodule still pulls in none of the others, nor core.mesh, built on them
     from kicad_rf_studio.core.geometry.copper import SIMPLIFY, connectivity, copper_pieces
     from kicad_rf_studio.core.geometry.lid import find_lid
@@ -80,8 +81,12 @@ def build_geometry(board: Board, project: dict) -> Geometry:
     from kicad_rf_studio.core.mesh.protect import protected_set
 
     chain, classes = chain_of(project), classify(board, project.get("classes"))
-    zs = zstack(Stackup.from_json(project["stackup"]), board.copper_layers)
     ports, ant = project.get("ports", []), antenna(project)
+    stack = project["stackup"]
+    if ant and copper_model(project) == "sheet":  # each copper slab collapses onto its dielectric face, the masks on it
+        stack = {**stack, "layers": [{**layer, "thickness_mm": 0.0} if layer["kind"] == "copper" else layer
+                                     for layer in stack["layers"]]}
+    zs = zstack(Stackup.from_json(stack), board.copper_layers)
     # ponytail: the antenna group is the footprint's own copper; a radiator drawn as tracks on the feed net (fit2d would
     # measure it as feed line) or as board graphics or zones outside the footprint is not in it
     if ant:

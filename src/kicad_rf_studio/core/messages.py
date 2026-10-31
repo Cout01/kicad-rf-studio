@@ -456,6 +456,7 @@ CATALOG: dict[str, str] = {
     "T_EXPECT_BOUNDARY": '"pml_8" or "mur"',
     "T_EXPECT_FAR_FIELD_HZ": "a list of 1 to 11 frequencies in Hz, f0_hz first, each inside the pulse's band, f_lo_hz/1.3 to 1.2·f_hi_hz",
     "T_EXPECT_STEP": "a whole number of degrees that divides 180",
+    "T_EXPECT_COPPER": '"solid" or "sheet"',
 }
 
 

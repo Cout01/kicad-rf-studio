@@ -31,6 +31,10 @@ if TYPE_CHECKING:  # the types only: project.py imports no board code
 SCHEMA = 1
 SCHEMA_ANTENNA = 2  # an antenna project (Stage 3 design 5.1); v1's stay SCHEMA
 FAR_FIELD_STEP = 5  # the far field's full sphere is sampled every 5° (Stage 3 design 5.5)
+# an antenna's copper model (Stage 3 design 5.3): Stage 1 5.3's solid copper, or every copper layer a sheet, for the
+# whole model
+COPPER_MODELS = ("solid", "sheet")
+ANTENNA_COPPER = "solid"  # `new`'s; gate P3-C decides whether all-sheet replaces it
 EXPAND_H = 3.0  # substrate heights the ROI grows by past the chain (spec 5.1)
 MARGIN_SCALE = 1.0  # the factor on the walls' margin past the ROI, WALL_MM + WALL_CELLS·coarse (D-12)
 MESH_N = {"draft": 2, "normal": 2, "strict": 3}  # the mesh rule's n by preset (spec 5.4, plan 2 Decisions)
@@ -76,6 +80,11 @@ def mesh_reach_h(data: dict) -> float:
 def mesh_n(data: dict) -> int:
     """project.json's mesh.n, else its preset's (MESH_N)."""
     return data.get("mesh", {}).get("n") or MESH_N[data["preset"]]
+
+
+def copper_model(data: dict) -> str:
+    """project.json's copper, else "solid": an antenna made before plan 4 has none."""
+    return data.get("copper", "solid")
 
 
 def parts(data: dict) -> dict[str, dict]:
@@ -125,8 +134,8 @@ def make_antenna_project(board_path: str, board_sha256: str, f_lo_hz: float, f_h
     """project.json of an antenna (schema 2, Stage 3 design 5.1) as `new --antenna` writes it: make_project's dict but
     harmonics and band_factor, with schema SCHEMA_ANTENNA, f0_hz the band's centre, `t_max_s`, region {"expand_h":
     REACH_H} (the measured region reaches as far as the protected set) and lid true (every shield gets its lid, 5.3);
-    then kind, band, antenna {"ref", "join"}, `air_gap_mm`, boundary "pml_8" and far_field {"f_hz": f0 then 10
-    frequencies evenly from f_lo to f_hi, "step_deg": FAR_FIELD_STEP}."""
+    then kind, band, antenna {"ref", "join"}, `air_gap_mm`, boundary "pml_8", far_field {"f_hz": f0 then 10
+    frequencies evenly from f_lo to f_hi, "step_deg": FAR_FIELD_STEP} and copper ANTENNA_COPPER."""
     f0 = (f_lo_hz + f_hi_hz) / 2
     data = make_project(board_path, board_sha256, f0, stackup, classes, chain, others, ports, preset=preset,
                         lid_height_mm=lid_height_mm)
@@ -135,7 +144,7 @@ def make_antenna_project(board_path: str, board_sha256: str, f_lo_hz: float, f_h
     data.update(kind="antenna", band={"f_lo_hz": f_lo_hz, "f_hi_hz": f_hi_hz}, antenna={"ref": ref, "join": join},
                 air_gap_mm=air_gap_mm, boundary="pml_8",
                 far_field={"f_hz": [f0, *(f_lo_hz + (f_hi_hz - f_lo_hz) * k / 9 for k in range(10))],
-                           "step_deg": FAR_FIELD_STEP})  # appended, in this order
+                           "step_deg": FAR_FIELD_STEP}, copper=ANTENNA_COPPER)  # appended, in this order
     return data
 
 
@@ -250,7 +259,9 @@ _FIELDS_ANTENNA = {  # schema 2 (Stage 3 design 5.1): no harmonics or band_facto
     "boundary": (lambda v: v in ("pml_8", "mur"), "T_EXPECT_BOUNDARY"),
     "far_field": {"f_hz": (lambda v: isinstance(v, list) and 0 < len(v) <= NF2FF_MAX and all(map(_number, v)),
                            "T_EXPECT_FAR_FIELD_HZ"),
-                  "step_deg": (lambda v: type(v) is int and v > 0 and 180 % v == 0, "T_EXPECT_STEP")}}
+                  "step_deg": (lambda v: type(v) is int and v > 0 and 180 % v == 0, "T_EXPECT_STEP")},
+    "copper": (lambda v: v is _MISSING or v in COPPER_MODELS, "T_EXPECT_COPPER"),  # missing reads solid
+    "flat_s": _OPTIONAL_ABOVE_0}
 _MISSING = object()  # a key that is not there, which only an optional field accepts (null is a value)
 
 
@@ -276,7 +287,9 @@ def check_project(data: dict, path: Path) -> dict:
     [index] as in ports[0].reference (C-3). So a hand edit never ends in E_INTERNAL further on, nor in a field read as
     something it is not. An antenna's band then holds f_lo < f_hi ≤ 2·f_lo (Stage 3 design 3: one band a run), its
     f0_hz lies in the band, and its far field's first frequency is f0_hz (the worker draws the cuts at the first) and
-    each lies within pulse_band, in that order. `results` is optional, and an object."""
+    each lies within pulse_band, in that order. An antenna's `copper` and `flat_s` are optional (a project made before
+    plan 4 has neither): solid copper (copper_model) and flat_window's (excitation). `results` is optional, and an
+    object."""
     _check(data, _FIELDS_ANTENNA if antenna(data) else _FIELDS, "", path)
     if antenna(data):
         f_lo, f_hi, f0, far = data["band"]["f_lo_hz"], data["band"]["f_hi_hz"], data["f0_hz"], data["far_field"]["f_hz"]

@@ -50,8 +50,8 @@ from kicad_rf_studio.core.post.checks import compare, indicator_lines, loss_budg
 from kicad_rf_studio.core.post.outputs import (LIMITS, OUTPUTS, VERIFY_OUTPUT, grid_lines, marker_lines, port_map,
                                                summary_csv, summary_png, touchstone, write)
 from kicad_rf_studio.core.post.waves import layout
-from kicad_rf_studio.core.project import (GATES, antenna, board_file, board_hash, load_project, mesh_n, parts,
-                                          read_project, relative_path, save_project)
+from kicad_rf_studio.core.project import (GATES, antenna, board_file, board_hash, copper_model, load_project, mesh_n,
+                                          parts, read_project, relative_path, save_project)
 from kicad_rf_studio.stoprule import KEPT, PRESETS, Records, Verdict, residual_db, stop_rule
 from kicad_rf_studio.worker import GRIDS, LOG
 
@@ -878,14 +878,14 @@ def results_of(project: dict, model: Model) -> dict:
 def fingerprint(project: dict) -> dict:
     """An antenna's settings fingerprint (Stage 3 design 5.8), recorded with each run's and verify's results:
     project.json's fields that set the model or the far field but no part value, the lid height and the start pad among
-    them (typed per project, not in the board); the copper model; and the versions of this app and of openEMS as a
-    worker sees it (runs.openems_versions: metadata in an isolated subprocess, nothing imported)."""
+    them (typed per project, not in the board); the copper model (copper_model); the flat window "flat_s" only when
+    project.json sets it, so that the records made before it still compare; and the versions of this app and of
+    openEMS as a worker sees it (runs.openems_versions: metadata in an isolated subprocess, nothing imported)."""
     keys = ("preset", "mesh", "region", "band", "f0_hz", "t_max_s", "air_gap_mm", "boundary", "far_field", "stackup",
             "lid_height_mm")
-    # ponytail: Stage 1 5.3's solid copper is the only model; plan 4's P3-C adds all-sheet copper as a project field,
-    # read here
-    return {**{key: project[key] for key in keys}, "start": project["chain"]["start"], "copper": "solid",
-            "app": __version__, "openems": runs.openems_versions()[0]}
+    flat = {"flat_s": project["flat_s"]} if "flat_s" in project else {}
+    return {**{key: project[key] for key in keys}, "start": project["chain"]["start"], "copper": copper_model(project),
+            **flat, "app": __version__, "openems": runs.openems_versions()[0]}
 
 
 def assign(project: dict, assignments: list[str], folder: Path) -> dict:

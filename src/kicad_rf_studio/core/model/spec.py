@@ -29,7 +29,7 @@ from kicad_rf_studio.core.model.csx import PML_CELLS
 from kicad_rf_studio.core.model.parts import COPPER
 from kicad_rf_studio.core.model.ports import _pad
 from kicad_rf_studio.core.model.readers import c_box
-from kicad_rf_studio.core.project import antenna
+from kicad_rf_studio.core.project import antenna, copper_model
 from kicad_rf_studio.stoprule import flat_window
 
 if TYPE_CHECKING:
@@ -61,9 +61,10 @@ def pulse(f1: float, f2: float, t_max: float) -> dict:
 
 def excitation(project: dict) -> dict:
     """pulse() over the band (f1, f2) of `project` (project.json), run to the project's T_max; an antenna's also holds
-    its flat window "flat_s", flat_window() of its f0 (Stage 3 design 5.4)."""
+    its flat window "flat_s": project.json's flat_s when it sets one (gate P3-C's widened window), else flat_window() of
+    its f0 (Stage 3 design 5.4)."""
     exc = pulse(*band(project), project["t_max_s"])
-    return {**exc, "flat_s": flat_window(project["f0_hz"])} if antenna(project) else exc
+    return {**exc, "flat_s": project.get("flat_s") or flat_window(project["f0_hz"])} if antenna(project) else exc
 
 
 def with_pml(lines: list[float]) -> list[float]:
@@ -171,20 +172,23 @@ def far_field_box(project: dict, board: Board, geom: Geometry) -> dict:
 def model_spec(project: dict, board: Board, geom: Geometry, mesh: Mesh, ports: list[dict], grid: list[dict]) -> dict:
     """The model of `geom` on `mesh` as plain JSON (C-19): the mesh's own lines (X-6), the excitation, the materials,
     the metal, `ports` (the place() entries in job order) and `grid` (the grid_entry() entries); then the antenna keys,
-    only for an antenna (Stage 3 design 5.2–5.5): "boundary", "pml_8" when project.json's boundary is; "nf2ff" when no
-    port is a part, far_field_box(); and "join" when the antenna has join pads, a box per pad: its bounds grown by d in
-    x and y, from the lowest copper slab's z0 to the highest's z1, to 1e-6 mm.
+    only for an antenna (Stage 3 design 5.2–5.5): "boundary", "pml_8" when project.json's boundary is; "copper",
+    "sheet" when its copper is (copper_model, design 5.3); "nf2ff" when no port is a part, far_field_box(); and "join"
+    when the antenna has join pads, a box per pad: its bounds grown by d in x and y, from the lowest copper slab's z0 to
+    the highest's z1, to 1e-6 mm.
     The materials, in this order: each dielectric slab, bottom up, at its εr and its κ at f0, and each copper slab
     between two dielectrics, at their mean εr and mean κ (C-8), all on the board (the crop cut to its outline) and
     named by their place in the list; then per mask, F first, its gap fill in the outer copper's slab and its coat
     smeared over the first z-cell dz0 outside it (C-6). The stackup's mask slabs are never materials (X-3). A material
-    with no solids is left out, and each is at priority 10 + its place in the list: openEMS breaks ties arbitrarily.
-    The metal: every copper piece, solid (C-5), and the convex hull of the two pads of each part whose role is copper
-    (spec 5.7), cut back from other nets' copper on its layer to the pads' own clearance, each over its layer's slab;
-    the solid rods as cylinders, the others as curves on the mesh lines (C-40); the lid's plate on the z line nearest
-    its top, and its walls up to it (C-39, X-5). Every solid is cut by split_holes. Raises E_UNKNOWN_PAD for a copper
-    part's pad that does not exist."""
+    with no solids is left out, as is one of no thickness under sheet copper, and each is at priority 10 + its place
+    in the list: openEMS breaks ties arbitrarily.
+    The metal: every copper piece, solid (C-5) or, under sheet copper, a sheet, and the convex hull of the two pads of
+    each part whose role is copper (spec 5.7), cut back from other nets' copper on its layer to the pads' own
+    clearance, each over its layer's slab; the solid rods as cylinders, the others as curves on the mesh lines (C-40);
+    the lid's plate on the z line nearest its top, and its walls up to it (C-39, X-5). Every solid is cut by
+    split_holes. Raises E_UNKNOWN_PAD for a copper part's pad that does not exist."""
     f0, zs, crop, dz = project["f0_hz"], geom.zs, geom.region.crop, mesh.dz0
+    sheet = antenna(project) and copper_model(project) == "sheet"
 
     def k(s: Slab) -> float:
         return kappa(s.eps_r, s.tan_d, f0)
@@ -200,9 +204,12 @@ def model_spec(project: dict, board: Board, geom: Geometry, mesh: Mesh, ports: l
         coat = (m.z_coat0, round(m.z_coat0 + dz, 6)) if m.side == "F" else (round(m.z_coat0 - dz, 6), m.z_coat0)
         mats += [(f"mask_{m.side}_fill", m.eps_m, km, _solids(m.gap_fill, *m.z_fill)),
                  (f"mask_{m.side}_coat", smeared_epsilon(m.t_m, m.eps_m, dz), km * m.t_m / dz, _solids(m.coat, *coat))]
+    # an antenna's sheet copper leaves its slab and mask fill no thickness; v1's materials stay as they are, 0 mm copper
+    # included
     materials = [{"name": f"substrate_{i}" if name == "substrate" else name, "eps": eps, "kappa": kap,
                   "priority": 10 + i, "solids": solids}
-                 for i, (name, eps, kap, solids) in enumerate(x for x in mats if x[3])]
+                 for i, (name, eps, kap, solids) in enumerate(
+                     x for x in mats if x[3] and not (sheet and x[3][0]["z"][0] == x[3][0]["z"][1]))]
 
     cu = {s.copper: (s.z0, s.z1) for s in zs if s.kind == "copper"}
     copper = [solid for pc in geom.pieces for solid in _solids(pc.polygon, *cu[pc.layer])]
@@ -230,6 +237,8 @@ def model_spec(project: dict, board: Board, geom: Geometry, mesh: Mesh, ports: l
     if antenna(project):
         if project["boundary"] == "pml_8":
             spec["boundary"] = "pml_8"
+        if sheet:
+            spec["copper"] = "sheet"
         if not any(q["part"] for q in ports):
             spec["nf2ff"] = far_field_box(project, board, geom)
         if boxes := [_pad(board, name).polygon.bounds for name in project["antenna"]["join"]]:

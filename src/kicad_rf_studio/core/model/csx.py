@@ -10,10 +10,14 @@ BOUNDARY = {None: "MUR", "pml_8": f"PML_{PML_CELLS}"}  # the spec's "boundary"; 
 NF2FF_MAX = 11  # the far-field frequencies a box records, at most (design 5.5)
 
 
-def _prism(prop: object, solid: dict, priority: int) -> None:
-    """`solid` ({"x", "y", "z": [z0, z1]}) as a polygon of `prop` extruded in z from z0 to z1."""
+def _prism(prop: object, solid: dict, priority: int, sheet: bool = False) -> None:
+    """`solid` ({"x", "y", "z": [z0, z1]}) as a polygon of `prop` extruded in z from z0 to z1, or, with `sheet` (the
+    antenna-only spec key "copper": "sheet", Stage 3 design 5.3) and z0 == z1, a polygon in the plane z = z0."""
     z0, z1 = solid["z"]
-    prop.AddLinPoly([solid["x"], solid["y"]], "z", z0, z1 - z0, priority=priority)
+    if sheet and z0 == z1:
+        prop.AddPolygon([solid["x"], solid["y"]], "z", z0, priority=priority)
+    else:
+        prop.AddLinPoly([solid["x"], solid["y"]], "z", z0, z1 - z0, priority=priority)
 
 
 def build_csx(spec: dict, excite: int, t_max: float) -> tuple[object, object, object | None]:
@@ -29,7 +33,8 @@ def build_csx(spec: dict, excite: int, t_max: float) -> tuple[object, object, ob
     stop] (optional)}, in Hz and mm); with it, the box records the far field in the frequency domain at "f_hz" (1 to
     NF2FF_MAX, each from f1 to f2), over-sampled 4 times, on all six faces with no mirror, at openEMS's own placement
     (one line inside the PML) or at "box". Points go to CSXCAD as [xs, ys]: it misreads an (N, 2) array silently.
-    CSXCAD and openEMS are imported here only, so that only a worker loads them."""
+    CSXCAD and openEMS are imported here only, so that only a worker loads them. Under the antenna-only key "copper":
+    "sheet", a material's or the metal's solid of no thickness is a polygon in its plane (_prism)."""
     from CSXCAD import ContinuousStructure
     from openEMS import openEMS
 
@@ -45,14 +50,15 @@ def build_csx(spec: dict, excite: int, t_max: float) -> tuple[object, object, ob
     fdtd.SetCustomExcite(pulse["expr"], pulse["f2"], pulse["f2"])
     fdtd.SetMaxTime(t_max)
 
+    sheet = spec.get("copper") == "sheet"
     for m in spec["materials"]:
         material = csx.AddMaterial(m["name"], epsilon=m["eps"], kappa=m["kappa"])
         for solid in m["solids"]:
-            _prism(material, solid, m["priority"])
+            _prism(material, solid, m["priority"], sheet)
 
     pec, metal = spec["metal"], csx.AddMetal("metal")
     for solid in (*pec["copper"], *pec["lid"]["walls"]):
-        _prism(metal, solid, METAL_PRIORITY)
+        _prism(metal, solid, METAL_PRIORITY, sheet)
     if (plate := pec["lid"]["plate"]) is not None:
         metal.AddPolygon([plate["x"], plate["y"]], "z", plate["z"], priority=METAL_PRIORITY)
     for rod in pec["cylinders"]:

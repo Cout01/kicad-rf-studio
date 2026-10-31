@@ -10,7 +10,7 @@ from kicad_rf_studio.core.mesh.gates import edge_lint
 from kicad_rf_studio.core.messages import KrsError
 from kicad_rf_studio.core.model import spec as spec_module
 from kicad_rf_studio.core.model.csx import PML_CELLS
-from kicad_rf_studio.core.model.spec import far_field_box, metal_in_pml, verify_spec
+from kicad_rf_studio.core.model.spec import far_field_box, metal_in_pml, spec_hash, verify_spec
 from kicad_rf_studio.core.project import load_project, parts, save_project
 from kicad_rf_studio.stoprule import flat_window
 from test_antenna_geometry import model_of
@@ -106,3 +106,45 @@ def test_cost_and_preview_take_an_antenna_project(tmp_path, calibrated, monkeypa
     monkeypatch.setattr(pipeline, "open_viewer", lambda exe, job: opened.append(job))
     assert pipeline.preview(pj) == 0
     assert "boundary" in json.loads((opened[0].parent / "model.json").read_text(encoding="utf-8"))
+
+
+def test_sheet_copper_puts_each_copper_layer_at_its_dielectric_face(tmp_path):  # design 5.3; P3-C
+    pj = antenna_project(tmp_path / "sheet")
+    save_project(pj, {**load_project(pj), "copper": "sheet"})
+    model, _, _ = model_of(pj)
+    s = model.spec
+    assert model.blocked == [] and [len(s["mesh"][a]) for a in "xyz"] == [135, 137, 69] and s["copper"] == "sheet"
+    assert {tuple(c["z"]) for c in s["metal"]["copper"]} == {(0.0, 0.0), (0.71, 0.71)}
+    assert [(m["name"], m["solids"][0]["z"]) for m in s["materials"]] == [
+        ("substrate_0", [0.0, 0.71]), ("mask_F_coat", [0.71, 0.81]), ("mask_B_coat", [-0.1, 0.0])]  # no 0-thick fill
+    assert [(q["start"][2], q["stop"][2]) for q in s["ports"]] == [(0.71, 0.71)]  # a port in the sheet's plane
+    assert model.dt_ref == pytest.approx(2.3057e-13, rel=1e-4) and s["nf2ff"]["center"][2] == 0.355
+    solid_pj = antenna_project(tmp_path / "solid")
+    save_project(solid_pj, {**load_project(solid_pj), "copper": "solid"})  # named: a sheet default moves no pin here
+    solid, _, _ = model_of(solid_pj)
+    assert "copper" not in solid.spec and spec_hash(solid.spec) != spec_hash(s) and len(solid.spec["mesh"]["z"]) == 71
+
+
+def test_sheet_copper_puts_verifys_network_in_the_sheets_plane(tmp_path, monkeypatch):  # design 5.3, 5.7; RF 5
+    pj = antenna_project(tmp_path, FIX / "ifa2g4_pi.kicad_pcb")
+    save_project(pj, {**load_project(pj), "copper": "sheet"})
+    project, board, geom, _ = pipeline.load(pj)
+    spec = pipeline.build_model(project, board, geom).spec
+    by_ref = parts(project)
+    by_ref["L1"]["value"], by_ref["C2"]["value"], by_ref["C3"]["value"] = "0R", "0.13pF", "1pF"  # plan 3's snapped set
+    dump = tmp_path / "operator_dump.vtr"
+    dump.write_bytes(b"")
+    monkeypatch.setattr(spec_module, "c_box", lambda *a: 6e-16)
+    out = verify_spec(spec, by_ref, dump, 2.4e-13, far_field=far_field_box(project, board, geom))
+    assert [(g["name"], g["start"][2], g["stop"][2]) for g in out["grid"]] == [("C2", 0.71, 0.71), ("C3", 0.71, 0.71)]
+    added = out["metal"]["copper"][len(spec["metal"]["copper"]):]  # L1's 0 Ω box and the parts' PEC fill
+    assert added and all(c["z"] == [0.71, 0.71] for c in added) and out["copper"] == "sheet"
+
+
+def test_an_antennas_flat_window_may_be_set_in_project_json(tmp_path):  # design 5.4: P3-C revisits it; RF 4
+    pj = antenna_project(tmp_path)
+    default, _, _ = model_of(pj)
+    save_project(pj, {**load_project(pj), "flat_s": 4.4e-8})
+    widened, _, _ = model_of(pj)
+    assert default.spec["excitation"]["flat_s"] == flat_window(2.44175e9)
+    assert widened.spec["excitation"]["flat_s"] == 4.4e-8

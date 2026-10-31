@@ -96,6 +96,12 @@ def test_an_antenna_run_records_its_settings_fingerprint(tmp_path, calibrated): 
                                            "app": __version__, "openems": "0.37.0"}  # fake_cli's openems_versions
 
 
+def test_the_fingerprint_reads_the_copper_model_and_a_flat_window(tmp_path, calibrated):  # design 5.3, 5.4, 5.8
+    d = load_project(antenna_project(tmp_path / "p"))
+    fp = pipeline.fingerprint({**d, "copper": "sheet", "flat_s": 4.4e-8})
+    assert (fp["copper"], fp["flat_s"]) == ("sheet", 4.4e-8) and "flat_s" not in pipeline.fingerprint(d)
+
+
 def test_an_antenna_takes_its_fingerprint_before_any_job(tmp_path, calibrated, monkeypatch):  # final review
     pj = pi_run(tmp_path, monkeypatch)  # part ports and a run: verify has something to verify
     calls = []

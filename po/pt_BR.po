@@ -2044,3 +2044,7 @@ msgstr "uma lista de 1 a 11 frequências em Hz, f0_hz primeiro, cada uma dentro 
 msgid "a whole number of degrees that divides 180"
 msgstr "um número inteiro de graus que divide 180"
 
+#. T_EXPECT_COPPER
+msgid "\"solid\" or \"sheet\""
+msgstr "\"solid\" ou \"sheet\""
+
