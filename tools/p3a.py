@@ -136,23 +136,23 @@ def _far(spec: dict, sid: str) -> dict:
     return {**run, "dumps": dumps, "aborted": (job / "ABORT").is_file(), "far": far}
 
 
-def _free(spec: dict, sid: str) -> dict:
-    """A free step's work, the worker's own path with no stop rule, to T_FREE: pipeline.prepare for the threads; a
-    fresh run folder with model.json and one job of port P1, run unwatched and checked under the tool's own word "run";
-    its et and ht removed; openEMS_stats.txt, which openEMS and the fake both write, read; then its records at that dt.
-    Returns {"run_dir": the folder's name, never a path (the privacy gate refuses one), "t_max", "t_stop", "dt",
-    "speed_mcs", "finite": every u, i and energy sample finite, "growth_db": growth_rise}."""
+def _free(spec: dict, sid: str, t_free: float = T_FREE) -> dict:
+    """A free step's work, the worker's own path with no stop rule, to `t_free` (T_FREE by default): pipeline.prepare
+    for the threads; a fresh run folder with model.json and one job of port P1, run unwatched and checked under the
+    tool's own word "run"; its et and ht removed; openEMS_stats.txt, which openEMS and the fake both write, read; then
+    its records at that dt. Returns {"run_dir": the folder's name, never a path (the privacy gate refuses one), "t_max",
+    "t_stop", "dt", "speed_mcs", "finite": every u, i and energy sample finite, "growth_db": growth_rise}."""
     threads = pipeline.prepare(p0.model_of(spec), lambda code, params: print(render(code, **params)))[0]
     run_dir, settings = runs.run_dir_for(sid), runs.load_settings()
     runs.write_spec(run_dir, spec)
-    job = runs.write_job(runs.job_dir(run_dir, 1, "P1"), 1, "run", threads, T_FREE)
+    job = runs.write_job(runs.job_dir(run_dir, 1, "P1"), 1, "run", threads, t_free)
     runs.check_job(job, runs.run_jobs([job], 1, run_dir, settings)[job], "run", settings)
     for array in ("et", "ht"):  # as run_ports removes them (D-17)
         with contextlib.suppress(OSError):  # Windows: an antivirus or the indexer may still hold it; it stays
             (job / array).unlink(missing_ok=True)
     stats = read_stats((job / "openEMS_stats.txt").read_text(encoding="utf-8"))
     rec = pipeline.records(job, 1, stats["dt"])
-    return {"run_dir": run_dir.name, "t_max": T_FREE, "t_stop": pipeline.last_sample(rec)[0], "dt": stats["dt"],
+    return {"run_dir": run_dir.name, "t_max": t_free, "t_stop": pipeline.last_sample(rec)[0], "dt": stats["dt"],
             "speed_mcs": stats["speed"] / 1e6, "finite": all(np.isfinite(x).all() for x in (rec.u, rec.i, rec.e)),
             "growth_db": growth_rise(rec, spec["excitation"]["t0"])}
 
