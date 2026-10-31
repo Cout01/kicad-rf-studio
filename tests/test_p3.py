@@ -133,3 +133,34 @@ def test_an_unconditioned_miss_is_explained_within_its_shift_equivalent():  # ru
     assert near["ds11"] < 0.05 < 0.1 < near["ds11_shift"] < 0.2  # a 1 % shift moves S11 by about 0.14 here
     far = p3.pair(broad(0.0), broad(-5.0), 0.01, -6.0)  # about 0.20 apart in band: more than a 1 % shift
     assert far["explained"] is False and far["ds11"] > far["ds11_shift"]
+
+
+def detuned(x=0.0):  # S(f·(1 + x)) of a detuned board on F: its |S11| falling to the grid's top end, no dip, its
+    g = F * (1 + x)  # phase turning with f
+    return 10 ** ((-0.3 - 1.0 * (g - 2.3e9) / 0.2e9) / 20) * np.exp(-2j * np.pi * g * 0.4e-9)
+
+
+def test_a_pair_with_no_resonance_in_its_grid_is_judged_by_its_fitted_shift():  # the controller's ruling at CP3
+    a = {**meas(2.4e9), "s11": detuned()}
+    b = {**a, "s11": detuned(-0.00865)}  # a's response shifted: S_b(f) = S_a(f·(1 − 0.865 %))
+    p = p3.pair(a, b, 0.005, -6.0)
+    assert p["f_res"] == [2.5e9, 2.5e9] and p["fit"]["clean"] is True
+    assert p["fit"]["shift"] == pytest.approx(-0.00865, abs=2e-5)
+    assert p["f_rel"] == pytest.approx(0.00865 / (1 - 0.00865), abs=3e-5) and p["pass"] is False
+    assert p3.pair(a, b, 0.01, -6.0)["pass"] is True
+    ripple = 0.003 * np.cos(2 * np.pi * F / 7e6) * ((F >= 2.4e9) & (F <= 2.4835e9))  # in band, and no shift
+    vacuous = p3.pair(a, {**a, "s11": detuned() + ripple}, 0.005, -6.0)  # both minima still at the grid's last point
+    assert (vacuous["fit"]["clean"], vacuous["f_rel"], vacuous["pass"]) == (False, 0.0, True)
+    dips = p3.pair(meas(2.4e9), meas(2.43e9), 0.01, -6.0)  # both minima inside the grid: the argmins, as before
+    assert dips["fit"] is None and dips["f_rel"] == abs(dips["f_res"][1] - dips["f_res"][0]) / dips["f_res"][0]
+    assert dips["f_rel"] == pytest.approx(0.0125)
+    assert (dips["conditioned"], dips["pass"], dips["explained"]) == (True, False, False)
+
+
+def test_the_fit_finds_the_shift_on_either_side():  # the controller's ruling at CP3
+    a = {**meas(2.4e9), "s11": detuned()}
+    shift, residual = p3.fit_shift(a, {**a, "s11": detuned(0.004)})  # b's resonance a's / 1.004
+    assert type(shift) is type(residual) is float
+    assert shift == pytest.approx(0.004, abs=2e-5) and residual < 1e-4
+    p = p3.pair(a, {**a, "s11": detuned(0.004)}, 0.005, -6.0)
+    assert p["fit"]["clean"] is True and p["f_rel"] == pytest.approx(0.004 / 1.004, abs=3e-5) and p["pass"] is True

@@ -7,7 +7,7 @@ import pytest
 import p3
 import p3c
 from kicad_rf_studio.core.project import load_project
-from test_p3 import gates  # noqa: F401 (the fixture)
+from test_p3 import detuned, gates  # noqa: F401 (the fixture)
 
 
 @pytest.fixture(autouse=True)
@@ -118,6 +118,22 @@ def test_an_unconditioned_miss_within_its_shift_equivalent_is_explained():  # ru
     assert c["explained"] is False and c["ds11"] > c["ds11_shift"] and copper["decisions"]["copper"] == "solid"
     near = p3c.decide(full(**{"meander915-solid-n2": shallow(), "meander915-sheet-n2": shallow(-0.6)}))
     assert near["checks"]["copper"]["meander915"]["explained"] is True and near["decisions"]["copper"] == "sheet"
+
+
+def test_the_mesh_check_reads_fitted_shifts_where_no_resonance_lies_in_the_grid():  # the controller's ruling at CP3
+    for (x2, x3), ok in (((-0.003, -0.001), True), ((-0.006, -0.002), False)):
+        shifts = {"n2": x2, "n3": x3, "n4": 0.0, "gap2": x2, "strict": x2}  # the detuned response, S(f·(1 + x))
+        d = p3c.decide(full(**{f"meander915-{cu}-{s}": {**run(), "s11": detuned(x)} for cu in p3c.COPPERS
+                               for s, x in shifts.items()}))
+        mesh, fs = d["checks"]["mesh"]["meander915"], [2.5e9 / (1 + x2), 2.5e9 / (1 + x3), 2.5e9]  # f4: F's end
+        f_ext = p3c.extrapolated(fs)[0]
+        assert [(fit["shift"], fit["clean"]) for fit in mesh["fits"]] == [
+            (pytest.approx(x2, abs=2e-5), True), (pytest.approx(x3, abs=2e-5), True)]
+        assert mesh["kind"] == "monotone" and mesh["value"] == pytest.approx(abs(fs[0] - f_ext) / f_ext)
+        assert (mesh["pass"], d["decisions"]["mesh_n"]) == (ok, 2 if ok else 3)
+    d["decisions"]["edits_2g4"] = {}
+    text = p3c.tables({"criteria": p3c.CRITERIA, **d, "runs": {}, "t_max_projection": {}})
+    assert "; fit -0.600% (residual " in text and "; fit -0.200% (residual " in text
 
 
 def test_a_run_at_t_max_or_flat_is_no_converged_comparison():  # RF 4; design 5.4

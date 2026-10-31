@@ -142,12 +142,13 @@ def fit2d_probe(pj: Path) -> list[dict]:
     return [{"net": fit.section.net, "width": fit.section.width, "err": float(fit.err)} for fit in fit2d(geom, mesh)]
 
 
-def _res(x: dict) -> tuple[float, bool]:
-    """The run measure `x`'s f_res (resonance) and whether its minimum is conditioned, as p3.pair judges each side:
-    inside the grid at or below conditioned_db."""
+def _res(x: dict) -> tuple[float, bool, bool]:
+    """The run measure `x`'s f_res (resonance), whether its minimum lies inside the grid and whether it is
+    conditioned, as p3.pair judges each side: inside the grid at or below conditioned_db."""
     f, s = np.asarray(x["f_hz"]), np.asarray(x["s11"])
     k, f_res = resonance(f, s)
-    return f_res, bool(0 < k < len(f) - 1 and 20 * np.log10(abs(s[k])) <= CRITERIA["conditioned_db"])
+    inside = 0 < k < len(f) - 1
+    return f_res, inside, bool(inside and 20 * np.log10(abs(s[k])) <= CRITERIA["conditioned_db"])
 
 
 def _within(v: float | None, limit: float) -> bool:
@@ -167,9 +168,17 @@ def _mesh(xs: list[dict], p: float | None) -> dict:
     two meshes; "f_res" each run's; "ratio" (f3 − f2)/(f4 − f3); "value" n 2's |f2 − f_ext|/f_ext, oscillating
     max(|f2 − f4|, |f3 − f4|)/f4; "pass" within mesh_f_res_rel unless not converging; "conditioned" all of them; "ds11"
     and "ds11_shift" as p3.pair takes them, n 2 against the S11 extrapolated pointwise at f_ext's own order (S4 itself
-    when oscillating); "explained" a miss on no conditioned dip whose ds11 is within ds11_shift (ruling 1, amended)."""
+    when oscillating); "explained" a miss on no conditioned dip whose ds11 is within ds11_shift (ruling 1, amended).
+    With no resonance in a grid (any run's lowest |S11| at its first or last point), "fits", p3.fitted of each coarser
+    run against the finest, coarse to fine: when every one is clean, a coarser run's f is f_finest/(1 + shift), with
+    f_finest the finest's own f_res (the controller's ruling at P3-C's CP3), else its argmin's; "fits" None when every
+    minimum lies inside its grid."""
     res = [_res(x) for x in xs]
-    fs = [f for f, _ in res]
+    fs, fits = [f for f, _, _ in res], None
+    if not all(inside for _, inside, _ in res):
+        fits = [p3.fitted(xs[-1], x) for x in xs[:-1]]
+        if all(fit["clean"] for fit in fits):
+            fs = [fs[-1] / (1 + fit["shift"]) for fit in fits] + fs[-1:]
     f_ext, kind, p_obs = extrapolated(fs, p)
     fine, coarse = fs[-1], fs[-2]
     value = max(abs(fs[0] - fine), abs(fs[1] - fine)) / fine if kind == "oscillating" else abs(fs[0] - f_ext) / f_ext
@@ -178,12 +187,12 @@ def _mesh(xs: list[dict], p: float | None) -> dict:
     ext = {"f_hz": xs[0]["f_hz"], "s11": s_fine + w * (s_fine - s_coarse), "band": xs[0]["band"], "d_dbi": None,
            "eta_rad": None}
     shift = p3.pair(ext, xs[0], CRITERIA["mesh_f_res_rel"], CRITERIA["conditioned_db"])
-    conditioned = all(c for _, c in res)
+    conditioned = all(c for _, _, c in res)
     ok = kind != "not converging" and value <= CRITERIA["mesh_f_res_rel"]
     return {"kind": kind, "p": p_obs, "ratio": (fs[1] - fs[0]) / (fs[2] - fs[1]) if len(fs) == 3 and fs[2] != fs[1]
             else None, "f_res": fs, "f_ext": f_ext, "value": value, "conditioned": conditioned, "ds11": shift["ds11"],
             "ds11_shift": shift["ds11_shift"], "pass": ok,
-            "explained": not ok and not conditioned and shift["ds11"] <= shift["ds11_shift"]}
+            "explained": not ok and not conditioned and shift["ds11"] <= shift["ds11_shift"], "fits": fits}
 
 
 def _growth(x: dict | None) -> dict:
@@ -335,11 +344,11 @@ def _t_max_projection(out: Path, m: dict, d: dict) -> dict:
 
 def tables(result: dict) -> str:
     """The Markdown tables of the gate JSON `result` (write's), with p0.table, cells by p3a._cell: P3C-1 each check per
-    fixture with its limit, its value (or why it is not judged), D and η where judged, its conditioning, pass and
-    explained, |ΔS11| (ds11) beside its threshold ds11_shift, and the mesh check's kind, observed p and ratio; then pml,
-    converged, mur and the verdict; P3C-2 each recorded step's verdict, t_stop, cells, split, f_res, depth, D, η_rad
-    range, wall_s, predicted_s, worst_s, MC/s and pool; P3C-3 the decisions with their rules, then the T_max
-    projections with K."""
+    fixture with its limit, its value (or why it is not judged) and each fit its result holds (shift in %, residual,
+    clean or not), D and η where judged, its conditioning, pass and explained, |ΔS11| (ds11) beside its threshold
+    ds11_shift, and the mesh check's kind, observed p and ratio; then pml, converged, mur and the verdict; P3C-2 each
+    recorded step's verdict, t_stop, cells, split, f_res, depth, D, η_rad range, wall_s, predicted_s, worst_s, MC/s and
+    pool; P3C-3 the decisions with their rules, then the T_max projections with K."""
     c, ch, d, v, cell = result["criteria"], result["checks"], result["decisions"], result["verdict"], p3a._cell
     why = "an unconditioned miss is explained when ds11 is within ds11_shift"  # no "|": a table cell
     limits = {
@@ -358,7 +367,11 @@ def tables(result: dict) -> str:
         for fx in FIXTURES:
             x = ch[k][fx]
             value = {key: x.get(key) for key in ("growth_db", "finite", "reach")} if k == "pml" else x.get("value")
-            rows.append({**x, "check": k, "fixture": fx, "limit": limits[k], "value": x.get("why") or cell(value)})
+            fits = [x["fit"]] if x.get("fit") else x.get("fits") or []
+            value = x.get("why") or cell(value) + "".join(
+                f"; fit {f['shift']:.3%} (residual {cell(f['residual'])}, {'clean' if f['clean'] else 'not clean'})"
+                for f in fits)
+            rows.append({**x, "check": k, "fixture": fx, "limit": limits[k], "value": value})
     rows.append({"check": "converged", "fixture": "both", "pass": ch["converged"]["pass"],
                  "limit": "every compared run converged; a comparison that reads one at T_max or flat is not judged",
                  "value": cell({fx: ch["converged"][fx] for fx in FIXTURES})})

@@ -168,7 +168,11 @@ def measure(out: Path, name: str, command: str = "run") -> dict | None:
 def pair(a: dict, b: dict, limit: float, conditioned_db: float) -> dict:
     """Ruling 1's pair rule, as amended at commit, on the measures `a` and `b` (or dicts of their shape: "f_hz" and
     "s11" on one grid, "band", "d_dbi", "far_f_hz", "eta_rad"): "f_res" [f_a, f_b] and "depth_db", resonance's on each;
-    "f_rel" |f_b − f_a|/f_a; "conditioned", both lowest |S11| inside the grid and at or below `conditioned_db`; "ds11",
+    "f_rel" |f_b − f_a|/f_a, but a pair with no resonance in its grid (either lowest |S11| at its first or last point)
+    is judged by fit_shift's response shift when that fit is clean (its residual at most a quarter of ds11): the
+    controller's ruling at P3-C's CP3, f_rel then |x|/(1 + x), b's resonance against a's; otherwise f_rel stays the
+    argmins' (vacuous); "fit", fitted's {"shift", "residual", "clean"} there, None when both lowest |S11| lie inside
+    the grid; "conditioned", both lowest |S11| inside the grid and at or below `conditioned_db`; "ds11",
     the largest |S_b − S_a| over a's band [f_lo, f_hi]; "ds11_shift", the largest |S_a(f·(1 + limit)) − S_a(f)| there,
     S_a interpolated in its real and imaginary parts: what a shift of `limit` does to a's S11; "pass" f_rel ≤ `limit`;
     "explained", a miss on no conditioned dip whose curves differ by no more than ds11_shift; "d_db" |D_b − D_a| at f0;
@@ -181,8 +185,10 @@ def pair(a: dict, b: dict, limit: float, conditioned_db: float) -> dict:
     up = f[band] * (1 + limit)  # past the grid's end np.interp holds the last value: a stricter explanation only
     ds11 = float(np.abs(sb - sa)[band].max())
     ds11_shift = float(np.abs(np.interp(up, f, sa.real) + 1j * np.interp(up, f, sa.imag) - sa[band]).max())
-    f_rel = abs(fb - fa) / fa
-    conditioned = all(0 < k < len(f) - 1 for k in (ka, kb)) and max(depth) <= conditioned_db
+    inside = all(0 < k < len(f) - 1 for k in (ka, kb))
+    fit = None if inside else fitted(a, b)  # no resonance in the grid: the controller's ruling at P3-C's CP3
+    f_rel = abs(fit["shift"]) / (1 + fit["shift"]) if fit and fit["clean"] else abs(fb - fa) / fa
+    conditioned = inside and max(depth) <= conditioned_db
     ok = f_rel <= limit
     eta_db = None
     if a["eta_rad"] and b["eta_rad"]:
@@ -191,7 +197,32 @@ def pair(a: dict, b: dict, limit: float, conditioned_db: float) -> dict:
     return {"f_res": [fa, fb], "depth_db": depth, "f_rel": f_rel, "conditioned": conditioned, "ds11": ds11,
             "ds11_shift": ds11_shift, "pass": ok, "explained": not ok and not conditioned and ds11 <= ds11_shift,
             "d_db": None if None in (a["d_dbi"], b["d_dbi"]) else float(abs(b["d_dbi"] - a["d_dbi"])),
-            "eta_db": eta_db}
+            "eta_db": eta_db, "fit": fit}
+
+
+def fit_shift(a: dict, b: dict) -> tuple[float, float]:
+    """The relative shift x in [−0.1, 0.1] that best maps the measure `a`'s S11 onto `b`'s over a's band [f_lo, f_hi]
+    on the grid both share: the x that minimizes r(x), the largest |S_a(f·(1 + x)) − S_b(f)| there, S_a interpolated in
+    its real and imaginary parts as pair's ds11_shift; (x, r(x)) as Python floats. S_b(f) ≈ S_a(f·(1 + x)) means b's
+    response sits at a's frequencies divided by (1 + x), so b's resonance is a's / (1 + x)."""
+    # ponytail: a brute-force scan of 20001 shifts; a bracketed minimizer if it ever shows in a report's time
+    f, sa, sb = np.asarray(a["f_hz"]), np.asarray(a["s11"]), np.asarray(b["s11"])
+    band = (f >= a["band"][0]) & (f <= a["band"][1])
+    shifts = np.linspace(-0.1, 0.1, 20001)  # a step of 1e-5
+    up = np.outer(1 + shifts, f[band])  # past the grid's end np.interp holds the last value, as in pair
+    r = np.abs(np.interp(up, f, sa.real) + 1j * np.interp(up, f, sa.imag) - sb[band]).max(axis=1)
+    k = int(r.argmin())
+    return float(shifts[k]), float(r[k])
+
+
+def fitted(a: dict, b: dict) -> dict:
+    """fit_shift(a, b) as pair reports it: {"shift", "residual", "clean"}, clean when the shift lies inside the scan
+    and the residual is at most a quarter of ds11, the largest |S_b − S_a| over a's band, itself above 0 (the
+    controller's ruling at P3-C's CP3)."""
+    x, r = fit_shift(a, b)
+    f = np.asarray(a["f_hz"])
+    ds11 = float(np.abs(np.asarray(b["s11"]) - np.asarray(a["s11"]))[(f >= a["band"][0]) & (f <= a["band"][1])].max())
+    return {"shift": x, "residual": r, "clean": abs(x) < 0.1 and ds11 > 0 and r <= 0.25 * ds11}
 
 
 def predicted_s(spec: dict, dt: float, t: float, pool: int, jobs: int, mcs: float) -> float:
