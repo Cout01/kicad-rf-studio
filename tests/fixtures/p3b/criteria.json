@@ -1,0 +1,5 @@
+{"source": "Stage 3 design 5.11, gate P3-B; plan 4 ruling 1 (r1): f_res is the refined lowest |S11| over the simulated band on each side, the hand's interpolated onto the product's grid; a miss on an unconditioned minimum (not both inside the grid at or below -6 dB) is explained when max |dS11| over [f_lo, f_hi] is within its shift-equivalent, the largest |dS11| that shifting the hand's S11 by f_res_rel makes there (the controller's amendment at commit); D at f0 and eta_rad at every recorded frequency stay binding; the hand run is valid when it hit its end criterion or its last 2 ns sit decay_db or more under its peak, and the product's job converged; a fail is diagnosed by the first of diagnoses whose two runs pass f_res, D and eta, else a product bug is presumed; a hand-f1 run that is not valid either stops for a ruling",
+ "f_res_rel": 0.01, "d_db": 0.3, "eta_db": 0.3, "conditioned_db": -6.0, "decay_db": 40.0,
+ "xor_f_cu_mm2": 1.0, "xor_b_cu_mm2": 0.2,
+ "diagnoses": [["boundary", "hand", "product-mur"], ["mesh", "hand-030", "product"],
+               ["boundary and mesh", "hand-030", "product-mur"]]}
