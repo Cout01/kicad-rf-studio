@@ -125,8 +125,7 @@ def build_geometry(board: Board, project: dict) -> Geometry:
     if ant:
         default, gap = air_gap(project["band"]["f_lo_hz"]), project["air_gap_mm"]
         if project["boundary"] != ANTENNA_BOUNDARY or gap < default:
-            gate.append(("W_AIR_BOX", {"gap_mm": f"{gap:.1f}", "boundary": project["boundary"],
-                                       "tested": ANTENNA_BOUNDARY, "fraction": "λ/4",  # air_gap's fraction of λ
-                                       "default_mm": f"{default:.1f}"}))
+            gate.append(("W_AIR_BOX", {"gap_mm": f"{gap:.1f}", "quarter_mm": f"{default:.1f}",
+                                       "boundary": project["boundary"]}))  # an event before plan 4 carries these
     return Geometry(region, zs, pieces, protected, rods, masks, secs, lid, notes + stairs + gate, width,
                     staircase_gap(board, chain.nets, pieces), ant)

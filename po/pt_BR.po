@@ -95,8 +95,8 @@ msgstr "As blindagens {refs} na placa da antena ficam sem tampa: uma só tampa �
 
 #. W_AIR_BOX
 #, python-brace-format
-msgid "The antenna's air box is outside the tested setting: an air gap of {gap_mm} mm to a {boundary} absorber, where gate P3-C tested {tested} with a gap of {fraction} at f_lo ({default_mm} mm) or more."
-msgstr "A caixa de ar da antena está fora da configuração testada: espaçamento de ar de {gap_mm} mm até um absorvedor {boundary}, enquanto a checagem prévia P3-C testou {tested} com um espaçamento de {fraction} em f_lo ({default_mm} mm) ou mais."
+msgid "The antenna's air box is outside the tested setting: an air gap of {gap_mm} mm to a {boundary} absorber, where gate P3-C tested pml_8 with a gap of λ/4 at f_lo ({quarter_mm} mm) or more."
+msgstr "A caixa de ar da antena está fora da configuração testada: espaçamento de ar de {gap_mm} mm até um absorvedor {boundary}, enquanto a checagem prévia P3-C testou pml_8 com um espaçamento de λ/4 em f_lo ({quarter_mm} mm) ou mais."
 
 #. E_LID_HEIGHT
 #, python-brace-format
@@ -2059,4 +2059,7 @@ msgstr "\"solid\" ou \"sheet\""
 
 #~ msgid "Resolved means larger than the significance threshold: {shift_pct} % of f0 for a frequency and {db} dB for an efficiency or a gain, both provisional until gate P3-D measures the model's noise floor and sets them at three times it."
 #~ msgstr "Resolvido significa maior que o limiar de significância: {shift_pct} % de f0 para uma frequência e {db} dB para uma eficiência ou um ganho, ambos provisórios até a checagem prévia P3-D medir o piso de ruído do modelo e defini-los em três vezes ele."
+
+#~ msgid "The antenna's air box is outside the tested setting: an air gap of {gap_mm} mm to a {boundary} absorber, where gate P3-C tested {tested} with a gap of {fraction} at f_lo ({default_mm} mm) or more."
+#~ msgstr "A caixa de ar da antena está fora da configuração testada: espaçamento de ar de {gap_mm} mm até um absorvedor {boundary}, enquanto a checagem prévia P3-C testou {tested} com um espaçamento de {fraction} em f_lo ({default_mm} mm) ou mais."
 

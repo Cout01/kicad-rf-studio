@@ -10,7 +10,7 @@ import shapely
 import p0
 from kicad_rf_studio import cli, pipeline
 from kicad_rf_studio.core.kicad import load_board
-from kicad_rf_studio.core.messages import KrsError
+from kicad_rf_studio.core.messages import KrsError, english, render
 from kicad_rf_studio.core.project import load_project, save_project
 from test_antenna_kicad import fp
 from test_cli_antenna import FIX, IFA, antenna_project
@@ -83,8 +83,14 @@ def test_every_shield_is_a_lid_candidate_and_one_gets_it(tmp_path):  # design 5.
 def test_an_air_box_outside_the_tested_setting_is_warned(tmp_path):  # design 5.2; P3-A's MUR twin; RF 5
     pj = antenna_project(tmp_path)
     save_project(pj, {**load_project(pj), "boundary": "mur", "air_gap_mm": 20.0})
-    assert ("W_AIR_BOX", {"gap_mm": "20.0", "boundary": "mur", "tested": "pml_8", "fraction": "λ/4",
-                          "default_mm": "31.2"}) in pipeline.load(pj)[3]  # the setting gate P3-C tested and kept
+    assert ("W_AIR_BOX", {"gap_mm": "20.0", "quarter_mm": "31.2", "boundary": "mur"}) in pipeline.load(pj)[3]
+
+
+def test_an_air_box_warning_recorded_before_plan_4_still_renders(pt_br):  # final review G3: the GUI replays events
+    old = {"gap_mm": "62.5", "quarter_mm": "31.2", "boundary": "mur"}  # the gates' own MUR run's parameters
+    en, pt = english("W_AIR_BOX", **old), render("W_AIR_BOX", **old)
+    assert en.startswith("The antenna's air box") and pt.startswith("A caixa de ar da antena")
+    assert all(value in text for value in old.values() for text in (en, pt))
 
 
 def test_load_refuses_an_antenna_ref_that_is_no_longer_an_antenna(tmp_path):  # final review G3

@@ -93,7 +93,7 @@ msgstr ""
 
 #. W_AIR_BOX
 #, python-brace-format
-msgid "The antenna's air box is outside the tested setting: an air gap of {gap_mm} mm to a {boundary} absorber, where gate P3-C tested {tested} with a gap of {fraction} at f_lo ({default_mm} mm) or more."
+msgid "The antenna's air box is outside the tested setting: an air gap of {gap_mm} mm to a {boundary} absorber, where gate P3-C tested pml_8 with a gap of λ/4 at f_lo ({quarter_mm} mm) or more."
 msgstr ""
 
 #. E_LID_HEIGHT
