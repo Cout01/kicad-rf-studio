@@ -164,3 +164,46 @@ def test_the_fit_finds_the_shift_on_either_side():  # the controller's ruling at
     assert shift == pytest.approx(0.004, abs=2e-5) and residual < 1e-4
     p = p3.pair(a, {**a, "s11": detuned(0.004)}, 0.005, -6.0)
     assert p["fit"]["clean"] is True and p["f_rel"] == pytest.approx(0.004 / 1.004, abs=3e-5) and p["pass"] is True
+
+
+def test_the_refit_recovers_the_small_speed_by_level_and_judges_w_on_its_pair():  # design 5.9; ruling 6
+    def row(pool, f, small, w=6.38, cal=580.0):
+        return {"pool": pool, "f_pml": f, "cal_mcs": cal, "node_mcs": small * cal / (1 + (w - 1) * f)}
+    rows = [row(1, f, 0.42) for f in (0.0, 0.31, 0.38, 0.44)] + [row(4, 0.434, 0.58, cal=205.6)]
+    out = p3.refit(rows, 6.38, like=(rows[0], rows[3]))
+    assert out["small"] == {1: pytest.approx(0.42), 4: pytest.approx(0.58)}
+    assert (out["w_fit"], out["w_line"]) == (pytest.approx(6.38), pytest.approx(6.38)) and out["moved"] is False
+    assert out["w"] == 6.38
+    moved = [row(1, f, 0.42, w=9.0) for f in (0.0, 0.31, 0.44)]
+    out = p3.refit(moved, 6.38, like=(moved[0], moved[2]))
+    assert out["moved"] and out["w"] == pytest.approx(9.0) and out["small"][1] == pytest.approx(0.42)
+
+
+def test_the_rows_are_each_recorded_run_and_verify_once(gates):  # free runs and hand runs left out
+    p3.variant(gates, "a", "ifa2g4", {})
+    p3.run_step(gates, "a")
+    p3.free_step(gates, "a", 30e-9)
+    (row,) = p3.rows(gates)
+    m = p3.measure(gates, "a")
+    assert row == {"step": "p3-a-run", "pool": 1, "cells": m["cells"], "f_pml": m["split"][2] / m["cells"],
+                   "node_mcs": 100.0, "cal_mcs": 200.0}
+
+
+def test_the_refit_record_fits_the_unloaded_records_and_the_extra_rows_at_pml_weight(gates, tmp_path):  # ruling 6
+    p3.variant(gates, "a", "ifa2g4", {})
+    record = p3.run_step(gates, "a")
+    p0.save(gates / "steps" / "p3-b-run.json", {**record, "step": "p3-b-run", "loaded": True})  # another process seen
+    (row,) = p3.rows(gates)
+    k = 100.0 * (1 + (runs.PML_WEIGHT - 1) * row["f_pml"]) / 200.0  # the fake's 100 MC/s, the calibration's 200
+    mur = {"step": "a MUR run", "pool": 1, "cells": None, "f_pml": 0.0, "node_mcs": 200.0 * k, "cal_mcs": 200.0}
+    data = p3.refit_record(gates, ("a MUR run", "p3-a-run"), [mur], tmp_path / "refit")
+    assert data == json.loads((tmp_path / "refit.json").read_text(encoding="utf-8"))
+    assert (data["rows"], data["like"]) == ([row, mur], ["a MUR run", "p3-a-run"])
+    before = {"PML_WEIGHT": runs.PML_WEIGHT, "SMALL_SPEED": runs.SMALL_SPEED}
+    assert data["before"] == json.loads(json.dumps(before))  # a level's int key as JSON's string
+    result = data["result"]  # the pair at w: w kept, both rows at one k
+    assert (result["w_fit"], result["w_line"]) == (pytest.approx(runs.PML_WEIGHT), pytest.approx(runs.PML_WEIGHT))
+    assert (result["w"], result["moved"], result["small"]) == (runs.PML_WEIGHT, False, {"1": float(f"{k:.3g}")})
+    md = (tmp_path / "refit.md").read_text(encoding="utf-8")
+    assert "| step | pool | cells | f_pml | node_mcs | cal_mcs | k |" in md and "| a MUR run | 1 | – | 0 |" in md
+    assert f"| p3-a-run | 1 | {row['cells']} |" in md and "| moved | False |" in md

@@ -1,7 +1,8 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """The gates P3-B to P3-E's shared runner (Stage 3 design 5.11, plan 4): the gates folder, the base project from `new`
 and its variants, resumable run, verify and free steps through the product's CLI, the one-code check over a gate's
-records, in-process measurements and the pair rule P3-B and P3-C share. Dev-time only, like p0."""
+records, in-process measurements, the pair rule P3-B and P3-C share, and the cost refit from the gates' step records
+(design 5.9). Dev-time only, like p0."""
 import copy
 import json
 import math
@@ -10,6 +11,7 @@ import traceback
 from collections.abc import Callable
 from functools import partial
 from pathlib import Path
+from statistics import median
 
 import numpy as np
 
@@ -258,3 +260,78 @@ def run_steps(names: list[str], work: Callable[[str], object]) -> int:
     if failed:
         print(f"p3: failed steps: {', '.join(failed)}", flush=True)
     return 1 if failed else 0
+
+
+def rows(out: Path) -> list[dict]:
+    """The cost refit's rows (ruling 6), one per record in out/steps of a run or verify step (p3-…-run, p3-…-verify)
+    that was not loaded, through measure: {"step", "pool", "cells", "f_pml" (split[2]/cells), "node_mcs" (the median
+    of speeds_mcs), "cal_mcs"}, a row lacking any of them left out. A step id has one record, so a step two gates share
+    counts once; free runs, the hand runs (in out/p3b, not steps) and other steps are none of them."""
+    # ponytail: measure reads each project's antenna result too, unused here; a cost-only reader at hundreds of steps
+    found = []
+    for path in sorted((out / "steps").glob("p3-*.json")):
+        name, _, command = path.stem.removeprefix("p3-").rpartition("-")
+        if command not in ("run", "verify") or json.loads(path.read_text(encoding="utf-8"))["loaded"]:
+            continue
+        m = measure(out, name, command)
+        row = {"step": path.stem, "pool": m["pool"], "cells": m["cells"],
+               "f_pml": m["split"] and m["cells"] and m["split"][2] / m["cells"],
+               "node_mcs": m["speeds_mcs"] and median(m["speeds_mcs"]), "cal_mcs": m["cal_mcs"]}
+        if None not in row.values():
+            found.append(row)
+    return found
+
+
+def _speed_ratio(row: dict, w: float) -> float:
+    """A refit row's k at the PML weight `w`: node_mcs·(1 + (w − 1)·f_pml)/cal_mcs, its speed in cells, each PML node
+    counted as w, over its calibration's per-job speed."""
+    return row["node_mcs"] * (1 + (w - 1) * row["f_pml"]) / row["cal_mcs"]
+
+
+def refit(rows: list[dict], w: float, like: tuple[dict, dict] | None = None, band: float = 0.25) -> dict:
+    """The cost refit (Stage 3 design 5.9, ruling 6) of `rows` (rows()'s, "step" and "cells" unread) at the PML weight
+    `w`: "w_fit" from `like`, the f_PML-0 row and its twin of one fixture, mesh n and copper at a pool of 1, by P3-A's
+    method, 1 + (r − 1)/f, r = (node_0/cal_0)/(node_f/cal_f) and f the twin's f_pml, None without `like`; "w_line",
+    1 + b/a of the least-squares line cal/node = a + b·f_pml through the pool-1 rows, a cross-check, None without two
+    distinct f_pml among them; "moved", |w_fit − w| > `band`·w; "w", w_fit when moved, else `w`; "small", {pool: the
+    median of its rows' k (_speed_ratio) at that w, to 3 significant digits}. Python floats and bools."""
+    w_fit = None
+    if like:
+        zero, twin = like
+        r = (zero["node_mcs"] / zero["cal_mcs"]) / (twin["node_mcs"] / twin["cal_mcs"])
+        w_fit = 1 + (r - 1) / twin["f_pml"]
+    single, w_line = [row for row in rows if row["pool"] == 1], None
+    if len({row["f_pml"] for row in single}) > 1:
+        b, a = np.polyfit([row["f_pml"] for row in single], [row["cal_mcs"] / row["node_mcs"] for row in single], 1)
+        w_line = float(1 + b / a)
+    moved = w_fit is not None and abs(w_fit - w) > band * w
+    w = w_fit if moved else w
+    small = {pool: float(f"{median(_speed_ratio(row, w) for row in rows if row['pool'] == pool):.3g}")
+             for pool in sorted({row["pool"] for row in rows})}
+    return {"small": small, "w_fit": w_fit, "w_line": w_line, "w": w, "moved": moved}
+
+
+def refit_record(out: Path, like: tuple[str, str], extra: list[dict], dest: Path) -> dict:
+    """The cost refit's record (ruling 6): refit of rows(out) followed by `extra` (rows of runs outside out/steps) at
+    runs.PML_WEIGHT, w judged on the rows of the step ids `like` (the f_PML-0 run, then its twin) with the band
+    refit_w_band of tests/fixtures/p3c/criteria.json. Writes <dest>.json through p0.save, {"rows", "like", "result",
+    "before": runs.PML_WEIGHT and runs.SMALL_SPEED as they stood}, and <dest>.md: the rows with their k at the result's
+    w, then the result, as p0.table's. KeyError for a step id of `like` with no row. Returns the JSON as saved."""
+    every = rows(out) + extra
+    by_step = {row["step"]: row for row in every}
+    band = json.loads((p0.FIX / "p3c" / "criteria.json").read_text(encoding="utf-8"))["refit_w_band"]
+    result = refit(every, runs.PML_WEIGHT, (by_step[like[0]], by_step[like[1]]), band)
+    before = {"PML_WEIGHT": runs.PML_WEIGHT, "SMALL_SPEED": runs.SMALL_SPEED}
+    data = p0.save(Path(f"{dest}.json"), {"rows": every, "like": list(like), "result": result, "before": before})
+    w = result["w"]
+    items = [*({"item": f"small, pool {pool}", "value": s} for pool, s in result["small"].items()),
+             *({"item": key, "value": result[key]} for key in ("w_fit", "w_line", "w", "moved"))]
+    Path(f"{dest}.md").write_text("\n\n".join([
+        "# The cost refit (Stage 3 design 5.9)",
+        f"Each row's k = node_mcs·(1 + (w − 1)·f_pml)/cal_mcs at w = {w:g}. w is judged on {like[0]} (f_PML 0) "
+        f"against {like[1]} by P3-A's method and moves beyond {band:g}·w; the pool-1 line is a cross-check. Before: "
+        f"PML_WEIGHT {before['PML_WEIGHT']}, SMALL_SPEED {before['SMALL_SPEED']}.",
+        p0.table([{**row, "k": _speed_ratio(row, w)} for row in every],
+                 ["step", "pool", "cells", "f_pml", "node_mcs", "cal_mcs", "k"]),
+        p0.table(items, ["item", "value"])]) + "\n", encoding="utf-8")
+    return data
