@@ -221,7 +221,7 @@ Each item has the default this design applies:
 
 ## 8. Risks
 
-1. **PML late growth.** Stage 1 saw it with copper in the absorber; r1's probes saw none without. Mitigation: P3-A and P3-C's runs to 3 × the stop time, the growth detector, the MUR fallback.
+1. **PML late growth.** Stage 1 saw it with copper in the absorber; r1's probes saw none without. Mitigation: P3-A and P3-C's runs to 3 × the stop time, the growth detector, and a ruling on any PML failure: MUR at λ/2 rose 21 dB in P3-C and is no fallback (A-36).
 2. **Runtime at 868/915 MHz.** A high-Q antenna rings long, and solid copper sets a small timestep. Mitigation: T_max scaled by f0 with its flag, cost before every run, P3-C's sheet-copper check.
 3. **Deltas inside the noise read as design guidance.** Mitigation: P3-D's measured floor and "not resolved".
 4. **A silent v1 regression.** Mitigation: the golden pins land first.
