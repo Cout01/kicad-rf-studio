@@ -96,8 +96,8 @@ def test_load_refuses_an_antenna_ref_that_is_no_longer_an_antenna(tmp_path):  # 
 
 
 BAND = (2.4e9, 2.4835e9)
-D = 0.3  # make_fixtures.D_MOVE: one fine cell of the pi board at P3-C's n (Task 11 Step 1 re-sets both)
-EDITS: dict = {}  # P3-C's edits_2g4 for the 2.4 GHz boards (Task 11 Step 1 copies p3c.json's in)
+D = 0.3  # make_fixtures.D_MOVE: one fine cell of the pi board at P3-C's n, which stayed 2 (2026-11-01-p3-c.md)
+EDITS: dict = {"copper": "solid"}  # P3-C's edits_2g4 for the 2.4 GHz boards, from its p3c.json
 
 
 def built(tmp_path, name):
