@@ -93,7 +93,7 @@ msgstr ""
 
 #. W_AIR_BOX
 #, python-brace-format
-msgid "The antenna's air box is outside the tested setting: an air gap of {gap_mm} mm (λ/4 at f_lo is {quarter_mm} mm) to a {boundary} absorber. Only PML_8 at λ/4 or more has passed a gate (P3-A); a MUR twin's energy rose 16 dB at 0.53 λ, and gate P3-C tests the rest."
+msgid "The antenna's air box is outside the tested setting: an air gap of {gap_mm} mm to a {boundary} absorber, where gate P3-C tested {tested} with a gap of {fraction} at f_lo ({default_mm} mm) or more."
 msgstr ""
 
 #. E_LID_HEIGHT
@@ -349,7 +349,7 @@ msgstr ""
 
 #. I_ANTENNA_DEFAULTS
 #, python-brace-format
-msgid "Preset {preset} (provisional default), T_max {t_max_ns} ns (2·t0 + 60/f0), mesh n {mesh_n}, measured region {expand_h} substrate heights past the antenna and the chain, protected reach {reach_h} substrate heights, air gap {air_gap_mm} mm (λ/4 at f_lo) to a {boundary} absorber, far-field frequencies: {count}, on a {step_deg}° sphere."
+msgid "Preset {preset}, T_max {t_max_ns} ns (2·t0 + 60/f0), mesh n {mesh_n}, measured region {expand_h} substrate heights past the antenna and the chain, protected reach {reach_h} substrate heights, air gap {air_gap_mm} mm (λ/4 at f_lo) to a {boundary} absorber, far-field frequencies: {count}, on a {step_deg}° sphere."
 msgstr ""
 
 #. I_LID_ON
@@ -1163,7 +1163,7 @@ msgstr ""
 
 #. I_COMPARE_THRESHOLDS
 #, python-brace-format
-msgid "Resolved means larger than the significance threshold: {shift_pct} % of f0 for a frequency and {db} dB for an efficiency or a gain, both provisional until gate P3-D measures the model's noise floor and sets them at three times it."
+msgid "Resolved means larger than the significance threshold: {shift_pct} % of f0 for a frequency and {db} dB for an efficiency or a gain, set by gate P3-D at three times the model's measured noise floor and never below 0.3 % and 0.2 dB."
 msgstr ""
 
 #. E_INTERNAL

@@ -10,7 +10,8 @@ import shapely
 
 from kicad_rf_studio.core.kicad.stackup import Stackup
 from kicad_rf_studio.core.kicad.tracer import Chain, ChainPart, classify
-from kicad_rf_studio.core.project import antenna, copper_model, mesh_reach_h, region_expand_h, region_margin_scale
+from kicad_rf_studio.core.project import (ANTENNA_BOUNDARY, antenna, copper_model, mesh_reach_h, region_expand_h,
+                                          region_margin_scale)
 
 if TYPE_CHECKING:  # the types only: importing a submodule must not pull in the others
     from kicad_rf_studio.core.geometry.copper import Piece
@@ -68,7 +69,8 @@ def build_geometry(board: Board, project: dict) -> Geometry:
     A touch within its join pads (antenna.join), grown by 2·SIMPLIFY, is no short. W_STAIRCASED names the feed net,
     the chain's last, when the antenna's copper graphics are staircased (sections.staircased) and the sections have
     not named it. Every top-side shield on the board is a lid candidate, and W_LIDS_LEFT_OUT names those the one lid
-    leaves out. W_AIR_BOX comes last when the air box is not the tested one, PML_8 with a gap of λ/4 at f_lo or more.
+    leaves out. W_AIR_BOX comes last when the air box is not the one gate P3-C tested, ANTENNA_BOUNDARY past a gap of
+    λ/4 at f_lo (air_gap) or more.
     An antenna's sheet copper (Stage 3 design 5.3) is a stack whose copper layers have no thickness."""
     # imported here, so that importing a submodule still pulls in none of the others, nor core.mesh, built on them
     from kicad_rf_studio.core.geometry.copper import SIMPLIFY, connectivity, copper_pieces
@@ -121,9 +123,10 @@ def build_geometry(board: Board, project: dict) -> Geometry:
         if left:
             gate.append(("W_LIDS_LEFT_OUT", {"ref": lid.ref, "refs": ", ".join(left)}))
     if ant:
-        quarter, gap = air_gap(project["band"]["f_lo_hz"]), project["air_gap_mm"]
-        if project["boundary"] != "pml_8" or gap < quarter:  # only PML_8 at λ/4 has passed a gate (P3-A)
-            gate.append(("W_AIR_BOX", {"gap_mm": f"{gap:.1f}", "quarter_mm": f"{quarter:.1f}",
-                                       "boundary": project["boundary"]}))
+        default, gap = air_gap(project["band"]["f_lo_hz"]), project["air_gap_mm"]
+        if project["boundary"] != ANTENNA_BOUNDARY or gap < default:
+            gate.append(("W_AIR_BOX", {"gap_mm": f"{gap:.1f}", "boundary": project["boundary"],
+                                       "tested": ANTENNA_BOUNDARY, "fraction": "λ/4",  # air_gap's fraction of λ
+                                       "default_mm": f"{default:.1f}"}))
     return Geometry(region, zs, pieces, protected, rods, masks, secs, lid, notes + stairs + gate, width,
                     staircase_gap(board, chain.nets, pieces), ant)

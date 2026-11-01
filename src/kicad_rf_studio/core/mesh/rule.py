@@ -256,6 +256,10 @@ def _patterns(edges: Iterable[Edge], d: float, prefer: Collection[Edge] = (), fo
                     j += 1
                 cut = [(side * u, side) in prefer for u in us[k:j]]
                 faces = h >= THIN * d and facing(opp, us[k])
+                # ponytail: a narrow pad in line with a wider feed (an inverted-F's 0.5 mm feed pad on its 0.6 mm
+                # stub) shares one cell with the feed's edge 48 µm away, so the stub reads Z0 4-5 % high at mesh n 3
+                # and 4 (gate P3-C, ruling 2: at most 0.06 % on f_res); E→W for sections under λg(f2)/20, or
+                # exempting the non-cut edge from the lint, if users meet it
                 if j < len(us) and near(opp, us[j - 1], us[j]) and joins(top, us[j - 1], us[j]) or j > k + 1 and (
                         bisect_left(opp, us[k] - ALONE * d) < bisect_right(opp, us[k] + ALONE * d)
                         or any(cut) and (not cut[0] or faces)):

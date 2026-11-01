@@ -49,7 +49,7 @@ def test_part_ports_record_no_far_field_and_mur_adds_no_pml(tmp_path):  # design
     pj = antenna_project(tmp_path / "mur")
     save_project(pj, {**load_project(pj), "boundary": "mur"})
     model, _, _ = model_of(pj)
-    # provisional: MUR is the untested fallback (W_AIR_BOX), which plan 4's P3-C tests and may re-pin
+    # gate P3-C kept PML_8 at λ/4 (docs/validation/2026-11-01-p3-c.md): MUR stays outside its setting (W_AIR_BOX)
     assert "boundary" not in model.spec and [len(model.spec["mesh"][a]) for a in "xyz"] == [119, 121, 55]
 
 

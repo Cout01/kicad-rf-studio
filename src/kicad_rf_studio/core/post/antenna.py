@@ -59,7 +59,9 @@ def dip_resonance(f: np.ndarray, s11: np.ndarray) -> float | None:
     """The refined resonance (resonance) of `s11` on `f` when its lowest |S11| marks a dip: at or below the −6 dB
     marker (LEVELS_DB) at a point inside the grid; else None, as the argmin of a shallow minimum, or one at the grid's
     edge, moves with the model's noise (Stage 3 plan 3)."""
-    # ponytail: a depth screen; a broad -7 dB minimum still passes it, and P3-D's noise floor decides
+    # ponytail: P3-D (docs/validation/2026-11-01-p3-d.md): the repeat and the whole shift move a dip's depth by under
+    # 3e-6 dB, the antenna moved by ±0.3 mm by 1.25 dB (its position, not noise); every P3-D dip lay 5.5 dB or more
+    # under −6 dB, P3-E's pour 0.99 dB; still a depth screen, which a broad −7 dB minimum passes
     k, f_res = resonance(f, s11)
     return f_res if 0 < k < len(f) - 1 and _db(s11[k]) <= LEVELS_DB[1] else None
 
@@ -166,7 +168,9 @@ def eta_what_if_lines(far: dict, p: np.ndarray) -> list[tuple[str, dict]]:
 
 
 # design 5.8: a delta is resolved above 0.3 % of f0 for a frequency and 0.2 dB for an efficiency or a gain
-# ponytail: the design's provisional defaults; plan 4's P3-D sets them at three times its measured noise floor
+# gate P3-D (docs/validation/2026-11-01-p3-d.md): three times the model's measured noise floor (the same verify twice,
+# the board shifted by one fine cell and the even parts of the antenna moved by ± one fine cell: 0.029 % and
+# 0.029 dB) lies under the design's 0.3 % and 0.2 dB, which therefore stand
 SHIFT_LIMIT, DB_LIMIT = 0.003, 0.2
 DELTA_COLUMNS = ("quantity", "marker", "f_hz", "base", "variant", "unit", "delta", "delta_unit", "threshold",
                  "resolved")
@@ -190,7 +194,8 @@ def deltas(project: dict, f: np.ndarray, base: tuple[np.ndarray, dict | None],
         crossings = bandwidth(f, s11, resonance(f, s11)[0], LEVELS_DB[0])
         return None if crossings is None or None in crossings else (crossings[1] - crossings[0]) / 1e6
 
-    # ponytail: the bandwidth's change is judged by the frequency threshold; P3-D may give it its own
+    # ponytail: the bandwidth's change is judged by the frequency threshold, as gate P3-D left it: three times its
+    # noise, 0.037 % of f0, lies under 0.3 % (docs/validation/2026-11-01-p3-d.md)
     limit, rows = SHIFT_LIMIT * project["f0_hz"] / 1e6, []
     for quantity, value in (("resonance", res_mhz), ("bandwidth_10db", bw_mhz)):
         b, v = value(base[0]), value(variant[0])

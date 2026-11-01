@@ -10,11 +10,11 @@ import pytest
 from matplotlib.figure import Figure
 
 from kicad_rf_studio.core.messages import KrsError, render
-from kicad_rf_studio.core.post.antenna import (ANTENNA_LIMITS, DELTA_COLUMNS, antenna_csv, antenna_png, bandwidth,
-                                                compare_png, compare_s11, delta_lines, deltas, deltas_csv,
-                                                dip_resonance, draw_antenna, draw_compare, eta_what_if_lines,
-                                                far_field_lines, far_field_of, farfield_csv, resonance, s11_lines,
-                                                shown_zin, zin)
+from kicad_rf_studio.core.post.antenna import (ANTENNA_LIMITS, DB_LIMIT, DELTA_COLUMNS, SHIFT_LIMIT, antenna_csv,
+                                                antenna_png, bandwidth, compare_png, compare_s11, delta_lines, deltas,
+                                                deltas_csv, dip_resonance, draw_antenna, draw_compare,
+                                                eta_what_if_lines, far_field_lines, far_field_of, farfield_csv,
+                                                resonance, s11_lines, shown_zin, zin)
 from kicad_rf_studio.core.post.waves import band_grid
 from test_project import antenna_dict
 
@@ -193,6 +193,18 @@ def test_the_delta_lines_and_csv():  # design 5.8
         "I_RESONANCE_NOT_COMPARED")
     table = list(csv.reader(io.StringIO(deltas_csv(rows).decode())))
     assert table[0] == list(DELTA_COLUMNS) and len(table) == 7 and table[1][-1] == "True"
+
+
+def test_the_significance_thresholds_are_gate_p3_ds():  # design 5.8, 5.11; docs/validation/2026-11-01-p3-d.md
+    d = antenna_dict()
+    f = band_grid(d)
+    code, params = delta_lines(d, deltas(d, f, *pair(f)))[-1]
+    assert (SHIFT_LIMIT, DB_LIMIT) == (0.003, 0.2)  # 3 × the noise floor lies under the design's, which stand
+    assert params == {"shift_pct": f"{100 * SHIFT_LIMIT:g}", "db": f"{DB_LIMIT:g}"}
+    assert render(code, **params) == (
+        "Resolved means larger than the significance threshold: 0.3 % of f0 for a frequency and 0.2 dB for an "
+        "efficiency or a gain, set by gate P3-D at three times the model's measured noise floor and never below 0.3 % "
+        "and 0.2 dB.")
 
 
 def test_the_compare_png_overlays_both_with_the_label_and_the_limits():  # design 5.8; anti-goal 1

@@ -38,6 +38,7 @@ def test_new_antenna_writes_schema_2(tmp_path, capsys):  # design 5.1
                  render("I_ANTENNA_DEFAULTS", preset="normal", t_max_ns="30", mesh_n=2, expand_h="6", reach_h="6",
                         air_gap_mm="31.2", boundary="pml_8", count=11, step_deg=5)):
         assert line in out
+    assert "Preset normal, T_max 30 ns (2·t0 + 60/f0), mesh n 2," in out  # P3-C kept every default: none provisional
     assert "no net and is simulated as floating copper" not in out  # the antenna's copper took RF
 
 

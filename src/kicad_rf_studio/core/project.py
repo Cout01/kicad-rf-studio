@@ -34,7 +34,9 @@ FAR_FIELD_STEP = 5  # the far field's full sphere is sampled every 5° (Stage 3 
 # an antenna's copper model (Stage 3 design 5.3): Stage 1 5.3's solid copper, or every copper layer a sheet, for the
 # whole model
 COPPER_MODELS = ("solid", "sheet")
-ANTENNA_COPPER = "solid"  # `new`'s; gate P3-C decides whether all-sheet replaces it
+ANTENNA_COPPER = "solid"  # `new`'s, which gate P3-C kept over sheet (docs/validation/2026-11-01-p3-c.md)
+# `new`'s absorber past an air gap of λ/4 at f_lo (air_gap), the setting gate P3-C tested and kept (the same record)
+ANTENNA_BOUNDARY = "pml_8"
 EXPAND_H = 3.0  # substrate heights the ROI grows by past the chain (spec 5.1)
 MARGIN_SCALE = 1.0  # the factor on the walls' margin past the ROI, WALL_MM + WALL_CELLS·coarse (D-12)
 MESH_N = {"draft": 2, "normal": 2, "strict": 3}  # the mesh rule's n by preset (spec 5.4, plan 2 Decisions)
@@ -134,15 +136,15 @@ def make_antenna_project(board_path: str, board_sha256: str, f_lo_hz: float, f_h
     """project.json of an antenna (schema 2, Stage 3 design 5.1) as `new --antenna` writes it: make_project's dict but
     harmonics and band_factor, with schema SCHEMA_ANTENNA, f0_hz the band's centre, `t_max_s`, region {"expand_h":
     REACH_H} (the measured region reaches as far as the protected set) and lid true (every shield gets its lid, 5.3);
-    then kind, band, antenna {"ref", "join"}, `air_gap_mm`, boundary "pml_8", far_field {"f_hz": f0 then 10
-    frequencies evenly from f_lo to f_hi, "step_deg": FAR_FIELD_STEP} and copper ANTENNA_COPPER."""
+    then kind, band, antenna {"ref", "join"}, `air_gap_mm`, boundary ANTENNA_BOUNDARY, far_field {"f_hz": f0 then
+    10 frequencies evenly from f_lo to f_hi, "step_deg": FAR_FIELD_STEP} and copper ANTENNA_COPPER."""
     f0 = (f_lo_hz + f_hi_hz) / 2
     data = make_project(board_path, board_sha256, f0, stackup, classes, chain, others, ports, preset=preset,
                         lid_height_mm=lid_height_mm)
     del data["harmonics"], data["band_factor"]
     data.update(schema=SCHEMA_ANTENNA, t_max_s=t_max_s, region={"expand_h": REACH_H}, lid=True)  # in their places
     data.update(kind="antenna", band={"f_lo_hz": f_lo_hz, "f_hi_hz": f_hi_hz}, antenna={"ref": ref, "join": join},
-                air_gap_mm=air_gap_mm, boundary="pml_8",
+                air_gap_mm=air_gap_mm, boundary=ANTENNA_BOUNDARY,
                 far_field={"f_hz": [f0, *(f_lo_hz + (f_hi_hz - f_lo_hz) * k / 9 for k in range(10))],
                            "step_deg": FAR_FIELD_STEP}, copper=ANTENNA_COPPER)  # appended, in this order
     return data

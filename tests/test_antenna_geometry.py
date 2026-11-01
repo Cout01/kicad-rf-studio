@@ -83,7 +83,8 @@ def test_every_shield_is_a_lid_candidate_and_one_gets_it(tmp_path):  # design 5.
 def test_an_air_box_outside_the_tested_setting_is_warned(tmp_path):  # design 5.2; P3-A's MUR twin; RF 5
     pj = antenna_project(tmp_path)
     save_project(pj, {**load_project(pj), "boundary": "mur", "air_gap_mm": 20.0})
-    assert ("W_AIR_BOX", {"gap_mm": "20.0", "quarter_mm": "31.2", "boundary": "mur"}) in pipeline.load(pj)[3]
+    assert ("W_AIR_BOX", {"gap_mm": "20.0", "boundary": "mur", "tested": "pml_8", "fraction": "λ/4",
+                          "default_mm": "31.2"}) in pipeline.load(pj)[3]  # the setting gate P3-C tested and kept
 
 
 def test_load_refuses_an_antenna_ref_that_is_no_longer_an_antenna(tmp_path):  # final review G3
