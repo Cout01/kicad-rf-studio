@@ -1,6 +1,6 @@
 # kicad-rf-studio — Stage 3 design: PCB antenna placement
 
-Status: written on 2026-10-29 by the controller, right after the pt-BR translation (main at `dcad54e`). The owner is unavailable and asked not to be stopped for questions, so every decision below that the Stage 1 spec, the Stage 2 design and the pt-BR design did not already make is a controller recommendation, owner unavailable. The research behind it is in `.superpowers/sdd/stage3-research/` (git-ignored): r1 the physics, with two dipole probes run on this PC; r2 the user's workflow and the KiCad side; r3 the engine; r4 the references and gates. An independent builder read it before the commit; its three questions are settled in §5.1 (how one project gets both a retune and a far field) and §5.3 (what takes the ROI's place, the rest of the board's parts, and the copper model that sets the runtime).
+Status: written on 2026-10-29 by the controller, right after the pt-BR translation (main at `dcad54e`). The owner is unavailable and asked not to be stopped for questions, so every decision below that the Stage 1 spec, the Stage 2 design and the pt-BR design did not already make is a controller recommendation, owner unavailable. The research behind it is in `.superpowers/sdd/stage3-research/` (git-ignored): r1 the physics, with two dipole probes run on this PC; r2 the user's workflow and the KiCad side; r3 the engine; r4 the references and gates. An independent builder read it before the commit; its three questions are settled in §5.1 (how one project gets both a retune and a far field) and §5.3 (what takes the ROI's place, the rest of the board's parts, and the copper model that sets the runtime). Amended on 2026-11-01 by Stage 3's plan 4 with the gates' results (P3-B to P3-E, `docs/validation/2026-10-31-p3-b.md` and `2026-11-01-p3-{c,d,e}.md`).
 
 References: "Stage 1 §x" names a section of the Stage 1 spec (`docs/superpowers/specs/2026-10-16-stage1-validated-engine-design.md`), and so does every § in a list or heading that names that spec; a bare § names a section of this design.
 
@@ -10,7 +10,7 @@ The Stage 1 spec's stage table names Stage 3: "PCB antenna placement, with relat
 
 The results are relative because there is no hardware (Stage 1 §1.1: every reference is numerical), and because the absolute numbers depend on things a board model does not hold: the enclosure, a hand, the battery, the cables. TI's AN043 measured a 5–10 MHz resonance shift from the coax cable's position alone. A variant run against a baseline with identical settings cancels most of the error the two share. So Stage 3's main output is the comparison: this placement against that one, this clearance against that one, and which differences are larger than the model's own noise.
 
-Success: on a board with a printed antenna, the user gets the antenna's S11 at the radio pin against the band, its resonance and bandwidth, its radiation and total efficiency, its peak gain and three pattern cuts, a matching retune with E12/E24 snapping, and a comparison with a baseline that says which differences are resolved. Runtime is measured and recorded, not promised: with Stage 1 §5.3's solid copper, r1 estimates 9–18 min per job at 2.4 GHz and 45–90 min at 868/915 MHz on this PC, before a worst-case T_max; all-sheet copper, if gate P3-C allows it (§5.3), cuts that 5–6 times. `cost` shows the estimate before every run, as in v1.
+Success: on a board with a printed antenna, the user gets the antenna's S11 at the radio pin against the band, its resonance and bandwidth, its radiation and total efficiency, its peak gain and three pattern cuts, a matching retune with E12/E24 snapping, and a comparison with a baseline that says which differences are resolved. Runtime is measured and recorded, not promised: with Stage 1 §5.3's solid copper, r1 estimates 9–18 min per job at 2.4 GHz (measured: one 2.4 GHz job 25 min, `docs/validation/2026-10-30-antenna-first-run.md`) and 45–90 min at 868/915 MHz on this PC, before a worst-case T_max; all-sheet copper would cut the timestep about 1.9 times, but gate P3-C did not offer it (§5.3). `cost` shows the estimate before every run, as in v1.
 
 ## 2. What is already decided (binding)
 
@@ -72,10 +72,10 @@ Anti-goals:
 
 - **The whole board.** An antenna's ground plane is half the antenna (TI's AN043: the ground's size took the bandwidth from about 250 to about 100 MHz). So an antenna project simulates the whole board outline, every copper layer, the substrate, the mask and the lid, in an air box. The selected-region rule stays for the matching chain.
 - **PML_8 on all six faces**, as Stage 1 §5.1 already reserved for antennas. r1's probes ran it stable to 30 and 40 ns with nothing in the absorber.
-- **The air gap** from the board to the PML's inner edge is λ/4 at f_lo by default (openEMS's documentation: "Radiating structures must be kept at a distance of λ/4 from PML"). The 8 PML lines are added outside the gap at the outer cell size. The gap is a project field.
+- **The air gap** from the board to the PML's inner edge is λ/4 at f_lo by default (gate P3-C, A-36) (openEMS's documentation: "Radiating structures must be kept at a distance of λ/4 from PML"). The 8 PML lines are added outside the gap at the outer cell size. The gap is a project field.
 - **A setup gate**, E_METAL_IN_PML, refuses a model with metal or dielectric within the PML plus 2 cells.
 - **The far-field box** sits one line inside the PML on every face and encloses the whole board. Its centre for the transform is the board's centre.
-- **MUR on all six faces** stays a project option, the fallback if a gate finds PML_8 unstable on a real board (§5.11).
+- **MUR on all six faces** stays a project option: gate P3-C found PML_8 stable and measured MUR at λ/2 rising 21 dB within 90 ns, so it is no fallback (A-36).
 
 ### 5.3 Mesh and copper
 
@@ -89,7 +89,7 @@ Anti-goals:
 
   Resistors, and capacitors resonating above 3·f2, go in the grid as in v1. Every shield frame on the board gets its lid at the project's lid height. The stated limits (§5.6) say these parts are approximations.
 - **Placement repeatability.** The antenna group's mesh lines are placed in the antenna footprint's own frame and move with it, so a variant that moves the antenna keeps the antenna's own discretization. Gate P3-D measures the noise that remains.
-- **The copper model is a whole-model choice.** openEMS runs one timestep for the whole model, and the mesh rule puts both faces of every copper layer across the whole domain, so a single solid feed line keeps the 35 µm cell, and its small timestep, everywhere. Stage 1 §5.3's solid copper is the default. Gate P3-C compares it with all-sheet copper (every copper layer a sheet) on both fixtures: if all-sheet passes, it becomes the antenna default (r1: 5–6 times cheaper); if it fails, it is not offered.
+- **The copper model is a whole-model choice.** openEMS runs one timestep for the whole model, and the mesh rule puts both faces of every copper layer across the whole domain, so a single solid feed line keeps the 35 µm cell, and its small timestep, everywhere. Stage 1 §5.3's solid copper is the default. Gate P3-C compares it with all-sheet copper (every copper layer a sheet) on both fixtures: if all-sheet passes, it becomes the antenna default (r1: 5–6 times cheaper); if it fails, it is not offered. Gate P3-C kept solid copper (A-35).
 - **Diagonal antenna copper** (KiCad's `Texas_SWRA416_868MHz_915MHz` has 18 diagonal segments) keeps v1's W_STAIRCASED warning; it is never refused.
 - **fit2d** runs on the feed network's sections only: a radiator has no reference under it.
 
@@ -100,7 +100,7 @@ Anti-goals:
   - T_max defaults to 2·t0 + 60/f0: about 30 ns at 2.45 GHz, about 75 ns at 915 MHz;
   - the flat window is max(5 ns, 20/f0).
 
-  Gate P3-C revisits both from the measured stop times. v1's constants do not change.
+  Gate P3-C kept both (A-37). v1's constants do not change.
 - **The growth detector** (Stage 1 §6.3) is the PML's guard: a run whose energy grows is classified as v1 classifies it.
 
 ### 5.5 The far field
@@ -130,11 +130,11 @@ Anti-goals:
 
 - **`kicad-rf-studio compare BASE VARIANT`** overlays the two projects' S11 and, where both have one, their efficiencies and cuts. It writes a deltas table: the resonance shift in MHz and %, the −10 dB bandwidth's change, Δη_tot in dB at f0 and at the band's edges, and the change in peak gain.
 - **Same settings or nothing.** `compare` refuses when the two projects' settings fingerprints differ (preset, mesh, band, air gap, boundary, stackup, copper model, app and openEMS versions).
-- **Resolved or not.** Each delta is marked resolved when it exceeds the significance threshold, and "not resolved" otherwise. The thresholds default to 0.3 % of f0 for a resonance shift and 0.2 dB for an efficiency or gain change, until gate P3-D measures the noise floor and sets them at three times it.
+- **Resolved or not.** Each delta is marked resolved when it exceeds the significance threshold, and "not resolved" otherwise. The thresholds default to 0.3 % of f0 for a resonance shift and 0.2 dB for an efficiency or gain change, kept by gate P3-D, whose measured noise floor lies under a third of them (A-39).
 
 ### 5.9 Cost
 
-Stage 1 §6.4's estimate stays: jobs × cells × T_max/dt over the calibrated speed, with T_max the worst case. For an antenna, the cost lines split the cells into board, air and PML. The first plan measures how much a PML cell costs against an ordinary one and whether the chain-sized calibration reads a small single-job model right (r1 measured 49–76 MC/s for 0.3 M-cell models on 8 threads); it adds a correction or a calibration point only if the measurement needs one.
+Stage 1 §6.4's estimate stays: jobs × cells × T_max/dt over the calibrated speed, with T_max the worst case. For an antenna, the cost lines split the cells into board, air and PML. Gates P3-B to P3-E's runs refitted the small-model speed by pool level (0.559 at one job, 0.718 at four) and the PML weight (8.92) (A-38).
 
 ### 5.10 GUI and button
 
@@ -209,9 +209,9 @@ Each item has the default this design applies:
 - **Band presets.** Default: 868 (863–870), 915 (902–928, which covers Brazil's 902–907.5 and 915–928 MHz) and 2.4 GHz (2400–2483.5), plus custom.
 - **The bandwidth threshold.** Default: −10 dB, with a −6 dB marker.
 - **Absolute numbers.** Default: shown, always with the relative label and the stated limits; deltas marked resolved or not.
-- **The boundary.** Default: PML_8 with a λ/4 gap at f_lo; MUR at λ/2 if a gate finds PML_8 unstable.
-- **Sheet copper for antennas.** Default: solid, as Stage 1 §5.3; all-sheet copper only if P3-C allows it, and then for the whole model.
-- **Runtime.** Default: measured and recorded, shown by `cost` before every run; no runtime is promised before the gates measure it.
+- **The boundary.** Default: PML_8 with a λ/4 gap at f_lo; MUR on all six faces stays a project option: gate P3-C found PML_8 stable and measured MUR at λ/2 rising 21 dB within 90 ns, so it is no fallback (A-36).
+- **Sheet copper for antennas.** Default: solid, as Stage 1 §5.3; all-sheet copper, for the whole model, is not offered: gate P3-C kept solid copper (A-35).
+- **Runtime.** Default: measured and recorded, shown by `cost` before every run; no runtime is promised (measured: one 2.4 GHz job 25 min, `docs/validation/2026-10-30-antenna-first-run.md`). Gates P3-B to P3-E's runs refitted the small-model speed by pool level (0.559 at one job, 0.718 at four) and the PML weight (8.92) (A-38).
 - **Matching placeholders.** Default: every part on an antenna's chain is a part port, a 0R or DNP placeholder included.
 - **Parts off the chain.** Default: never ports; decoupling capacitors past their self-resonance bridged as copper; inductors, beads and unparsed values left open.
 - **Matching in the far field.** Default: efficiency and pattern from the jobs that hold the network (M = 0, or verify); an instant far-field retune by superposition is deferred.
