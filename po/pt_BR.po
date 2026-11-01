@@ -559,8 +559,8 @@ msgstr "Células: {nx} × {ny} × {nz} = {mcells} M (malha n {n}, célula d {d_m
 
 #. I_COST_SPLIT
 #, python-brace-format
-msgid "Cells: {board} M in the board, {air} M of air and {pml} M of PML; the time counts a PML cell as {weight} cells and runs this model at {ratio} × the calibrated speed for that many jobs at once (gates P3-A and P3-C)."
-msgstr "Células: {board} M na placa, {air} M de ar e {pml} M de PML; o tempo conta uma célula de PML como {weight} células e executa este modelo a {ratio} × a velocidade calibrada para esse número de tarefas simultâneas (checagens prévias P3-A e P3-C)."
+msgid "Cells: {board} M in the board, {air} M of air and {pml} M of PML; the time counts a PML cell as {weight} cells and runs this model at {ratio} × the calibrated speed for that many jobs at once (gate P3-A's method, refitted by gates P3-B to P3-E)."
+msgstr "Células: {board} M na placa, {air} M de ar e {pml} M de PML; o tempo conta uma célula de PML como {weight} células e executa este modelo a {ratio} × a velocidade calibrada para esse número de tarefas simultâneas (método da checagem prévia P3-A, reajustado pelas checagens prévias P3-B a P3-E)."
 
 #. I_COST_SMALLEST
 #, python-brace-format
@@ -2062,4 +2062,7 @@ msgstr "\"solid\" ou \"sheet\""
 
 #~ msgid "The antenna's air box is outside the tested setting: an air gap of {gap_mm} mm to a {boundary} absorber, where gate P3-C tested {tested} with a gap of {fraction} at f_lo ({default_mm} mm) or more."
 #~ msgstr "A caixa de ar da antena está fora da configuração testada: espaçamento de ar de {gap_mm} mm até um absorvedor {boundary}, enquanto a checagem prévia P3-C testou {tested} com um espaçamento de {fraction} em f_lo ({default_mm} mm) ou mais."
+
+#~ msgid "Cells: {board} M in the board, {air} M of air and {pml} M of PML; the time counts a PML cell as {weight} cells and runs this model at {ratio} × the calibrated speed for that many jobs at once (gates P3-A and P3-C)."
+#~ msgstr "Células: {board} M na placa, {air} M de ar e {pml} M de PML; o tempo conta uma célula de PML como {weight} células e executa este modelo a {ratio} × a velocidade calibrada para esse número de tarefas simultâneas (checagens prévias P3-A e P3-C)."
 

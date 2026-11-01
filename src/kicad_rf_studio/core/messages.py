@@ -124,7 +124,7 @@ CATALOG: dict[str, str] = {
     "E_PORT_OPEN": "Port {name}: its {end} end does not lie in its own pad's copper on the mesh. Check the port in project.json and look at it with `preview`.",
     "E_PORT_SHORT": "Port {name}: its signal and reference are one piece of copper on the mesh, a short. Check the copper between them in KiCad and with `preview`.",
     "I_COST_CELLS": "Cells: {nx} × {ny} × {nz} = {mcells} M (mesh n {n}, cell d {d_mm} mm).",
-    "I_COST_SPLIT": "Cells: {board} M in the board, {air} M of air and {pml} M of PML; the time counts a PML cell as {weight} cells and runs this model at {ratio} × the calibrated speed for that many jobs at once (gates P3-A and P3-C).",
+    "I_COST_SPLIT": "Cells: {board} M in the board, {air} M of air and {pml} M of PML; the time counts a PML cell as {weight} cells and runs this model at {ratio} × the calibrated speed for that many jobs at once (gate P3-A's method, refitted by gates P3-B to P3-E).",
     "I_COST_SMALLEST": "Smallest cell: {size_um} µm across {axis}, at {axis} = {at_mm} mm.",
     "I_COST_DT": "dt {dt} s (floor {floor} × {ref} s), set by the {axis} edge at ({x}, {y}, {z}) mm.",
     "I_COST_TIME": "Worst case: {time} for {runs} runs to T_max {t_max_ns} ns, {pool} at once with {threads} threads each.",

@@ -4,6 +4,7 @@ import pytest
 
 from kicad_rf_studio import runs
 from kicad_rf_studio.core.mesh import Mesh
+from kicad_rf_studio.core.messages import english, render
 from kicad_rf_studio.core.model.spec import cell_split, spec_hash
 from kicad_rf_studio.core.project import GATES
 from kicad_rf_studio.pipeline import Model, cost_notes, driver, duration, port_gates, prepare, smallest_cell
@@ -36,7 +37,7 @@ def test_cost_notes_follow_the_cost_model():  # spec 6.4
     assert (duration(5307.2), duration(840), duration(45.4)) == ("1 h 28 min", "14 min", "45 s")
 
 
-def test_an_antennas_cost_splits_its_cells_and_weights_the_pml():  # design 5.9; P3-A's decisions
+def test_an_antennas_cost_splits_its_cells_and_weights_the_pml(pt_br):  # design 5.9; P3-A's decisions
     lines = np.arange(30.0)  # 30 lines per axis: 27000 nodes, 12³ inside the PML's 9 lines a face
     spec = {"boundary": "pml_8", "mesh": {a: lines.tolist() for a in "xyz"}, "ports": [{"part": False}],
             "materials": [{"solids": [{"x": [10.0, 19.0, 19.0, 10.0], "y": [10.0, 10.0, 19.0, 19.0], "z": [12.0, 14.0]}]}]}
@@ -47,6 +48,10 @@ def test_an_antennas_cost_splits_its_cells_and_weights_the_pml():  # design 5.9;
     notes = dict(cost_notes(m, project, {"dt": 1e-12, "node": [0, 1, 2, 3]}, 4, 1, 100.0))
     assert notes["I_COST_SPLIT"] == {"board": "0.00", "air": "0.00", "pml": "0.03", "weight": f"{8.92:g}",
                                      "ratio": f"{0.559:g}"}
+    split = notes["I_COST_SPLIT"]  # final review G4: the refit's rows are gates P3-B to P3-E's, by P3-A's method
+    assert english("I_COST_SPLIT", **split).endswith("(gate P3-A's method, refitted by gates P3-B to P3-E).")
+    assert render("I_COST_SPLIT", **split).endswith(
+        "(método da checagem prévia P3-A, reajustado pelas checagens prévias P3-B a P3-E).")
     step = (1728 + 8.92 * 25272) / (100.0 * 0.559 * 1e6)  # s per 1 ps step
     assert (notes["I_COST_TIME"]["time"], notes["I_COST_PREDICTED"]["time"]) == (duration(1000 * step), duration(500 * step))
     v1 = {**project, "schema": 1}
