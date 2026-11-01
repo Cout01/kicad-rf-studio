@@ -45,11 +45,19 @@ def test_an_antennas_cost_splits_its_cells_and_weights_the_pml():  # design 5.9;
     project = {"schema": 2, "t_max_s": 1e-9, "gates": GATES, "mesh": {"n": 2},
                "results": {"model_hash": spec_hash(spec), "jobs": [{"verdict": "converged", "t_stop": 5e-10}]}}
     notes = dict(cost_notes(m, project, {"dt": 1e-12, "node": [0, 1, 2, 3]}, 4, 1, 100.0))
-    assert notes["I_COST_SPLIT"] == {"board": "0.00", "air": "0.00", "pml": "0.03", "weight": "6.38", "ratio": "0.384"}
-    step = (1728 + 6.38 * 25272) / (100.0 * 0.384 * 1e6)  # s per 1 ps step
+    assert notes["I_COST_SPLIT"] == {"board": "0.00", "air": "0.00", "pml": "0.03", "weight": f"{8.92:g}",
+                                     "ratio": f"{0.559:g}"}
+    step = (1728 + 8.92 * 25272) / (100.0 * 0.559 * 1e6)  # s per 1 ps step
     assert (notes["I_COST_TIME"]["time"], notes["I_COST_PREDICTED"]["time"]) == (duration(1000 * step), duration(500 * step))
     v1 = {**project, "schema": 1}
     assert "I_COST_SPLIT" not in dict(cost_notes(m, v1, {"dt": 1e-12, "node": [0, 1, 2, 3]}, 4, 1, 100.0))
+
+
+def test_the_small_speed_is_its_pool_levels():  # design 5.9; ruling 6, the cost refit
+    assert runs.small_speed(1) == runs.SMALL_SPEED[1] == 0.559
+    assert runs.small_speed(4) == runs.SMALL_SPEED[4] == 0.718
+    assert runs.small_speed(2) == runs.small_speed(3) == 0.559  # the nearest lower measured level
+    assert runs.small_speed(8) == 0.718
 
 
 def test_a_small_lone_job_takes_the_calibrations_own_one_job_speed(calibrated):  # design 5.9; P3-A's decisions
@@ -76,6 +84,17 @@ def test_port_gates(roots, notes):  # C-15
 
 
 # --- beyond the brief's tests: the branches and edge cases they leave open ------------------------------------------
+
+
+def test_an_antennas_cost_at_a_pool_of_4_takes_that_levels_small_speed():  # the cost refit; the test above's pool is 1
+    lines = np.arange(30.0)
+    spec = {"boundary": "pml_8", "mesh": {a: lines.tolist() for a in "xyz"}, "ports": [{"part": False}] * 4,
+            "materials": [{"solids": [{"x": [10.0, 19.0, 19.0, 10.0], "y": [10.0, 10.0, 19.0, 19.0], "z": [12.0, 14.0]}]}]}
+    m = Model(Mesh(lines, lines, lines, 1.0, 0.4, {}, {}), spec, [], 1.5e-12)
+    project = {"schema": 2, "t_max_s": 1e-6, "gates": GATES, "mesh": {"n": 2}}  # 10⁶ steps: 0.559 reads 15 min longer
+    notes = dict(cost_notes(m, project, {"dt": 1e-12, "node": [0, 1, 2, 3]}, 4, 4, 100.0))
+    assert notes["I_COST_SPLIT"]["ratio"] == f"{0.718:g}"
+    assert notes["I_COST_TIME"]["time"] == duration(1e6 * (1728 + 8.92 * 25272) / (100.0 * 0.718 * 1e6))
 
 
 def test_the_driver_names_a_cell_under_d_over_3_else_the_runs_else_the_cell_count():  # C-36

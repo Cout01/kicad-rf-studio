@@ -229,12 +229,12 @@ def fitted(a: dict, b: dict) -> dict:
 
 def predicted_s(spec: dict, dt: float, t: float, pool: int, jobs: int, mcs: float) -> float:
     """The machine time in s that cost predicts for `jobs` jobs of the antenna model `spec` at the timestep `dt` (s) to
-    the simulated time `t` (s), `pool` at once at the calibration's `mcs` MC/s a job, with gate P3-A's corrections:
-    each PML node (cell_split) counts as runs.PML_WEIGHT cells, at runs.SMALL_SPEED × `mcs`."""
+    the simulated time `t` (s), `pool` at once at the calibration's `mcs` MC/s a job, with the cost refit's corrections:
+    each PML node (cell_split) counts as runs.PML_WEIGHT cells, at runs.small_speed(`pool`) × `mcs`."""
     cells = math.prod(len(spec["mesh"][a]) for a in "xyz")
     # mirrors the time() in pipeline.cost_notes for an antenna
     return p0.predicted_s(jobs, pool, cells + (runs.PML_WEIGHT - 1) * cell_split(spec)[2], dt, t,
-                          mcs * runs.SMALL_SPEED)
+                          mcs * runs.small_speed(pool))
 
 
 def calibration() -> dict:

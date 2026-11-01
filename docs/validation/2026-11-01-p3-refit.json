@@ -1,0 +1,222 @@
+{
+  "rows": [
+    {
+      "step": "p3-d-ifa2g4_pi-rep-verify",
+      "pool": 1,
+      "cells": 1370655,
+      "f_pml": 0.4344857020913359,
+      "node_mcs": 76.46987751899766,
+      "cal_mcs": 601.5430887929908
+    },
+    {
+      "step": "p3-d-ifa2g4_pi-run",
+      "pool": 4,
+      "cells": 1370655,
+      "f_pml": 0.4344857020913359,
+      "node_mcs": 35.362564743361844,
+      "cal_mcs": 218.44412384817858
+    },
+    {
+      "step": "p3-d-ifa2g4_pi-verify",
+      "pool": 1,
+      "cells": 1370655,
+      "f_pml": 0.4344857020913359,
+      "node_mcs": 76.21945217470397,
+      "cal_mcs": 601.5430887929908
+    },
+    {
+      "step": "p3-d-ifa2g4_pi_dxm-run",
+      "pool": 4,
+      "cells": 1350349,
+      "f_pml": 0.4357940058458961,
+      "node_mcs": 35.20405475541005,
+      "cal_mcs": 218.44412384817858
+    },
+    {
+      "step": "p3-d-ifa2g4_pi_dxm-verify",
+      "pool": 1,
+      "cells": 1350349,
+      "f_pml": 0.4357940058458961,
+      "node_mcs": 75.86366852101558,
+      "cal_mcs": 601.5430887929908
+    },
+    {
+      "step": "p3-d-ifa2g4_pi_dxp-run",
+      "pool": 4,
+      "cells": 1380808,
+      "f_pml": 0.4338459800348781,
+      "node_mcs": 35.368108643310826,
+      "cal_mcs": 218.44412384817858
+    },
+    {
+      "step": "p3-d-ifa2g4_pi_dxp-verify",
+      "pool": 1,
+      "cells": 1380808,
+      "f_pml": 0.4338459800348781,
+      "node_mcs": 76.00156216836471,
+      "cal_mcs": 601.5430887929908
+    },
+    {
+      "step": "p3-d-ifa2g4_pi_pour-run",
+      "pool": 4,
+      "cells": 1360502,
+      "f_pml": 0.43513497223818853,
+      "node_mcs": 35.03886717497764,
+      "cal_mcs": 218.44412384817858
+    },
+    {
+      "step": "p3-d-ifa2g4_pi_pour-verify",
+      "pool": 1,
+      "cells": 1360502,
+      "f_pml": 0.43513497223818853,
+      "node_mcs": 76.14396114098734,
+      "cal_mcs": 601.5430887929908
+    },
+    {
+      "step": "p3-d-ifa2g4_pi_shift-run",
+      "pool": 4,
+      "cells": 1370655,
+      "f_pml": 0.4344857020913359,
+      "node_mcs": 35.59349484439369,
+      "cal_mcs": 218.44412384817858
+    },
+    {
+      "step": "p3-d-ifa2g4_pi_shift-verify",
+      "pool": 1,
+      "cells": 1370655,
+      "f_pml": 0.4344857020913359,
+      "node_mcs": 75.88351226930114,
+      "cal_mcs": 601.5430887929908
+    },
+    {
+      "step": "p3-ifa2g4-sheet-n2-run",
+      "pool": 1,
+      "cells": 1276155,
+      "f_pml": 0.44358404739236224,
+      "node_mcs": 74.57163082543464,
+      "cal_mcs": 601.5430887929908
+    },
+    {
+      "step": "p3-ifa2g4-solid-gap2-run",
+      "pool": 1,
+      "cells": 1842600,
+      "f_pml": 0.3946597199609248,
+      "node_mcs": 79.97963692235734,
+      "cal_mcs": 601.5430887929908
+    },
+    {
+      "step": "p3-ifa2g4-solid-mur-run",
+      "pool": 1,
+      "cells": 1185096,
+      "f_pml": 0.0,
+      "node_mcs": 340.57652899854673,
+      "cal_mcs": 601.5430887929908
+    },
+    {
+      "step": "p3-ifa2g4-solid-n2-run",
+      "pool": 1,
+      "cells": 1313145,
+      "f_pml": 0.438052157225592,
+      "node_mcs": 76.23787773705594,
+      "cal_mcs": 601.5430887929908
+    },
+    {
+      "step": "p3-ifa2g4-solid-n3-run",
+      "pool": 1,
+      "cells": 2083128,
+      "f_pml": 0.3986543313708999,
+      "node_mcs": 80.05032809576184,
+      "cal_mcs": 601.5430887929908
+    },
+    {
+      "step": "p3-ifa2g4-solid-n4-run",
+      "pool": 1,
+      "cells": 3401706,
+      "f_pml": 0.359581339480837,
+      "node_mcs": 84.53761365774061,
+      "cal_mcs": 601.5430887929908
+    },
+    {
+      "step": "p3-ifa2g4-solid-strict-run",
+      "pool": 1,
+      "cells": 1313145,
+      "f_pml": 0.438052157225592,
+      "node_mcs": 75.88879078053826,
+      "cal_mcs": 601.5430887929908
+    },
+    {
+      "step": "p3-meander915-sheet-n2-run",
+      "pool": 1,
+      "cells": 2544696,
+      "f_pml": 0.3802521008403361,
+      "node_mcs": 81.76169807655859,
+      "cal_mcs": 601.5430887929908
+    },
+    {
+      "step": "p3-meander915-solid-gap2-run",
+      "pool": 1,
+      "cells": 3423420,
+      "f_pml": 0.3417372101582628,
+      "node_mcs": 86.2942517163533,
+      "cal_mcs": 601.5430887929908
+    },
+    {
+      "step": "p3-meander915-solid-n2-run",
+      "pool": 1,
+      "cells": 2610792,
+      "f_pml": 0.37546537602382724,
+      "node_mcs": 83.509277927766,
+      "cal_mcs": 601.5430887929908
+    },
+    {
+      "step": "p3-meander915-solid-n3-run",
+      "pool": 1,
+      "cells": 4059315,
+      "f_pml": 0.3434633675878812,
+      "node_mcs": 87.5468654827204,
+      "cal_mcs": 601.5430887929908
+    },
+    {
+      "step": "p3-meander915-solid-n4-run",
+      "pool": 1,
+      "cells": 6322204,
+      "f_pml": 0.3071602877730614,
+      "node_mcs": 94.10563481041459,
+      "cal_mcs": 601.5430887929908
+    },
+    {
+      "step": "p3-meander915-solid-strict-run",
+      "pool": 1,
+      "cells": 2610792,
+      "f_pml": 0.37546537602382724,
+      "node_mcs": 82.27042401580235,
+      "cal_mcs": 601.5430887929908
+    },
+    {
+      "step": "matching run, 2026-10-30",
+      "pool": 4,
+      "cells": null,
+      "f_pml": 0.434,
+      "node_mcs": 35.5,
+      "cal_mcs": 205.6
+    }
+  ],
+  "like": [
+    "p3-ifa2g4-solid-mur-run",
+    "p3-ifa2g4-solid-n2-run"
+  ],
+  "result": {
+    "small": {
+      "1": 0.559,
+      "4": 0.718
+    },
+    "w_fit": 8.915239278951315,
+    "w_line": 8.019629260008468,
+    "w": 8.915239278951315,
+    "moved": true
+  },
+  "before": {
+    "PML_WEIGHT": 6.38,
+    "SMALL_SPEED": 0.384
+  }
+}

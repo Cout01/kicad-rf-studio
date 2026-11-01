@@ -212,17 +212,19 @@ def cost_notes(model: Model, project: dict, setup: dict, threads: int, pool: int
     cells; an antenna's split of them into board, air and PML (cell_split, Stage 3 design 5.9); the smallest cell; dt
     against its floor, with the edge that sets it in KiCad's frame; the worst case, every run to T_max, in
     ceil(runs / pool) rounds; the time predicted from the longest stop time of the last run's jobs that kept S, when
-    that run was of this model; the RAM; the main cost (driver). An antenna's two times take gate P3-A's corrections:
-    each PML cell counts as runs.PML_WEIGHT cells, at runs.SMALL_SPEED × `per_job_mcs`; its RAM counts the cells."""
+    that run was of this model; the RAM; the main cost (driver). An antenna's two times take the cost refit's
+    corrections: each PML cell counts as runs.PML_WEIGHT cells, at runs.small_speed(`pool`) × `per_job_mcs`; its RAM
+    counts the cells."""
     mesh, ports, dt = model.mesh, model.spec["ports"], setup["dt"]
     nx, ny, nz = len(mesh.x), len(mesh.y), len(mesh.z)
     cells, n_runs = nx * ny * nz, len(ports)
     weighted, mcs, split = cells, per_job_mcs, []  # the cells a timestep costs, at mcs MC/s a job
     if antenna(project):
         board, air, pml = cell_split(model.spec)
-        weighted, mcs = cells + (runs.PML_WEIGHT - 1) * pml, per_job_mcs * runs.SMALL_SPEED
+        ratio = runs.small_speed(pool)
+        weighted, mcs = cells + (runs.PML_WEIGHT - 1) * pml, per_job_mcs * ratio
         split = [("I_COST_SPLIT", {"board": f"{board / 1e6:.2f}", "air": f"{air / 1e6:.2f}", "pml": f"{pml / 1e6:.2f}",
-                                   "weight": f"{runs.PML_WEIGHT:g}", "ratio": f"{runs.SMALL_SPEED:g}"})]
+                                   "weight": f"{runs.PML_WEIGHT:g}", "ratio": f"{ratio:g}"})]
 
     def time(t_stop: float) -> str:
         return duration(math.ceil(n_runs / pool) * weighted * (t_stop / dt) / (mcs * 1e6))
@@ -254,8 +256,8 @@ def prepare(model: Model, emit: Callable[[str, dict], None], run_dir: Path | Non
     (runs.calibrate), the pool no larger than the number of runs, so that the cost lines count only jobs that run at
     once, and the per-job MC/s at that level (runs.per_job_mcs, D-16). With `small` (an antenna's model, Stage 3
     design 5.9) and a pool of 1, the per-job MC/s is the calibration's own one-job speed at its threads ("single"),
-    when it holds one, else per_job_mcs at 1: gate P3-A measured runs.SMALL_SPEED against that speed, which no run
-    refreshes, while a v1 run at pool 1 refreshes levels["1"]. Calls `emit(code, params)` with check_openems()'s
+    when it holds one, else per_job_mcs at 1: the cost refit measured runs.SMALL_SPEED[1] against that speed, which no
+    run refreshes, while a v1 run at pool 1 refreshes levels["1"]. Calls `emit(code, params)` with check_openems()'s
     warnings, before any worker (C-31), and with W_RAM when one job needs more RAM than is free. Raises
     check_openems()'s refusals and what calibrate raises."""
     for code, params in runs.check_openems():

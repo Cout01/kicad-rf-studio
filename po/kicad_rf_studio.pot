@@ -557,7 +557,7 @@ msgstr ""
 
 #. I_COST_SPLIT
 #, python-brace-format
-msgid "Cells: {board} M in the board, {air} M of air and {pml} M of PML; the time counts a PML cell as {weight} cells and runs this model at {ratio} × the calibrated speed (gate P3-A)."
+msgid "Cells: {board} M in the board, {air} M of air and {pml} M of PML; the time counts a PML cell as {weight} cells and runs this model at {ratio} × the calibrated speed for that many jobs at once (gates P3-A and P3-C)."
 msgstr ""
 
 #. I_COST_SMALLEST

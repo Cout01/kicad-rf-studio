@@ -27,13 +27,13 @@ WINDOWS = sys.platform == "win32"  # tests patch it, so the Windows API calls be
 # metadata only, so no openEMS DLL loads; run with -I, which sees what a worker sees
 PROBE = "import importlib.metadata as m; print(m.version('openEMS'), m.version('CSXCAD'))"
 MB_PER_MCELL, MB_PER_WORKER = 170, 50  # ponytail: provisional (spec 6.4); P0-C measures RAM
-# gate P3-A (docs/validation/2026-10-29-p3-a.md §4): a PML cell costs 6.38 ordinary cells, and a small antenna model
-# runs at 0.384 times the calibration's own one-job speed at its threads. They compose as (N − N_PML + w·N_PML)/N over
-# the ratio, never w on every cell (Stage 3 design 5.9)
-# ponytail: one PC's gate (16 CPUs), one job alone; 0.384 at a pool above 1 is unmeasured, and a calibration that never
-# timed one job at its threads (12 CPUs at 4 × 3) falls back to aggregate/pool and over-predicts about 3 times; plan
-# 4's P3-C refits them
-PML_WEIGHT, SMALL_SPEED = 6.38, 0.384
+# the cost refit (docs/validation/2026-11-01-p3-refit.md) of gates P3-B to P3-E's runs, by gate P3-A's method
+# (docs/validation/2026-10-29-p3-a.md §4): a PML cell costs 8.92 ordinary cells (8.915 from a MUR run against its PML
+# twin), and a small antenna model with k jobs at once runs at SMALL_SPEED[k] times the calibration's per-job speed at
+# k (at 1, its own one-job speed at its threads). They compose as (N − N_PML + w·N_PML)/N over the ratio, never w on
+# every cell (Stage 3 design 5.9)
+# ponytail: unmeasured levels (2, 3) take the nearest lower measured one, which predicts longer
+PML_WEIGHT, SMALL_SPEED = 8.92, {1: 0.559, 4: 0.718}
 WORKER = ("-I", "-u", "-m", "kicad_rf_studio.worker")  # after sys.executable; -u: log.txt follows the run
 POLL_S = 1.0  # how often the pool looks at its jobs
 ABORT_WAIT_S = 60.0  # how long a stopped job may take to write its data before it is killed
@@ -455,3 +455,9 @@ def per_job_mcs(entry: dict, k: int) -> float:
     run at that level refreshes, else its aggregate over its pool."""
     # ponytail: a level never run reads the calibration's aggregate / pool, as before plan 5
     return entry.get("levels", {}).get(str(k), entry["aggregate_mcs"] / entry["pool"])
+
+
+def small_speed(pool: int) -> float:
+    """A small antenna model's speed over the calibration's per-job speed with `pool` jobs at once: SMALL_SPEED at that
+    level, else at the nearest lower measured one."""
+    return SMALL_SPEED[max(k for k in SMALL_SPEED if k <= pool)]

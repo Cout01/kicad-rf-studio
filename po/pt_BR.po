@@ -559,8 +559,8 @@ msgstr "Células: {nx} × {ny} × {nz} = {mcells} M (malha n {n}, célula d {d_m
 
 #. I_COST_SPLIT
 #, python-brace-format
-msgid "Cells: {board} M in the board, {air} M of air and {pml} M of PML; the time counts a PML cell as {weight} cells and runs this model at {ratio} × the calibrated speed (gate P3-A)."
-msgstr "Células: {board} M na placa, {air} M de ar e {pml} M de PML; o tempo conta uma célula de PML como {weight} células e executa este modelo a {ratio} × a velocidade calibrada (checagem prévia P3-A)."
+msgid "Cells: {board} M in the board, {air} M of air and {pml} M of PML; the time counts a PML cell as {weight} cells and runs this model at {ratio} × the calibrated speed for that many jobs at once (gates P3-A and P3-C)."
+msgstr "Células: {board} M na placa, {air} M de ar e {pml} M de PML; o tempo conta uma célula de PML como {weight} células e executa este modelo a {ratio} × a velocidade calibrada para esse número de tarefas simultâneas (checagens prévias P3-A e P3-C)."
 
 #. I_COST_SMALLEST
 #, python-brace-format
@@ -2047,4 +2047,7 @@ msgstr "um número inteiro de graus que divide 180"
 #. T_EXPECT_COPPER
 msgid "\"solid\" or \"sheet\""
 msgstr "\"solid\" ou \"sheet\""
+
+#~ msgid "Cells: {board} M in the board, {air} M of air and {pml} M of PML; the time counts a PML cell as {weight} cells and runs this model at {ratio} × the calibrated speed (gate P3-A)."
+#~ msgstr "Células: {board} M na placa, {air} M de ar e {pml} M de PML; o tempo conta uma célula de PML como {weight} células e executa este modelo a {ratio} × a velocidade calibrada (checagem prévia P3-A)."
 
