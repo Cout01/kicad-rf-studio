@@ -83,15 +83,22 @@ def step_id(name: str, command: str) -> str:
 def run_step(out: Path, name: str, command: str = "run") -> dict:
     """`command`, "run" or "verify", on the project `name` through the product's CLI (p0.cli_run), a p0.step keyed by
     its model's hash and its preset, which the spec does not hold, and for verify by the values of its part ports too,
-    so that an edit that changes any of them runs it again. No `cost` runs: the run's own events carry the cost lines,
-    and measure predicts from the formula. Returns the record."""
+    so that an edit that changes any of them runs it again. A stored record of exit 2 or 3 is first moved to
+    out/steps-superseded, replacing any there, so that the step runs again. No `cost` runs: the run's own events carry
+    the cost lines, and measure predicts from the formula. Returns the record."""
     pj = project_path(out, name)
     project = load_project(pj)
     key = f"{p0.model_key(pj)}|{project['preset']}"
     if command == "verify":
         values = {ref: q["value"] for ref, q in parts(project).items() if q["role"] in (PORT, CURVE_PORT)}
         key += "|" + ",".join(f"{ref}={value}" for ref, value in sorted(values.items()))
-    return p0.step(out, step_id(name, command), key, lambda: p0.cli_run(pj, command))
+    sid = step_id(name, command)
+    path = out / "steps" / f"{sid}.json"
+    # a refused or blocked run costs seconds and its cause (gates.* among them) may since have been edited
+    if path.is_file() and json.loads(path.read_text(encoding="utf-8"))["result"]["exit"] in (2, 3):
+        (out / "steps-superseded").mkdir(exist_ok=True)
+        path.replace(out / "steps-superseded" / path.name)
+    return p0.step(out, sid, key, lambda: p0.cli_run(pj, command))
 
 
 def free_step(out: Path, name: str, t_free: float) -> dict:

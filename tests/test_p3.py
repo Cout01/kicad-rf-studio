@@ -108,6 +108,15 @@ def test_a_blocked_run_is_recorded_and_measures_as_none(gates):  # p0.cli_run st
     assert (m["jobs"], m["split"], m["predicted_s"], m["worst_s"], m["f_res_hz"]) == ([], None, None, None, None)
 
 
+def test_a_blocked_step_runs_again_once_its_cause_is_edited(gates):  # final review G1: the spec holds no gates
+    p3.variant(gates, "blocked", "ifa2g4", {"gates.fit2d_limit": 0.001})
+    first = p3.run_step(gates, "blocked")
+    assert first["result"]["exit"] == 3
+    p3.variant(gates, "blocked", "ifa2g4", {"gates.fit2d_limit": 0.03})  # the same key: only the gates moved
+    assert p3.run_step(gates, "blocked")["result"]["exit"] == 0
+    assert json.loads((gates / "steps-superseded" / "p3-blocked-run.json").read_text(encoding="utf-8")) == first
+
+
 def meas(f_res, depth=-12.0, d=2.57, eta=0.81):  # a measure's shape: a dip of `depth` dB at f_res, a parabola in dB
     s11 = 10 ** ((depth + 8 * ((F - f_res) / 50e6) ** 2) / 20) + 0j
     return {"f_hz": F, "s11": s11, "band": [2.4e9, 2.4835e9], "d_dbi": d, "far_f_hz": [2.44175e9], "eta_rad": [eta]}
