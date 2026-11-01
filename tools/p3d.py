@@ -28,6 +28,10 @@ POUR = "ifa2g4_pi_pour"  # P3-E's ground pour inside the antenna's clearance
 # branch, a recorded deviation; None: criteria's values and P3-C's mesh n
 VALUES: list[str] | None = None
 REFINE: int | None = None
+# the controller's ruling at P3-D's CP-D (plan 4 open issue 7), a recorded deviation: "max", ruling 10's largest delta
+# over every judged pair, or "proper", the repeat, the shift and the ±d moves' even parts, when the moves measure
+# position rather than noise
+NOISE = "proper"
 JUDGED = ("repeat", "shift", "dxp", "dxm")  # the pairs P3-D judges; dxp_dxm, +d against -d, is reported only
 MARKERS = ("f_lo", "f0", "f_hi")  # the band's markers, in deltas' order
 RUN_COLUMNS = ["step", "pool", "cells", "split", "speeds_mcs", "cal_mcs", "predicted_s", "worst_s", "wall_s"]
@@ -178,28 +182,41 @@ def decide_d(pairs: dict[str, dict | None]) -> dict:
     compared dip, "kept" margin > factor × the depth noise. A pair fails unconditioned (_conditioned), and dxp and dxm
     outside the move limits (_moved). "shift_rel", "db" and "bw_rel" from thresholds once every judged pair is present
     and conditioned, on a pass and a fail alike, else None (an unconditioned pair stops for a ruling). "verdict":
-    {"value": "fail" when a pair fails, else "incomplete" while one is missing, else "pass"; "fails", those failed}."""
+    {"value": "fail" when a pair fails, else "incomplete" while one is missing, else "pass"; "fails", those failed}.
+    "noise_proper" (the controller's ruling at CP-D, open issue 7): "f_rel", "db" and "bw_rel" as in "noise", over the
+    repeat, the shift and the ±d pairs' even parts, bw_rel's (dbw+ + dbw−)/2 over f0, the position's slope left out;
+    None without a source. "proper": thresholds of the noise proper, each None while those of "noise" are."""
     c = CRITERIA
     ps = {name: pairs.get(name) for name in JUDGED}
     there = [p for p in ps.values() if p is not None]
     qs = [_quantities(p) for p in there]
+    bw = {k: None if p is None or p["dbw_mhz"] is None else p["dbw_mhz"] / (p["f0_hz"] / 1e6) for k, p in ps.items()}
     noise = {"f_rel": _largest(q["f_rel"] for q in qs),
              "db": _largest(x for q in qs for k, x in q.items() if k != "f_rel"),
-             "bw_rel": _largest(None if p["dbw_mhz"] is None else p["dbw_mhz"] / (p["f0_hz"] / 1e6) for p in there),
+             "bw_rel": _largest(bw.values()),
              "depth_db": _largest(p["depth_db"][1] - p["depth_db"][0] for p in there),
              "ds11": _largest(p["ds11_max"] for p in there)}
     plus, minus = (ps[k] and _quantities(ps[k]) for k in ("dxp", "dxm"))
     odd_even = plus and minus and {k: None if None in (a, minus[k]) else ((a - minus[k]) / 2, (a + minus[k]) / 2)
                                    for k, a in plus.items()}
     f = odd_even and odd_even["f_rel"]
+    # the noise proper's quantities: the repeat's, the shift's and the ±d pairs' even parts, the position left out
+    qp = [*(_quantities(p) for p in (ps["repeat"], ps["shift"]) if p is not None),
+          {k: x[1] for k, x in (odd_even or {}).items() if x}]
+    proper = {"f_rel": _largest(q.get("f_rel") for q in qp),
+              "db": _largest(x for q in qp for k, x in q.items() if k != "f_rel"),
+              "bw_rel": _largest([bw["repeat"], bw["shift"],
+                                  None if None in (bw["dxp"], bw["dxm"]) else (bw["dxp"] + bw["dxm"]) / 2])}
     margin = min((c["conditioned_db"] - x for p in there for x in p["depth_db"]), default=None)
     fails = [k for k, p in ps.items()
              if p is not None and not (_conditioned(p) and (k in ("repeat", "shift") or _moved(p)))]
     judged = None not in ps.values() and all(map(_conditioned, there))
+    unset = dict.fromkeys(("shift_rel", "db", "bw_rel"))  # while a judged pair is missing or unconditioned
     return {"pairs": pairs, "noise": noise, "odd_even": odd_even, "position_bound": f and abs(f[0]) > 2 * abs(f[1]),
             "screen": {"depth_noise_db": noise["depth_db"], "margin_db": margin,
                        "kept": None if margin is None else margin > c["factor"] * noise["depth_db"]},
-            **(thresholds(noise) if judged else dict.fromkeys(("shift_rel", "db", "bw_rel"))),
+            **(thresholds(noise) if judged else unset),
+            "noise_proper": proper, "proper": thresholds(proper) if judged else unset,
             "verdict": {"value": "fail" if fails else "pass" if judged else "incomplete", "fails": fails}}
 
 
@@ -237,8 +254,9 @@ def _run_rows(runs: dict) -> list[dict]:
 def tables_d(result: dict) -> str:
     """The Markdown tables of P3-D's JSON `result` (write's), with p0.table, cells by p3a._cell: P3D-1 each pair's
     deltas with its verdict, then the odd and even parts of the ±d pairs; P3D-2 the noise, the thresholds with their
-    rules, BW_LIMIT's need with the depth it was measured on, the -6 dB screen, the largest |ΔS11| against verify's,
-    the position bound and the verdict; P3D-3 each step's machine time."""
+    rules, BW_LIMIT's need with the depth it was measured on, the noise proper and its thresholds, the -6 dB screen,
+    the largest |ΔS11| against verify's, the position bound and the verdict, then the statistic in force; P3D-3 each
+    step's machine time."""
     c, cell, v, pairs = result["criteria"], p3a._cell, result["verdict"], result["pairs"]
     rows = [{**{k: cell(x) for k, x in (p or {}).items()}, "pair": name,
              "verdict": "report only" if name not in JUDGED else "missing" if p is None
@@ -256,6 +274,9 @@ def tables_d(result: dict) -> str:
         ("bw_rel", cell(result["bw_rel"]), f"BW_LIMIT: {c['factor']:g} × the bw_rel noise, rounded up to "
                                            f"{c['shift_step_rel']:g}, only when above shift_rel, else the bandwidth "
                                            f"is judged by shift_rel; measured on the base's dip at {cell(depth)} dB"),
+        ("noise_proper", cell(result["noise_proper"]), "f_rel, db and bw_rel as in noise, over the repeat, the shift "
+                                                       "and the ±d pairs' even parts, the position's slope left out"),
+        ("proper", cell(result["proper"]), "shift_rel, db and bw_rel by the rules above, from the noise proper"),
         ("screen", cell(result["screen"]), f"the {c['conditioned_db']:g} dB screen is kept unless a compared dip lies "
                                            f"within {c['factor']:g} × the depth noise of it"),
         ("ds11", cell(result["noise"]["ds11"]), "the largest ΔS11 magnitude in band against verify's 0.0076 at f0 and "
@@ -273,16 +294,21 @@ def tables_d(result: dict) -> str:
           "discretization and curvature:\n\n" + p0.table(parts, ["quantity", "odd", "even"]),
         "## P3D-2 Noise and thresholds\n\n" + p0.table([dict(zip(("item", "value", "rule"), r)) for r in rules],
                                                        ["item", "value", "rule"])
-        + f"\n\nDeviations: p3d.VALUES {cell(result['values'])}, p3d.REFINE {cell(result['refine'])} (– is the "
-          "pre-registered: criteria's values, P3-C's mesh n).",
+        + f"\n\nstatistic in force: {cell(result['statistic'])} (max is ruling 10's; proper is the controller's at "
+          "CP-D, open issue 7)"
+        + f"\n\nDeviations: p3d.VALUES {cell(result['values'])}, p3d.REFINE {cell(result['refine'])}, p3d.NOISE "
+          f"{cell(result['statistic'])} (– and max are the pre-registered: criteria's values, P3-C's mesh n, ruling "
+          "10's statistic).",
         "## P3D-3 Runs\n\n" + p0.table(_run_rows(result["runs"]), RUN_COLUMNS)]) + "\n"
 
 
 def tables_e(result: dict) -> str:
-    """The Markdown tables of P3-E's JSON `result` (write's): P3E-1 its pair and decide_e at P3-D's thresholds, each
-    with its rule; P3E-2 its steps' machine time."""
+    """The Markdown tables of P3-E's JSON `result` (write's): P3E-1 its pair, P3-D's thresholds beside their statistic
+    and decide_e at them, each with its rule; P3E-2 its steps' machine time."""
     c, cell, t = result["criteria"], p3a._cell, result["thresholds"]
     rules = [("pair", cell(result["pair"]), "the pour against the base, both verified at the same values"),
+             ("thresholds", cell(t), "P3-D's, of the statistic in force: max is ruling 10's; proper is the "
+                                     "controller's at CP-D, open issue 7"),
              ("resolved", cell(result["resolved"]), f"the shift's magnitude over shift_rel {cell(t['shift_rel'])}, "
                                                     f"strictly; ratio {cell(result['ratio'])}"),
              ("sign", cell(result["sign"]), f"as expected when df_rel has the sign of {c['pour_sign']:+d} (soft: "
@@ -301,11 +327,12 @@ def tables_e(result: dict) -> str:
 def write(out: Path) -> dict:
     """p3.records over the recorded steps first (SystemExit on two product codes), then the pairs (pair; None while
     either side has no current verify or the two were verified at different values) and decide_d of <out>:
-    <out>/p3d/p3d.json through p0.save, with the versions, CRITERIA, VALUES and REFINE (the deviations), this machine's
-    calibration (p3.calibration), decide_d's result, "runs" (each recorded step's p3.measure but the pour's, without
-    f_hz and s11) and their machine time (p0.machine); p3d.md beside it. With the pour's verify recorded,
-    <out>/p3e/p3e.json likewise, with P3-D's "thresholds", decide_e of the base against the pour at them and the pour's
-    runs; p3e.md beside it. Returns P3-D's JSON as saved."""
+    <out>/p3d/p3d.json through p0.save, with the versions, CRITERIA, VALUES, REFINE and NOISE as "statistic" (the
+    deviations), this machine's calibration (p3.calibration), decide_d's result, "runs" (each recorded step's
+    p3.measure but the pour's, without f_hz and s11) and their machine time (p0.machine); p3d.md beside it. With the
+    pour's verify recorded, <out>/p3e/p3e.json likewise, with "thresholds", P3-D's of the statistic NOISE ("proper",
+    else shift_rel, db and bw_rel) and "statistic", decide_e of the base against the pour at them and the pour's runs;
+    p3e.md beside it. Returns P3-D's JSON as saved."""
     ids = {p3.step_id(*s): s for s in _steps()}
     recs = p3.records(out, list(ids))
     runs = {sid: {k: x for k, x in m.items() if k not in ("f_hz", "s11")}
@@ -323,7 +350,7 @@ def write(out: Path) -> dict:
     base, (shift, dxp, dxm), pour = project_name(BOARDS[0]), map(project_name, BOARDS[1:]), project_name(POUR)
     d = decide_d({"repeat": paired(base, _repeat()), "shift": paired(base, shift), "dxp": paired(base, dxp),
                   "dxm": paired(base, dxm), "dxp_dxm": paired(dxp, dxm)})
-    head = {"versions": p0.versions(), "criteria": CRITERIA, "values": VALUES, "refine": REFINE,
+    head = {"versions": p0.versions(), "criteria": CRITERIA, "values": VALUES, "refine": REFINE, "statistic": NOISE,
             "calibration": p3.calibration()}
     e_ids = [p3.step_id(pour, command) for command in ("run", "verify")]
     result = p0.save(out / "p3d" / "p3d.json", {
@@ -331,9 +358,10 @@ def write(out: Path) -> dict:
         "machine": p0.machine([r for r in recs if r["step"] not in e_ids])})
     (out / "p3d" / "p3d.md").write_text(tables_d(result), encoding="utf-8")
     if e_ids[1] in runs:
+        t = {k: (d["proper"] if NOISE == "proper" else d)[k] for k in ("shift_rel", "db", "bw_rel")}
         e = p0.save(out / "p3e" / "p3e.json", {
-            "gate": "P3-E", **head, "thresholds": {k: d[k] for k in ("shift_rel", "db")},
-            **decide_e(paired(base, pour), d["shift_rel"], d["db"]), "runs": {k: runs[k] for k in e_ids if k in runs},
+            "gate": "P3-E", **head, "thresholds": {**t, "statistic": NOISE},
+            **decide_e(paired(base, pour), t["shift_rel"], t["db"]), "runs": {k: runs[k] for k in e_ids if k in runs},
             "machine": p0.machine([r for r in recs if r["step"] in e_ids])})
         (out / "p3e" / "p3e.md").write_text(tables_e(e), encoding="utf-8")
     return result
