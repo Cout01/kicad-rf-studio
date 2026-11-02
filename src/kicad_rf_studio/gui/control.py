@@ -2,10 +2,12 @@
 """The GUI's Qt-free logic (Stage 2 design 5.1, 5.3, 5.5): the detached start, Apply's retune run to its end, the events
 tail, re-attach through the lock and the end events, the project read off the GUI thread, the retune session (an update
 of a project read's chain from the parts' rows), Verify's stale indicator and comparison, New's read of a board (its
-pads and antennas), its band presets and a button press's pre-fill, Advanced's fields of project.json and their edit,
-and About's text. Never imports Qt or matplotlib."""
+pads and antennas), its band presets and a button press's pre-fill, Compare's run into the base project's folder and
+its table, Advanced's fields of project.json and their edit, and About's text. Never imports Qt, and matplotlib only
+when compare draws compare.png (compare_png)."""
 import contextlib
 import copy
+import csv
 import json
 import math
 import operator
@@ -42,7 +44,8 @@ GUI = {"E_LOCKED": "G_LOCKED", "I_RUN_START": "G_RUN_START", "I_WHAT_IF": "G_WHA
        "W_S2P_FIXTURE": "G_S2P_FIXTURE", "E_VERIFY_VALUE": "G_VERIFY_VALUE", "E_PROJECT_FIELD": "G_PROJECT_FIELD",
        "E_RETUNE_SHORT_SHUNT": "G_RETUNE_SHORT_SHUNT", "E_RETUNE_OPEN_SERIES": "G_RETUNE_OPEN_SERIES",
        "E_RETUNE_ANTENNA_VALUE": "G_RETUNE_ANTENNA_VALUE", "I_ANTENNA_NO_FAR_FIELD": "G_ANTENNA_NO_FAR_FIELD",
-       "E_ANTENNA_MODULE": "G_ANTENNA_MODULE", "E_ANTENNA_CHIP": "G_ANTENNA_CHIP"}
+       "E_ANTENNA_MODULE": "G_ANTENNA_MODULE", "E_ANTENNA_CHIP": "G_ANTENNA_CHIP", "E_COMPARE_KIND": "G_COMPARE_KIND",
+       "E_COMPARE_NO_RESULT": "G_COMPARE_NO_RESULT", "E_RESULTS_WRITE": "G_RESULTS_WRITE"}
 # an S2P fixture combo's label code by its data
 FIXTURE_LABELS = {"series": "G_FIXTURE_SERIES", "shunt": "G_FIXTURE_SHUNT"}
 
@@ -505,6 +508,41 @@ def handed(path: Path) -> Handed:
             ends.reverse()
     start, end, *_ = [p.name for p in ends] + ["", ""]
     return Handed(board, socket, token, pickers, start, end, None)
+
+
+COMPARE_FOLDER = "compare"  # Compare's folder, in the base project's folder (Stage 3 design 5.10)
+# compare.csv's quantities in the window's words, compare's lines' own (I_COMPARE_RESONANCE, I_COMPARE_BANDWIDTH,
+# I_COMPARE_ETA, I_COMPARE_GAIN)
+QUANTITIES = {"resonance": "G_QUANTITY_RESONANCE", "bandwidth_10db": "G_QUANTITY_BANDWIDTH",
+              "eta_tot": "G_QUANTITY_ETA_TOT", "peak_gain": "G_QUANTITY_PEAK_GAIN"}
+DIGITS = {"MHz": 1, "%": 1, "dBi": 2, "dB": 2}  # a number's decimals by its unit, as delta_lines rounds it
+
+
+def compare(base: Path, variant: Path) -> tuple[int, list[tuple[str, dict]], list[list[str]]]:
+    """Compare (Stage 3 design 5.8, 5.10), off the GUI thread: compare_projects of the project files `base` and
+    `variant` into the base's own folder's compare/ (COMPARE_FOLDER), never the variant's; its lines and, when it
+    exited 0, compare.csv's rows as the Compare table shows them (cells: DELTA_COLUMNS, the quantity in the window's
+    words, f in MHz, the numbers rounded as the lines round them). Returns (exit code, lines, cells). Raises
+    compare_projects' refusals (E_COMPARE_KIND, E_COMPARE_NO_RESULT, E_COMPARE_SETTINGS)."""
+    # ponytail: compare/ is replaced on each compare; one folder per variant if users keep several
+    # ponytail: compare_png draws on this pool thread while the GUI thread may draw the Results canvas: separate
+    # Figures, and matplotlib keys its font cache by thread; a lock around both if a crash ever shows
+    folder, lines = base.parent / COMPARE_FOLDER, []
+    code = pipeline.compare_projects(base, variant, folder, lambda c, p: lines.append((c, p)))
+    if code != 0:
+        return code, lines, []
+    with open(folder / "compare.csv", encoding="utf-8", newline="") as f:
+        rows = list(csv.DictReader(f))
+
+    def fixed(cell: str, digits: int, sign: str = "", scale: float = 1.0) -> str:  # an empty cell stays empty
+        return cell and f"{float(cell) / scale:{sign}.{digits}f}"
+
+    verdicts = {"True": render("T_RESOLVED"), "False": render("T_NOT_RESOLVED")}
+    return code, lines, [[render(QUANTITIES[r["quantity"]]), r["marker"], fixed(r["f_hz"], 1, scale=1e6),
+                           fixed(r["base"], DIGITS[r["unit"]]), fixed(r["variant"], DIGITS[r["unit"]]), r["unit"],
+                           fixed(r["delta"], DIGITS[r["delta_unit"]], "+"), r["delta_unit"],
+                           fixed(r["threshold"], DIGITS[r["delta_unit"]]), verdicts.get(r["resolved"], "")]
+                          for r in rows]
 
 
 def message(error: Exception) -> str:

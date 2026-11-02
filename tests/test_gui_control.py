@@ -518,6 +518,23 @@ def test_advanced_shows_an_antennas_fields_with_its_own_defaults_and_units():  #
     assert (v1["t_max_s"], v1["region.expand_h"], v1["lid"]) == ("4e-08", "3.0", "null")  # v1's as before
 
 
+def test_compare_runs_into_the_bases_own_folder_and_gives_its_table_in_the_windows_words(tmp_path, calibrated):
+    from test_compare import twin  # design 5.8, 5.10
+    a = antenna_project(tmp_path / "a").resolve()
+    assert pipeline.run(a) == 0
+    b = twin(a, tmp_path / "b")
+    code, lines, cells = control.compare(a, b)
+    assert code == 0 and lines[0] == ("I_ANTENNA_RELATIVE", {})
+    assert [row[0] for row in cells] == [render(q) for q in ("G_QUANTITY_RESONANCE", "G_QUANTITY_BANDWIDTH",
+                                                             *["G_QUANTITY_ETA_TOT"] * 3, "G_QUANTITY_PEAK_GAIN")]
+    said = dict(lines)  # each delta's line, rounded as the table rounds it
+    res, gain = said["I_COMPARE_RESONANCE"], said["I_COMPARE_GAIN"]
+    assert (cells[0][3], cells[0][6], cells[5][2], cells[5][4]) == (res["base_mhz"], res["shift_mhz"],
+                                                                    gain["f_mhz"], gain["variant_dbi"])
+    assert sorted(p.name for p in (a.parent / control.COMPARE_FOLDER).iterdir()) == ["compare.csv", "compare.png"]
+    assert not (b.parent / control.COMPARE_FOLDER).exists()
+
+
 def test_about_names_the_version_the_licence_notices_and_each_runtime_dependency(monkeypatch):  # design 5.3 About
     real = metadata.version
 

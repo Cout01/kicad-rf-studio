@@ -28,15 +28,16 @@ from kicad_rf_studio.core.post.outputs import LIMITS
 from kicad_rf_studio.core.post.waves import grid
 from kicad_rf_studio.core.project import board_file, load_project, parts, save_project
 from kicad_rf_studio.gui import control
-from kicad_rf_studio.gui.window import FIXTURE, PART, S2P, SNAP, VALUE, MainWindow
+from kicad_rf_studio.gui.window import COMPARE_COLUMNS, FIXTURE, PART, S2P, SNAP, VALUE, MainWindow
 from networks import C_BOX, star, terminate_np, write_s2p
 from test_antenna_kicad import KINDS
 from test_cli_antenna import antenna_project
 from test_cli_cost import FIX, fail, new_project
+from test_compare import edited, twin
 from test_gui_control import FAKE_PREFIX, press, until
 from test_match_antenna import pi_run
 from test_post_chain import M0402
-from test_run import lpf_loads, lpf_run
+from test_run import lpf_loads, lpf_project, lpf_run
 from test_run_dir import events
 from test_verify import verified
 
@@ -206,8 +207,8 @@ def test_the_window_costs_then_runs_after_the_confirmation(window, tmp_path, mon
 def test_every_list_of_sentences_wraps_at_its_width(window, qapp):  # Task 6 Step 7, V1
     # the real run's grabs at 1200 × 800 cut long lines at a list's right edge, behind a horizontal scroll bar
     w = window()
-    lists = (w.new_form.notes, w.cost_lines, w.log, w.results.lines, w.results.verify_lines)
-    assert [(v.wordWrap(), v.resizeMode()) for v in lists] == [(True, QListView.ResizeMode.Adjust)] * 5
+    lists = (w.new_form.notes, w.cost_lines, w.log, w.results.lines, w.results.verify_lines, w.comparison.lines)
+    assert [(v.wordWrap(), v.resizeMode()) for v in lists] == [(True, QListView.ResizeMode.Adjust)] * 6
     w.tabs.setCurrentWidget(w.log.parentWidget())  # the Run tab
     w.log.addItem(" ".join(["word"] * 60))
     qapp.processEvents()
@@ -1235,6 +1236,72 @@ def test_verify_brings_an_antennas_far_field_and_the_retune_blits_on_its_six_pan
     assert r.stale.text() == render("G_VERIFY_STALE")
     assert "openEMS" not in sys.modules and "CSXCAD" not in sys.modules
     grab(w, "antenna-verify")
+
+
+def test_compare_runs_on_the_pool_into_the_bases_folder_and_never_the_variants(window, qapp, tmp_path, monkeypatch):
+    a = antenna_project(tmp_path / "a").resolve()  # design 5.8, 5.10; Review Focus 5
+    assert pipeline.run(a) == 0
+    b, wrong, lpf = twin(a, tmp_path / "b"), twin(a, tmp_path / "wrong"), lpf_project(tmp_path).resolve()
+    fresh = antenna_project(tmp_path / "fresh").resolve()  # never run: nothing compare can use
+    edited(wrong, fingerprint={**load_project(wrong)["results"]["fingerprint"], "preset": "strict"})
+    watched = (b.parent, Path(load_project(a)["results"]["run_dir"]))
+
+    def stamps():
+        return {p: p.stat().st_mtime_ns for root in watched for p in [root, *root.rglob("*")]}
+
+    before = stamps()
+    w = window()
+    w.open_project(a)
+    opened(w)
+    c = w.comparison
+    assert w.tabs.tabText(4) == render("G_TAB_COMPARE") and c.status.text() == render("G_COMPARE_NONE")
+    assert not c.compare_button.isEnabled()
+
+    def choose(project):  # Variant…, then the tick that enables Compare
+        monkeypatch.setattr(QFileDialog, "getOpenFileName", lambda *x, **k: (str(project), ""))
+        c.variant_button.click()
+        w.tick()
+
+    choose(b)
+    assert (w.variant, c.variant.text(), c.compare_button.isEnabled()) == (b.resolve(), str(b.resolve()), True)
+    c.compare_button.click()
+    assert c.status.text() == render("G_COMPARING") and not c.compare_button.isEnabled()
+    code, lines, cells = w.comparing.result(timeout=120)
+    w.tick()
+    assert code == 0 and items(c.lines) == [control.text(x, p) for x, p in lines] and c.status.text() == ""
+    assert [c.table.horizontalHeaderItem(k).text() for k in range(10)] == [render(x) for x in COMPARE_COLUMNS]
+    assert [[c.table.item(k, j).text() for j in range(10)] for k in range(c.table.rowCount())] == cells
+    assert len(cells) == 6 and c.table.item(0, 9).text() == render("T_NOT_RESOLVED")  # against its copy
+    w.tabs.setCurrentWidget(c)
+    qapp.processEvents()
+    assert not c.picture.pixmap().isNull() and c.picture.size() == c.picture.pixmap().size()  # whole, by scrolling
+    assert (a.parent / "compare" / "compare.png").is_file()
+    assert stamps() == before and not (b.parent / "compare").exists()  # read in place, never written
+    grab(w, "compare")
+    real = os.replace
+
+    def held(src, dst):  # a viewer holds compare.png
+        if Path(dst).name == "compare.png":
+            raise PermissionError(13, "in use")
+        real(src, dst)
+
+    with monkeypatch.context() as m:
+        m.setattr(os, "replace", held)
+        c.compare_button.click()
+        assert w.comparing.result(timeout=120)[0] == 2
+    w.tick()
+    assert render("G_RESULTS_WRITE", path=str(a.parent / "compare" / "compare.png"),
+                  reason="T_PERMISSION_DENIED") in items(c.lines)
+    assert c.table.rowCount() == 0 and c.picture.pixmap().isNull()
+    for project, shown in ((lpf, render("G_COMPARE_KIND", path=str(lpf))),
+                           (fresh, render("G_COMPARE_NO_RESULT", path=str(fresh))),
+                           (wrong.resolve(), render("E_COMPARE_SETTINGS", fields="preset"))):
+        choose(project)
+        c.compare_button.click()
+        w.comparing.exception(timeout=120)
+        w.tick()
+        assert (c.status.text(), c.lines.count(), c.table.rowCount()) == (shown, 0, 0)
+    assert "openEMS" not in sys.modules and "CSXCAD" not in sys.modules
 
 
 def test_the_help_menu_shows_about_and_qts_about(window, monkeypatch):  # design 5.3 About

@@ -2,12 +2,13 @@
 """The main window (Stage 2 design 5.1, 5.3, 5.4): it creates a project from a board (NewForm) or opens one, shows its
 cost, starts, follows and stops a run, its own or one it re-attaches through the project lock, replays the project's
 last run and shows its results, which its parts' rows retune in this process (ResultsView), Apply stores through the
-CLI's retune and Verify checks; Advanced edits project.json's fields and saves them under the project lock
-(AdvancedView); all driven by one 500 ms timer (`tick`). The project is read, a board's pads and antennas listed, a
-KiCad button press read, the board refilled and saved in KiCad, new run and retune waited for on a pool thread
-(control.open_project, control.board_choices, control.handed, button.refill, cli.new or cli.new_antenna,
-control.apply); cost, run and verify start as a detached orchestrator (control.start), so this process never reaches
-runs.run_jobs. Its Help menu shows About (control.about) and Qt's About."""
+CLI's retune and Verify checks; Compare compares an antenna project with a variant (CompareView); Advanced edits
+project.json's fields and saves them under the project lock (AdvancedView); all driven by one 500 ms timer (`tick`).
+The project is read, a board's pads and antennas listed, a KiCad button press read, the board refilled and saved in
+KiCad, new run, retune and compare waited for on a pool thread (control.open_project, control.board_choices,
+control.handed, button.refill, cli.new or cli.new_antenna, control.apply, control.compare); cost, run and verify start
+as a detached orchestrator (control.start), so this process never reaches runs.run_jobs. Its Help menu shows About
+(control.about) and Qt's About."""
 import html
 import json
 import subprocess
@@ -15,12 +16,12 @@ from concurrent.futures import Future, ThreadPoolExecutor
 from pathlib import Path
 
 from PySide6.QtCore import QLocale, QLockFile, QSignalBlocker, Qt, QTimer, Signal
-from PySide6.QtGui import QCloseEvent
+from PySide6.QtGui import QCloseEvent, QPixmap
 from PySide6.QtNetwork import QLocalServer
 from PySide6.QtWidgets import (QAbstractScrollArea, QComboBox, QDoubleSpinBox, QFileDialog, QFormLayout, QGroupBox,
                                QHBoxLayout, QHeaderView, QLabel, QLineEdit, QListView, QListWidget, QMainWindow,
-                               QMessageBox, QPushButton, QSizePolicy, QSpinBox, QTableWidget, QTableWidgetItem,
-                               QTabWidget, QVBoxLayout, QWidget)
+                               QMessageBox, QPushButton, QScrollArea, QSizePolicy, QSpinBox, QTableWidget,
+                               QTableWidgetItem, QTabWidget, QVBoxLayout, QWidget)
 # after PySide6: matplotlib's Qt backend then wraps the binding already loaded, never another one installed beside it
 from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg
 from matplotlib.figure import Figure
@@ -40,6 +41,9 @@ PART, VALUE, SNAP, S2P, FIXTURE = range(5)  # the parts table's columns
 PART_COLUMNS = ("G_COL_PART", "G_COL_VALUE", "G_COL_SNAP", "G_COL_S2P", "G_COL_FIXTURE")
 FIELD_COLUMNS = ("G_COL_FIELD", "G_COL_VALUE", "G_COL_DEFAULT", "G_COL_UNIT")  # Advanced's table; Value alone edited
 DEFAULT_COLUMN_MAX = 320  # Advanced's Default column's width at most, in px
+# Compare's table: compare.csv's DELTA_COLUMNS, as control.compare gives them
+COMPARE_COLUMNS = ("G_COL_QUANTITY", "G_COL_MARKER", "G_COL_F_MHZ", "T_BASE", "T_VARIANT", "G_COL_UNIT", "G_COL_DELTA",
+                   "G_COL_DELTA_UNIT", "G_COL_THRESHOLD", "G_COL_RESOLVED")
 SNAPPING = tuple(zip(control.SERIES, ("G_SNAP_OFF", "G_SNAP_E12", "G_SNAP_E24")))  # a Snapping combo's (data, code)
 FIXTURES = tuple(control.FIXTURE_LABELS.items())  # an S2P fixture combo's (data, code)
 
@@ -390,6 +394,48 @@ class NewForm(QGroupBox):
         box.setCurrentIndex(box.findData(pick))  # -1, none picked, for "": no reference is empty
 
 
+class CompareView(QWidget):
+    """The Compare tab (Stage 3 design 5.8, 5.10): the row of Variant… (`variant_button`), the variant's project file
+    (`variant`, which the window sets) and Compare the projects (`compare_button`, which the window enables); its status
+    line (`status`); compare's lines (`lines`); its deltas (`table`, control.compare's cells under COMPARE_COLUMNS); and
+    compare.png (`picture`), at its own size in a scroll area."""
+
+    def __init__(self):
+        super().__init__()
+        self.variant_button, self.variant = QPushButton(render("G_COMPARE_VARIANT")), QLabel()
+        self.compare_button, self.status = QPushButton(render("G_COMPARE")), QLabel(render("G_COMPARE_NONE"))
+        self.lines, self.table, self.picture = sentences(), QTableWidget(0, len(COMPARE_COLUMNS)), QLabel()
+        self.compare_button.setEnabled(False)  # until the window has a variant
+        for label in (self.variant, self.status):
+            label.setWordWrap(True)  # a path, or a refusal naming one, would otherwise widen the window
+        self.table.setHorizontalHeaderLabels([render(code) for code in COMPARE_COLUMNS])
+        self.table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
+        self.table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.ResizeToContents)
+        # ponytail: compare.png at its own size in a scroll area, which keeps the window's 1200 × 800; scaled to the
+        # tab's width if users want it whole
+        # resizable: a label whose pixmap is set after setWidget keeps its old size otherwise (probed: 12 × 14 px, no
+        # scroll range)
+        scroll = QScrollArea(widgetResizable=True)
+        scroll.setWidget(self.picture)
+        row = beside(self.variant_button, self.variant, self.compare_button)
+        row.setStretch(1, 1)  # the variant's path takes the row's width, and the buttons keep their own
+        layout = QVBoxLayout(self)
+        layout.addLayout(row)
+        for widget in (self.status, self.lines, self.table, scroll):
+            layout.addWidget(widget)
+
+    def display(self, lines: list[str], cells: list[list[str]], picture: Path | None) -> None:
+        """compare's `lines`, its deltas' `cells`, a table row per list, each cell its text, and the image file
+        `picture` (None for none, an empty pixmap)."""
+        self.lines.clear()
+        self.lines.addItems(lines)
+        self.table.setRowCount(len(cells))
+        for k, row in enumerate(cells):
+            for j, text in enumerate(row):
+                self.table.setItem(k, j, QTableWidgetItem(text))
+        self.picture.setPixmap(QPixmap() if picture is None else QPixmap(str(picture)))
+
+
 class AdvancedView(QWidget):
     """The Advanced tab (Stage 2 design 5.3): project.json's fields (control.fields) in `table`, a row each with its
     name, its value as JSON, the one cell that can be edited, its default and its unit; then the row of Save
@@ -449,8 +495,10 @@ class MainWindow(QMainWindow):
     """The main window; `prefix` is the command that starts the orchestrator (control.orchestrator() by default).
     Its state: `path`, the resolved project file; `opened`, its last read (control.Opened) and `loading`, the read
     going on (a Future); `applying`, Apply's retune going on (a Future), and `verify_next`, whether its end starts
-    verify (Verify's Yes to G_APPLY_FIRST); `cost`, the folder of this model's last cost,
-    which Run… confirms on; the watch: `command`, `run_dir`, its events' `tail`, its `end` event and `proc`, only a
+    verify (Verify's Yes to G_APPLY_FIRST); `cost`, the folder of this model's last cost, which Run… confirms on; the
+    Compare tab (`comparison`, a CompareView), with `variant`, the resolved project file it compares the project with
+    (None until Variant… picks one), and `comparing`, its compare going on (a Future); the watch: `command`,
+    `run_dir`, its events' `tail`, its `end` event and `proc`, only a
     process this window started; `live`, whether the watched process goes on; `mtime`, project.json's and the board
     file's st_mtime_ns at the last read (stamp); `started`, every process this window started, polled every tick, so
     that none is left a zombie on Linux; the New form's work going on (Futures): `pads_read`, the chosen board's
@@ -470,6 +518,7 @@ class MainWindow(QMainWindow):
         self.path = self.opened = self.loading = self.applying = self.cost = self.mtime = None
         self.pads_read = self.creating = self.handoff = self.handed = self.refilling = self.server = self.lock = None
         self.command = self.run_dir = self.tail = self.end = self.proc = None
+        self.variant = self.comparing = None
         self.live, self.started, self.verify_next = False, [], False
         self.pool = ThreadPoolExecutor(1)
         self.open_button, self.project_status, self.new_form = QPushButton(render("G_OPEN")), QLabel(), NewForm()
@@ -488,8 +537,9 @@ class MainWindow(QMainWindow):
                               ("G_TAB_COST", (self.cost_lines, self.cost_status, self.cost_button, self.run_button)),
                               ("G_TAB_RUN", (self.banner, self.jobs, self.log, self.run_status, self.stop_button))):
             self.tabs.addTab(page(*widgets), render(code))
-        self.results, self.advanced = ResultsView(), AdvancedView()
+        self.results, self.comparison, self.advanced = ResultsView(), CompareView(), AdvancedView()
         self.tabs.addTab(self.results, render("G_TAB_RESULTS"))
+        self.tabs.addTab(self.comparison, render("G_TAB_COMPARE"))
         self.tabs.addTab(self.advanced, render("G_TAB_ADVANCED"))
         self.setCentralWidget(self.tabs)
         menu = self.menuBar().addMenu(render("G_MENU_HELP"))
@@ -504,6 +554,8 @@ class MainWindow(QMainWindow):
                              (form.folder_button, self.pick_folder),
                              (form.create_button, self.create_project), (self.results.revert_button, self.revert),
                              (self.results.apply_button, self.apply), (self.results.verify_button, self.verify),
+                             (self.comparison.variant_button, self.pick_variant),
+                             (self.comparison.compare_button, self.compare_variant),
                              (self.advanced.save_button, self.save)):
             widget.clicked.connect(slot)
         self.results.edited.connect(self.retune)
@@ -525,10 +577,13 @@ class MainWindow(QMainWindow):
         """Opens the project file `path`, a folder standing for its project.json: the views and the watch cleared,
         then its read and a tick. A process this window started goes on, no longer watched, and so does an Apply's
         retune of the previous project, which ends on the pool unread (`applying` None) and starts no verify
-        (`verify_next` False)."""
+        (`verify_next` False), and a compare of the previous project, which ends on the pool unread too (`comparing`
+        None); the Compare tab is emptied and says G_COMPARE_NONE, its variant kept."""
         self.path = pipeline.project_path(str(path)).resolve()
         self.command = self.run_dir = self.tail = self.end = self.proc = self.cost = self.opened = self.applying = None
-        self.verify_next = False
+        self.verify_next, self.comparing = False, None
+        self.comparison.display([], [], None)
+        self.comparison.status.setText(render("G_COMPARE_NONE"))
         for view in (self.cost_lines, self.cost_status, self.log, self.run_status, self.advanced.status):
             view.clear()
         self.jobs.setRowCount(0)
@@ -572,7 +627,8 @@ class MainWindow(QMainWindow):
         and nothing is watched (on open), so a cost meanwhile keeps its tab. Before all that, with or without a
         project, New's board read, new itself and Refill when done (show_pads; created, which opens the project new
         wrote, whose own tick runs inside this one; refilled), then Refill enabled while a press gave a KiCad to ask
-        (`handed`) and no refill goes on."""
+        (`handed`) and no refill goes on; and, with a project, a compare that ended (compared), then Compare the
+        projects enabled while a variant is picked (`variant`) and no compare goes on."""
         self.started = [p for p in self.started if p.poll() is None]  # poll() reaps one that ended
         if self.pads_read is not None and self.pads_read.done():
             done, self.pads_read = self.pads_read, None
@@ -586,6 +642,10 @@ class MainWindow(QMainWindow):
         self.new_form.refill_button.setEnabled(self.handed is not None and self.refilling is None)
         if self.path is None:
             return
+        if self.comparing is not None and self.comparing.done():
+            done, self.comparing = self.comparing, None
+            self.compared(done)
+        self.comparison.compare_button.setEnabled(self.variant is not None and self.comparing is None)
         holder = runs.lock_holder(self.path)
         held = holder is not None and holder["alive"]  # any run's, a retune's included
         if holder and holder["run_dir"] and Path(holder["run_dir"]) == self.path.parent / "results":
@@ -837,6 +897,38 @@ class MainWindow(QMainWindow):
             self.verify_next = True
             self.apply()
 
+    def pick_variant(self) -> None:
+        """Compare's Variant…: the project file picked in the dialog, a folder standing for its project.json, resolved,
+        kept as `variant` and shown; nothing on Cancel. The next tick enables Compare the projects."""
+        name, _ = QFileDialog.getOpenFileName(self, render("G_COMPARE_VARIANT"), "", render("G_OPEN_FILTER"))
+        if name:
+            self.variant = pipeline.project_path(name).resolve()
+            self.comparison.variant.setText(str(self.variant))
+
+    def compare_variant(self) -> None:
+        """Compare the projects: the project against `variant` on the pool (control.compare, as `comparing`), which
+        writes into the project's own folder, never the variant's; G_COMPARING in Compare's status line, then a tick,
+        which disables the button until it ends (compared)."""
+        self.comparing = self.pool.submit(control.compare, self.path, self.variant)
+        self.comparison.status.setText(render("G_COMPARING"))
+        self.tick()
+
+    def compared(self, done: Future) -> None:
+        """Compare's end (`done`, control.compare): a refusal (compare_projects', else E_INTERNAL) in Compare's status
+        line in the window's words (control.message), the view emptied and the exception taken as show_pads takes it;
+        else the status line cleared and compare's lines in the window's words (control.text) with its cells and, on
+        exit code 0, compare.png from the project's compare folder (control.COMPARE_FOLDER). On 2, a file it could
+        not write, there are no cells and no picture, so no stale table or picture shows."""
+        view, error = self.comparison, done.exception()
+        if error is not None:
+            view.status.setText(control.message(error))
+            view.display([], [], None)
+            return
+        code, lines, cells = done.result()
+        view.status.clear()
+        view.display([control.text(c, p) for c, p in lines], cells,
+                     self.path.parent / control.COMPARE_FOLDER / "compare.png" if code == 0 else None)
+
     def save(self) -> None:
         """Advanced's Save: under the project lock, results/ its run folder as a retune's, project.json read afresh
         (load_project), as run, verify and retune read it, so a save never writes back a stale snapshot and no engine
@@ -1055,9 +1147,9 @@ class MainWindow(QMainWindow):
     def closeEvent(self, event: QCloseEvent) -> None:
         """Closing the window first closes its server and unlocks gui.lock (serve), so that a later start serves itself
         instead of waiting on a closing window whose pool may still run; it then stops its timer and drops the pool's
-        work not yet begun (project reads, a pad list, a New, an Apply, a refill); what it started goes on (design 5.1:
-        a run outlives its window, and the next window re-attaches it), an Apply's retune included, and so does a
-        refill already begun, which ends when KiCad answers, within FILL_WAIT_S, as an Apply's retune does."""
+        work not yet begun (project reads, a pad list, a New, an Apply, a compare, a refill); what it started goes on
+        (design 5.1: a run outlives its window, and the next window re-attaches it), an Apply's retune included, and so
+        does a refill already begun, which ends when KiCad answers, within FILL_WAIT_S, as an Apply's retune does."""
         if self.server is not None:  # serve keeps both
             self.server.close()
             self.lock.unlock()

@@ -1619,6 +1619,85 @@ msgstr ""
 msgid "Verify puts each part in the grid at its value, but {ref} has \"{value}\": Verify can place only a C, L or R whose value reads (a C above 0). Set {ref}'s value in Advanced (under chain.series, chain.shunt or others), which keeps its S2P file, or clear the file in its row in Results and retune and type the value there, which Apply stores without the file; then press Verify again."
 msgstr ""
 
+#. G_TAB_COMPARE
+msgid "Compare"
+msgstr ""
+
+#. G_COMPARE_VARIANT
+msgid "Variant…"
+msgstr ""
+
+#. G_COMPARE
+msgid "Compare the projects"
+msgstr ""
+
+#. G_COMPARING
+msgid "Comparing…"
+msgstr ""
+
+#. G_COMPARE_NONE
+msgid "Open an antenna project, then choose the variant to compare it with."
+msgstr ""
+
+#. G_COMPARE_KIND
+#, python-brace-format
+msgid "{path} is not an antenna project: Compare the projects compares two antenna projects, made with New from a board and the kind Antenna."
+msgstr ""
+
+#. G_COMPARE_NO_RESULT
+#, python-brace-format
+msgid "{path} has no result that Compare the projects can use: a run of its current model, made by this version, with no part on the chain, or, with part ports, a verify of that run at the values project.json holds. Run it (a board re-saved since its run needs one), then press Verify for a project with part ports."
+msgstr ""
+
+#. G_RESULTS_WRITE
+#, python-brace-format
+msgid "Cannot write {path}: {reason}. Close the program that holds it open (a spreadsheet or an image viewer, say), then press the button that wrote it again."
+msgstr ""
+
+#. G_COL_QUANTITY
+msgid "Quantity"
+msgstr ""
+
+#. G_COL_MARKER
+msgid "Marker"
+msgstr ""
+
+#. G_COL_F_MHZ
+msgid "f (MHz)"
+msgstr ""
+
+#. G_COL_DELTA
+msgid "Delta"
+msgstr ""
+
+#. G_COL_DELTA_UNIT
+msgid "Delta unit"
+msgstr ""
+
+#. G_COL_THRESHOLD
+msgid "Threshold"
+msgstr ""
+
+#. G_COL_RESOLVED
+msgid "Resolved"
+msgstr ""
+
+#. G_QUANTITY_RESONANCE
+msgid "Resonance"
+msgstr ""
+
+#. G_QUANTITY_BANDWIDTH
+msgid "-10 dB bandwidth"
+msgstr ""
+
+#. G_QUANTITY_ETA_TOT
+msgid "Total efficiency"
+msgstr ""
+
+#. G_QUANTITY_PEAK_GAIN
+msgid "Peak gain"
+msgstr ""
+
 #. G_TAB_ADVANCED
 msgid "Advanced"
 msgstr ""

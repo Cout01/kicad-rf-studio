@@ -1621,6 +1621,85 @@ msgstr "O botão Verificar executa uma simulação com os valores armazenados no
 msgid "Verify puts each part in the grid at its value, but {ref} has \"{value}\": Verify can place only a C, L or R whose value reads (a C above 0). Set {ref}'s value in Advanced (under chain.series, chain.shunt or others), which keeps its S2P file, or clear the file in its row in Results and retune and type the value there, which Apply stores without the file; then press Verify again."
 msgstr "O botão Verificar coloca cada componente na grade com o valor dele, mas {ref} tem \"{value}\": a verificação só consegue colocar um C, L ou R cujo valor é legível (um C maior que 0). Defina o valor de {ref} na aba Avançado (em chain.series, chain.shunt ou others), o que mantém o arquivo S2P dele, ou limpe o arquivo na linha dele na aba Resultados e ajuste e digite o valor ali, que o botão Aplicar armazena sem o arquivo; depois pressione Verificar de novo."
 
+#. G_TAB_COMPARE
+msgid "Compare"
+msgstr "Comparação"
+
+#. G_COMPARE_VARIANT
+msgid "Variant…"
+msgstr "Variante…"
+
+#. G_COMPARE
+msgid "Compare the projects"
+msgstr "Comparar os projetos"
+
+#. G_COMPARING
+msgid "Comparing…"
+msgstr "Comparando…"
+
+#. G_COMPARE_NONE
+msgid "Open an antenna project, then choose the variant to compare it with."
+msgstr "Abra um projeto de antena e escolha a variante a comparar com ele."
+
+#. G_COMPARE_KIND
+#, python-brace-format
+msgid "{path} is not an antenna project: Compare the projects compares two antenna projects, made with New from a board and the kind Antenna."
+msgstr "{path} não é um projeto de antena: o botão Comparar os projetos compara dois projetos de antena, criados com Novo projeto a partir de uma placa e o tipo Antena."
+
+#. G_COMPARE_NO_RESULT
+#, python-brace-format
+msgid "{path} has no result that Compare the projects can use: a run of its current model, made by this version, with no part on the chain, or, with part ports, a verify of that run at the values project.json holds. Run it (a board re-saved since its run needs one), then press Verify for a project with part ports."
+msgstr "{path} não tem resultado que o botão Comparar os projetos possa usar: uma execução do modelo atual dele, feita por esta versão, sem componente na cadeia ou, com portas de componentes, uma verificação dessa execução com os valores que o project.json guarda. Execute-o (uma placa salva de novo desde a execução precisa de uma) e depois pressione Verificar num projeto com portas de componentes."
+
+#. G_RESULTS_WRITE
+#, python-brace-format
+msgid "Cannot write {path}: {reason}. Close the program that holds it open (a spreadsheet or an image viewer, say), then press the button that wrote it again."
+msgstr "Não foi possível gravar {path}: {reason}. Feche o programa que o mantém aberto (uma planilha ou um visualizador de imagens, por exemplo) e depois pressione de novo o botão que o gravou."
+
+#. G_COL_QUANTITY
+msgid "Quantity"
+msgstr "Grandeza"
+
+#. G_COL_MARKER
+msgid "Marker"
+msgstr "Marcador"
+
+#. G_COL_F_MHZ
+msgid "f (MHz)"
+msgstr "f (MHz)"
+
+#. G_COL_DELTA
+msgid "Delta"
+msgstr "Delta"
+
+#. G_COL_DELTA_UNIT
+msgid "Delta unit"
+msgstr "Unidade do delta"
+
+#. G_COL_THRESHOLD
+msgid "Threshold"
+msgstr "Limiar"
+
+#. G_COL_RESOLVED
+msgid "Resolved"
+msgstr "Resolvido"
+
+#. G_QUANTITY_RESONANCE
+msgid "Resonance"
+msgstr "Ressonância"
+
+#. G_QUANTITY_BANDWIDTH
+msgid "-10 dB bandwidth"
+msgstr "Largura de banda a -10 dB"
+
+#. G_QUANTITY_ETA_TOT
+msgid "Total efficiency"
+msgstr "Eficiência total"
+
+#. G_QUANTITY_PEAK_GAIN
+msgid "Peak gain"
+msgstr "Ganho de pico"
+
 #. G_TAB_ADVANCED
 msgid "Advanced"
 msgstr "Avançado"
