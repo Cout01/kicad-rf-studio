@@ -11,12 +11,12 @@ from shapely.geometry import Point, box
 from kicad_rf_studio import runs
 from kicad_rf_studio.cli import main
 from kicad_rf_studio.core.geometry import build_geometry
-from kicad_rf_studio.core.geometry.copper import Piece
+from kicad_rf_studio.core.geometry.copper import Piece, split_holes
 from kicad_rf_studio.core.geometry.zstack import Slab
 from kicad_rf_studio.core.mesh import Mesh
 from kicad_rf_studio.core.mesh.gates import mesh_with_lint
 from kicad_rf_studio.core.messages import KrsError, render
-from kicad_rf_studio.core.model.ports import End, ends, nominal_boxes, place
+from kicad_rf_studio.core.model.ports import End, ends, nominal_boxes, place, plane_under
 from kicad_rf_studio.core.project import load_project, save_project
 from kicad_rf_studio.pipeline import build_model
 from test_cli_cost import FIX
@@ -245,6 +245,66 @@ def test_copper_in_the_gap_that_no_box_clears_is_a_coded_refusal(extra):  # D-45
         synthetic(extra)
     assert (e.value.code, e.value.params) == ("E_PORT_BOX", {"name": "P9"})
     assert "copper-free mesh line between them" in render("E_PORT_BOX", name="P9")
+
+
+FOUR = (Slab("copper", 0.0, 0.035, None, None, "B.Cu"), Slab("dielectric", 0.035, 0.235, 4.3, 0.02, None),
+        Slab("copper", 0.235, 0.27, None, None, "In2.Cu"), Slab("dielectric", 0.27, 1.335, 4.5, 0.02, None),
+        Slab("copper", 1.335, 1.37, None, None, "In1.Cu"), Slab("dielectric", 1.37, 1.57, 4.3, 0.02, None),
+        Slab("copper", 1.57, 1.605, None, None, "F.Cu"))
+GRID = np.round(np.arange(-10, 11) * 0.1, 6)  # lines every 0.1 mm
+V_MESH = Mesh(GRID, GRID, np.array([0.0, 0.035, 0.235, 0.27, 1.335, 1.37, 1.57, 1.605]), 0.1, 0.03, {}, {})
+PAD = box(-0.15, -0.3, 0.15, 0.3)  # 0.3 × 0.6 mm, longer along y
+
+
+def plane(layer, net="GND", shape=box(-5, -5, 5, 5)):
+    return Piece(layer, net, shape, True)
+
+
+def cut(shape, layer="In1.Cu"):
+    """A GND plane `shape` as the copper pipeline leaves it: pieces with no holes (split_holes)."""
+    return [Piece(layer, "GND", g, True) for g in split_holes(shape)]
+
+
+def test_a_vertical_port_runs_from_the_plane_under_a_pad_to_the_pad():  # Stage 4 design 5.5
+    assert plane_under(PAD, "F.Cu", FOUR, [plane("In1.Cu")], {"GND"}) == "In1.Cu"
+    q = place(End("P1", PAD, PAD, "F.Cu", "external", ref_layer="In1.Cu"), V_MESH, FOUR, [])
+    assert q == {"name": "P1", "kind": "lumped", "dir": "z", "start": [0.0, -0.2, 1.37], "stop": [0.0, 0.2, 1.57],
+                 "nodes": [[0.0, 0.0, 1.37], [0.0, 0.0, 1.57], [0.0, 0.0, 1.335], [0.0, 0.0, 1.605]], "part": False}
+    assert plane_under(PAD, "B.Cu", FOUR, [plane("In2.Cu")], {"GND"}) == "In2.Cu"  # a bottom pad: the plane above
+    q = place(End("P2", PAD, PAD, "B.Cu", "external", ref_layer="In2.Cu"), V_MESH, FOUR, [])
+    assert (q["start"], q["stop"]) == ([0.0, -0.2, 0.235], [0.0, 0.2, 0.035])  # from the plane: u = V_pad − V_plane
+    # the lumped port's order, plane cap, pad cap, then their far faces, which the PEC-roots gate reads
+    assert q["nodes"] == [[0.0, 0.0, 0.235], [0.0, 0.0, 0.035], [0.0, 0.0, 0.27], [0.0, 0.0, 0.0]]
+    disc = Point(0, 0).buffer(0.2)
+    q = place(End("P3", disc, disc, "F.Cu", "external", ref_layer="In1.Cu"), V_MESH, FOUR, [])
+    assert (q["start"], q["stop"]) == ([-0.1, 0.0, 1.37], [0.1, 0.0, 1.57])  # a round pad: across its centre
+
+
+def test_the_plane_under_a_pad_is_the_nearest_one_nets_copper_that_covers_it():  # design 5.5; Review Focus 4
+    halves = cut(box(-5, -5, 5, 5).difference(Point(0.05, 3.0).buffer(0.15)))  # an antipad 3 mm off, cut at x 0.05
+    assert len(halves) == 2 and plane_under(PAD, "F.Cu", FOUR, halves, {"GND"}) == "In1.Cu"  # neither piece alone
+    assert plane_under(PAD, "F.Cu", FOUR, [plane("In2.Cu")], {"GND"}) == "In2.Cu"  # past In1.Cu, bare under the pad
+    away = plane("In1.Cu", "SIG", box(1, -1, 2, 1))  # In1.Cu's copper beside the pad, not over it
+    assert plane_under(PAD, "F.Cu", FOUR, [away, plane("In2.Cu")], {"GND"}) == "In2.Cu"
+    two = (FOUR[0], Slab("dielectric", 0.035, 1.535, 4.5, 0.02, None), Slab("copper", 1.535, 1.57, None, None, "F.Cu"))
+    assert plane_under(PAD, "F.Cu", two, [plane("B.Cu")], {"GND"}) == "B.Cu"  # two layers: the bottom copper
+
+
+@pytest.mark.parametrize("pieces", [
+    [],  # no copper under the pad
+    cut(box(-5, -5, 5, 5).difference(Point(0, 0).buffer(0.15))),  # an antipad under it, cut as the pipeline cuts it
+    [plane("In1.Cu", shape=box(-5, -5, 0.0, 5)), plane("In1.Cu", shape=box(0.1, -5, 5, 5))],  # a split under it
+    [plane("In1.Cu", "SIG")],  # copper of a signal net
+    [plane("In1.Cu", "SIG", box(-1, -1, 1, 1)), plane("In2.Cu")]])  # another net's copper between the pad and plane
+def test_a_pad_with_no_plane_under_it_has_no_vertical_port(pieces):  # Review Focus 4
+    assert plane_under(PAD, "F.Cu", FOUR, pieces, {"GND"}) is None
+
+
+def test_a_vertical_port_needs_a_mesh_line_inside_its_pad():  # D-11: a coded refusal, never E_INTERNAL
+    tiny = box(0.02, 0.02, 0.08, 0.08)  # between the lines at 0 and 0.1
+    with pytest.raises(KrsError) as e:
+        place(End("P9", tiny, tiny, "F.Cu", "external", ref_layer="In1.Cu"), V_MESH, FOUR, [])
+    assert (e.value.code, e.value.params) == ("E_PORT_BOX", {"name": "P9"})
 
 
 @pytest.mark.openems

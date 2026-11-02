@@ -16,6 +16,8 @@ from kicad_rf_studio.core.messages import KrsError
 from kicad_rf_studio.core.model.parts import CURVE_PORT, GRID, PORT
 
 if TYPE_CHECKING:
+    from collections.abc import Collection
+
     from shapely.geometry import Polygon
     from shapely.geometry.base import BaseGeometry
 
@@ -31,13 +33,15 @@ class End:
     """A port's two ends in the board's frame (y up): the copper of its signal and of its reference, on the copper
     layer `layer`. `name` is the port's name, or the part's ref; `role` is "external" for a port of project.json's
     `ports`, else the part's role (port, curve_port or grid). `centers`, a part's only, are the centres of its
-    reference and signal pads, where its CurvePort ends."""
+    reference and signal pads, where its CurvePort ends. `ref_layer`, an SI end's only (Stage 4 design 5.5): the
+    copper layer of the plane under its pad, which makes its port vertical; None keeps the port on `layer`."""
     name: str
     signal: BaseGeometry
     reference: BaseGeometry
     layer: str
     role: str
     centers: tuple[XY, XY] | None = None
+    ref_layer: str | None = None
 
 
 def _pad(board: Board, name: str, uuid: str = "", layer: str | None = None) -> Pad:
@@ -118,6 +122,65 @@ def nominal_boxes(ends: list[End]) -> tuple[Polygon, ...]:
     return tuple(e.signal.union(e.reference).convex_hull for e in ends)
 
 
+def plane_under(pad: BaseGeometry, layer: str, zs: tuple[Slab, ...], pieces: list[Piece],
+                nets: Collection[str]) -> str | None:
+    """The copper layer of the plane a vertical port on `pad`, on copper layer `layer`, takes as its reference (Stage 4
+    design 5.5): the nearest layer toward the board's middle (down from the top half, up from the bottom half, and on
+    past the middle) on which the copper of one net of `nets` (the ground and power nets), its pieces' union, covers
+    the pad, the 10 µm simplification allowed. None when a layer before it has any copper over the pad's footprint, or
+    when no layer qualifies: no copper, an antipad or a split under the pad, or another net's copper on the way. The
+    union, since the copper pipeline's hole cut splits a plane along any antipad's x into abutting pieces."""
+    # ponytail: any copper over the pad's footprint on a layer on the way refuses the port, though the sheet crosses
+    # only the pad's centre line; a narrower check if real pads need it
+    cu = [c.copper for c in zs if c.copper]  # bottom up
+    i = cu.index(layer)
+    for name in cu[i - 1::-1] if i >= len(cu) / 2 else cu[i + 1:]:
+        here = [pc for pc in pieces if pc.layer == name]
+        if any(shapely.union_all([pc.polygon for pc in here if pc.net == net]).buffer(SIMPLIFY).covers(pad)
+               for net in nets):
+            return name
+        if any(pc.polygon.intersects(pad) for pc in here):
+            return None
+    return None
+
+
+def vertical(end: End, mesh: Mesh, zs: tuple[Slab, ...]) -> dict:
+    """The vertical lumped port of `end`, an SI end over a plane (Stage 4 design 5.5): a sheet in z from the plane's
+    face (end.ref_layer's slab) to the pad's (end.layer's), starting at the plane, the reference, so that openEMS's u
+    is V_pad − V_plane. Across, the sheet runs along the longer side of the pad's copper shrunk by SIMPLIFY (x on a
+    tie), on the lines inside that copper. It sits at the line across within the copper's bounds nearest their middle,
+    a tie to the lower. Its `nodes` are the plane's cap, the pad's cap, then the plane's and the pad's far faces (the
+    witnesses), the lumped port's order, all at the sheet's middle line (a tie to the lower). E_PORT_BOX when no line
+    lies inside the pad either way."""
+    # ponytail: a sheet across the pad's centre line; a box over the whole pad would need its corners inside a rounded
+    # pad's copper
+    slabs = {c.copper: c for c in zs}
+    pad, plane = slabs[end.layer], slabs[end.ref_layer]
+    below = plane.z0 < pad.z0
+    face, far = ((plane.z1, pad.z0), (plane.z0, pad.z1)) if below else ((plane.z0, pad.z1), (plane.z1, pad.z0))
+    cu = end.signal.buffer(-SIMPLIFY)  # the solids are simplified
+    b = cu.bounds
+    p = int(b[3] - b[1] > b[2] - b[0])  # along the longer side, x on a tie; t = 1 - p across it
+    t = 1 - p
+    along, across = (mesh.x, mesh.y)[p], (mesh.x, mesh.y)[t]
+    width = across[(across > b[t]) & (across < b[t + 2])]
+    if not width.size:
+        raise KrsError("E_PORT_BOX", name=end.name)
+    tc = min(width, key=lambda v: abs(v - (b[t] + b[t + 2]) / 2))  # a tie: the lower
+    run = along[shapely.contains_xy(cu, *((along, tc) if p == 0 else (tc, along)))]  # the lines inside the copper
+    if not run.size:
+        raise KrsError("E_PORT_BOX", name=end.name)
+    mid = min(run, key=lambda v: abs(v - (run[0] + run[-1]) / 2))  # a tie: the lower
+
+    def at(u: float, z: float) -> list[float]:
+        """The point `u` along p, at tc across and at `z`, as [x, y, z]."""
+        xy = (u, tc) if p == 0 else (tc, u)
+        return [float(xy[0]), float(xy[1]), float(z)]
+
+    return {"name": end.name, "kind": "lumped", "dir": "z", "start": at(run[0], face[0]), "stop": at(run[-1], face[1]),
+            "nodes": [at(mid, z) for z in (*face, *far)], "part": end.role != "external"}
+
+
 def place(end: End, mesh: Mesh, zs: tuple[Slab, ...], pieces: list[Piece]) -> dict:
     """The port of `end` on the lines of `mesh` (spec 5.6): a CurvePort for a curve_port, else a lumped port; `pieces`
     are the board's copper (geom.pieces), and those on `end.layer` are the metal the box keeps out of. The lumped port's
@@ -138,9 +201,12 @@ def place(end: End, mesh: Mesh, zs: tuple[Slab, ...], pieces: list[Piece]) -> di
     the copper's top face; its `nodes` are those two ends. openEMS puts its one-edge port at their middle, joined to
     both by PEC curves, and orders them along its axis itself: its u is V_signal − V_reference only when the
     reference lies lower along it.
+    An end with a `ref_layer`, an SI end over a plane (Stage 4 design 5.5), takes the vertical port (`vertical`).
     Every coordinate is a line of `mesh` and every value JSON-native: lists of Python floats. Raises E_PORT_SPANS, and
     E_PORT_BOX when no line across qualifies, copper fills every line between the facing lines, or a cap touches no
     piece of metal or another than its witness's."""
+    if end.ref_layer is not None:
+        return vertical(end, mesh, zs)
     slab = next(c for c in zs if c.copper == end.layer)
     if end.role == CURVE_PORT:
         z = float(slab.z1)  # ponytail: the top face for any layer; P0-B tests F.Cu only
