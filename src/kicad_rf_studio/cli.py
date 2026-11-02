@@ -195,7 +195,7 @@ def new_antenna(board: str | Path, start: str, antenna: str, band: tuple[float, 
     from kicad_rf_studio.core.geometry.lid import find_lid  # here, as in `new`
     from kicad_rf_studio.core.geometry.region import air_gap, board_region
     from kicad_rf_studio.core.model.parts import project_parts
-    from kicad_rf_studio.core.model.spec import pulse
+    from kicad_rf_studio.core.model.spec import antenna_t_max
 
     f_lo, f_hi = band
     if f_hi > 2 * f_lo:
@@ -210,8 +210,7 @@ def new_antenna(board: str | Path, start: str, antenna: str, band: tuple[float, 
     ports = [_port(board, classes, "P1", start)]
     f1, f2 = pulse_band(f_lo, f_hi)
     f0 = (f_lo + f_hi) / 2
-    # design 5.4: 2·t0 + 60/f0, rounded up to a whole ns
-    t_max = math.ceil((2 * pulse(f1, f2, 0)["t0"] + 60 / f0) * 1e9) / 1e9
+    t_max = antenna_t_max(f_lo, f_hi)
     region = board_region(board, chain, ports, zs, f2)
     series, shunt, others, part_notes = project_parts(board, chain, classes, region.roi, f1, f2, antenna=True)
     # every shield on the board is a candidate

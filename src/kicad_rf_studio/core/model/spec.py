@@ -29,7 +29,7 @@ from kicad_rf_studio.core.model.csx import PML_CELLS
 from kicad_rf_studio.core.model.parts import COPPER
 from kicad_rf_studio.core.model.ports import _pad
 from kicad_rf_studio.core.model.readers import c_box
-from kicad_rf_studio.core.project import antenna, copper_model
+from kicad_rf_studio.core.project import antenna, copper_model, pulse_band
 from kicad_rf_studio.stoprule import flat_window
 
 if TYPE_CHECKING:
@@ -57,6 +57,12 @@ def pulse(f1: float, f2: float, t_max: float) -> dict:
     t0 = 9 / (2 * math.pi * fw)
     return {"f1": f1, "f2": f2, "t0": t0, "t_max": t_max,
             "expr": f"sin(2*pi*{fm:.12g}*(t-{t0:.12g}))*exp(-(2*pi*{fw:.12g}*t/3-3)^2)*(t<{2 * t0:.12g})"}
+
+
+def antenna_t_max(f_lo: float, f_hi: float) -> float:
+    """An antenna's default T_max in s (Stage 3 design 5.4, A-28): 2·t0 + 60/f0 of its band's pulse (pulse_band,
+    pulse), f0 the band's centre, rounded up to a whole ns."""
+    return math.ceil((2 * pulse(*pulse_band(f_lo, f_hi), 0)["t0"] + 60 / ((f_lo + f_hi) / 2)) * 1e9) / 1e9
 
 
 def excitation(project: dict) -> dict:

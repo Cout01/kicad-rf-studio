@@ -8,9 +8,10 @@ import pytest
 from kicad_rf_studio.core.geometry.region import air_gap
 from kicad_rf_studio.core.kicad import classify, load_board
 from kicad_rf_studio.core.messages import KrsError, render
+from kicad_rf_studio.core.model.spec import antenna_t_max
 from kicad_rf_studio.core.project import (SCHEMA, SCHEMA_ANTENNA, antenna, board_file, board_hash, check_project,
-                                          copper_model, load_project, make_antenna_project, pulse_band, read_project,
-                                          save_project)
+                                          copper_model, far_field_hz, load_project, make_antenna_project, pulse_band,
+                                          read_project, save_project)
 from test_cli_new import FIX, run_new
 
 
@@ -264,3 +265,14 @@ def test_an_antennas_copper_is_solid_or_sheet_and_optional():  # design 5.3; rul
     assert check_project({**d, "copper": "sheet", "flat_s": 4.4e-8}, Path("p.json"))["copper"] == "sheet"
     old = {k: v for k, v in d.items() if k != "copper"}  # a project made before this version
     assert check_project(old, Path("p.json")) is old and copper_model(old) == "solid"
+
+
+# --- Stage 3 plan 5, task 1: the band's defaults --------------------------------------------------------------
+
+
+def test_the_bands_defaults_are_new_antennas():  # Stage 3 design 5.4, 5.5; the GUI's Advanced shows them (plan 5)
+    assert far_field_hz(2.4e9, 2.4835e9) == [  # as <GATES>' verified pour holds them: compare's fingerprint
+        2441750000.0, 2400000000.0, 2409277777.7777777, 2418555555.5555553, 2427833333.3333335, 2437111111.111111,
+        2446388888.888889, 2455666666.6666665, 2464944444.4444447, 2474222222.2222223, 2483500000.0]
+    bands = ((863e6, 870e6), (902e6, 928e6), (2.4e9, 2.4835e9))
+    assert [antenna_t_max(*band) for band in bands] == [85e-9, 79e-9, 30e-9]

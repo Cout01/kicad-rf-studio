@@ -129,6 +129,12 @@ def make_project(board_path: str, board_sha256: str, f0_hz: float, stackup: Stac
         "chain": chain, "others": others, "ports": ports, "gates": dict(GATES), "allow_curve_port": False}
 
 
+def far_field_hz(f_lo: float, f_hi: float) -> list[float]:
+    """An antenna's far-field frequencies as `new` writes them (Stage 3 design 5.5): f0, the band's centre, then 10
+    evenly from f_lo to f_hi."""
+    return [(f_lo + f_hi) / 2, *(f_lo + (f_hi - f_lo) * k / 9 for k in range(10))]
+
+
 def make_antenna_project(board_path: str, board_sha256: str, f_lo_hz: float, f_hi_hz: float, stackup: Stackup,
                          classes: Classes, chain: dict, others: list[dict], ports: list[dict], ref: str,
                          join: list[str], *, t_max_s: float, air_gap_mm: float, preset: str = DEFAULT_PRESET,
@@ -136,8 +142,8 @@ def make_antenna_project(board_path: str, board_sha256: str, f_lo_hz: float, f_h
     """project.json of an antenna (schema 2, Stage 3 design 5.1) as `new --antenna` writes it: make_project's dict but
     harmonics and band_factor, with schema SCHEMA_ANTENNA, f0_hz the band's centre, `t_max_s`, region {"expand_h":
     REACH_H} (the measured region reaches as far as the protected set) and lid true (every shield gets its lid, 5.3);
-    then kind, band, antenna {"ref", "join"}, `air_gap_mm`, boundary ANTENNA_BOUNDARY, far_field {"f_hz": f0 then
-    10 frequencies evenly from f_lo to f_hi, "step_deg": FAR_FIELD_STEP} and copper ANTENNA_COPPER."""
+    then kind, band, antenna {"ref", "join"}, `air_gap_mm`, boundary ANTENNA_BOUNDARY, far_field {"f_hz":
+    far_field_hz(f_lo, f_hi), "step_deg": FAR_FIELD_STEP} and copper ANTENNA_COPPER."""
     f0 = (f_lo_hz + f_hi_hz) / 2
     data = make_project(board_path, board_sha256, f0, stackup, classes, chain, others, ports, preset=preset,
                         lid_height_mm=lid_height_mm)
@@ -145,8 +151,8 @@ def make_antenna_project(board_path: str, board_sha256: str, f_lo_hz: float, f_h
     data.update(schema=SCHEMA_ANTENNA, t_max_s=t_max_s, region={"expand_h": REACH_H}, lid=True)  # in their places
     data.update(kind="antenna", band={"f_lo_hz": f_lo_hz, "f_hi_hz": f_hi_hz}, antenna={"ref": ref, "join": join},
                 air_gap_mm=air_gap_mm, boundary=ANTENNA_BOUNDARY,
-                far_field={"f_hz": [f0, *(f_lo_hz + (f_hi_hz - f_lo_hz) * k / 9 for k in range(10))],
-                           "step_deg": FAR_FIELD_STEP}, copper=ANTENNA_COPPER)  # appended, in this order
+                far_field={"f_hz": far_field_hz(f_lo_hz, f_hi_hz), "step_deg": FAR_FIELD_STEP},
+                copper=ANTENNA_COPPER)  # appended, in this order
     return data
 
 

@@ -5,6 +5,8 @@ budget, radiation being the "loss". matplotlib is imported inside antenna_png an
 import csv
 import io
 import re
+from collections.abc import Sequence
+from dataclasses import replace
 from pathlib import Path
 
 import numpy as np
@@ -129,14 +131,23 @@ def s11_lines(project: dict, f: np.ndarray, s11: np.ndarray) -> list[tuple[str, 
     return lines
 
 
-def far_field_of(paths: dict[str, Path], waves: Path) -> dict:
+def far_field_of(paths: dict[str, Path], waves: Path, f_hz: Sequence[float] = ()) -> dict:
     """A run's far field (design 5.5): each transform file of `paths` (sphere, elevation, azimuth) read back under its
     grid's name; "p_acc" and "p_inc" at the sphere's frequencies from port 1 of the job's `waves` file, u[0] and i[0]
-    over the whole record; and "eff", efficiencies' dict. E_RESULTS_WAVES for the first file missing, in that order."""
+    over the whole record; and "eff", efficiencies' dict. `f_hz` (project.json's far_field.f_hz): openEMS stores the
+    recorded frequencies as float32, up to about 128 Hz off at 2.4 GHz, so each is snapped to the nearest of them
+    within a relative 1e-6 and keeps its recorded value otherwise; with none, none is snapped. E_RESULTS_WAVES for the
+    first file missing, in that order."""
     for path in (*paths.values(), waves):
         if not path.is_file():
             raise KrsError("E_RESULTS_WAVES", path=str(path))
     far = {grid: read_far_field(path) for grid, path in paths.items()}
+    exact = np.asarray(f_hz, dtype=float)
+    if exact.size:
+        # ponytail: a frequency within 1e-6 of none of f_hz keeps openEMS's float32 value; nothing records another today
+        for grid, g in far.items():
+            nearest = exact[np.abs(g.f[:, None] - exact).argmin(axis=1)]
+            far[grid] = replace(g, f=np.where(np.isclose(nearest, g.f, rtol=1e-6, atol=0), nearest, g.f))
     with np.load(waves) as w:
         p_acc, p_inc = port_powers(w["t_u"], w["u"][0], w["t_i"], w["i"][0], far["sphere"].f)
     return {**far, "p_acc": p_acc, "p_inc": p_inc, "eff": efficiencies(far["sphere"], p_acc, p_inc)}
@@ -285,16 +296,18 @@ def antenna_csv(far: dict, s11: np.ndarray) -> bytes:
     return _csv(ANTENNA_COLUMNS, np.column_stack(columns))
 
 
-def _panels(fig, f: np.ndarray, curves: list[tuple[str, np.ndarray, dict | None]], project: dict) -> None:
+def _panels(fig, f: np.ndarray, curves: list[tuple[str, np.ndarray, dict | None]], project: dict,
+            one_row: bool = False) -> tuple:
     """The plots of draw_antenna and draw_compare on the matplotlib Figure `fig`, each curve (name, S11 (F,) on `f`,
     far_field_of's dict or None) drawn on every panel (Stage 3 design 5.6, 5.8): |S11| in dB against GHz, each curve
     labelled with its name, with the band [f_lo, f_hi] shaded and lines at LEVELS_DB; S11 on a Smith chart with dots
     at f_lo, f0 and f_hi; and only when every curve has a far field, η_rad and η_tot in % against GHz and the cuts of
     D in dBi at f0, XY (θ 90°), XZ (φ 0°) and YZ (φ 90°), on one radial range down to CUT_RANGE_DB below the highest
     peak. The η panel has a legend; with two curves every panel has one, and the η lines' labels start with the
-    curve's name."""
+    curve's name; with `one_row`, the far field's panels beside S11 and the Smith chart in one row. Returns the S11
+    axes and the Smith chart's."""
     far_fields, two = all(far for _, _, far in curves), len(curves) > 1
-    rows, cols = (2, 3) if far_fields else (1, 2)
+    rows, cols = ((1, 6) if one_row else (2, 3)) if far_fields else (1, 2)
     ax11, ax_smith = fig.add_subplot(rows, cols, 1), fig.add_subplot(rows, cols, 2)
     band, dots = project["band"], list(_markers(project, f).values())
     rf.plotting.smith(ax=ax_smith, draw_labels=True)
@@ -332,19 +345,38 @@ def _panels(fig, f: np.ndarray, curves: list[tuple[str, np.ndarray, dict | None]
             legends += [ax] if two else []
     for ax in legends:
         ax.legend()
+    return ax11, ax_smith
 
 
 def draw_antenna(fig, f: np.ndarray, s11: np.ndarray, project: dict, far: dict | None, name: str,
-                 label: str | None = None) -> None:
+                 label: str | None = None, gui: bool = False) -> tuple:
     """antenna_summary.png's plots (design 5.6) on the matplotlib Figure `fig` (antenna_png's, or plan 5's GUI
     canvas), as draw_summary draws v1's: _panels of the one curve `s11` named `name`, with far_field_of's `far` when
     given. Under I_PLOT_ANTENNA_TITLE with I_ANTENNA_RELATIVE as its second line and `label` (the what-if label, D-15,
     as draw_summary's) as its third when given, and with the rendered ANTENNA_LIMITS, one a line, in the last of
-    fig.texts, at the foot."""
-    _panels(fig, f, [(name, s11, far)], project)
+    fig.texts, at the foot. Returns the S11 and Smith axes, which retrace_antenna moves. With `gui` (plan 5's Results
+    canvas) the far field's panels stand in one row and the limits are left to the window's lines, which end with
+    them: at 1200 × 800 the 2 × 3 grid under its title and five-line foot collapses (probed: 28 px axes in English,
+    none in pt-BR); antenna_png never passes it, so its bytes stay."""
+    axes = _panels(fig, f, [(name, s11, far)], project, one_row=gui)
     fig.suptitle(render("I_PLOT_ANTENNA_TITLE", name=name) + "\n" + render("I_ANTENNA_RELATIVE")
                  + ("\n" + label if label else ""), wrap=True)
-    fig.supxlabel("\n".join(render(code) for code in ANTENNA_LIMITS), x=0.01, ha="left", fontsize="small", wrap=True)
+    if not gui:
+        fig.supxlabel("\n".join(render(code) for code in ANTENNA_LIMITS), x=0.01, ha="left", fontsize="small",
+                      wrap=True)
+    return axes
+
+
+def retrace_antenna(axes: tuple, f: np.ndarray, s11: np.ndarray, project: dict) -> list:
+    """Moves the curve that draw_antenna drew on `axes` (its return) to `s11` (F,) on `f`, as retrace_summary moves
+    v1's (the GUI's instant retune, Stage 3 design 5.10): |S11| in dB, the S11 axes' first line; the Smith locus and
+    its dots at f_lo, f0 and f_hi, the chart's last two lines. Returns those Line2D."""
+    ax11, ax_smith = axes
+    dots = list(_markers(project, f).values())
+    lines = [ax11.lines[0], ax_smith.lines[-2], ax_smith.lines[-1]]  # the band's level lines come after the curve
+    for line, xy in zip(lines, ((f / 1e9, _db(s11)), (s11.real, s11.imag), (s11[dots].real, s11[dots].imag))):
+        line.set_data(*xy)  # no draw, no rescale
+    return lines
 
 
 def draw_compare(fig, f: np.ndarray, curves: list[tuple[str, np.ndarray, dict | None]], project: dict) -> None:

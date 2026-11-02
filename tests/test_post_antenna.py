@@ -2,9 +2,11 @@
 import csv
 import io
 import math
+import shutil
 from pathlib import Path
 from types import SimpleNamespace
 
+import h5py
 import numpy as np
 import pytest
 from matplotlib.figure import Figure
@@ -14,7 +16,7 @@ from kicad_rf_studio.core.post.antenna import (ANTENNA_LIMITS, DB_LIMIT, DELTA_C
                                                 antenna_png, bandwidth, compare_png, compare_s11, delta_lines, deltas,
                                                 deltas_csv, dip_resonance, draw_antenna, draw_compare,
                                                 eta_what_if_lines, far_field_lines, far_field_of, farfield_csv,
-                                                resonance, s11_lines, shown_zin, zin)
+                                                resonance, retrace_antenna, s11_lines, shown_zin, zin)
 from kicad_rf_studio.core.post.waves import band_grid
 from test_project import antenna_dict
 
@@ -86,6 +88,20 @@ def test_a_missing_far_field_file_is_named(tmp_path):  # design 5.5: a run folde
     assert (e.value.code, e.value.params) == ("E_RESULTS_WAVES", {"path": str(tmp_path / "waves.npz")})
 
 
+def test_far_field_of_snaps_openems_float32_frequencies_to_the_projects(tmp_path):  # plan 3's deferred item; ruling 8
+    exact = [2441750000.0, 2409277777.7777777]  # f0 and the next of the 2.4 GHz band's list: not round numbers
+    for g in ("sphere", "elevation", "azimuth"):
+        shutil.copyfile(FAR / f"{g}.h5", tmp_path / f"{g}.h5")
+    with h5py.File(tmp_path / "sphere.h5", "r+") as h5:
+        h5["nf2ff"].attrs["Frequency"] = np.array(exact, dtype=np.float32)  # as openEMS stores them: ...016, ...696
+    paths = {g: tmp_path / f"{g}.h5" for g in ("sphere", "elevation", "azimuth")}
+    far = far_field_of(paths, FAR / "waves.npz", exact)
+    assert far["sphere"].f.tolist() == exact and far["elevation"].f.tolist() == [2449999872.0]  # 3e-3 away: kept
+    rows = antenna_csv(far, np.full(2, 0.5 + 0j)).decode().splitlines()[1:]
+    assert [row.split(",")[0] for row in rows] == ["2409277777.7777777", "2441750000.0"]  # the project's, ascending
+    assert far_field_of(paths, FAR / "waves.npz")["sphere"].f.tolist() == [2441750016.0, 2409277696.0]  # none given
+
+
 def test_the_summary_png_holds_the_label_and_the_limits():  # design 5.6; anti-goal 1: no number without them
     d = antenna_dict()
     f = band_grid(d)
@@ -104,6 +120,23 @@ def test_the_summary_png_carries_the_what_if_label():  # design 5.7: under Stage
     draw_antenna(fig, f, dip(f).astype(complex), d, None, "proj", "label")
     assert fig.get_suptitle() == (render("I_PLOT_ANTENNA_TITLE", name="proj") + "\n" + render("I_ANTENNA_RELATIVE")
                                   + "\nlabel")
+
+
+def test_the_figures_curve_moves_in_place_and_the_windows_figure_stands_in_one_row():  # design 5.10; rulings 1, 7
+    d = antenna_dict()
+    f = band_grid(d)
+    k = [int(np.flatnonzero(f == v)[0]) for v in (2.4e9, 2.44175e9, 2.4835e9)]
+    moved = (0.5 * dip(f, 2.45e9)).astype(complex)
+    for far in (far_of(), None):
+        fig = Figure()
+        axes = draw_antenna(fig, f, dip(f).astype(complex), d, far, "proj", gui=True)
+        lines = retrace_antenna(axes, f, moved, d)
+        grid = [(1, 6) if far else (1, 2)] * len(fig.axes)  # the window's: one row, readable at 1200 x 800
+        assert [ax.get_subplotspec().get_geometry()[:2] for ax in fig.axes] == grid
+        assert not [t for t in fig.texts for code in ANTENNA_LIMITS if render(code) in t.get_text()]  # no foot
+        assert len(fig.axes) == (6 if far else 2) and lines == [axes[0].lines[0], axes[1].lines[-2], axes[1].lines[-1]]
+        assert np.array_equal(lines[0].get_ydata(), 20 * np.log10(np.abs(moved)))
+        assert np.array_equal(lines[1].get_xdata(), moved.real) and np.array_equal(lines[2].get_ydata(), moved[k].imag)
 
 
 def test_verify_compares_s11_and_the_resonance_with_the_retune():  # design 5.7; RF 5: a shallow minimum is no dip

@@ -613,7 +613,7 @@ def antenna_outputs(path: Path, project: dict, command: str, *,
         lines += s11_lines(project, lay.f, res.chain[:, 0, 0])
         if results.get("far_field"):
             try:
-                far = far_of(results)
+                far = far_of(results, project)
             except KrsError as err:
                 if not errors_as_lines:
                     raise
@@ -625,7 +625,7 @@ def antenna_outputs(path: Path, project: dict, command: str, *,
         elif res.refs:
             # ponytail: η_rad from verify's ideal network (no package model), the network assumed not to radiate nor to
             # change the board's own loss; the line says what-if
-            if (v := current_verify(project)) and (verify_far := far_of(v)):
+            if (v := current_verify(project)) and (verify_far := far_of(v, project)):
                 lines += eta_what_if_lines(verify_far, s11_at(path, project, verify_far["sphere"].f)[1])
             else:
                 lines.append(("I_ANTENNA_NO_FAR_FIELD", what_if))
@@ -853,15 +853,15 @@ def far_field(job: Path, step_deg: int = 5) -> dict[str, Path]:
     return {grid: job / f"nf2ff-{token}-{grid}.h5" for grid in GRIDS}
 
 
-def far_of(record: dict) -> dict | None:
+def far_of(record: dict, project: dict | None = None) -> dict | None:
     """far_field_of of the run `record` holds, project.json's results or its verify (Stage 3 design 5.5): its far_field
-    files and its first job's waves, in its run_dir; None when it records no far field. Raises far_field_of's
-    E_RESULTS_WAVES."""
+    files and its first job's waves, in its run_dir, and, with `project`, its far_field.f_hz, to which far_field_of
+    snaps the recorded frequencies; None when it records no far field. Raises far_field_of's E_RESULTS_WAVES."""
     if not record.get("far_field"):
         return None
     run_dir = Path(record["run_dir"])
     return far_field_of({grid: run_dir / file for grid, file in record["far_field"].items()},
-                        run_dir / record["jobs"][0]["waves"])
+                        run_dir / record["jobs"][0]["waves"], project["far_field"]["f_hz"] if project else ())
 
 
 def results_of(project: dict, model: Model) -> dict:
@@ -995,7 +995,7 @@ def antenna_result(path: Path) -> dict:
     if record is None or "fingerprint" not in record:
         raise KrsError("E_COMPARE_NO_RESULT", path=str(path))
     try:  # a run folder moved or deleted since: nothing compare can use, as a deleted verify folder
-        lay, far = layout(project, record), far_of(record)
+        lay, far = layout(project, record), far_of(record, project)
     except KrsError as err:
         if err.code != "E_RESULTS_WAVES":
             raise
@@ -1203,7 +1203,7 @@ def _verify_antenna(path: Path, run_dir: Path, project: dict, vspec: dict, value
             paths = far_field(run_dir / Path(done[0]["waves"]).parent, project["far_field"]["step_deg"])
             data["verify"]["far_field"] = {grid: p.relative_to(run_dir).as_posix() for grid, p in paths.items()}
             _save(path, data, command)
-            far = far_of(data["verify"])
+            far = far_of(data["verify"], project)
         except KrsError as err:  # the transform's, the save's or far_of's: the first write stands
             errors.append((err.code, err.params))
         else:
