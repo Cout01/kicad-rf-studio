@@ -1,15 +1,16 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """The release check (Stage 2 design 5.6): run by hand before a release, from the repo root
 (`python tools/release_check.py`, with the dev venv's Python, which has jsonschema), and by
-.github/workflows/release-check.yml on a version tag or by hand. Five steps, each printing one PASS, FAIL or SKIPPED
+.github/workflows/release-check.yml on a version tag or by hand. Six steps, each printing one PASS, FAIL or SKIPPED
 line: build (a wheel from git archive of HEAD, the tree a release's source zip holds, inspected), install (a fresh
 venv: the wheel, pip check, kicad-python's import and both entry points), gui (the main window built, shown offscreen
-and closed, in that venv), plugin (install-kicad-plugin in that venv, its plugin.json checked against KiCad's schemas
-at SCHEMA_TAGS and the identifier rules) and privacy (the privacy gate's generic rules over the history and the wheel;
-the private list stays the hooks'). Every file it makes is under one temporary folder, removed at the end and named
-with a space and an accent, but for pip's own cache and build folders; a folder it cannot remove is named on a last
-line. Every process of the gui and plugin steps gets that folder for its data, caches and KiCad folders. Exits 1 when
-a step fails. The standard library only, but for jsonschema, which kicad-python brings, imported by the plugin step.
+and closed, in that venv), antenna (`new --antenna` in that venv on the release's own antenna fixture, its project.json
+of schema 2), plugin (install-kicad-plugin in that venv, its plugin.json checked against KiCad's schemas at SCHEMA_TAGS
+and the identifier rules) and privacy (the privacy gate's generic rules over the history and the wheel; the private
+list stays the hooks'). Every file it makes is under one temporary folder, removed at the end and named with a space
+and an accent, but for pip's own cache and build folders; a folder it cannot remove is named on a last line. Every
+process of the gui, antenna and plugin steps gets that folder for its data, caches and KiCad folders. Exits 1 when a
+step fails. The standard library only, but for jsonschema, which kicad-python brings, imported by the plugin step.
 Its lines are plain English: a release tool's output, like privacy_gate's, not the app's.
 """
 import json
@@ -150,8 +151,25 @@ def gui(tmp: Path) -> tuple[str, str]:
     return "PASS", "the main window was built, shown offscreen and closed, in the fresh venv"
 
 
+def antenna(tmp: Path) -> tuple[str, str]:
+    """(d) `new --antenna` by the fresh venv's console script on the release's own tests/fixtures/ifa2g4_pi.kicad_pcb,
+    taken from tmp/source.zip, isolated: its project.json schema 2 and kind antenna, the installed importer and schema
+    2 at no cost (no openEMS runs)."""
+    with zipfile.ZipFile(tmp / "source.zip") as z:
+        board = z.extract("tests/fixtures/ifa2g4_pi.kicad_pcb", tmp / "source")
+    command = [program(tmp, "kicad-rf-studio"), "new", board, "--start", "U1.1", "--antenna", "AE1",
+               "--band", "2400MHz:2483.5MHz", "-o", str(tmp / "antenna")]
+    if (done := run(command, timeout=300, env=isolated(tmp))).returncode:
+        return failed(command, done)
+    data = json.loads((tmp / "antenna" / "project.json").read_text(encoding="utf-8"))
+    schema, kind = data.get("schema"), data.get("kind")
+    if (schema, kind) != (2, "antenna"):
+        return "FAIL", f"…/antenna/project.json: schema {schema!r}, kind {kind!r}"
+    return "PASS", "new wrote an antenna project, schema 2, from tests/fixtures/ifa2g4_pi.kicad_pcb in the fresh venv"
+
+
 def plugin(tmp: Path) -> tuple[str, str]:
-    """(d) install-kicad-plugin by the fresh venv's console script into tmp's KiCad 10.0 folder (9.0's files are the
+    """(e) install-kicad-plugin by the fresh venv's console script into tmp's KiCad 10.0 folder (9.0's files are the
     same), checked by kicad-python-packager, against KiCad's schema at each of SCHEMA_TAGS and the identifier rules
     (plugin_problems), and its entrypoint executable, as KiCad checks it at the click."""
     folder = tmp / "documents" / ("KiCad" if WINDOWS else "kicad") / "10.0" / "plugins" / "kicad-rf-studio"
@@ -170,7 +188,7 @@ def plugin(tmp: Path) -> tuple[str, str]:
 
 
 def privacy(tmp: Path) -> tuple[str, str]:
-    """(e) The privacy gate's generic rules, as ci.yml runs them: over the history (its script, --all --generic-only)
+    """(f) The privacy gate's generic rules, as ci.yml runs them: over the history (its script, --all --generic-only)
     and over the wheel's texts (wheel_hits). The private list stays the hooks' (spec 9.1): pre-commit and pre-push run
     it on every commit and push."""
     command = [sys.executable, "-X", "utf8", str(ROOT / "tools" / "privacy_gate.py"), "--all", "--generic-only"]
@@ -186,8 +204,8 @@ def privacy(tmp: Path) -> tuple[str, str]:
     return "PASS", f"{scanned}: clean under the generic rules (the private list is the hooks')"
 
 
-NEEDS = {"install": "build", "gui": "install", "plugin": "install"}
-STEPS = (build, install, gui, plugin, privacy)
+NEEDS = {"install": "build", "gui": "install", "antenna": "install", "plugin": "install"}
+STEPS = (build, install, gui, antenna, plugin, privacy)
 
 
 def main() -> int:

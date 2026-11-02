@@ -65,6 +65,19 @@ def test_the_readme_has_a_tutorial():  # D-21
     tutorial = readme.split("\n## Tutorial\n", 1)[1].split("\n## ", 1)[0]
     assert [c for c in ("new", "cost", "run", "retune", "verify") if f"kicad-rf-studio {c} " not in tutorial] == []
 
+def test_the_readme_has_an_antenna_tutorial():  # Stage 3 design 5.12 item 5
+    readme = (ROOT / "README.md").read_text(encoding="utf-8")
+    assert readme.index("\n## Tutorial\n") < readme.index("\n## Antenna tutorial\n") < readme.index(
+        "\n## Development setup\n")
+    tutorial = readme.split("\n## Antenna tutorial\n", 1)[1].split("\n## ", 1)[0]
+    band = "--start U1.1 --antenna AE1 --band 2400MHz:2483.5MHz"
+    for command in (f"new tests/fixtures/ifa2g4_pi.kicad_pcb {band} -o ifa2g4_pi", "cost ifa2g4_pi",
+                    "run ifa2g4_pi", "retune ifa2g4_pi L1=0R C2=0.13pF C3=1pF", "verify ifa2g4_pi",
+                    f"new tests/fixtures/ifa2g4_pi_pour.kicad_pcb {band} -o ifa2g4_pi_pour",
+                    "compare ifa2g4_pi ifa2g4_pi_pour -o compare"):
+        assert f"kicad-rf-studio {command}\n" in tutorial, command
+    assert "\n### What these results do not tell you\n" in tutorial and CATALOG["I_ANTENNA_RELATIVE"] in tutorial
+
 def test_the_readme_installs_the_app_openems_and_the_button_with_real_commands(capsys):  # design 5.6, 7; RF 4
     readme = (ROOT / "README.md").read_text(encoding="utf-8")
     install = readme.split("\n## Install\n", 1)[1].split("\n## ", 1)[0]

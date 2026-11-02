@@ -31,7 +31,7 @@ In PowerShell, on Windows 10 or 11:
    & "$venv\Scripts\kicad-rf-studio" install-kicad-plugin
    ```
 
-5. Start the GUI with `& "$venv\Scripts\kicad-rf-studio-gui"`, or from KiCad's PCB editor: select the chain's two end pads and press the kicad-rf-studio button.
+5. Start the GUI with `& "$venv\Scripts\kicad-rf-studio-gui"`, or from KiCad's PCB editor: select the chain's two end pads, or the antenna footprint (or one of its pads) and the radio pin, and press the kicad-rf-studio button.
 
 ### Linux
 
@@ -148,6 +148,65 @@ P2: reached T_max (39.99 ns) at a residual of -69.7 dB. S is kept and flagged; r
 
 P0-B's consistency criterion, `verify` against the co-simulation, failed (|ΔS21| at f0 0.1019 dB against 0.1 dB, max |ΔS| 0.0926 against 0.03), and P0-B was decided fail at the ceiling. Read P0-B's report before you take `verify`'s comparison as agreement.
 
+## Antenna tutorial
+
+This takes `ifa2g4_pi`, the synthetic 2.4 GHz board in `tests/fixtures` (KiCad's `Texas_SWRA117D_2.4GHz_Left` inverted-F, after TI's application note SWRA117D, fed from the radio's pad U1.1 through a pi network of 0402 parts: series L1, shunts C2 and C3), through `new --antenna`, `cost`, `run`, `retune` and `verify`, then compares it with `ifa2g4_pi_pour`, the same board with a ground pour inside the antenna's clearance. Run the commands as in the Tutorial above.
+
+The times were measured on the development PC (Windows 11, 16 CPUs) at the Normal preset, `new`'s default, by the run through the GUI that closed Stage 3 (`docs/validation/<date>-stage3-exit.md`); that run compared with the pour that gate P3-E had verified, so the pour's run and verify times are P3-E's (`docs/validation/2026-11-01-p3-e.md`). `cost` prints your own machine's estimate before every run, and no runtime is promised. The excerpts are real output of that run; `<run folder>` stands for a run's folder in the per-user data folder, and `ifa2g4_pi`, `ifa2g4_pi_pour` and `compare` for the projects' and the compare's folders.
+
+**`new --antenna`** finds the antenna footprint AE1 and its feed pad, traces the chain from the radio's pin U1.1 to it, and writes an antenna project for the band: `--antenna` takes the place of `--end` and `--band F_LO:F_HI` that of `--f0`. The whole board is simulated, in an air box with a PML absorber, and every part on the chain is a part port, so the network can be retuned.
+
+```
+<venv>\Scripts\kicad-rf-studio new tests/fixtures/ifa2g4_pi.kicad_pcb --start U1.1 --antenna AE1 --band 2400MHz:2483.5MHz -o ifa2g4_pi
+```
+
+**`cost`** splits the cells into board, air and PML, and prints the worst case before any run.
+
+```
+<venv>\Scripts\kicad-rf-studio cost ifa2g4_pi
+```
+
+**`run`** runs one job per port, P1 at the radio's pin and the part ports L1, C2 and C3, four at once. It gives S11 at the radio's pin for any part values, and no far field: a part port is not a part.
+
+```
+<venv>\Scripts\kicad-rf-studio run ifa2g4_pi
+```
+
+**`retune`** closes the part ports at new values, with no new run. These came from an E24 search over the run's layout, the values the GUI's snapping gives (C2 typed as 0.127pF snaps to 0.13pF). `0R` replaces a series part with a short and `open` removes a shunt part: `retune ifa2g4_pi L1=0R C2=open C3=open` shows the antenna through its feed line.
+
+```
+<venv>\Scripts\kicad-rf-studio retune ifa2g4_pi L1=0R C2=0.13pF C3=1pF
+```
+
+**`verify`** runs one job with every part in the grid at its applied value, as an ideal part, and records the far field: the radiation and total efficiency, the directivity, gain and realized gain, and the three cuts at f0 in `verify_summary.png`. After it, `retune` also prints the what-if total efficiency of each new set of values.
+
+```
+<venv>\Scripts\kicad-rf-studio verify ifa2g4_pi
+```
+
+**`compare`** reads both projects' verified results, which must share every setting, and marks each difference resolved or not. First the same steps on the pour board, then the compare, which writes `compare.csv` and `compare.png` into `compare`:
+
+```
+<venv>\Scripts\kicad-rf-studio new tests/fixtures/ifa2g4_pi_pour.kicad_pcb --start U1.1 --antenna AE1 --band 2400MHz:2483.5MHz -o ifa2g4_pi_pour
+<venv>\Scripts\kicad-rf-studio run ifa2g4_pi_pour
+<venv>\Scripts\kicad-rf-studio retune ifa2g4_pi_pour L1=0R C2=0.13pF C3=1pF
+<venv>\Scripts\kicad-rf-studio verify ifa2g4_pi_pour
+<venv>\Scripts\kicad-rf-studio compare ifa2g4_pi ifa2g4_pi_pour -o compare
+```
+
+In the GUI, New's kind Antenna takes the antenna footprint, the start pad and a band preset; Results shows S11 with the band shaded, the Smith chart and, from the run that holds the network, the efficiencies and the three cuts, its title naming that run; the Compare tab compares the open project with a variant. The KiCad button pre-fills New with the antenna kind when the antenna footprint, or one of its pads, is selected with the radio's pin.
+
+### What these results do not tell you
+
+- Every antenna result carries this line: "Relative: these antenna results compare variants of one board under identical settings; they do not predict measured performance."
+- The board is alone in free space: no enclosure, hand, battery or cable. TI's AN043 measured a 5–10 MHz shift from a cable's position alone.
+- Copper is a perfect conductor, so the radiation efficiency reads high; the parts' bodies are absent, and the parts off the chain are approximated.
+- A difference is resolved only above 0.3 % of f0 for a frequency and 0.2 dB for an efficiency or a gain, at least three times the model's measured noise floor (gate P3-D, `docs/validation/2026-11-01-p3-d.md`). This antenna's resonance moves about 1.9 % per mm of its position near the ground's corner, which compare resolves.
+- The retune stays what-if until P0-C: `verify` checks the layout reduction with ideal parts, not the vendor parts, and here its ideal network reads −12.5 dB at f0 where the retune's 0402 presets read −17.4 dB.
+- Chip antennas and modules are refused, the matching chain up to their pad still runs as in the Tutorial, and sheet copper is not offered.
+- A radio pin, feed and antenna pad in one line can be refused by the fit2d gate; raising `gates.fit2d_limit` in project.json is at your own risk.
+- `meander915` is no 915 MHz example: on its synthetic board it resonates above its band.
+
 ## Development setup
 
 1. Create a virtual environment: `python -m venv .venv`
@@ -155,7 +214,7 @@ P0-B's consistency criterion, `verify` against the co-simulation, failed (|ΔS21
 3. Install the package in editable mode with the development extras: `python -m pip install -e .[dev]`
 4. Give the venv openEMS as Install says (on Windows, `kicad-rf-studio setup-openems <openEMS folder>`, and `CSXCAD_INSTALL_PATH` set to that folder: the tests import openEMS in this Python, which reads it to find openEMS's DLLs). Without it, the tests marked `openems` are skipped.
 5. Run the tests: `python -m pytest -q`
-6. Before a release, run `python tools/release_check.py`: it builds a wheel from git archive of HEAD and checks it, installs it in a fresh venv, starts the GUI there offscreen, checks the KiCad button's plugin.json against KiCad's schemas, and runs the privacy gate's generic rules over the history and the wheel. One real run through the GUI, lpf915 at Draft then its verify, runs with `KRS_E2E_DIR` set to an empty folder outside the repository and openEMS importable (step 4): `python -X utf8 -m pytest tests/test_gui.py -k real_run -s`. It takes about lpf915's Draft run plus its verify, and its cost line prints the estimate first; a file named STOP in its newest run folder stops it.
+6. Before a release, run `python tools/release_check.py`: it builds a wheel from git archive of HEAD and checks it, installs it in a fresh venv, starts the GUI there offscreen, runs `new --antenna` there on `tests/fixtures/ifa2g4_pi.kicad_pcb`, checks the KiCad button's plugin.json against KiCad's schemas, and runs the privacy gate's generic rules over the history and the wheel. One real run through the GUI, lpf915 at Draft then its verify, runs with `KRS_E2E_DIR` set to an empty folder outside the repository and openEMS importable (step 4): `python -X utf8 -m pytest tests/test_gui.py -k real_run -s`. It takes about lpf915's Draft run plus its verify, and its cost line prints the estimate first; a file named STOP in its newest run folder stops it.
 7. After a change to a message in `src/kicad_rf_studio/core/messages.py`, run `python tools/catalog.py` (Babel comes with the dev extras), translate each entry of `po/pt_BR.po` whose msgstr is empty (a changed message's old translation stays at the file's end as a `#~` entry), then run it again: the tests refuse a catalog that is not complete and compiled. They run in English whatever your system's language, and `KRS_TEST_LANGUAGE=pt_BR` runs `tests/test_gui.py` in Brazilian Portuguese.
 
 ## Contributing

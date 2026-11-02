@@ -109,6 +109,31 @@ def test_install_fails_a_venv_without_either_entry_point(tmp_path, monkeypatch):
     assert release_check.install(tmp_path)[0] == "PASS"
 
 
+def test_the_antenna_step_runs_new_on_the_releases_own_fixture_and_reads_schema_2(tmp_path, monkeypatch):
+    fixture = ROOT / "tests" / "fixtures" / "ifa2g4_pi.kicad_pcb"  # Stage 3 design 5.12 item 5; r3
+    with zipfile.ZipFile(tmp_path / "source.zip", "w") as z:
+        z.write(fixture, "tests/fixtures/ifa2g4_pi.kicad_pcb")
+    seen, schema = [], {"schema": 2, "kind": "antenna"}
+
+    def run(command, **kw):  # the fresh venv's new: it writes project.json where -o says
+        seen.append((command, kw["env"]))
+        out = Path(command[command.index("-o") + 1])
+        out.mkdir(parents=True, exist_ok=True)
+        (out / "project.json").write_text(json.dumps(schema), encoding="utf-8")
+        return subprocess.CompletedProcess(command, 0, "", "")
+
+    monkeypatch.setattr(release_check, "run", run)
+    assert release_check.antenna(tmp_path)[0] == "PASS"
+    (command, env), = seen
+    assert command[:2] == [release_check.program(tmp_path, "kicad-rf-studio"), "new"]
+    assert command[3:9] == ["--start", "U1.1", "--antenna", "AE1", "--band", "2400MHz:2483.5MHz"]
+    assert Path(command[2]).read_bytes() == fixture.read_bytes() and env["QT_QPA_PLATFORM"] == "offscreen"
+    schema = {"schema": 1}
+    assert release_check.antenna(tmp_path)[0] == "FAIL"  # no kind: read with .get, a FAIL line
+    assert [s.__name__ for s in release_check.STEPS] == ["build", "install", "gui", "antenna", "plugin", "privacy"]
+    assert release_check.NEEDS["antenna"] == "install"
+
+
 def test_main_skips_what_a_failed_step_holds_up_fails_a_step_that_raises_and_removes_its_folder(monkeypatch, capsys):
     made = []
 
