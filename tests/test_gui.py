@@ -1427,3 +1427,157 @@ def test_one_real_run_through_the_window_new_cost_run_retune_apply_verify(qapp, 
         assert "openEMS" not in sys.modules and "CSXCAD" not in sys.modules  # design 4: the GUI process
     finally:
         dispose([w])  # a failed step leaves no run going
+
+
+PI_VALUES = {"L1": "0R", "C2": "0.13pF", "C3": "1pF"}  # plan 3's E24 search; the gates verified the pour at them
+
+
+# ponytail: run by hand only, so it can lag the window's API until it next runs; the fake-backed tests above pin each
+# step's widgets meanwhile. Its setup copies Stage 2's real-run test's, which stays as Stage 2's exit record ran it
+@pytest.mark.openems
+@pytest.mark.skipif(not (os.environ.get("KRS_E2E_DIR") and os.environ.get("KRS_E2E_VARIANT")),
+                    reason="one antenna project through the window (Stage 3 design 5.14 item 3): set KRS_E2E_DIR to an "
+                    "empty folder outside the repository and KRS_E2E_VARIANT to a verified ground-pour project.json, "
+                    "or to window")
+def test_one_antenna_project_through_the_window_new_cost_run_retune_apply_verify_compare(qapp, monkeypatch):
+    out = Path(os.environ["KRS_E2E_DIR"]).resolve()
+    assert not out.is_relative_to(ROOT), "KRS_E2E_DIR must be outside the repository"
+    out.mkdir(parents=True, exist_ok=True)
+    assert not any(out.iterdir()), "KRS_E2E_DIR must be empty: a fresh data folder, as on a new install"
+    assert qapp.platformName() == "offscreen"
+    for name in ("LOCALAPPDATA", "XDG_DATA_HOME"):
+        monkeypatch.setenv(name, str(out / "data"))
+    monkeypatch.setenv("KRS_GRAB_DIR", str(out / "grabs"))
+    for name in ("run_jobs", "ensure_calibrated"):
+        monkeypatch.setattr(runs, name, fail)  # no run in the GUI process
+    masks = [(str(out), "<KRS_E2E_DIR>")]
+    reuse = os.environ["KRS_E2E_VARIANT"] != "window"
+    if reuse:  # <GATES>/projects/<name>/project.json, read in place: usable before an hour is spent
+        variant = Path(os.environ["KRS_E2E_VARIANT"]).resolve()
+        masks.append((str(variant.parents[2]), "<GATES>"))
+        assert pipeline.antenna_result(variant)["source"] == "T_VERIFY"
+        vd = load_project(variant)  # design 5.14 item 3: the pour, verified at the same values
+        assert (board_file(variant, vd).name, vd["verify"]["values"]) == ("ifa2g4_pi_pour.kicad_pcb", PI_VALUES)
+
+    def ended(timeout):
+        until(lambda: w.tick() or w.proc.poll() is not None, timeout=timeout)
+        w.tick()
+
+    def say(step, begin, lines):  # the record and the README quote these: no machine path shows in them
+        line = " | ".join(lines)
+        for real, shown in masks:
+            line = line.replace(real, shown)
+        print(f"e2e {step}: {time.monotonic() - begin:.0f} s: {line}", flush=True)
+
+    def printed():  # what the terminal's command prints but its progress, as the CLI renders it
+        return [render(e["code"], **e["params"]) for e in events(w.run_dir) if e["kind"] not in ("progress", "end")]
+
+    def through(name):  # New, Cost, Run, a snapped retune, Apply and Verify of one board copy
+        board, pj = out / "board" / f"{name}.kicad_pcb", out / "board" / name / "project.json"
+        board.parent.mkdir(exist_ok=True)
+        board.write_bytes((FIX / f"{name}.kicad_pcb").read_bytes())
+        begin, f = time.monotonic(), w.new_form
+        f.board.setText(str(board))
+        w.board_chosen()
+        w.pads_read.result(timeout=60)
+        w.tick()
+        f.kind.setCurrentIndex(f.kind.findData("antenna"))
+        f.start.setCurrentText("U1.1")
+        assert (f.antenna.currentData(), f.band.currentData(), f.preset.currentText()) == (
+            "AE1", (2.4e9, 2.4835e9), "normal")  # New's defaults; the band and the preset are in compare's fingerprint
+        f.create_button.click()
+        made, notes = w.creating.result(timeout=120)
+        assert made == pj
+        w.tick()
+        opened(w)
+        assert w.project_status.text() == render("G_PROJECT_ANTENNA", path=str(pj), ref="AE1", f_lo_mhz="2400",
+                                                 f_hi_mhz="2483.5", preset="normal")
+        grab(w, f"e2e-{name}-new")
+        say(f"{name} new", begin, [render(c, **p) for c, p in notes])
+        begin = time.monotonic()
+        w.cost_button.click()  # a fresh data folder: it calibrates this machine first
+        ended(3600)
+        assert w.cost_status.text() == render("G_END_DONE", exit_code=0), w.cost_status.text()
+        assert events(w.run_dir, code="I_COST_SPLIT")  # the board's, the air's and the PML's cells
+        say(f"{name} cost", begin, printed())
+        opened(w)
+        assert w.cost == w.run_dir and w.run_button.isEnabled()
+        grab(w, f"e2e-{name}-cost")
+        asked = []
+        monkeypatch.setattr(w, "ask", lambda text: asked.append(text) or True)
+        begin = time.monotonic()
+        w.run_button.click()
+        (cost_time,) = events(w.cost, code="I_COST_TIME")
+        assert w.command == "run" and control.text(cost_time["code"], cost_time["params"]) in asked[0]
+        ended(12 * 3600)
+        assert (w.end["params"]["exit_code"], w.run_status.text()) == (0, render("G_END_DONE", exit_code=0)), \
+            w.run_status.text()
+        (kept,) = events(w.run_dir, code="I_RESULTS")
+        assert (kept["params"]["kept"], kept["params"]["runs"]) == (4, 4)
+        assert events(w.run_dir, code="I_ANTENNA_NO_FAR_FIELD")  # part ports: verify records it
+        say(f"{name} run", begin, printed())
+        grab(w, f"e2e-{name}-run")
+        opened(w)
+        r, begin = w.results, time.monotonic()
+        assert column(r.parts, PART) == ["L1", "C2", "C3"] and len(r.canvas.figure.axes) == 2
+        r.parts.item(0, VALUE).setText("0R")  # L1 bypassed
+        r.parts.item(1, VALUE).setText("0.127pF")  # snapped to E24's 0.13pF (design 7's default)
+        assert column(r.parts, VALUE) == list(PI_VALUES.values()) and not r.what_if.isHidden()
+        w.tabs.setCurrentWidget(r)
+        grab(w, f"e2e-{name}-retune")
+        r.apply_button.click()
+        code, lines = w.applying.result(timeout=300)
+        w.tick()
+        assert code == 0 and r.retune_status.text() == render("G_APPLIED", folder=str(pj.parent / "results"))
+        assert {ref: q["value"] for ref, q in parts(load_project(pj)).items() if ref in PI_VALUES} == PI_VALUES
+        say(f"{name} retune", begin, lines)
+        opened(w)
+        begin = time.monotonic()
+        r.verify_button.click()  # applied: verify starts at once
+        assert w.command == "verify"
+        ended(12 * 3600)
+        assert (w.end["params"]["exit_code"], w.run_status.text()) == (0, render("G_END_DONE", exit_code=0)), \
+            w.run_status.text()
+        opened(w)
+        d = load_project(pj)
+        assert d["verify"]["values"] == PI_VALUES and r.stale.isHidden()
+        assert w.opened.verified[0][0] == "I_VERIFY_RESULTS"
+        assert items(r.verify_lines) == [control.text(c, p) for c, p in w.opened.verified]
+        assert all((Path(d["verify"]["run_dir"]) / p).is_file() for p in d["verify"]["far_field"].values())
+        assert w.opened.far_source == ("T_VERIFY", d["verify"]["run_dir"])
+        assert [ax.name for ax in r.canvas.figure.axes].count("polar") == 3  # the cuts at f0, drawn
+        say(f"{name} verify", begin, printed())
+        w.tabs.setCurrentWidget(r)  # verify's watch selected the Run tab
+        grab(w, f"e2e-{name}-verify")
+        return pj
+
+    w = MainWindow()  # the real orchestrator (control.orchestrator)
+    w.show()
+    try:
+        if not reuse:
+            variant = through("ifa2g4_pi_pour")
+        vd = load_project(variant)
+        watched = (variant.parent, Path(vd["results"]["run_dir"]), Path(vd["verify"]["run_dir"]))
+
+        def stamps():
+            return {p: p.stat().st_mtime_ns for root in watched for p in [root, *root.rglob("*")]}
+
+        before = stamps()
+        pj = through("ifa2g4_pi")
+        begin = time.monotonic()
+        monkeypatch.setattr(QFileDialog, "getOpenFileName", lambda *a, **k: (str(variant), ""))
+        w.comparison.variant_button.click()
+        w.tick()
+        w.comparison.compare_button.click()
+        code, lines, cells = w.comparing.result(timeout=600)
+        w.tick()
+        resonance = next(p for c, p in lines if c == "I_COMPARE_RESONANCE")
+        assert code == 0 and resonance["verdict"] == "T_RESOLVED" and w.comparison.table.rowCount() == len(cells) == 6
+        assert not w.comparison.picture.pixmap().isNull() and (pj.parent / "compare" / "compare.png").is_file()
+        assert stamps() == before  # the variant read in place, never written
+        say("compare", begin, [render(c, **p) for c, p in lines])
+        w.tabs.setCurrentWidget(w.comparison)
+        grab(w, "e2e-compare")
+        assert "openEMS" not in sys.modules and "CSXCAD" not in sys.modules  # design 4: the GUI process
+    finally:
+        dispose([w])  # a failed step leaves no run going
