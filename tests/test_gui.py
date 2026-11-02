@@ -714,6 +714,25 @@ def test_a_button_press_pre_fills_new_and_swap_swaps_start_and_end(window, tmp_p
     assert board.read_bytes() == (FIX / "lpf915.kicad_pcb").read_bytes()  # never written (anti-goal)
 
 
+def test_a_press_on_an_antenna_pre_fills_new_and_a_modules_shows_its_refusal(window, tmp_path, mini_board_file):
+    board = tmp_path / "ifa2g4_pi.kicad_pcb"  # design 5.10; r2
+    board.write_bytes((FIX / "ifa2g4_pi.kicad_pcb").read_bytes())
+    w = window()
+    f = w.new_form
+    w.take_handoff(press(board, ["U1.1"], ["AE1"]))
+    w.pads_read.result(timeout=60)
+    w.tick()
+    assert (f.kind.currentData(), f.antenna.currentData(), f.start.currentText(), f.status.text()) == (
+        "antenna", "AE1", "U1.1", "")
+    assert f.form.isRowVisible(f.antenna) and not f.form.isRowVisible(f.f0)
+    grab(w, "handoff-antenna")
+    w.take_handoff(press(mini_board_file(KINDS), (), ["U2"]))
+    w.pads_read.result(timeout=60)
+    w.tick()
+    assert (f.kind.currentData(), f.status.text()) == ("chain", render("G_ANTENNA_MODULE", ref="U2"))
+    assert "openEMS" not in sys.modules and "CSXCAD" not in sys.modules
+
+
 def test_the_gui_entry_takes_a_handoff_and_a_second_start_forwards_its_own_and_exits(qapp, fake, tmp_path,
                                                                                      monkeypatch):
     local = tmp_path / "local"  # design 5.5 Single instance; Review Focus 1

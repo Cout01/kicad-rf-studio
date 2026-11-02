@@ -970,11 +970,12 @@ class MainWindow(QMainWindow):
             self.pads_read = self.pool.submit(control.board_choices, Path(text))
 
     def take_handoff(self, path: Path) -> None:
-        """A press of the KiCad button, in the handoff file `path` (design 5.3, 5.5): kept as `handoff`, the Project
-        tab shown and New's status line cleared, unless a refill goes on (`refilling`), whose G_REFILLING stays; then
-        the press read on the pool (control.handed) as New's read, `pads_read`, which show_pads shows. It replaces a
-        read in flight, so a slower read of another board never overwrites it, and a board picked after the press wins
-        over it."""
+        """A press of the KiCad button, in the handoff file `path` (Stage 2 design 5.3, 5.5; Stage 3 design 5.10): kept
+        as `handoff`, the Project tab shown and New's status line cleared, unless a refill goes on (`refilling`), whose
+        G_REFILLING stays; then the press read on the pool (control.handed) as New's read, `pads_read`, which show_pads
+        shows: a matching chain's start and end, or, for a selected printed antenna, the antenna kind with that antenna
+        and its start. It replaces a read in flight, so a slower read of another board never overwrites it, and a
+        board picked after the press wins over it."""
         self.handoff = path
         self.tabs.setCurrentIndex(0)  # the Project tab, New's
         if self.refilling is None:
@@ -1029,10 +1030,11 @@ class MainWindow(QMainWindow):
     def show_pads(self, done: Future) -> None:
         """New's read (`done`): the board's pads and antennas (control.board_choices), the pads in the start and end
         pickers, none picked for the user, and the antennas in the footprint combo (NewForm.show_antennas); or a press
-        (control.handed), kept as `handed`: its board in the board field and as `chosen` ("" when the press has no
-        pads, a refusal, so that the board, fixed and picked again, is read again), the project folder beside it as
-        board_chosen sets it, and kept, as there, when the board is `chosen` already, its pads in the pickers with its
-        start and end picked, and its problem in the status line, which is otherwise left as it is. On a refusal
+        (control.handed), kept as `handed`: its kind in New's Kind, its board's antennas in the footprint combo with
+        its antenna picked, its board in the board field and as `chosen` ("" when the press has no pads, a refusal, so
+        that the board, fixed and picked again, is read again), the project folder beside it as board_chosen sets it,
+        and kept, as there, when the board is `chosen` already, its pads in the pickers with its start and end picked,
+        and its problem in the status line, which is otherwise left as it is. On a refusal
         (load_board's, else E_INTERNAL), the pickers and the footprint combo left empty, the refusal in the status line
         and `chosen` cleared, so that the same board, fixed and picked again, is read again. The exception is taken,
         never raised again: its traceback would then hold this frame, and so the window, in a cycle with the Future
@@ -1045,6 +1047,8 @@ class MainWindow(QMainWindow):
         start = end = ""
         if isinstance(read, control.Handed):
             self.handed, names, start, end = read, read.pads, read.start, read.end
+            f.kind.setCurrentIndex(f.kind.findData(read.kind))
+            f.show_antennas(read.kinds, read.antenna)
             f.board.setText(str(read.board))
             if str(read.board) != f.chosen:
                 f.folder.setText(str(read.board.with_suffix("")))

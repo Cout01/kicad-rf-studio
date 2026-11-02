@@ -209,6 +209,7 @@ def test_a_handoff_joins_the_selection_to_the_saved_boards_pads(fake, tmp_path):
     assert (one.start, one.end, none.start, none.end, none.pads, none.problem) == ("C3.1", "", "", "", every, None)
     narrowed = read(["U1.1"], ["C1", "J1"])  # a footprint narrows the pickers to its pads and the selected ones
     assert (narrowed.pads, narrowed.start, narrowed.problem) == (["C1.1", "C1.2", "J1.1", "J1.2", "U1.1"], "U1.1", None)
+    assert narrowed.kind == "chain"
     three = read(["C1.1", "C2.1", "C3.1"])
     assert (three.start, three.end, three.problem) == ("", "", ("G_HANDOFF_PADS", {"count": 3}))
     for unsaved in (read(["U1.1", "00000000-0000-0000-0000-000000000001"]), read(footprints=["C9"])):
@@ -221,6 +222,39 @@ def test_a_handoff_joins_the_selection_to_the_saved_boards_pads(fake, tmp_path):
                                                 "socket": "ipc://s", "token": "T"}))
     assert (gone.board, gone.pads, gone.problem) == (nope, [], ("E_BOARD_UNREADABLE", {
         "path": str(nope), "reason": "T_FILE_NOT_FOUND"}))
+
+
+def test_a_press_on_an_antenna_gives_its_kind_and_never_its_own_pad_as_the_start(fake):  # design 5.10; r2
+    board = FIX / "ifa2g4_pi.kicad_pcb"
+
+    def read(pads=(), footprints=()):
+        return control.handed(press(board, pads, footprints))
+
+    every = [name for name in control.pads(board) if not name.startswith("AE1.")]
+    assert read(["U1.1"], ["AE1"]) == control.Handed(board, "ipc://s", "T", every, "U1.1", "", None, "antenna", "AE1",
+                                                     {"AE1": "printed"})
+    for pads in (["AE1.1"], ["AE1.2"], ["AE1.1", "AE1.2"]):  # its own pads select it (new refuses them as start)
+        h = read(pads)
+        assert (h.kind, h.antenna, h.start, h.problem) == ("antenna", "AE1", "", None)
+    assert (read(["AE1.2", "U1.1"]).antenna, read(["AE1.2", "U1.1"]).start) == ("AE1", "U1.1")
+    two = read(["U1.1", "C1.1"], ["AE1"])
+    assert (two.antenna, two.start, two.problem) == ("AE1", "", ("G_HANDOFF_START", {"count": 2}))
+
+
+def test_a_press_on_two_antennas_or_on_a_module_or_a_chip_antenna_says_so(fake, mini_board_file):  # design 5.10
+    board = mini_board_file(KINDS)
+
+    def read(footprints):
+        return control.handed(press(board, (), footprints))
+
+    both = read(["AE1", "U4"])
+    assert (both.kind, both.antenna, both.problem) == ("antenna", "", ("G_HANDOFF_ANTENNAS",
+                                                                       {"count": 2, "refs": "AE1, U4"}))
+    for ref, code in (("U2", "E_ANTENNA_MODULE"), ("U3", "E_ANTENNA_MODULE"), ("AE2", "E_ANTENNA_CHIP"),
+                      ("AE4", "E_ANTENNA_CHIP")):
+        h = read([ref])
+        assert (h.kind, h.antenna, h.problem) == ("chain", "", (code, {"ref": ref}))  # v1's chain still applies
+    assert read(["R1"]).problem is None and read(["AE1", "U2"]).kind == "antenna"  # a printed one wins
 
 
 def test_every_gui_wording_keeps_its_cli_params_and_drops_terminal_syntax():  # design 5.3, 5.7

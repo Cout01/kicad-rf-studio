@@ -1830,7 +1830,7 @@ msgid "Simulates the RF parts of a KiCad board with openEMS."
 msgstr ""
 
 #. G_BUTTON_ACTION
-msgid "Opens kicad-rf-studio on this board, with the selected pads as the chain's start and end."
+msgid "Opens kicad-rf-studio on this board and pre-fills New from a board with the selected pads, or with a selected antenna and its radio pin."
 msgstr ""
 
 #. I_PLUGIN_INSTALLED
@@ -1879,6 +1879,16 @@ msgstr ""
 #. G_HANDOFF_PADS
 #, python-brace-format
 msgid "{count} pads are selected in KiCad. Select only the chain's two end pads and press the button again, or pick start and end here."
+msgstr ""
+
+#. G_HANDOFF_ANTENNAS
+#, python-brace-format
+msgid "{count} printed antennas are selected in KiCad ({refs}). Select one and press the button again, or pick it here."
+msgstr ""
+
+#. G_HANDOFF_START
+#, python-brace-format
+msgid "{count} pads besides the antenna's are selected in KiCad. Select the antenna with the one pad that feeds it, the radio pin, and press the button again, or pick the start pad here."
 msgstr ""
 
 #. G_REFILL

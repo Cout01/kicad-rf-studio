@@ -1840,8 +1840,8 @@ msgid "Simulates the RF parts of a KiCad board with openEMS."
 msgstr "Simula as partes de RF de uma placa do KiCad com o openEMS."
 
 #. G_BUTTON_ACTION
-msgid "Opens kicad-rf-studio on this board, with the selected pads as the chain's start and end."
-msgstr "Abre o kicad-rf-studio nesta placa, com as ilhas selecionadas como início e fim da cadeia."
+msgid "Opens kicad-rf-studio on this board and pre-fills New from a board with the selected pads, or with a selected antenna and its radio pin."
+msgstr "Abre o kicad-rf-studio nesta placa e preenche Novo projeto a partir de uma placa com as ilhas selecionadas, ou com uma antena selecionada e o pino do rádio dela."
 
 #. I_PLUGIN_INSTALLED
 #, python-brace-format
@@ -1890,6 +1890,16 @@ msgstr "A versão salva de {board} não tem uma ilha ou um componente selecionad
 #, python-brace-format
 msgid "{count} pads are selected in KiCad. Select only the chain's two end pads and press the button again, or pick start and end here."
 msgstr "Ilhas selecionadas no KiCad: {count}. Selecione só as duas ilhas das extremidades da cadeia e pressione o botão de novo, ou escolha o início e o fim aqui."
+
+#. G_HANDOFF_ANTENNAS
+#, python-brace-format
+msgid "{count} printed antennas are selected in KiCad ({refs}). Select one and press the button again, or pick it here."
+msgstr "Antenas impressas selecionadas no KiCad: {count} ({refs}). Selecione uma e pressione o botão de novo, ou escolha-a aqui."
+
+#. G_HANDOFF_START
+#, python-brace-format
+msgid "{count} pads besides the antenna's are selected in KiCad. Select the antenna with the one pad that feeds it, the radio pin, and press the button again, or pick the start pad here."
+msgstr "Ilhas selecionadas no KiCad além das da antena: {count}. Selecione a antena com a única ilha que a alimenta, o pino do rádio, e pressione o botão de novo, ou escolha a ilha inicial aqui."
 
 #. G_REFILL
 msgid "Refill zones and save in KiCad"
@@ -2215,4 +2225,7 @@ msgstr "\"solid\" ou \"sheet\""
 
 #~ msgid "Cells: {board} M in the board, {air} M of air and {pml} M of PML; the time counts a PML cell as {weight} cells and runs this model at {ratio} × the calibrated speed for that many jobs at once (gates P3-A and P3-C)."
 #~ msgstr "Células: {board} M na placa, {air} M de ar e {pml} M de PML; o tempo conta uma célula de PML como {weight} células e executa este modelo a {ratio} × a velocidade calibrada para esse número de tarefas simultâneas (checagens prévias P3-A e P3-C)."
+
+#~ msgid "Opens kicad-rf-studio on this board, with the selected pads as the chain's start and end."
+#~ msgstr "Abre o kicad-rf-studio nesta placa, com as ilhas selecionadas como início e fim da cadeia."
 

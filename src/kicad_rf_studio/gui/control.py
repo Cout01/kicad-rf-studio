@@ -464,9 +464,11 @@ BANDS = (("868 MHz (863–870 MHz)", 863e6, 870e6), ("915 MHz (902–928 MHz)", 
 
 @dataclass(frozen=True)
 class Handed:
-    """A button press as New shows it (design 5.3, 5.5): the board KiCad has open and its API's `socket` and `token`;
-    the pickers' `pads`, the `start` and `end` pads it pre-fills ("" for none) and New's status line (`problem`, as
-    (code, params); None for none)."""
+    """A button press as New shows it (Stage 2 design 5.3, 5.5; Stage 3 design 5.10): the board KiCad has open and its
+    API's `socket` and `token`; the pickers' `pads`, the `start` and `end` pads it pre-fills ("" for none) and New's
+    status line (`problem`, as (code, params); None for none); the project's `kind` ("chain" or "antenna"), the
+    `antenna` footprint it pre-fills ("" for none) and the board's antenna footprints by reference (`kinds`, as
+    board_choices gives them), which New's Antenna combo lists."""
     board: Path
     socket: str
     token: str
@@ -474,32 +476,60 @@ class Handed:
     start: str
     end: str
     problem: tuple[str, dict] | None
+    kind: str = "chain"
+    antenna: str = ""
+    kinds: dict[str, str] = field(default_factory=dict)
 
 
 def handed(path: Path) -> Handed:
-    """The button press in the handoff file `path` (button.write_handoff), read off the GUI thread (design 5.5): its
-    selection joined to the pads of its board as saved (load_board), the pads by their KIIDs (Pad.uuid) and the
-    footprints by reference. load_board's refusal: no pads, and the refusal as `problem`. A selected KIID or reference
-    the file lacks (KiCad holds edits not yet saved): every pad with copper, nothing pre-filled and G_HANDOFF_UNSAVED.
-    Else the pickers list the selected footprints' pads and the selected pads, or every pad with copper when no
-    footprint is selected (_names); of the selected pads with copper, by name, one is the start; two are the start and
-    the end, swapped when only the first is a connector's (classify), so that the connector's side is the end; three or
-    more pre-fill nothing, with G_HANDOFF_PADS. Raises when the handoff file cannot be read."""
+    """The button press in the handoff file `path` (button.write_handoff), read off the GUI thread (Stage 2 design 5.5,
+    Stage 3 design 5.10): its selection joined to the pads of its board as saved (load_board), the pads by their KIIDs
+    (Pad.uuid) and the footprints by reference, with the board's antenna footprints (`kinds`, _antennas). The first of
+    these that holds decides, the chain kind unless said:
+    - load_board's refusal: no pads and no kinds, and the refusal as `problem`.
+    - a selected KIID or reference the file lacks (KiCad holds edits not yet saved): every pad with copper, nothing
+      pre-filled and G_HANDOFF_UNSAVED.
+    - printed antennas among the selected footprints and the footprints of the selected pads, in the order they came in
+      (one of its pads selects an antenna): the antenna kind, the pickers listing every pad with copper but the
+      antennas' (_names), since an antenna's own pad is never the start (new refuses its feed pad with E_SAME_PADS and
+      its ground pad with E_START_ON_GND); two antennas or more pre-fill neither antenna nor start, with
+      G_HANDOFF_ANTENNAS; else the one is the antenna and, of the selected pads with copper off it, by name, one is the
+      start, while two or more pre-fill no start, with G_HANDOFF_START. Never an end.
+    - else v1's rules: the pickers list the selected footprints' pads and the selected pads, or every pad with copper
+      when no footprint is selected (_names); of the selected pads with copper, by name, one is the start; two are the
+      start and the end, swapped when only the first is a connector's (classify), so that the connector's side is the
+      end; three or more pre-fill nothing, with G_HANDOFF_PADS. With no such problem, the first selected footprint that
+      is a module or a chip antenna (a selected pad's own footprint does not count) gives its refusal, E_ANTENNA_MODULE
+      or E_ANTENNA_CHIP, beside v1's pre-fill.
+    Raises when the handoff file cannot be read."""
     data = json.loads(path.read_text(encoding="utf-8"))
     board, socket, token = Path(data["board"]), data["socket"], data["token"]
     try:
         b = load_board(board)
     except KrsError as e:
         return Handed(board, socket, token, [], "", "", (e.code, e.params))
+    kinds = _antennas(b)
     by_kiid = {p.uuid: p for p in b.all_pads()}
     if any(k not in by_kiid for k in data["pads"]) or any(r not in b.footprints for r in data["footprints"]):
-        return Handed(board, socket, token, _names(b.all_pads()), "", "", ("G_HANDOFF_UNSAVED", {"board": str(board)}))
+        return Handed(board, socket, token, _names(b.all_pads()), "", "", ("G_HANDOFF_UNSAVED", {"board": str(board)}),
+                      kinds=kinds)
     selected = [by_kiid[k] for k in data["pads"]]
+    ants = [r for r in dict.fromkeys(data["footprints"] + [p.ref for p in selected]) if kinds.get(r) == "printed"]
+    if ants:
+        pickers = _names(p for p in b.all_pads() if p.ref not in ants)
+        others = list(dict.fromkeys(p.name for p in selected if p.layers and p.ref not in ants))
+        if len(ants) > 1:
+            return Handed(board, socket, token, pickers, "", "", ("G_HANDOFF_ANTENNAS", {
+                "count": len(ants), "refs": ", ".join(ants)}), "antenna", "", kinds)
+        if len(others) > 1:
+            return Handed(board, socket, token, pickers, "", "", ("G_HANDOFF_START", {"count": len(others)}), "antenna",
+                          ants[0], kinds)
+        return Handed(board, socket, token, pickers, (others + [""])[0], "", None, "antenna", ants[0], kinds)
     pickers = _names([p for r in data["footprints"] for p in b.footprints[r].pads] + selected if data["footprints"]
                      else b.all_pads())
     ends = list({p.name: p for p in selected if p.layers}.values())  # by name, each once, in the order they came in
     if len(ends) > 2:
-        return Handed(board, socket, token, pickers, "", "", ("G_HANDOFF_PADS", {"count": len(ends)}))
+        return Handed(board, socket, token, pickers, "", "", ("G_HANDOFF_PADS", {"count": len(ends)}), kinds=kinds)
     if len(ends) == 2:
         # ponytail: KiCad's API gives no selection order, so two pads neither of which is a connector's keep the order
         # they came in; Swap fixes it
@@ -507,7 +537,11 @@ def handed(path: Path) -> Handed:
         if ends[0].ref in connectors and ends[1].ref not in connectors:
             ends.reverse()
     start, end, *_ = [p.name for p in ends] + ["", ""]
-    return Handed(board, socket, token, pickers, start, end, None)
+    for r in data["footprints"]:  # in kinds, a module or a chip antenna: a printed one took the antenna's rules
+        if r in kinds:
+            return Handed(board, socket, token, pickers, start, end, (
+                "E_ANTENNA_MODULE" if kinds[r] == "module" else "E_ANTENNA_CHIP", {"ref": r}), kinds=kinds)
+    return Handed(board, socket, token, pickers, start, end, None, kinds=kinds)
 
 
 COMPARE_FOLDER = "compare"  # Compare's folder, in the base project's folder (Stage 3 design 5.10)
