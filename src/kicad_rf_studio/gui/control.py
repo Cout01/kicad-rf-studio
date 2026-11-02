@@ -1,8 +1,9 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """The GUI's Qt-free logic (Stage 2 design 5.1, 5.3, 5.5): the detached start, Apply's retune run to its end, the events
 tail, re-attach through the lock and the end events, the project read off the GUI thread, the retune session (an update
-of a project read's chain from the parts' rows), Verify's stale indicator and comparison, New's pad list and a button
-press's pre-fill, Advanced's fields of project.json and their edit, and About's text. Never imports Qt or matplotlib."""
+of a project read's chain from the parts' rows), Verify's stale indicator and comparison, New's read of a board (its
+pads and antennas), its band presets and a button press's pre-fill, Advanced's fields of project.json and their edit,
+and About's text. Never imports Qt or matplotlib."""
 import contextlib
 import copy
 import json
@@ -20,6 +21,7 @@ from pathlib import Path
 from kicad_rf_studio import __version__, pipeline, runs
 from kicad_rf_studio.core.geometry.region import air_gap
 from kicad_rf_studio.core.kicad import classify, load_board
+from kicad_rf_studio.core.kicad.tracer import antenna_kinds
 from kicad_rf_studio.core.kicad.values import bypass, part_kind, port_value, snap, value_text
 from kicad_rf_studio.core.messages import KrsError, detail, render
 from kicad_rf_studio.core.model import spec
@@ -39,7 +41,8 @@ GUI = {"E_LOCKED": "G_LOCKED", "I_RUN_START": "G_RUN_START", "I_WHAT_IF": "G_WHA
        "E_S2P_MISSING": "G_S2P_MISSING", "E_S2P_UNREADABLE": "G_S2P_UNREADABLE", "E_S2P_BAND": "G_S2P_BAND",
        "W_S2P_FIXTURE": "G_S2P_FIXTURE", "E_VERIFY_VALUE": "G_VERIFY_VALUE", "E_PROJECT_FIELD": "G_PROJECT_FIELD",
        "E_RETUNE_SHORT_SHUNT": "G_RETUNE_SHORT_SHUNT", "E_RETUNE_OPEN_SERIES": "G_RETUNE_OPEN_SERIES",
-       "E_RETUNE_ANTENNA_VALUE": "G_RETUNE_ANTENNA_VALUE", "I_ANTENNA_NO_FAR_FIELD": "G_ANTENNA_NO_FAR_FIELD"}
+       "E_RETUNE_ANTENNA_VALUE": "G_RETUNE_ANTENNA_VALUE", "I_ANTENNA_NO_FAR_FIELD": "G_ANTENNA_NO_FAR_FIELD",
+       "E_ANTENNA_MODULE": "G_ANTENNA_MODULE", "E_ANTENNA_CHIP": "G_ANTENNA_CHIP"}
 # an S2P fixture combo's label code by its data
 FIXTURE_LABELS = {"series": "G_FIXTURE_SERIES", "shunt": "G_FIXTURE_SHUNT"}
 
@@ -431,6 +434,29 @@ def _names(pads) -> list[str]:
     # ponytail: every pad with copper, GND's too; new refuses a GND or netless end with its own message
     names = dict.fromkeys(p.name for p in pads if p.layers)
     return sorted(names, key=lambda name: [int(t) if t.isdigit() else t for t in re.split(r"(\d+)", name)])
+
+
+def _antennas(b) -> dict[str, str]:
+    """The antenna footprints of the board `b` by reference, as antenna_kinds reads them, classify's connectors left
+    out (Stage 3 design 5.10, r2: a U.FL with a keep-out reads as a module): New's list and a press's."""
+    # ponytail: classify's connectors are skipped, which closes plan 2's ceiling for a U.FL with a keep-out; a converter
+    # with a keep-out still reads module (listed disabled, refused on a press) and a custom-library module that draws
+    # copper still reads printed; a class test if users meet them
+    connectors = classify(b).connectors
+    return {ref: kind for ref, kind in antenna_kinds(b).items() if ref not in connectors}
+
+
+def board_choices(board: Path) -> tuple[list[str], dict[str, str]]:
+    """New's read of the board file `board` (Stage 2 design 5.3, Stage 3 design 5.10): its pads with copper, as pads
+    lists them, and its antenna footprints by reference (_antennas). Raises load_board's refusals."""
+    b = load_board(board)
+    return _names(b.all_pads()), _antennas(b)
+
+
+# New's band presets (Stage 3 design 5.10, 7): numbers and units only, the same in both languages (pt-BR design 3), so
+# no catalog code
+BANDS = (("868 MHz (863–870 MHz)", 863e6, 870e6), ("915 MHz (902–928 MHz)", 902e6, 928e6),
+         ("2.4 GHz (2400–2483.5 MHz)", 2.4e9, 2.4835e9))
 
 
 @dataclass(frozen=True)

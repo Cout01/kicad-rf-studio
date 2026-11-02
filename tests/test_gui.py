@@ -15,10 +15,10 @@ from pathlib import Path
 import h5py
 import numpy as np
 import pytest
-from PySide6.QtCore import QCoreApplication, QTimer
+from PySide6.QtCore import QCoreApplication, Qt, QTimer
 from PySide6.QtWidgets import QFileDialog, QListView, QMessageBox
 
-from kicad_rf_studio import button, gui, pipeline, runs
+from kicad_rf_studio import button, cli, gui, pipeline, runs
 from kicad_rf_studio.cli import main
 from kicad_rf_studio.core.kicad import load_board
 from kicad_rf_studio.core.messages import render
@@ -30,6 +30,7 @@ from kicad_rf_studio.core.project import board_file, load_project, parts, save_p
 from kicad_rf_studio.gui import control
 from kicad_rf_studio.gui.window import FIXTURE, PART, S2P, SNAP, VALUE, MainWindow
 from networks import C_BOX, star, terminate_np, write_s2p
+from test_antenna_kicad import KINDS
 from test_cli_antenna import antenna_project
 from test_cli_cost import FIX, fail, new_project
 from test_gui_control import FAKE_PREFIX, press, until
@@ -586,6 +587,72 @@ def test_new_from_a_board_lists_its_pads_writes_the_project_and_opens_it(window,
     w.pads_read.result(timeout=60)
     w.tick()
     assert [f.start.itemText(i) for i in range(f.start.count())] == control.pads(bad)
+
+
+def test_new_makes_an_antenna_project_from_its_kind_its_antenna_and_its_band(window, tmp_path, monkeypatch,
+                                                                            mini_board_file):  # design 5.10
+    board = tmp_path / "ifa2g4_pi.kicad_pcb"
+    board.write_bytes((FIX / "ifa2g4_pi.kicad_pcb").read_bytes())
+    monkeypatch.setattr(QFileDialog, "getOpenFileName", lambda *a, **k: (str(board), ""))
+    w = window()
+    f = w.new_form
+    assert f.kind.currentData() == "chain" and f.form.isRowVisible(f.f0) and not f.form.isRowVisible(f.antenna)
+    assert f.band.currentData() == (2.4e9, 2.4835e9) and not f.band_text.isEnabled()
+    f.board_button.click()
+    w.pads_read.result(timeout=60)
+    w.tick()
+    f.kind.setCurrentIndex(f.kind.findData("antenna"))
+    assert f.form.isRowVisible(f.antenna) and f.form.isRowVisible(f.band_row)
+    assert not any(f.form.isRowVisible(x) for x in (f.end_row, f.f0, f.harmonics))
+    assert [f.antenna.itemText(k) for k in range(f.antenna.count())] == ["AE1"] and f.antenna.currentData() == "AE1"
+    f.start.setCurrentText("U1.1")
+    f.create_button.click()
+    path, notes = w.creating.result(timeout=120)
+    w.tick()
+    same = cli.new_antenna(board, "U1.1", "AE1", (2.4e9, 2.4835e9), output=tmp_path / "cli")[0]
+    assert path == tmp_path / "ifa2g4_pi" / "project.json" and load_project(path) == load_project(same)
+    assert items(f.notes) == [control.text(c, p) for c, p in notes]  # new --antenna's own call, nothing duplicated
+    opened(w)
+    assert w.project_status.text() == render("G_PROJECT_ANTENNA", path=str(path.resolve()), ref="AE1",
+                                             f_lo_mhz="2400", f_hi_mhz="2483.5", preset="normal")
+    grab(w, "new-antenna")
+    f.band.setCurrentIndex(f.band.findData(None))  # Custom: findData matches None, never an equal tuple (probed)
+    assert f.band_text.isEnabled()
+    f.band_text.setText("2400MHz")
+    f.folder.setText(str(tmp_path / "custom"))
+    f.create_button.click()
+    assert w.creating is None and f.status.text() == render("E_BAD_BAND", text="2400MHz")
+    f.band_text.setText("2400MHz:2483.5MHz")
+    f.create_button.click()
+    assert load_project(w.creating.result(timeout=120)[0])["band"] == {"f_lo_hz": 2.4e9, "f_hi_hz": 2.4835e9}
+    w.tick()
+    f.board.setText(str(mini_board_file(KINDS)))
+    w.board_chosen()
+    w.pads_read.result(timeout=60)
+    w.tick()
+    assert [f.antenna.itemText(k) for k in range(f.antenna.count())] == [
+        "AE1", "AE2", "AE3", "AE4", "AE5", "U2", "U3", "U4"]
+    assert [f.antenna.model().item(k).isEnabled() for k in range(8)] == [True] + [False] * 6 + [True]
+    tip = Qt.ItemDataRole.ToolTipRole
+    for k, code, ref in ((1, "G_ANTENNA_CHIP", "AE2"), (5, "G_ANTENNA_MODULE", "U2")):  # rich text: Qt wraps it
+        assert f.antenna.itemData(k, tip).startswith("<p>") and render(code, ref=ref) in f.antenna.itemData(k, tip)
+    lpf = tmp_path / "lpf915.kicad_pcb"
+    lpf.write_bytes((FIX / "lpf915.kicad_pcb").read_bytes())
+    f.board.setText(str(lpf))
+    w.board_chosen()
+    w.pads_read.result(timeout=60)
+    w.tick()
+    f.create_button.click()  # no printed antenna (J1, a connector, is not listed): nothing starts
+    assert (f.antenna.count(), w.creating, f.status.text()) == (0, None, render("G_NO_ANTENNA"))
+    f.board.setText(str(tmp_path / "nope.kicad_pcb"))
+    w.board_chosen()
+    w.pads_read.exception(timeout=60)
+    w.tick()
+    refusal = f.status.text()  # the read's refusal, which show_pads put there
+    f.create_button.click()  # a board never read: its refusal stays, never G_NO_ANTENNA
+    assert refusal and (f.antenna.count(), w.creating, f.status.text()) == (0, None, refusal)
+    assert board.read_bytes() == (FIX / "ifa2g4_pi.kicad_pcb").read_bytes()
+    assert "openEMS" not in sys.modules and "CSXCAD" not in sys.modules
 
 
 def test_a_button_press_pre_fills_new_and_swap_swaps_start_and_end(window, tmp_path):  # design 5.3, 5.5; RF 2

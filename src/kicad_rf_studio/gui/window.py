@@ -3,11 +3,12 @@
 cost, starts, follows and stops a run, its own or one it re-attaches through the project lock, replays the project's
 last run and shows its results, which its parts' rows retune in this process (ResultsView), Apply stores through the
 CLI's retune and Verify checks; Advanced edits project.json's fields and saves them under the project lock
-(AdvancedView); all driven by one 500 ms timer (`tick`). The project is read, a board's pads listed, a KiCad button
-press read, the board refilled and saved in KiCad, new run and retune waited for on a pool thread (control.open_project,
-control.pads, control.handed, button.refill, cli.new, control.apply); cost, run and verify start as a detached
-orchestrator (control.start), so this process never reaches runs.run_jobs. Its Help menu shows About (control.about)
-and Qt's About."""
+(AdvancedView); all driven by one 500 ms timer (`tick`). The project is read, a board's pads and antennas listed, a
+KiCad button press read, the board refilled and saved in KiCad, new run and retune waited for on a pool thread
+(control.open_project, control.board_choices, control.handed, button.refill, cli.new or cli.new_antenna,
+control.apply); cost, run and verify start as a detached orchestrator (control.start), so this process never reaches
+runs.run_jobs. Its Help menu shows About (control.about) and Qt's About."""
+import html
 import json
 import subprocess
 from concurrent.futures import Future, ThreadPoolExecutor
@@ -26,7 +27,7 @@ from matplotlib.figure import Figure
 
 from kicad_rf_studio import button, cli, pipeline, runs
 from kicad_rf_studio.core.kicad.stackup import PRESETS as STACKUPS
-from kicad_rf_studio.core.kicad.values import parse_frequency
+from kicad_rf_studio.core.kicad.values import parse_band, parse_frequency
 from kicad_rf_studio.core.messages import KrsError, detail, reason, render
 from kicad_rf_studio.core.post.antenna import ANTENNA_LIMITS, draw_antenna, retrace_antenna
 from kicad_rf_studio.core.post.outputs import LIMITS, draw_summary, retrace_summary
@@ -74,8 +75,8 @@ def sentences() -> QListWidget:
 
 
 def combo(choices: tuple, current: str, slot) -> QComboBox:
-    """A table cell's combo box of `choices`, (data, code) pairs shown as their code's text, `current`'s selected and
-    only then its currentIndexChanged connected to `slot`, so that filling it emits nothing."""
+    """A combo box (a table cell's, or New's kind) of `choices`, (data, code) pairs shown as their code's text,
+    `current`'s selected and only then its currentIndexChanged connected to `slot`, so that filling it emits nothing."""
     box = QComboBox()
     for data, code in choices:
         box.addItem(render(code), data)
@@ -292,19 +293,31 @@ class ResultsView(QWidget):
 
 
 class NewForm(QGroupBox):
-    """New from a board (Stage 2 design 5.3, 5.5): the board and the project folder, each with its Browse…, and Refill
-    zones and save in KiCad after the board's (`refill_button`, disabled until the window enables it); the start and
-    end pads, picked from the board's pads or typed, and Swap beside the end; f0; new's options at new's defaults (the
-    board's own stackup, and a lid height of 0 for none); Create, its status line and new's notes. `chosen` is the
-    board text whose pads were last read."""
+    """New from a board (Stage 2 design 5.3, 5.5; Stage 3 design 5.10): the board and the project folder, each with its
+    Browse…, and Refill zones and save in KiCad after the board's (`refill_button`, disabled until the window enables
+    it); the project's kind (`kind`: a matching chain, or an antenna), which shows its own rows (kind_changed); the
+    start pad, picked from the board's pads or typed; a chain's end pad, picked or typed too, with Swap beside it, its
+    f0 and its harmonics; an antenna's footprint (`antenna`), picked from the board's antennas (show_antennas), and its
+    band (`band`), one of control.BANDS or Custom, whose F_LO:F_HI is typed in `band_text` (band_changed); new's
+    options at new's defaults (the board's own stackup, and a lid height of 0 for none); Create, its status line and
+    new's notes. `chosen` is the board text whose pads were last read; `form` is the form's layout, and `end_row` and
+    `band_row` are the layouts of the end's row and the band's."""
 
     def __init__(self):
         super().__init__(render("G_NEW"))
         self.board, self.board_button = QLineEdit(), QPushButton(render("G_BROWSE"))
         self.refill_button = QPushButton(render("G_REFILL"))
         self.refill_button.setEnabled(False)  # until a press gives a KiCad to ask
+        self.kind = combo((("chain", "G_KIND_CHAIN"), ("antenna", "G_KIND_ANTENNA")), "chain", self.kind_changed)
         self.start, self.end, self.f0 = QComboBox(editable=True), QComboBox(editable=True), QLineEdit()
         self.swap_button = QPushButton(render("G_SWAP"))
+        self.antenna, self.band, self.band_text = QComboBox(), QComboBox(), QLineEdit()
+        for label, f_lo, f_hi in control.BANDS:
+            self.band.addItem(label, (f_lo, f_hi))
+        self.band.addItem(render("G_BAND_CUSTOM"), None)
+        # 2.4 GHz by its index: findData finds None and text, but a tuple only as the very object stored (probed on
+        # PySide6 6.12)
+        self.band.setCurrentIndex(2)
         self.harmonics = QSpinBox(minimum=1, maximum=99, value=HARMONICS)
         self.preset, self.stackup = QComboBox(), QComboBox()
         self.preset.addItems(cli.PRESETS)
@@ -318,23 +331,63 @@ class NewForm(QGroupBox):
         self.create_button, self.status, self.notes = QPushButton(render("G_CREATE")), QLabel(), sentences()
         self.status.setWordWrap(True)  # a refusal names a path, which would otherwise widen the window
         self.chosen = ""
-        form, end_row = QFormLayout(self), beside(self.end, self.swap_button)
-        end_row.setStretch(0, 1)  # the end picker takes the row's width, as the start one does, and Swap keeps its own
+        self.form, self.end_row = QFormLayout(self), beside(self.end, self.swap_button)
+        self.end_row.setStretch(0, 1)  # the end picker takes the row's width, as the start one does; Swap keeps its own
+        self.band_row = beside(self.band, self.band_text)
         for code, field in (("G_NEW_BOARD", beside(self.board, self.board_button, self.refill_button)),
-                            ("G_NEW_START", self.start),
-                            ("G_NEW_END", end_row), ("G_NEW_F0", self.f0), ("G_NEW_HARMONICS", self.harmonics),
+                            ("G_NEW_KIND", self.kind), ("G_NEW_START", self.start), ("G_NEW_END", self.end_row),
+                            ("G_NEW_ANTENNA", self.antenna), ("G_NEW_F0", self.f0),
+                            ("G_NEW_HARMONICS", self.harmonics), ("G_NEW_BAND", self.band_row),
                             ("G_NEW_PRESET", self.preset), ("G_NEW_STACKUP", self.stackup), ("G_NEW_LID", self.lid),
                             ("G_NEW_FOLDER", beside(self.folder, self.folder_button))):
-            form.addRow(render(code), field)
+            self.form.addRow(render(code), field)
         for widget in (self.create_button, self.status, self.notes):
-            form.addRow(widget)
+            self.form.addRow(widget)
         self.swap_button.clicked.connect(self.swap)
+        self.band.currentIndexChanged.connect(self.band_changed)
+        self.kind_changed()
+        self.band_changed()
 
     def swap(self) -> None:
         """Swap: start and end exchange their texts."""
         start, end = self.start.currentText(), self.end.currentText()
         self.start.setCurrentText(end)
         self.end.setCurrentText(start)
+
+    def kind_changed(self) -> None:
+        """The kind set (kind's currentIndexChanged, and once at the start): the antenna's and the band's rows shown
+        for an antenna, the end's, f0's and the harmonics' for a chain; the rows to hide first, since a row shown lays
+        the form out at once, which would keep the space of a row still to hide until the event loop runs (probed: a
+        grab then shows the gap)."""
+        ant = self.kind.currentData() == "antenna"
+        rows = ((self.antenna, ant), (self.band_row, ant), (self.end_row, not ant), (self.f0, not ant),
+                (self.harmonics, not ant))
+        for row, shown in sorted(rows, key=lambda pair: pair[1]):  # False first
+            self.form.setRowVisible(row, shown)
+
+    def band_changed(self) -> None:
+        """The band set (band's currentIndexChanged, and once at the start): its F_LO:F_HI text enabled only for
+        Custom."""
+        self.band_text.setEnabled(self.band.currentData() is None)
+
+    def show_antennas(self, kinds: dict[str, str], antenna: str = "") -> None:
+        """The antenna footprints `kinds` (control._antennas: each one's kind by its reference) in the footprint combo,
+        each as its reference; a module's or a chip antenna's item disabled, with its refusal in the window's words
+        (control.text of E_ANTENNA_MODULE or E_ANTENNA_CHIP) as its tooltip, in rich text, which Qt word-wraps (a plain
+        tooltip of some 250 characters runs about 1600 px wide). `antenna` is picked when given and listed, else the
+        first printed antenna, else none: Qt keeps a disabled first item current otherwise."""
+        # ponytail: a disabled entry's reason is its tooltip; a 200-character item would widen the window past 1200
+        box = self.antenna
+        box.clear()
+        for k, (ref, kind) in enumerate(kinds.items()):
+            box.addItem(ref, ref)
+            if kind != "printed":
+                item = box.model().item(k)
+                item.setEnabled(False)
+                why = control.text("E_ANTENNA_MODULE" if kind == "module" else "E_ANTENNA_CHIP", {"ref": ref})
+                item.setToolTip(f"<p>{html.escape(why, quote=False)}</p>")
+        pick = antenna if antenna in kinds else next((ref for ref, kind in kinds.items() if kind == "printed"), "")
+        box.setCurrentIndex(box.findData(pick))  # -1, none picked, for "": no reference is empty
 
 
 class AdvancedView(QWidget):
@@ -401,11 +454,11 @@ class MainWindow(QMainWindow):
     process this window started; `live`, whether the watched process goes on; `mtime`, project.json's and the board
     file's st_mtime_ns at the last read (stamp); `started`, every process this window started, polled every tick, so
     that none is left a zombie on Linux; the New form's work going on (Futures): `pads_read`, the chosen board's
-    pads, or a press (take_handoff), and `creating`, new; and the KiCad button's presses: `handoff`, the handoff file of
-    the last press taken, and `handed`, the last press shown (control.Handed), each None before the first, and
-    `refilling`, Refill's refill and save in KiCad going on (a Future); one window per user (gui.main, serve):
-    `server`, the local server that takes a second start's request, and `lock`, gui.lock, both None in a window main
-    did not make.
+    pads and antennas, or a press (take_handoff), and `creating`, new; and the KiCad button's presses: `handoff`, the
+    handoff file of the last press taken, and `handed`, the last press shown (control.Handed), each None before the
+    first, and `refilling`, Refill's refill and save in KiCad going on (a Future); one window per user (gui.main,
+    serve): `server`, the local server that takes a second start's request, and `lock`, gui.lock, both None in a
+    window main did not make.
     Every slot is a bound method: a lambda or partial slot would keep a closed window alive (probed on PySide6
     6.12)."""
 
@@ -517,7 +570,7 @@ class MainWindow(QMainWindow):
         bannered. Any other holder's run folder, when it names one other than the watched one, is watched when this
         window's own process was not running at the last tick (`live`) and the holder lives, or when the holder is dead
         and nothing is watched (on open), so a cost meanwhile keeps its tab. Before all that, with or without a
-        project, New's pad list, new itself and Refill when done (show_pads; created, which opens the project new
+        project, New's board read, new itself and Refill when done (show_pads; created, which opens the project new
         wrote, whose own tick runs inside this one; refilled), then Refill enabled while a press gave a KiCad to ask
         (`handed`) and no refill goes on."""
         self.started = [p for p in self.started if p.poll() is None]  # poll() reaps one that ended
@@ -815,14 +868,14 @@ class MainWindow(QMainWindow):
     def board_chosen(self) -> None:
         """A board picked, or typed and left (the board field's editingFinished): for a board text, stripped, that is
         not the one whose pads were last read (`chosen`), the project folder beside it, named after it (the README's
-        `-o lpf915`), and its pads read on the pool (`pads_read`). The same board again keeps a folder the user
-        typed, unless its read was refused (show_pads then clears `chosen`)."""
+        `-o lpf915`), and its pads and antennas read on the pool (control.board_choices, as `pads_read`). The same
+        board again keeps a folder the user typed, unless its read was refused (show_pads then clears `chosen`)."""
         f = self.new_form
         text = f.board.text().strip()
         if text and text != f.chosen:
             f.chosen = text
             f.folder.setText(str(Path(text).with_suffix("")))
-            self.pads_read = self.pool.submit(control.pads, Path(text))
+            self.pads_read = self.pool.submit(control.board_choices, Path(text))
 
     def take_handoff(self, path: Path) -> None:
         """A press of the KiCad button, in the handoff file `path` (design 5.3, 5.5): kept as `handoff`, the Project
@@ -846,10 +899,23 @@ class MainWindow(QMainWindow):
         """Create the project: f0 read here, on the GUI thread, then new on the pool with the form's fields, the board
         and the folder stripped (`creating`), the status line saying so and Create disabled until it ends (created). A
         frequency that does not read, or no project folder (new's own default, the working folder, means nothing to a
-        GUI), goes to the status line, and nothing starts."""
+        GUI), goes to the status line, and nothing starts. The antenna kind (Stage 3 design 5.10) takes the antenna
+        footprint picked and the band, a preset's or Custom's text read here (parse_band), in place of the end, f0 and
+        the harmonics, and calls new_antenna with the same board, start, options and folder. No antenna picked starts
+        nothing: G_NO_ANTENNA in the status line after a read that succeeded (`chosen` set and no `pads_read`
+        pending), else the status line as it is (a refused read's refusal, or a read going on, whose end fills the
+        combo); then a band that does not read goes to the status line, before the folder's check."""
         f = self.new_form
+        ant = f.kind.currentData() == "antenna"
+        if ant and f.antenna.currentData() is None:
+            if f.chosen and self.pads_read is None:  # a read that succeeded found no printed antenna
+                f.status.setText(render("G_NO_ANTENNA"))
+            return
         try:
-            f0 = parse_frequency(f.f0.text())
+            if ant:
+                band = f.band.currentData() or parse_band(f.band_text.text())
+            else:
+                f0 = parse_frequency(f.f0.text())
         except KrsError as e:
             f.status.setText(control.message(e))
             return
@@ -858,27 +924,33 @@ class MainWindow(QMainWindow):
             return
         f.status.setText(render("G_CREATING"))
         f.create_button.setEnabled(False)
-        self.creating = self.pool.submit(
-            cli.new, f.board.text().strip(), f.start.currentText().strip(), f.end.currentText().strip(), f0,
-            harmonics=f.harmonics.value(), preset=f.preset.currentText(), stackup=f.stackup.currentData(),
-            lid_height=f.lid.value() or None, output=f.folder.text().strip())  # a lid height of 0: none, new's default
+        board, start = f.board.text().strip(), f.start.currentText().strip()
+        options = {"preset": f.preset.currentText(), "stackup": f.stackup.currentData(),
+                   "lid_height": f.lid.value() or None,  # a lid height of 0: none, new's default
+                   "output": f.folder.text().strip()}
+        if ant:
+            self.creating = self.pool.submit(cli.new_antenna, board, start, f.antenna.currentData(), band, **options)
+        else:
+            self.creating = self.pool.submit(cli.new, board, start, f.end.currentText().strip(), f0,
+                                             harmonics=f.harmonics.value(), **options)
 
     def show_pads(self, done: Future) -> None:
-        """New's read (`done`): the board's pads (control.pads) in the start and end pickers, none picked for the user;
-        or a press (control.handed), kept as `handed`: its board in the board field and as `chosen` ("" when the press
-        has no pads, a refusal, so that the board, fixed and picked again, is read again), the project folder beside it
-        as board_chosen sets it, and kept, as there, when the board is `chosen` already, its pads in the pickers with
-        its start and end picked, and its problem in the status line, which is otherwise left as it is. On a refusal
-        (load_board's, else E_INTERNAL), the pickers left empty, the refusal in the status line and `chosen` cleared,
-        so that the same board, fixed and picked again, is read again. The exception is taken, never raised again: its
-        traceback would then hold this frame, and so the window, in a cycle with the Future that only the garbage
-        collector frees, maybe on a pool thread (probed)."""
+        """New's read (`done`): the board's pads and antennas (control.board_choices), the pads in the start and end
+        pickers, none picked for the user, and the antennas in the footprint combo (NewForm.show_antennas); or a press
+        (control.handed), kept as `handed`: its board in the board field and as `chosen` ("" when the press has no
+        pads, a refusal, so that the board, fixed and picked again, is read again), the project folder beside it as
+        board_chosen sets it, and kept, as there, when the board is `chosen` already, its pads in the pickers with its
+        start and end picked, and its problem in the status line, which is otherwise left as it is. On a refusal
+        (load_board's, else E_INTERNAL), the pickers and the footprint combo left empty, the refusal in the status line
+        and `chosen` cleared, so that the same board, fixed and picked again, is read again. The exception is taken,
+        never raised again: its traceback would then hold this frame, and so the window, in a cycle with the Future
+        that only the garbage collector frees, maybe on a pool thread (probed)."""
         f, error = self.new_form, done.exception()
         if error is not None:
             f.status.setText(control.message(error))
             f.chosen = ""
-        read = [] if error is not None else done.result()
-        names, start, end = read, "", ""
+        read = ([], {}) if error is not None else done.result()
+        start = end = ""
         if isinstance(read, control.Handed):
             self.handed, names, start, end = read, read.pads, read.start, read.end
             f.board.setText(str(read.board))
@@ -887,6 +959,9 @@ class MainWindow(QMainWindow):
             f.chosen = str(read.board) if read.pads else ""
             if read.problem:
                 f.status.setText(control.text(*read.problem))
+        else:
+            names, kinds = read
+            f.show_antennas(kinds)
         for box, pick in ((f.start, start), (f.end, end)):
             box.clear()
             box.addItems(names)

@@ -1394,6 +1394,44 @@ msgstr "Pasta do projeto"
 msgid "Choose the project folder: New writes project.json into it."
 msgstr "Escolha a pasta do projeto: o botão Criar o projeto grava o project.json nela."
 
+#. G_NEW_KIND
+msgid "Kind"
+msgstr "Tipo"
+
+#. G_KIND_CHAIN
+msgid "Matching chain"
+msgstr "Cadeia de casamento"
+
+#. G_KIND_ANTENNA
+msgid "Antenna"
+msgstr "Antena"
+
+#. G_NEW_ANTENNA
+msgid "Antenna footprint"
+msgstr "Footprint da antena"
+
+#. G_NEW_BAND
+msgid "Band"
+msgstr "Banda"
+
+#. G_BAND_CUSTOM
+msgid "Custom (F_LO:F_HI)"
+msgstr "Personalizada (F_LO:F_HI)"
+
+#. G_NO_ANTENNA
+msgid "No printed antenna on this board: an antenna project needs one whose copper is drawn in the board file. A matching chain can still be simulated: choose the kind Matching chain."
+msgstr "Nenhuma antena impressa nesta placa: um projeto de antena precisa de uma cujo cobre esteja desenhado no arquivo da placa. Uma cadeia de casamento ainda pode ser simulada: escolha o tipo Cadeia de casamento."
+
+#. G_ANTENNA_MODULE
+#, python-brace-format
+msgid "{ref} is a module: its antenna's copper is inside the module, not in the board file, so it cannot be simulated as an antenna. The matching chain up to it still can: choose the kind Matching chain, with a pad of {ref} as the end pad."
+msgstr "{ref} é um módulo: o cobre da antena dele fica dentro do módulo, não no arquivo da placa, então ela não pode ser simulada como antena. A cadeia de casamento até ele ainda pode: escolha o tipo Cadeia de casamento, com uma ilha de {ref} como ilha final."
+
+#. G_ANTENNA_CHIP
+#, python-brace-format
+msgid "{ref} is a chip antenna: its radiator is inside the part's body and the board file holds only its pads, so it cannot be simulated as an antenna. The matching chain up to it still can: choose the kind Matching chain, with a pad of {ref} as the end pad."
+msgstr "{ref} é uma antena chip: o radiador fica dentro do corpo do componente e o arquivo da placa só tem as ilhas dela, então ela não pode ser simulada como antena. A cadeia de casamento até ela ainda pode: escolha o tipo Cadeia de casamento, com uma ilha de {ref} como ilha final."
+
 #. G_BROWSE
 msgid "Browse…"
 msgstr "Procurar…"

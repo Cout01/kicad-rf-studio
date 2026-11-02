@@ -1392,6 +1392,44 @@ msgstr ""
 msgid "Choose the project folder: New writes project.json into it."
 msgstr ""
 
+#. G_NEW_KIND
+msgid "Kind"
+msgstr ""
+
+#. G_KIND_CHAIN
+msgid "Matching chain"
+msgstr ""
+
+#. G_KIND_ANTENNA
+msgid "Antenna"
+msgstr ""
+
+#. G_NEW_ANTENNA
+msgid "Antenna footprint"
+msgstr ""
+
+#. G_NEW_BAND
+msgid "Band"
+msgstr ""
+
+#. G_BAND_CUSTOM
+msgid "Custom (F_LO:F_HI)"
+msgstr ""
+
+#. G_NO_ANTENNA
+msgid "No printed antenna on this board: an antenna project needs one whose copper is drawn in the board file. A matching chain can still be simulated: choose the kind Matching chain."
+msgstr ""
+
+#. G_ANTENNA_MODULE
+#, python-brace-format
+msgid "{ref} is a module: its antenna's copper is inside the module, not in the board file, so it cannot be simulated as an antenna. The matching chain up to it still can: choose the kind Matching chain, with a pad of {ref} as the end pad."
+msgstr ""
+
+#. G_ANTENNA_CHIP
+#, python-brace-format
+msgid "{ref} is a chip antenna: its radiator is inside the part's body and the board file holds only its pads, so it cannot be simulated as an antenna. The matching chain up to it still can: choose the kind Matching chain, with a pad of {ref} as the end pad."
+msgstr ""
+
 #. G_BROWSE
 msgid "Browse…"
 msgstr ""

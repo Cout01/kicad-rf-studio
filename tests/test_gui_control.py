@@ -30,6 +30,7 @@ from kicad_rf_studio.core.post.waves import grid
 from kicad_rf_studio.core.project import board_file, load_project, parts, save_project
 from kicad_rf_studio.gui import control
 from networks import star, terminate_np
+from test_antenna_kicad import KINDS
 from test_cli_antenna import antenna_project
 from test_cli_cost import FIX, new_project
 from test_match_antenna import pi_run
@@ -171,6 +172,18 @@ def test_the_pad_picker_lists_each_pad_with_copper_once_in_natural_order():  # d
     with pytest.raises(KrsError) as e:
         control.pads(FIX / "nope.kicad_pcb")
     assert (e.value.code, e.value.params["reason"]) == ("E_BOARD_UNREADABLE", "T_FILE_NOT_FOUND")
+
+
+def test_new_reads_a_boards_pads_and_antennas_once_but_its_connectors(mini_board_file):  # design 5.10; r2
+    pads, kinds = control.board_choices(FIX / "ifa2g4_pi.kicad_pcb")
+    assert pads == control.pads(FIX / "ifa2g4_pi.kicad_pcb") and kinds == {"AE1": "printed"}
+    assert control.board_choices(FIX / "lpf915.kicad_pcb")[1] == {}  # J1, a U.FL with a keep-out, is a connector
+    assert control.board_choices(mini_board_file(KINDS))[1] == {
+        "AE1": "printed", "AE2": "chip", "AE3": "chip", "AE4": "chip", "AE5": "chip", "U2": "module", "U3": "module",
+        "U4": "printed"}
+    assert [(label, f_lo, f_hi) for label, f_lo, f_hi in control.BANDS] == [
+        ("868 MHz (863–870 MHz)", 863e6, 870e6), ("915 MHz (902–928 MHz)", 902e6, 928e6),
+        ("2.4 GHz (2400–2483.5 MHz)", 2.4e9, 2.4835e9)]  # design 5.10, 7's presets
 
 
 def press(board, pads=(), footprints=(), socket="ipc://s", token="T"):
