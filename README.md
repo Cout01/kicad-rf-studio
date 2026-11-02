@@ -152,12 +152,24 @@ P0-B's consistency criterion, `verify` against the co-simulation, failed (|ΔS21
 
 This takes `ifa2g4_pi`, the synthetic 2.4 GHz board in `tests/fixtures` (KiCad's `Texas_SWRA117D_2.4GHz_Left` inverted-F, after TI's application note SWRA117D, fed from the radio's pad U1.1 through a pi network of 0402 parts: series L1, shunts C2 and C3), through `new --antenna`, `cost`, `run`, `retune` and `verify`, then compares it with `ifa2g4_pi_pour`, the same board with a ground pour inside the antenna's clearance. Run the commands as in the Tutorial above.
 
-The times were measured on the development PC (Windows 11, 16 CPUs) at the Normal preset, `new`'s default, by the run through the GUI that closed Stage 3 (`docs/validation/<date>-stage3-exit.md`); that run compared with the pour that gate P3-E had verified, so the pour's run and verify times are P3-E's (`docs/validation/2026-11-01-p3-e.md`). `cost` prints your own machine's estimate before every run, and no runtime is promised. The excerpts are real output of that run; `<run folder>` stands for a run's folder in the per-user data folder, and `ifa2g4_pi`, `ifa2g4_pi_pour` and `compare` for the projects' and the compare's folders.
+The times were measured on the development PC (Windows 11, 16 CPUs) at the Normal preset, `new`'s default, by the run through the GUI that closed Stage 3 (`docs/validation/2026-11-02-stage3-exit.md`); that run compared with the pour that gate P3-E had verified, so the pour's run and verify times are P3-E's (`docs/validation/2026-11-01-p3-e.md`). `cost` prints your own machine's estimate before every run, and no runtime is promised. The excerpts are real output of that run; `<run folder>` stands for a run's folder in the per-user data folder, and `ifa2g4_pi`, `ifa2g4_pi_pour` and `compare` for the projects' and the compare's folders.
 
 **`new --antenna`** finds the antenna footprint AE1 and its feed pad, traces the chain from the radio's pin U1.1 to it, and writes an antenna project for the band: `--antenna` takes the place of `--end` and `--band F_LO:F_HI` that of `--f0`. The whole board is simulated, in an air box with a PML absorber, and every part on the chain is a part port, so the network can be retuned.
 
 ```
 <venv>\Scripts\kicad-rf-studio new tests/fixtures/ifa2g4_pi.kicad_pcb --start U1.1 --antenna AE1 --band 2400MHz:2483.5MHz -o ifa2g4_pi
+```
+
+It took under a second. It prints the stackup, the nets, the antenna and its join, the chain, each part and port, the band and every default it wrote:
+
+```
+Antenna AE1, fed at pad AE1.1 on net RF: its copper drawn without a net takes that net.
+Antenna AE1 joins its feed to ground through AE1.2 by design, as an inverted-F does; the connectivity and port checks accept that join and no other.
+Chain U1.1 → AE1.1: series L1; shunt C2, C3.
+Port P1: signal U1.1, reference U1.2 (ic).
+Band 2400 to 2483.5 MHz, f0 2441.75 MHz; the pulse spans 1840 to 2990 MHz.
+Preset normal, T_max 30 ns (2·t0 + 60/f0), mesh n 2, measured region 6 substrate heights past the antenna and the chain, protected reach 6 substrate heights, air gap 31.2 mm (λ/4 at f_lo) to a pml_8 absorber, far-field frequencies: 11, on a 5° sphere.
+Wrote ifa2g4_pi\project.json.
 ```
 
 **`cost`** splits the cells into board, air and PML, and prints the worst case before any run.
@@ -166,10 +178,37 @@ The times were measured on the development PC (Windows 11, 16 CPUs) at the Norma
 <venv>\Scripts\kicad-rf-studio cost ifa2g4_pi
 ```
 
-**`run`** runs one job per port, P1 at the radio's pin and the part ports L1, C2 and C3, four at once. It gives S11 at the radio's pin for any part values, and no far field: a part port is not a part.
+It took 37 s, 26 s of it measuring the machine's speed, which `cost` does once on a machine with no calibration yet:
+
+```
+Cells: 135 × 143 × 71 = 1.37 M (mesh n 2, cell d 0.3000 mm).
+Cells: 0.11 M in the board, 0.67 M of air and 0.60 M of PML; the time counts a PML cell as 8.92 cells and runs this model at 0.559 × the calibrated speed for that many jobs at once (gate P3-A's method, refitted by gates P3-B to P3-E).
+dt 1.2625e-13 s (floor 0.8 × 1.1118e-13 s), set by the z edge at (98.642, 93.865, 0.000) mm.
+Worst case: 3 h 48 min for 4 runs to T_max 30 ns, 2 at once with 8 threads each.
+RAM: about 0.6 GB (2 jobs at once).
+```
+
+**`run`** runs one job per port, P1 at the radio's pin and the part ports L1, C2 and C3, as many at once as the machine's calibration chose (two here). It gives S11 at the radio's pin for any part values, and no far field: a part port is not a part.
 
 ```
 <venv>\Scripts\kicad-rf-studio run ifa2g4_pi
+```
+
+It took 3833 s (1.1 h), 0.28 of that worst case, and all four jobs converged. These results are at the board's own values, L1 2.7nH and C2 and C3 1pF:
+
+```
+P1: converged at 11.12 ns (residual -60.2 dB).
+L1: converged at 11.95 ns (residual -60.7 dB).
+C2: converged at 11.12 ns (residual -60.4 dB).
+C3: converged at 12.58 ns (residual -60.6 dB).
+4 of 4 jobs kept S, in 1 h 3 min; results recorded in ifa2g4_pi\project.json.
+Resonance (lowest |S11|): 2325.8 MHz, |S11| -6.9 dB, Zin at U1.1 43.2 - j46.7 Ω.
+f_lo = 2400.0 MHz: |S11| -5.6 dB, Zin at U1.1 17.5 - j16.0 Ω, mismatch efficiency 72.6 %.
+f0 = 2441.8 MHz: |S11| -4.7 dB, Zin at U1.1 13.3 - j4.2 Ω, mismatch efficiency 66.2 %.
+f_hi = 2483.5 MHz: |S11| -4.0 dB, Zin at U1.1 11.5 + j5.9 Ω, mismatch efficiency 60.2 %.
+-10 dB bandwidth: none, as |S11| stays above -10 dB.
+-6 dB bandwidth: 2274.2 to 2384.3 MHz (110.1 MHz).
+No far field for this run: a run with part ports records none, as its jobs hold ports where the matching parts sit; `kicad-rf-studio verify ifa2g4_pi\project.json` runs one job with each part in the grid at its value, as an ideal part, and records it.
 ```
 
 **`retune`** closes the part ports at new values, with no new run. These came from an E24 search over the run's layout, the values the GUI's snapping gives (C2 typed as 0.127pF snaps to 0.13pF). `0R` replaces a series part with a short and `open` removes a shunt part: `retune ifa2g4_pi L1=0R C2=open C3=open` shows the antenna through its feed line.
@@ -178,10 +217,36 @@ The times were measured on the development PC (Windows 11, 16 CPUs) at the Norma
 <venv>\Scripts\kicad-rf-studio retune ifa2g4_pi L1=0R C2=0.13pF C3=1pF
 ```
 
+It took 2 s:
+
+```
+Resonance (lowest |S11|): 2443.4 MHz, |S11| -17.4 dB, Zin at U1.1 60.6 - j10.5 Ω.
+f_lo = 2400.0 MHz: |S11| -10.3 dB, Zin at U1.1 65.8 + j33.1 Ω, mismatch efficiency 90.7 %.
+f0 = 2441.8 MHz: |S11| -17.4 dB, Zin at U1.1 62.1 - j9.2 Ω, mismatch efficiency 98.2 %.
+f_hi = 2483.5 MHz: |S11| -10.5 dB, Zin at U1.1 32.1 - j17.6 Ω, mismatch efficiency 91.1 %.
+-10 dB bandwidth: 2397.7 to 2486.6 MHz (89.0 MHz).
+-6 dB bandwidth: 2356.6 to 2521.5 MHz (164.9 MHz).
+Relative / what-if: the instant retune is not yet validated against a full simulation of a real board (spec 7.6), so read these chain results as relative. Check the final values with `kicad-rf-studio verify ifa2g4_pi\project.json`.
+```
+
 **`verify`** runs one job with every part in the grid at its applied value, as an ideal part, and records the far field: the radiation and total efficiency, the directivity, gain and realized gain, and the three cuts at f0 in `verify_summary.png`. After it, `retune` also prints the what-if total efficiency of each new set of values.
 
 ```
 <venv>\Scripts\kicad-rf-studio verify ifa2g4_pi
+```
+
+It took 1161 s (19 min). It prints a far-field line for each of the eleven far-field frequencies; this excerpt keeps f0's:
+
+```
+1 verify jobs kept S, in 19 min; the comparison is stored in ifa2g4_pi\project.json.
+Resonance (lowest |S11|): 2446.6 MHz, |S11| -12.5 dB, Zin at U1.1 74.7 - j16.5 Ω.
+f_lo = 2400.0 MHz: |S11| -9.3 dB, Zin at U1.1 71.6 + j37.8 Ω, mismatch efficiency 88.3 %.
+f0 = 2441.8 MHz: |S11| -12.5 dB, Zin at U1.1 78.3 - j11.6 Ω, mismatch efficiency 94.4 %.
+f_hi = 2483.5 MHz: |S11| -10.1 dB, Zin at U1.1 43.0 - j29.7 Ω, mismatch efficiency 90.2 %.
+verify against the retune at the same ideal values: |ΔS11| 0.0076 at f0 = 2441.75 MHz (|a| -0.1 dB) and 0.0149 at most up to f2.
+Resonance at 2446.6 MHz in verify against 2446.8 MHz in the retune: a shift of -0.01 %.
+2441.8 MHz: radiation efficiency 81.3 %, total efficiency 76.7 %, directivity 2.55 dBi, gain 1.65 dBi, realized gain 1.40 dBi.
+verify checks the layout reduction, not the vendor part data: each part sat in the grid at its value as an ideal part, without the package ESL, ESR and Cp or the S2P data the retune applies, a 0 Ω part as copper and an open part left out, against a retune at the same ideal values; its far field holds that ideal network.
 ```
 
 **`compare`** reads both projects' verified results, which must share every setting, and marks each difference resolved or not. First the same steps on the pour board, then the compare, which writes `compare.csv` and `compare.png` into `compare`:
@@ -192,6 +257,19 @@ The times were measured on the development PC (Windows 11, 16 CPUs) at the Norma
 <venv>\Scripts\kicad-rf-studio retune ifa2g4_pi_pour L1=0R C2=0.13pF C3=1pF
 <venv>\Scripts\kicad-rf-studio verify ifa2g4_pi_pour
 <venv>\Scripts\kicad-rf-studio compare ifa2g4_pi ifa2g4_pi_pour -o compare
+```
+
+On the pour, `new` and `retune` take seconds, and `run` and `verify` took 1 h 4 min and 27 min in gate P3-E (`docs/validation/2026-11-01-p3-e.md`). The compare took 1 s:
+
+```
+Resonance: 2446.6 MHz to 2358.2 MHz, a shift of -88.5 MHz (-3.62 % of f0): resolved.
+-10 dB bandwidth: not compared, as one of the two has none bounded inside the simulated band.
+Total efficiency at f_lo = 2400.0 MHz: 71.8 % to 56.1 %, -1.07 dB: resolved.
+Total efficiency at f0 = 2441.8 MHz: 76.7 % to 48.4 %, -2.00 dB: resolved.
+Total efficiency at f_hi = 2483.5 MHz: 73.0 % to 39.0 %, -2.73 dB: resolved.
+Peak gain at f0 = 2441.8 MHz: 1.65 dBi to 1.21 dBi, -0.44 dB: resolved.
+Resolved means larger than the significance threshold: 0.3 % of f0 for a frequency and 0.2 dB for an efficiency or a gain, set by gate P3-D at three times the model's measured noise floor and never below 0.3 % and 0.2 dB.
+Wrote compare.csv, compare.png in compare.
 ```
 
 In the GUI, New's kind Antenna takes the antenna footprint, the start pad and a band preset; Results shows S11 with the band shaded, the Smith chart and, from the run that holds the network, the efficiencies and the three cuts, its title naming that run; the Compare tab compares the open project with a variant. The KiCad button pre-fills New with the antenna kind when the antenna footprint, or one of its pads, is selected with the radio's pin.
