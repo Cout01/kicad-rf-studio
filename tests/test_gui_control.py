@@ -24,12 +24,15 @@ from kicad_rf_studio.core import messages
 from kicad_rf_studio.core.kicad import load_board
 from kicad_rf_studio.core.messages import CATALOG, KrsError, render
 from kicad_rf_studio.core.model.spec import spec_hash
+from kicad_rf_studio.core.post.antenna import ANTENNA_LIMITS
 from kicad_rf_studio.core.post.outputs import LIMITS
 from kicad_rf_studio.core.post.waves import grid
 from kicad_rf_studio.core.project import board_file, load_project, parts, save_project
 from kicad_rf_studio.gui import control
 from networks import star, terminate_np
+from test_cli_antenna import antenna_project
 from test_cli_cost import FIX, new_project
+from test_match_antenna import pi_run
 from test_post_chain import M0402, lpf
 from test_run import lpf_loads, lpf_run
 from test_sexpr import mo_pairs
@@ -425,13 +428,81 @@ def test_open_project_keeps_project_json_as_stored_for_advanced(tmp_path, fake):
     assert control.open_project(tmp_path / "nope.json").stored is None
 
 
-def test_an_antenna_project_is_refused_until_plan_5(tmp_path, fake):  # Stage 3 plan 2: show_project reads harmonics
+def test_an_antenna_project_opens_with_its_far_field_and_where_it_comes_from(tmp_path, calibrated):  # design 5.10
     from test_project import antenna_dict
-    p = tmp_path / "project.json"
-    save_project(p, antenna_dict())
-    opened = control.open_project(p)
-    assert opened.project is None and opened.problem == ("E_PROJECT_SCHEMA", {"path": str(p), "found": 2, "expected": 1})
-    assert opened.stored is None and opened.board is None  # final review G2: Advanced shows no v1 defaults
+    p = tmp_path / "unread" / "project.json"
+    p.parent.mkdir()
+    save_project(p, antenna_dict())  # its board is not beside it: the read stops there, Advanced still gets it
+    unread = control.open_project(p)
+    assert unread.problem[0] == "E_BOARD_UNREADABLE" and unread.stored == antenna_dict()
+    assert unread.board == board_file(p, antenna_dict()) and unread.far is None
+    pj = antenna_project(tmp_path / "m0").resolve()
+    assert pipeline.run(pj) == 0  # M = 0: its run is its far-field run
+    opened, d = control.open_project(pj), load_project(pj)
+    assert (opened.problem, opened.results.refs, opened.far_lay) == (None, [], None)
+    assert opened.far_source == ("T_RUN", d["results"]["run_dir"]) and len(opened.far["sphere"].f) == 2
+    outputs = pipeline.antenna_outputs(pj, d, "x", errors_as_lines=True)
+    n = len(opened.results.lines)
+    assert outputs[:n] == opened.results.lines and [c for c, _ in outputs[n:]] == ["I_OUTPUTS", *ANTENNA_LIMITS]
+    assert opened.stored == d and opened.board == board_file(pj, d)
+
+
+def test_the_retune_session_of_an_antenna_gives_retunes_lines_and_reads_nothing(
+        tmp_path, calibrated, monkeypatch):  # design 5.7, 5.10; Review Focus 2, 3
+    pj = pi_run(tmp_path, monkeypatch).resolve()
+    assert pipeline.verify(pj) == 0
+    opened, d = control.open_project(pj), load_project(pj)
+    assert opened.far_source == ("T_VERIFY", d["verify"]["run_dir"])
+    assert opened.far_lay.f.tolist() == sorted(opened.far["sphere"].f.tolist())
+    rows = [replace(row, value=value) for row, value in
+            zip(control.rows(d, pj.parent, opened.results.refs), ("0R", "open", "open"))]  # the feed line alone
+    with monkeypatch.context() as m:  # read once, on the pool: an edit reads no far field and no waves
+        for name in ("far_of", "layout", "current_verify"):
+            m.setattr(pipeline, name, lambda *a, **k: 1 / 0)
+        res = control.retuned(pj, opened.project, opened.results, rows, opened.far, opened.far_lay)
+    lines = []
+    assert pipeline.retune(pj, ["L1=0R", "C2=open", "C3=open"], lambda c, p: lines.append((c, p))) == 0
+    assert lines[:len(res.lines)] == res.lines and [c for c, _ in res.lines].count("I_ANTENNA_ETA_WHAT_IF") == 2
+    assert [c for c, _ in lines[len(res.lines):]] == ["I_WHAT_IF", "I_OUTPUTS", *ANTENNA_LIMITS]
+    bad = control.retuned(pj, opened.project, opened.results, [replace(rows[0], value="open")], opened.far,
+                          opened.far_lay)
+    assert (bad.chain, bad.lines) == (None, [("E_RETUNE_OPEN_SERIES", {"ref": "L1"})])
+    assert control.text(*bad.lines[0]) == render("G_RETUNE_OPEN_SERIES", ref="L1")
+    none = control.retuned(pj, opened.project, opened.results, rows)  # no far field given: none, nothing read
+    assert ("I_ANTENNA_NO_FAR_FIELD" in [c for c, _ in none.lines]
+            and control.text("I_ANTENNA_NO_FAR_FIELD", {"command": "x"}) == render("G_ANTENNA_NO_FAR_FIELD"))
+
+
+def test_an_antennas_verify_is_stale_when_a_bypass_changes(tmp_path):  # design 5.7; Review Focus 4
+    project = load_project(antenna_project(tmp_path / "pi", FIX / "ifa2g4_pi.kicad_pcb"))
+    project = {**project, "results": {"model_hash": "M"},
+               "verify": {"base_hash": "M", "values": {"L1": "0R", "C2": "open", "C3": "1pF"}, "run_dir": "v"}}
+
+    def stale(l1, c2, c3):
+        return control.verify_stale(project, [control.Row(ref, value, "", "series")
+                                              for ref, value in (("L1", l1), ("C2", c2), ("C3", c3))])
+
+    assert stale("0R", "open", "1pF") is None and stale("0", "OPEN", "1p") is None  # an L of 0 is a short
+    assert stale("open", "open", "1pF") == stale("0R", "0R", "1pF") == "G_VERIFY_STALE"  # 0R against open
+    assert stale("0R", "open", "1.2pF") == "G_VERIFY_STALE"
+
+
+def test_advanced_shows_an_antennas_fields_with_its_own_defaults_and_units():  # design 5.10; ruling 5
+    from test_project import antenna_dict
+    d = antenna_dict()
+    by = {f.name: f for f in control.fields(d)}
+    assert not {"kind", "copper", "harmonics", "band_factor"} & set(by)  # sheet copper is not offered (A-35)
+    assert {name: (by[name].default, by[name].unit) for name in (
+        "t_max_s", "region.expand_h", "lid", "air_gap_mm", "boundary", "far_field.step_deg", "band.f_lo_hz")} == {
+        "t_max_s": ("3e-08", "G_UNIT_S"), "region.expand_h": ("6.0", "G_UNIT_SUBSTRATE"), "lid": ("true", None),
+        "air_gap_mm": ("31.228381", "G_UNIT_MM"), "boundary": ('"pml_8"', None),
+        "far_field.step_deg": ("5", "G_UNIT_DEG"), "band.f_lo_hz": ("", "G_UNIT_HZ")}
+    far = by["far_field.f_hz"]
+    assert json.loads(far.default) == d["far_field"]["f_hz"] and far.unit == "G_UNIT_HZ"
+    broken = {f.name: f for f in control.fields({**d, "band": "x"})}  # a hand edit Advanced is there to fix
+    assert (broken["t_max_s"].default, broken["air_gap_mm"].default, broken["boundary"].default) == ("", "", '"pml_8"')
+    v1 = {f.name: f.default for f in control.fields(lpf())}
+    assert (v1["t_max_s"], v1["region.expand_h"], v1["lid"]) == ("4e-08", "3.0", "null")  # v1's as before
 
 
 def test_about_names_the_version_the_licence_notices_and_each_runtime_dependency(monkeypatch):  # design 5.3 About

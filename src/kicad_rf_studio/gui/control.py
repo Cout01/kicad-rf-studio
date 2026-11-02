@@ -18,13 +18,16 @@ from importlib import metadata
 from pathlib import Path
 
 from kicad_rf_studio import __version__, pipeline, runs
+from kicad_rf_studio.core.geometry.region import air_gap
 from kicad_rf_studio.core.kicad import classify, load_board
-from kicad_rf_studio.core.kicad.values import part_kind, port_value, snap, value_text
+from kicad_rf_studio.core.kicad.values import bypass, part_kind, port_value, snap, value_text
 from kicad_rf_studio.core.messages import KrsError, detail, render
 from kicad_rf_studio.core.model import spec
-from kicad_rf_studio.core.project import (BAND_FACTOR, DEFAULT_PRESET, EXPAND_H, GATES, HARMONICS, MARGIN_SCALE, MESH_N,
-                                          REACH_H, SCHEMA, SCHEMA_ANTENNA, T_MAX_S, antenna, board_file, load_project,
-                                          parts)
+from kicad_rf_studio.core.model.spec import antenna_t_max
+from kicad_rf_studio.core.post.waves import Layout
+from kicad_rf_studio.core.project import (ANTENNA_BOUNDARY, BAND_FACTOR, DEFAULT_PRESET, EXPAND_H, FAR_FIELD_STEP, GATES,
+                                          HARMONICS, MARGIN_SCALE, MESH_N, REACH_H, T_MAX_S, antenna, board_file,
+                                          far_field_hz, load_project, parts)
 
 END = {0: "G_END_DONE", 2: "G_END_REFUSED", 3: "G_END_BLOCKED", 4: "G_END_NOT_KEPT", 130: "G_END_STOPPED"}
 # the CLI's lines that the GUI words its own way, with the same params (design 5.3)
@@ -34,7 +37,9 @@ GUI = {"E_LOCKED": "G_LOCKED", "I_RUN_START": "G_RUN_START", "I_WHAT_IF": "G_WHA
        "W_LID_HEIGHT_MISSING": "G_LID_HEIGHT_MISSING", "I_PART_NO_MODEL": "G_PART_NO_MODEL",
        "W_NO_REFERENCE": "G_NO_REFERENCE", "E_RETUNE_VALUE": "G_RETUNE_VALUE", "E_PART_NO_VALUE": "G_PART_NO_VALUE",
        "E_S2P_MISSING": "G_S2P_MISSING", "E_S2P_UNREADABLE": "G_S2P_UNREADABLE", "E_S2P_BAND": "G_S2P_BAND",
-       "W_S2P_FIXTURE": "G_S2P_FIXTURE", "E_VERIFY_VALUE": "G_VERIFY_VALUE", "E_PROJECT_FIELD": "G_PROJECT_FIELD"}
+       "W_S2P_FIXTURE": "G_S2P_FIXTURE", "E_VERIFY_VALUE": "G_VERIFY_VALUE", "E_PROJECT_FIELD": "G_PROJECT_FIELD",
+       "E_RETUNE_SHORT_SHUNT": "G_RETUNE_SHORT_SHUNT", "E_RETUNE_OPEN_SERIES": "G_RETUNE_OPEN_SERIES",
+       "E_RETUNE_ANTENNA_VALUE": "G_RETUNE_ANTENNA_VALUE", "I_ANTENNA_NO_FAR_FIELD": "G_ANTENNA_NO_FAR_FIELD"}
 # an S2P fixture combo's label code by its data
 FIXTURE_LABELS = {"series": "G_FIXTURE_SERIES", "shunt": "G_FIXTURE_SHUNT"}
 
@@ -183,10 +188,12 @@ class Opened:
     """A project as open_project reads it: project.json, its model's spec_hash and the chain results while they apply,
     each None when not read; the first refusal met, as (code, params); the last cost of this model (last_cost) and the
     newest run or verify that ended; each None without one; the board file that project.json names
-    (core.project.board_file), None when project.json cannot be read or names no board, or for an antenna project
-    until plan 5; the last verify's comparison (verify_lines), [] without one; and project.json as load_project reads
-    it (`stored`), unchecked, so that Advanced can fix a field the checks refuse, None when it cannot be read or for an
-    antenna project until plan 5."""
+    (core.project.board_file), None when project.json cannot be read or names no board; the last verify's comparison
+    (verify_lines), [] without one; project.json as load_project reads it (`stored`), unchecked, so that Advanced can
+    fix a field the checks refuse, None when it cannot be read; and the far field the plot shows (`far`: the run's with
+    no part port, else the current verify's; None without one), its `far_source` (T_RUN or T_VERIFY, and its run
+    folder) and `far_lay`, the run's layout at its frequencies for the what-if η_tot, all read here, on the pool
+    (Stage 3 design 5.10)."""
     project: dict | None
     spec_hash: str | None
     results: pipeline.ChainResults | None
@@ -196,27 +203,36 @@ class Opened:
     board: Path | None = None
     verified: list[tuple[str, dict]] = field(default_factory=list)
     stored: dict | None = None
+    far: dict | None = None
+    far_source: tuple[str, str] | None = None
+    far_lay: Layout | None = None
 
 
 def open_project(path: Path) -> Opened:
-    """The project file `path`, which the caller resolves, read off the GUI thread (design 5.1): an antenna project
-    refused as E_PROJECT_SCHEMA (Stage 3 plan 2), else pipeline.load, its model, the model's spec_hash (None without a
-    spec), results_of and chain_results with errors as lines, the first KrsError stopping there as `problem`, any other
-    exception E_INTERNAL; then `stored`, the project read when pipeline.load succeeded, else load_project alone,
-    unchecked (a project the checks refuse, or whose board fails to load, still reads), and the board file it names,
-    each None when it raises, `stored` kept when only the board file does, and both None for an antenna project until
-    plan 5 (Advanced would list v1's defaults); then last_cost, the newest of ended() that is a run or a verify, and
-    verify_lines. Never raises; starts nothing."""
-    project = model_hash = results = problem = None
+    """The project file `path`, which the caller resolves, read off the GUI thread (design 5.1): pipeline.load, its
+    model, the model's spec_hash (None without a spec), results_of and chain_results with errors as lines (an antenna's
+    lines are pipeline.antenna_lines', the CLI's, kept with the far field they read, its source and its layout), the
+    first KrsError stopping there as `problem`, any other exception E_INTERNAL; then `stored`, the project read when
+    pipeline.load succeeded, else load_project alone, unchecked (a project the checks refuse, or whose board fails to
+    load, still reads), and the board file it names, each None when it raises, `stored` kept when only the board file
+    does; then last_cost, the newest of ended() that is a run or a verify, and verify_lines. Never raises; starts
+    nothing."""
+    project = model_hash = results = problem = far = far_source = far_lay = None
     try:
-        # ponytail: plan 5 opens antenna projects; until then window.show_project would read their harmonics
-        if antenna(load_project(path)):
-            raise KrsError("E_PROJECT_SCHEMA", path=str(path), found=SCHEMA_ANTENNA, expected=SCHEMA)
         project, board, geom, _ = pipeline.load(path)
         model = pipeline.build_model(project, board, geom)
         model_hash = None if model.spec is None else spec.spec_hash(model.spec)
         pipeline.results_of(project, model)
-        results = pipeline.chain_results(path, project, errors_as_lines=True)
+        res = pipeline.chain_results(path, project, errors_as_lines=True)
+        if antenna(project):
+            # ponytail: a far-field file of another layout (read_far_field's ValueError) reads as E_INTERNAL for the
+            # whole read
+            lines, far, far_lay = pipeline.antenna_lines(path, project, res, errors_as_lines=True)
+            res = replace(res, lines=lines)
+            if far is not None:
+                far_source = (("T_RUN", project["results"]["run_dir"]) if project["results"].get("far_field")
+                              else ("T_VERIFY", project["verify"]["run_dir"]))
+        results = res
     except KrsError as e:
         problem = (e.code, e.params)
     except Exception as e:  # E_INTERNAL, as cli.main reports it
@@ -226,11 +242,9 @@ def open_project(path: Path) -> Opened:
     with contextlib.suppress(Exception):  # project.json unreadable, or naming no board
         stored = project if project is not None else load_project(path)
         file = board_file(path, stored)
-    if stored is not None and antenna(stored):  # ponytail: plan 5's Advanced reads schema 2; until then it shows none
-        stored = file = None
     last = next((d for d, end in ended(path) if end["params"]["command"] in ("run", "verify")), None)
     return Opened(project, model_hash, results, problem, last_cost(path, model_hash), last, file,
-                  verify_lines(project), stored)
+                  verify_lines(project), stored, far, far_source, far_lay)
 
 
 def run_state(run_dir: Path, end: dict | None, holder: dict | None, own: bool,
@@ -332,18 +346,25 @@ def changed(project: dict, folder: Path, rows: list[Row]) -> list[str]:
     return assignments
 
 
-def retuned(path: Path, project: dict, stored: pipeline.ChainResults, rows: list[Row]) -> pipeline.ChainResults:
+def retuned(path: Path, project: dict, stored: pipeline.ChainResults, rows: list[Row], far: dict | None = None,
+            far_lay: Layout | None = None) -> pipeline.ChainResults:
     """The chain results of the project file `path` (`project`, as read) with its `rows` (design 5.3, 5.4): the rows
     that changed stored by pipeline.assign, then pipeline.chain_results with errors as lines on the layout `stored`
-    holds, the CLI's own functions in retune's order, so its numbers and lines are retune's. Any exception on the way
-    gives `stored` with no chain and no what-if, its lines that one line: a KrsError's (assign's refusal,
+    holds, the CLI's own functions in retune's order, so its numbers and lines are retune's; an antenna's lines are
+    pipeline.antenna_lines' on the far field `far` and its layout `far_lay` that open_project read (Opened's; `far`
+    None: none), so an antenna's session reads no far-field or waves file (Stage 3 design 5.10). Any exception on the
+    way gives `stored` with no chain and no what-if, its lines that one line: a KrsError's (assign's refusal,
     E_S_SINGULAR), else E_INTERNAL. Writes nothing and never raises, so no stale curve stays on screen."""
     # ponytail: each S2P file is read again on every update, on the GUI thread (about 2, 5 and 19 ms per file of 401,
     # 1601 and 6401 points on lpf915; a file on a slow network share stalls it); cache by (file, mtime_ns), or read on
     # the pool, when several large files pass 50 ms
     try:
         new = pipeline.assign(project, changed(project, path.parent, rows), path.parent)
-        return pipeline.chain_results(path, new, errors_as_lines=True, lay=stored.lay)
+        res = pipeline.chain_results(path, new, errors_as_lines=True, lay=stored.lay)
+        if antenna(new):
+            res = replace(res, lines=pipeline.antenna_lines(path, new, res, errors_as_lines=True, far=far,
+                                                            far_lay=far_lay)[0])
+        return res
     except KrsError as e:
         line = (e.code, e.params)
     except Exception as e:  # E_INTERNAL, as cli.main reports it
@@ -380,14 +401,20 @@ def verify_stale(project: dict, rows: list[Row]) -> str | None:
     can read (none, or a hand edit that is not an object with base_hash and an object of value texts); G_VERIFY_STALE
     when a run came since (base_hash is not the results' model_hash) or when a row's value reads (port_value) other
     than the one verify ran; else None. A row with an S2P file counts with its part's stored value: Apply keeps that
-    value, and verify runs it, not the file (C-38)."""
+    value, and verify runs it, not the file (C-38). An antenna's 0R and open read as the bypasses they are (Stage 3
+    design 5.7), which port_value reads as None."""
     v, by_ref = project.get("verify"), parts(project)
     if not (isinstance(v, dict) and "base_hash" in v and isinstance(v.get("values"), dict)
             and all(isinstance(x, str) for x in v["values"].values())):
         return "G_VERIFY_NONE"
+
+    def read(ref: str, text: str) -> float | None:
+        z = bypass(ref, text) if antenna(project) else None
+        return port_value(ref, text) if z is None else z
+
     if v["base_hash"] != project["results"]["model_hash"] or any(
-            port_value(row.ref, by_ref[row.ref]["value"] if row.s2p else row.value)
-            != port_value(row.ref, v["values"].get(row.ref, "")) for row in rows):
+            read(row.ref, by_ref[row.ref]["value"] if row.s2p else row.value)
+            != read(row.ref, v["values"].get(row.ref, "")) for row in rows):
         return "G_VERIFY_STALE"
     return None
 
@@ -478,7 +505,8 @@ class Field:
 UNITS = {"f0_hz": "G_UNIT_HZ", "t_max_s": "G_UNIT_S", "region.expand_h": "G_UNIT_SUBSTRATE",
          "mesh.reach_h": "G_UNIT_SUBSTRATE", "lid_height_mm": "G_UNIT_MM", "layers[].thickness_mm": "G_UNIT_MM",
          "reference.point": "G_UNIT_MM", "model.esl_h": "G_UNIT_HENRY", "model.esr_ohm": "G_UNIT_OHM",
-         "model.cp_f": "G_UNIT_FARAD"}
+         "model.cp_f": "G_UNIT_FARAD", "band.f_lo_hz": "G_UNIT_HZ", "band.f_hi_hz": "G_UNIT_HZ",
+         "far_field.f_hz": "G_UNIT_HZ", "air_gap_mm": "G_UNIT_MM", "far_field.step_deg": "G_UNIT_DEG"}
 
 
 def _leaves(value, path: tuple):
@@ -493,9 +521,10 @@ def _leaves(value, path: tuple):
 
 def fields(data: dict) -> list[Field]:
     """Advanced's fields of project.json `data` (design 5.3): every leaf (_leaves) in file order, but those under
-    schema, results and verify (records, not settings), each with the default that `new` writes when it has one. The
-    preset is read through str(), so a hand-edited one that is not text (a list) cannot raise: unchecked data is what
-    Advanced is there to fix."""
+    schema, results and verify (records, not settings), and an antenna's kind and copper (sheet copper is not offered,
+    Stage 3 plan 4), each with the default that `new` writes when it has one, an antenna's its own (Stage 3 design
+    5.10): its T_max, air gap and far-field frequencies those of its band. The preset is read through str(), so a
+    hand-edited one that is not text (a list) cannot raise: unchecked data is what Advanced is there to fix."""
     # ponytail: a list of objects can be edited but not grown, and a reference cannot switch between pad and point
     # here; a text editor does both
     defaults = {"harmonics": HARMONICS, "preset": DEFAULT_PRESET, "band_factor": BAND_FACTOR, "t_max_s": T_MAX_S,
@@ -503,8 +532,19 @@ def fields(data: dict) -> list[Field]:
                 "mesh.n": MESH_N.get(str(data.get("preset")), MESH_N[DEFAULT_PRESET]), "mesh.reach_h": REACH_H,
                 "lid_height_mm": None, "lid": None, "gates.fit2d_limit": GATES["fit2d_limit"],
                 "gates.dt_floor": GATES["dt_floor"], "allow_curve_port": False}
+    hidden = ("schema", "results", "verify")
+    if antenna(data):
+        hidden += ("kind", "copper")
+        defaults.update({"lid": True, "region.expand_h": REACH_H, "boundary": ANTENNA_BOUNDARY,
+                         "far_field.step_deg": FAR_FIELD_STEP})
+        del defaults["t_max_s"]
+        # a hand-edited band that does not read: its defaults are left out, as Advanced must open it
+        with contextlib.suppress(Exception):
+            f_lo, f_hi = data["band"]["f_lo_hz"], data["band"]["f_hi_hz"]
+            defaults.update({"t_max_s": antenna_t_max(f_lo, f_hi), "air_gap_mm": air_gap(f_lo),
+                             "far_field.f_hz": far_field_hz(f_lo, f_hi)})
     found = []
-    for path, value in _leaves({k: v for k, v in data.items() if k not in ("schema", "results", "verify")}, ()):
+    for path, value in _leaves({k: v for k, v in data.items() if k not in hidden}, ()):
         name = "".join(f"[{k}]" if isinstance(k, int) else f".{k}" for k in path)[1:]
         unit = UNITS.get(".".join(re.sub(r"\[\d+\]", "[]", name).split(".")[-2:]))
         found.append(Field(name, path, value, json.dumps(defaults[name]) if name in defaults else "", unit))

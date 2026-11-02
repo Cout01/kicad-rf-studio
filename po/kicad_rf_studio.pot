@@ -1239,6 +1239,10 @@ msgstr ""
 msgid "Relative / what-if: the instant retune is not yet validated against a full simulation of a real board (spec 7.6), so read these chain results as relative. Check the final values with Verify."
 msgstr ""
 
+#. G_ANTENNA_NO_FAR_FIELD
+msgid "No far field for this run: a run with part ports records none, as its jobs hold ports where the matching parts sit; Verify runs one job with each part in the grid at its value, as an ideal part, and records it."
+msgstr ""
+
 #. G_NO_RESULTS
 msgid "No results yet: estimate the cost, then run."
 msgstr ""
@@ -1493,6 +1497,21 @@ msgstr ""
 msgid "Cannot read \"{value}\" as the value of {ref}: a C, L or R takes a value in its own unit (4.7pF, 4p7, 15nH, 50R; a C above 0), and any part takes an S2P file in its row."
 msgstr ""
 
+#. G_RETUNE_SHORT_SHUNT
+#, python-brace-format
+msgid "{ref} joins the antenna's chain to {net}: 0 Ω there would short the chain to {net}. In the Value column, 0R replaces a series part with a short, and open removes a part like this one."
+msgstr ""
+
+#. G_RETUNE_OPEN_SERIES
+#, python-brace-format
+msgid "{ref} is a series part of the antenna's chain: open there would cut the antenna off its feed. In the Value column, 0R replaces it with a short; open removes a shunt part."
+msgstr ""
+
+#. G_RETUNE_ANTENNA_VALUE
+#, python-brace-format
+msgid "Cannot read \"{value}\" as the value of {ref}: on an antenna's chain a C, L or R takes a value in its own unit (4.7pF, 4p7, 15nH, 50R), 0R replaces a series part with a short and open removes a shunt part (a C of 0 F could mean either, so it is refused), and any part takes an S2P file in its row."
+msgstr ""
+
 #. G_PART_NO_VALUE
 #, python-brace-format
 msgid "Part {ref} has no value that reads (\"{value}\") and no S2P file, so its port cannot be closed. Give it an S2P file in its row, or, for a C, L or R, a value."
@@ -1608,6 +1627,10 @@ msgstr ""
 
 #. G_UNIT_FARAD
 msgid "F"
+msgstr ""
+
+#. G_UNIT_DEG
+msgid "degrees"
 msgstr ""
 
 #. G_MENU_HELP

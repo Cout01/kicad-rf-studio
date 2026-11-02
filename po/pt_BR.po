@@ -1241,6 +1241,10 @@ msgstr "Executando em {folder} (tarefas: {runs}; simultâneas: {pool}). O botão
 msgid "Relative / what-if: the instant retune is not yet validated against a full simulation of a real board (spec 7.6), so read these chain results as relative. Check the final values with Verify."
 msgstr "Relativo / hipotético: o ajuste instantâneo ainda não foi validado contra uma simulação completa de uma placa real (especificação 7.6), então leia estes resultados da cadeia como relativos. Confira os valores finais com o botão Verificar."
 
+#. G_ANTENNA_NO_FAR_FIELD
+msgid "No far field for this run: a run with part ports records none, as its jobs hold ports where the matching parts sit; Verify runs one job with each part in the grid at its value, as an ideal part, and records it."
+msgstr "Sem campo distante para esta execução: uma execução com portas de componentes não registra nenhum, pois as tarefas dela têm portas onde ficam os componentes de casamento; o botão Verificar executa uma tarefa com cada componente na grade com o valor dele, como componente ideal, e o registra."
+
 #. G_NO_RESULTS
 msgid "No results yet: estimate the cost, then run."
 msgstr "Ainda não há resultados: estime o custo e depois execute."
@@ -1495,6 +1499,21 @@ msgstr "O project.json ou a placa dele mudou no disco: os valores que você não
 msgid "Cannot read \"{value}\" as the value of {ref}: a C, L or R takes a value in its own unit (4.7pF, 4p7, 15nH, 50R; a C above 0), and any part takes an S2P file in its row."
 msgstr "Não foi possível ler \"{value}\" como o valor de {ref}: um C, L ou R recebe um valor na própria unidade (4.7pF, 4p7, 15nH, 50R; um C maior que 0), e qualquer componente recebe um arquivo S2P na linha dele."
 
+#. G_RETUNE_SHORT_SHUNT
+#, python-brace-format
+msgid "{ref} joins the antenna's chain to {net}: 0 Ω there would short the chain to {net}. In the Value column, 0R replaces a series part with a short, and open removes a part like this one."
+msgstr "{ref} liga a cadeia da antena a {net}: 0 Ω ali poria a cadeia em curto com {net}. Na coluna Valor, 0R troca um componente em série por um curto, e open retira um componente como este."
+
+#. G_RETUNE_OPEN_SERIES
+#, python-brace-format
+msgid "{ref} is a series part of the antenna's chain: open there would cut the antenna off its feed. In the Value column, 0R replaces it with a short; open removes a shunt part."
+msgstr "{ref} é um componente em série da cadeia da antena: em aberto ali, ele separaria a antena da alimentação. Na coluna Valor, 0R o troca por um curto; open retira um componente shunt."
+
+#. G_RETUNE_ANTENNA_VALUE
+#, python-brace-format
+msgid "Cannot read \"{value}\" as the value of {ref}: on an antenna's chain a C, L or R takes a value in its own unit (4.7pF, 4p7, 15nH, 50R), 0R replaces a series part with a short and open removes a shunt part (a C of 0 F could mean either, so it is refused), and any part takes an S2P file in its row."
+msgstr "Não foi possível ler \"{value}\" como o valor de {ref}: na cadeia de uma antena, um C, L ou R recebe um valor na própria unidade (4.7pF, 4p7, 15nH, 50R), 0R troca um componente em série por um curto e open retira um componente shunt (um C de 0 F poderia ser qualquer um dos dois, então é recusado), e qualquer componente recebe um arquivo S2P na linha dele."
+
 #. G_PART_NO_VALUE
 #, python-brace-format
 msgid "Part {ref} has no value that reads (\"{value}\") and no S2P file, so its port cannot be closed. Give it an S2P file in its row, or, for a C, L or R, a value."
@@ -1611,6 +1630,10 @@ msgstr "Ω"
 #. G_UNIT_FARAD
 msgid "F"
 msgstr "F"
+
+#. G_UNIT_DEG
+msgid "degrees"
+msgstr "graus"
 
 #. G_MENU_HELP
 msgid "Help"
