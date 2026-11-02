@@ -100,7 +100,8 @@ def z_lines(zs: tuple[Slab, ...], d: float, t_m: float, h: float, z_walls: tuple
 
 def xy_lines(edges: list[Edge], extent: tuple[float, float], walls: tuple[float, float], free: Iterable[float],
              d: float, coarse: float, prefer: Collection[Edge] = (), force: Collection[Edge] = (),
-             h: float = math.inf, exempt: Collection[Edge] = frozenset()) -> tuple[np.ndarray, np.ndarray]:
+             h: float = math.inf, exempt: Collection[Edge] = frozenset(), *, max_cell: float | None = None,
+             spans: Collection[tuple[float, float]] = ()) -> tuple[np.ndarray, np.ndarray]:
     """The lines of one in-plane axis from wall to wall, and the rule's own lines among them: the walls, the edge
     lines, the protected extent's ends and its fill.
     - Every protected copper edge, (position, inside sign), gets its lines from _patterns (`prefer`, `force` and `h`,
@@ -108,6 +109,11 @@ def xy_lines(edges: list[Edge], extent: tuple[float, float], walls: tuple[float,
     - The `extent` (lo, hi; empty when lo > hi) is filled at d or finer, graded from its smallest cells. Its ends are
       lines but in an edge's cell (between the pinned lines around it), where one would sit on the edge or nearer it
       than its inside line, and the lint's one re-mesh could not move it (verifier).
+    - With `max_cell` (an SI project's, Stage 4 design 5.3), d fills only the `spans` (lo, hi) the caller gives on
+      this axis: the margins around vias, and any copper its edges cannot pattern. Their ends are lines where clear.
+      Elsewhere in the extent the cells grade at RATIO up to `max_cell`, and outside it up to `coarse` as before. The
+      rule's own lines are then the walls, the edge lines, the extent's and the spans' ends, and the spans' fill.
+      With None, as for v1 and the antenna, d fills the whole extent as before and `spans` is ignored.
     - A `free` coordinate (unprotected copper, a rod, the lid) at d or more from the extent and in no edge's cell gets
       a line where it lies at least the local graded cell, min(coarse, d + (1 − 1/GROW)·its distance to the extent),
       from every other line: a vertex line nearer than that would only make the grading refine back towards d.
@@ -118,12 +124,12 @@ def xy_lines(edges: list[Edge], extent: tuple[float, float], walls: tuple[float,
       converge, the axis keeps the lines of the rule as built."""
     if SLOT_IN is not None:  # ponytail: one failing check reverts the whole axis; per cell, if boards lose the depth so
         try:
-            out = _axis(edges, extent, walls, free, d, coarse, prefer, force, h, True)
+            out = _axis(edges, extent, walls, free, d, coarse, prefer, force, h, True, max_cell=max_cell, spans=spans)
             if not _faults(out[0], edges, d, exempt):
                 return out
         except RuntimeError:  # _grade's guard
             pass
-    return _axis(edges, extent, walls, free, d, coarse, prefer, force, h, False)
+    return _axis(edges, extent, walls, free, d, coarse, prefer, force, h, False, max_cell=max_cell, spans=spans)
 
 
 def lint_hits(lines: np.ndarray, edges: Iterable[Edge], d: float,
@@ -153,11 +159,13 @@ def _faults(lines: np.ndarray, edges: list[Edge], d: float, exempt: Collection[E
 
 
 def _axis(edges: list[Edge], extent: tuple[float, float], walls: tuple[float, float], free: Iterable[float], d: float,
-          coarse: float, prefer: Collection[Edge], force: Collection[Edge], h: float,
-          slot: bool) -> tuple[np.ndarray, np.ndarray]:
-    """xy_lines' lines and the rule's own lines among them, with _patterns' slot role on (`slot`) or off."""
+          coarse: float, prefer: Collection[Edge], force: Collection[Edge], h: float, slot: bool, *,
+          max_cell: float | None = None, spans: Collection[tuple[float, float]] = ()) -> tuple[np.ndarray, np.ndarray]:
+    """xy_lines' lines and the rule's own lines among them, with _patterns' slot role on (`slot`) or off, and
+    `max_cell` and `spans` as xy_lines takes them."""
     pins = _patterns(edges, d, prefer, force, h, slot) | dict.fromkeys(walls, 0.0)
     lo, hi = (round(v, 6) for v in extent)
+    spans = [(round(a, 6), round(b, 6)) for a, b in spans] if max_cell is not None else []  # None ignores them
     at = np.array(sorted(pins))
     cells = set(np.searchsorted(at, [e for e, _ in edges]).tolist())
 
@@ -165,7 +173,18 @@ def _axis(edges: list[Edge], extent: tuple[float, float], walls: tuple[float, fl
         i = int(np.searchsorted(at, v))
         return i not in cells or at[i] == v
 
-    base = merge([*pins, *(v for v in ([lo, hi] if lo <= hi else []) if clear(v))], pins, d / 3)
+    # ponytail: d fills only where the caller says; staircased (45°) copper has no axis edge, so plan 2 passes its
+    # spans too or keeps the d fill
+    def fill(m: np.ndarray) -> np.ndarray:  # where d fills: the extent, or with max_cell only the spans
+        if max_cell is None:
+            return (m >= lo) & (m <= hi)
+        out = np.zeros_like(m, bool)
+        for a, b in spans:
+            out |= (m >= a) & (m <= b)
+        return out
+
+    ends = ([lo, hi] if lo <= hi else []) + [v for span in spans for v in span]
+    base = merge([*pins, *(v for v in ends if clear(v))], pins, d / 3)
     kept = list(base)
     for v in sorted({round(v, 6) for v in free if walls[0] < v < walls[1]}, key=lambda v: max(lo - v, v - hi)):
         far = max(lo - v, v - hi)
@@ -174,10 +193,11 @@ def _axis(edges: list[Edge], extent: tuple[float, float], walls: tuple[float, fl
     hard = np.array(kept)
     mid = (hard[1:] + hard[:-1]) / 2
     held = [e for e, _ in edges]
-    lines = _grade(hard, [*held, *mid[(mid < lo) | (mid > hi)]], d, hard)  # the fill: the cells outside the extent wait
-    lines = _grade(_smooth(lines, coarse, d / 3, held), held, lambda m: np.where((m >= lo) & (m <= hi), d, coarse),
-                   hard)
-    return lines, np.union1d(base, lines[(lines >= lo) & (lines <= hi)])
+    lines = _grade(hard, [*held, *mid[~fill(mid)]], d, hard)  # the fill: the cells outside it wait
+    cap = d if max_cell is None else max_cell  # the extent's cells outside the fill
+    lines = _grade(_smooth(lines, coarse, d / 3, held), held,
+                   lambda m: np.where(fill(m), d, np.where((m >= lo) & (m <= hi), cap, coarse)), hard)
+    return lines, np.union1d(base, lines[fill(lines)])
 
 
 def _patterns(edges: Iterable[Edge], d: float, prefer: Collection[Edge] = (), force: Collection[Edge] = (),

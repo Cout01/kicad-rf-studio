@@ -13,7 +13,7 @@ from kicad_rf_studio.core.cs2d import solve
 from kicad_rf_studio.core.geometry import Geometry
 from kicad_rf_studio.core.geometry.copper import Piece, copper_pieces
 from kicad_rf_studio.core.geometry.mask import mask_model
-from kicad_rf_studio.core.geometry.region import build_region, lambda_min
+from kicad_rf_studio.core.geometry.region import build_region, coarse_cell, lambda_min, si_max_cell
 from kicad_rf_studio.core.geometry.sections import Section, cross_section, sections, staircase_gap
 from kicad_rf_studio.core.geometry.vias import via_rods
 from kicad_rf_studio.core.geometry.zstack import substrate_h, zstack
@@ -903,10 +903,10 @@ def test_a_slot_pass_that_does_not_converge_keeps_the_as_built_lines(monkeypatch
     slot(monkeypatch)
     axis = rule._axis
 
-    def stuck(*a):  # _grade's guard, on the slot pass only
+    def stuck(*a, **si):  # _grade's guard, on the slot pass only (xy_lines passes max_cell and spans by keyword)
         if a[-1]:
             raise RuntimeError("the mesh grading did not converge")
-        return axis(*a)
+        return axis(*a, **si)
 
     monkeypatch.setattr(rule, "_axis", stuck)
     on = xy_lines(PAIR, *ARGS)
@@ -926,3 +926,48 @@ G1 = [(*f, n) for f in FIXTURES for n in (2, 3) if n == 2 or not f[0].startswith
 def test_every_fixture_section_passes_the_fit2d_gate(name, start, end, n):  # design G1: plan 6's slot role (A-8)
     g, prot = geometry(name, start, end)  # the ratchet's own build (3 GHz, no lid, reach 6): condition 1 in tier (a)
     assert max(map(abs, fit2d(g, mesh_with_lint(g, prot, n))), default=0.0) < 3
+
+
+SI_D, SI_H = 0.075, 0.2  # a 0.15 mm pair with a 0.15 mm gap on 0.2 mm, at n 2
+SI_COARSE, SI_CELL = coarse_cell(10e9, 4.3), si_max_cell(10e9, 3.3)  # λ_min/20 and λ_eff/40 at 10 GHz
+STRAIGHT = [(0.0, 1), (100.0, -1)]  # a 100 mm pair along x: its ends
+ACROSS = [(-0.225, 1), (-0.075, -1), (0.075, 1), (0.225, -1)]  # its two legs, across it
+L_X = [(0.0, 1), (49.775, 1), (49.925, -1), (50.075, 1), (50.225, -1)]  # an L: 50 mm along x, then down along y
+
+
+def si_axis(edges, extent, **si):
+    walls = (round(extent[0] - 4 - 8 * SI_COARSE, 6), round(extent[1] + 4 + 8 * SI_COARSE, 6))  # 4 mm + 8 cells
+    return rule.xy_lines(edges, extent, walls, [e for e, _ in edges], SI_D, SI_COARSE, h=SI_H, **si)[0]
+
+
+def around(lines, e, inside):
+    """The lines nearest the edge at `e`, in its metal and out of it: its pattern's inside and outside lines."""
+    off = np.round((lines - e) * inside, 9)
+    return lines[off > 0][off[off > 0].argmin()], lines[off < 0][off[off < 0].argmax()]
+
+
+@pytest.mark.parametrize(("edges", "extent", "fewer"), [(STRAIGHT, (-1.2, 101.2), 4), (ACROSS, (-1.425, 1.425), 1.5),
+                                                        (L_X, (-1.2, 51.425), 4)])
+def test_the_si_rule_fills_d_only_at_the_edges_and_grades_to_max_cell_between(edges, extent, fewer):  # design 5.3
+    v1, si = si_axis(edges, extent), si_axis(edges, extent, max_cell=SI_CELL)
+    held = lambda lines: lines[(lines >= extent[0]) & (lines <= extent[1])]  # noqa: E731
+    assert fewer * len(held(si)) <= len(held(v1))  # 267 against 1,368; 22 against 42; 153 against 706
+    assert [around(si, e, s) for e, s in edges] == [around(v1, e, s) for e, s in edges]  # the edge patterns kept
+    assert lint_hits(si, edges, SI_D) == [] and bad_pairs(si, [e for e, _ in edges]) == []
+    steps, mids = np.diff(si), (si[1:] + si[:-1]) / 2
+    inside = (mids >= extent[0]) & (mids <= extent[1])
+    assert steps[inside].max() <= SI_CELL + GRID_TOL and steps[~inside].max() <= SI_COARSE + GRID_TOL
+    assert steps.min() >= SI_D / 3 - GRID_TOL  # the d/3 merge
+
+
+@pytest.mark.parametrize(("edges", "extent", "span"), [(STRAIGHT, (-1.2, 101.2), (49.0, 51.0)),
+                                                       (STRAIGHT, (-1.2, 101.2), (99.0, 101.0)),
+                                                       (L_X, (-1.2, 51.425), (49.0, 51.0)),
+                                                       (L_X, (-1.2, 51.425), (49.0, 49.8))])
+def test_the_si_rule_fills_a_via_margin_at_d_clear_of_or_over_an_edge(edges, extent, span):  # 5.3; Review Focus 3
+    si = si_axis(edges, extent, max_cell=SI_CELL, spans=[span])
+    inner = si[(si >= span[0]) & (si <= span[1])]
+    assert inner[0] == span[0] and np.diff(inner).max() <= SI_D + GRID_TOL  # 49.8 lies d/3 from an edge line: merged
+    assert lint_hits(si, edges, SI_D) == [] and bad_pairs(si, [e for e, _ in edges]) == []
+    assert np.diff(si).min() >= SI_D / 3 - GRID_TOL
+    assert si_max_cell(10e9, 3.3) == pytest.approx(0.412576, abs=1e-6)  # 30 mm/√3.3/40
