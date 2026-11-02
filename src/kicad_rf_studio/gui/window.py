@@ -28,8 +28,9 @@ from kicad_rf_studio import button, cli, pipeline, runs
 from kicad_rf_studio.core.kicad.stackup import PRESETS as STACKUPS
 from kicad_rf_studio.core.kicad.values import parse_frequency
 from kicad_rf_studio.core.messages import KrsError, detail, reason, render
+from kicad_rf_studio.core.post.antenna import ANTENNA_LIMITS, draw_antenna, retrace_antenna
 from kicad_rf_studio.core.post.outputs import LIMITS, draw_summary, retrace_summary
-from kicad_rf_studio.core.project import DEFAULT_PRESET, HARMONICS, check_project, load_project, save_project
+from kicad_rf_studio.core.project import DEFAULT_PRESET, HARMONICS, antenna, check_project, load_project, save_project
 from kicad_rf_studio.gui import control
 
 COLUMNS = ("G_COL_PORT", "G_COL_TIME", "G_COL_RESIDUAL", "G_COL_SPEED", "G_COL_VERDICT")
@@ -37,6 +38,7 @@ PROGRESS = ("port", "t_ns", "residual_db", "speed_mcs")  # a progress event's pa
 PART, VALUE, SNAP, S2P, FIXTURE = range(5)  # the parts table's columns
 PART_COLUMNS = ("G_COL_PART", "G_COL_VALUE", "G_COL_SNAP", "G_COL_S2P", "G_COL_FIXTURE")
 FIELD_COLUMNS = ("G_COL_FIELD", "G_COL_VALUE", "G_COL_DEFAULT", "G_COL_UNIT")  # Advanced's table; Value alone edited
+DEFAULT_COLUMN_MAX = 320  # Advanced's Default column's width at most, in px
 SNAPPING = tuple(zip(control.SERIES, ("G_SNAP_OFF", "G_SNAP_E12", "G_SNAP_E24")))  # a Snapping combo's (data, code)
 FIXTURES = tuple(control.FIXTURE_LABELS.items())  # an S2P fixture combo's (data, code)
 
@@ -89,15 +91,18 @@ class ResultsView(QWidget):
     as its rows, a row per part port with its value, its Snapping, its S2P file and that file's fixture, then the row
     (`buttons`) of S2P file…, Revert, Apply and the retune's status line; summary.png's drawing on a FigureCanvasQTAgg;
     and the row (`footer`) of the result's lines and stated limits, then the last verify's comparison (`verify_lines`),
-    shown only with part ports. `series` holds each part's Snapping as the user set it. A row's edit emits `edited`; the
-    window answers it with the chain of the rows (show_chain). The plot: its `axes` as draw_summary drew them (None
-    without a plot, or to draw the next one in full) and its `curves`, animated, which a retune moves and blits
-    (retrace_summary, blit) on the background (`bg`) that the last full draw kept (on_draw), None until one."""
+    shown only with part ports. `series` holds each part's Snapping as the user set it. `shown` is the read on display
+    (display sets it), whose project and far field an antenna's chain is drawn with. A row's edit emits `edited`; the
+    window answers it with the chain of the rows (show_chain). The plot: its `axes` as draw_summary or draw_antenna drew
+    them (None without a plot, or to draw the next one in full) and its `curves`, animated, which a retune moves and
+    blits (retrace_summary or retrace_antenna, blit) on the background (`bg`) that the last full draw kept (on_draw),
+    None until one."""
 
     edited = Signal()
 
     def __init__(self):
         super().__init__()
+        self.shown = control.Opened(None, None, None, None, None, None)
         self.what_if, self.problem, self.lines = QLabel(control.text("I_WHAT_IF", {})), QLabel(), sentences()
         self.stale, self.verify_button, self.verify_lines = QLabel(), QPushButton(render("G_VERIFY")), sentences()
         self.canvas = FigureCanvasQTAgg(Figure(layout="constrained"))
@@ -135,11 +140,13 @@ class ResultsView(QWidget):
         self.canvas.mpl_connect("draw_event", self.on_draw)
 
     def display(self, opened: control.Opened, folder: Path | None) -> None:
-        """Shows the project read `opened` of the project folder `folder` (None for none): the problem's line only
-        with one; the rows of the results' part ports as project.json stores them (control.rows, S2P files against
-        `folder`), none without part ports, and only with them Verify and the last verify's comparison
-        (opened.verified); then the results' chain (show_chain), under the folder's name, drawn in full (`axes` None):
-        a read, Revert and the re-read after Apply. Never touches retune_status or the stale indicator."""
+        """Shows the project read `opened` of the project folder `folder` (None for none), kept first as `shown`, the
+        read on display: the problem's line only with one; the rows of the results' part ports as project.json stores
+        them (control.rows, S2P files against `folder`), none without part ports, and only with them Verify and the
+        last verify's comparison (opened.verified); then the results' chain (show_chain), under the folder's name, drawn
+        in full (`axes` None): a read, Revert and the re-read after Apply. Never touches retune_status or the stale
+        indicator."""
+        self.shown = opened
         res = opened.results
         self.problem.setText("" if opened.problem is None else control.text(*opened.problem))
         self.problem.setVisible(opened.problem is not None)
@@ -217,37 +224,56 @@ class ResultsView(QWidget):
     def show_chain(self, res: pipeline.ChainResults | None, name: str) -> None:
         """Shows the chain results `res` (None for none), `name` being the project folder's name, which summary.png's
         title shows: the lines cleared; the what-if label only when `res` carries what_if; with any results, plot or
-        not, their lines, then LIMITS (C-32). With a chain closed on 2 external ports and the plot drawn (`axes`), its
-        curves moved in place (retrace_summary) and blitted (blit). Otherwise the figure cleared, then, with such a
-        chain, summary.png's plots (draw_summary) with the label as their title's second line, their curves (`curves`)
-        animated, which a full draw leaves to on_draw; Qt redraws the canvas once its event loop runs (draw_idle)."""
+        not, their lines, then LIMITS (C-32), an antenna's ANTENNA_LIMITS. With a chain closed on 2 external ports and
+        the plot drawn (`axes`), its curves moved in place (retrace_summary) and blitted (blit). Otherwise the figure
+        cleared, then, with such a chain, summary.png's plots (draw_summary) with the label as their title's second
+        line, their curves (`curves`) animated, which a full draw leaves to on_draw; Qt redraws the canvas once its
+        event loop runs (draw_idle). An antenna's chain (Stage 3 design 5.10) draws draw_antenna's figure for the window
+        (gui: the six panels in one row, the limits in the lines) with the far field of the read (the run's, or the
+        current verify's while the retune moves S11), the title's last line saying which run it comes from, and is
+        moved by retrace_antenna."""
         # ponytail: the curves keep the limits of the last full draw (the stored values', or the first good values after
         # a refusal); a retune far off clips until Revert or Apply draws again
         fig = self.canvas.figure
         self.lines.clear()
         label = self.what_if.text() if res is not None and res.what_if else None
         self.what_if.setVisible(label is not None)
+        ant = res is not None and antenna(self.shown.project)  # a result always comes with its project
         if res is not None:
-            self.lines.addItems([control.text(c, p) for c, p in res.lines] + [render(c) for c in LIMITS])
-        plot = res is not None and res.chain is not None and len(res.ext) == 2
+            self.lines.addItems([control.text(c, p) for c, p in res.lines]
+                                + [render(c) for c in (ANTENNA_LIMITS if ant else LIMITS)])
+        plot = res is not None and res.chain is not None and len(res.ext) == (1 if ant else 2)
         if plot and self.axes is not None:
-            retrace_summary(self.axes, res.lay, res.chain, res.ideal)
+            if ant:
+                retrace_antenna(self.axes, res.lay.f, res.chain[:, 0, 0], self.shown.project)
+            else:
+                retrace_summary(self.axes, res.lay, res.chain, res.ideal)
             self.blit()
             return
         fig.clear()
         self.axes, self.curves, self.bg = None, [], None
-        if plot:
+        if plot and ant:
+            # ponytail: with part ports the η and cut panels stay the current verify's while the retune moves S11,
+            # labelled so; the instant far field by superposition (design 7) would move them too
+            p, source = self.shown.project, self.shown.far_source
+            far_from = source and render("G_FAR_FIELD_FROM", source=source[0], run_dir=Path(source[1]).name)
+            label = "\n".join(filter(None, (label, far_from))) or None
+            self.axes = draw_antenna(fig, res.lay.f, res.chain[:, 0, 0], p, self.shown.far, name, label, gui=True)
+            self.curves = retrace_antenna(self.axes, res.lay.f, res.chain[:, 0, 0], p)  # the data unchanged
+        elif plot:
             self.axes = draw_summary(fig, res.lay, res.chain, res.ideal, name, label)
             self.curves = retrace_summary(self.axes, res.lay, res.chain, res.ideal)  # the data unchanged
-            for curve in self.curves:
-                curve.set_animated(True)
+        for curve in self.curves:
+            curve.set_animated(True)
         self.canvas.draw_idle()
 
     def blit(self) -> None:
         """The curves drawn on the background that the last full draw kept (`bg`), then the figure copied to the screen
         (canvas.blit); without a background, the canvas drawn in full, whose draw_event keeps one (on_draw)."""
         # ponytail: a status line that changes height (G_APPLIED cleared, the stale indicator lit) resizes the canvas,
-        # which Qt then redraws once in full; fixed-height status lines if that is felt
+        # which Qt then redraws once in full (about 0.1 s for v1's figure, a quarter of a second for an antenna's six
+        # panels, as on the first edit after a verify); fixed-height status lines (setRetainSizeWhenHidden) if that is
+        # felt
         if self.bg is None:
             self.canvas.draw()
             return
@@ -315,7 +341,10 @@ class AdvancedView(QWidget):
     """The Advanced tab (Stage 2 design 5.3): project.json's fields (control.fields) in `table`, a row each with its
     name, its value as JSON, the one cell that can be edited, its default and its unit; then the row of Save
     (`save_button`, which the window enables) and its status line (`status`). `edits` holds the text of each edited
-    value by its field's path, and `paths` each row's path."""
+    value by its field's path, and `paths` each row's path. The Default column is fitted to its contents after each
+    display, but at most DEFAULT_COLUMN_MAX px (Stage 3 design 5.10): an antenna's far_field.f_hz default, 200
+    characters, would otherwise widen it to 2407 px and leave the Value column, the only editable one, 100 px; v1's
+    widest default takes 103 px, so v1's columns stay as they are."""
 
     def __init__(self):
         super().__init__()
@@ -325,6 +354,7 @@ class AdvancedView(QWidget):
         header = self.table.horizontalHeader()
         header.setSectionResizeMode(QHeaderView.ResizeMode.ResizeToContents)  # a name, a default or a unit unclipped
         header.setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)  # the value: a list, or a path
+        header.setSectionResizeMode(2, QHeaderView.ResizeMode.Interactive)  # the default: fitted in display, capped
         self.save_button.setEnabled(False)  # until an edit
         self.status.setWordWrap(True)  # a refusal names a path, which would otherwise widen the window
         buttons = beside(self.save_button, self.status)
@@ -337,7 +367,8 @@ class AdvancedView(QWidget):
     def display(self, stored: dict | None) -> None:
         """project.json as stored (control.Opened.stored; None for none, an empty table) in the table, its signals
         blocked: Field, Default and Unit read-only, Value as json.dumps writes it, non-ASCII text as it is; then `edits`
-        cleared. Never touches `status`."""
+        cleared and the Default column fitted to its contents, at most DEFAULT_COLUMN_MAX px. Never touches
+        `status`."""
         # ponytail: a re-read refills the table and drops unsaved edits; carry them per field, as the retune's rows are,
         # if users lose work
         fields = [] if stored is None else control.fields(stored)
@@ -352,6 +383,9 @@ class AdvancedView(QWidget):
                     self.table.setItem(k, column, item)
         self.paths = [f.path for f in fields]
         self.edits.clear()
+        # ponytail: a default past 320 px (an antenna's far-field list) is elided; drag the column to read it whole
+        self.table.resizeColumnToContents(2)
+        self.table.setColumnWidth(2, min(self.table.columnWidth(2), DEFAULT_COLUMN_MAX))
 
     def item_changed(self, item: QTableWidgetItem) -> None:
         """A value edited (itemChanged): its text kept in `edits` under its row's path."""
@@ -640,15 +674,23 @@ class MainWindow(QMainWindow):
         (self.run_dir / "STOP").touch()
 
     def show_project(self, opened: control.Opened) -> None:
-        """A project read: its line (G_PROJECT), or its refusal when there is no project, and its cost; while nothing
-        is watched and the project has no lock, its newest run or verify that ended (opened.last) is watched, which
-        replays it. Unless a cost is watched, live or ended, the Cost tab replays the last cost of this model
-        (G_COST_REUSED), or says there is none (G_NO_COST). Last, the Results tab shows the read (ResultsView) and its
-        stale indicator (show_stale), and Advanced project.json as stored (AdvancedView), which drops unsaved edits."""
+        """A project read: its line (G_PROJECT, an antenna's G_PROJECT_ANTENNA with its antenna and band), or its
+        refusal when there is no project, and its cost; while nothing is watched and the project has no lock, its
+        newest run or verify that ended (opened.last) is watched, which replays it. Unless a cost is watched, live or
+        ended, the Cost tab replays the last cost of this model (G_COST_REUSED), or says there is none (G_NO_COST).
+        Last, the Results tab shows the read (ResultsView) and its stale indicator (show_stale), and Advanced
+        project.json as stored (AdvancedView), which drops unsaved edits."""
         p = opened.project
-        self.project_status.setText(control.text(*opened.problem) if p is None else render(
-            "G_PROJECT", path=str(self.path), f0_mhz=f"{p['f0_hz'] / 1e6:g}", harmonics=p["harmonics"],
-            preset=p["preset"]))
+        if p is None:
+            line = control.text(*opened.problem)
+        elif antenna(p):
+            band = p["band"]
+            line = render("G_PROJECT_ANTENNA", path=str(self.path), ref=p["antenna"]["ref"],
+                          f_lo_mhz=f"{band['f_lo_hz'] / 1e6:g}", f_hi_mhz=f"{band['f_hi_hz'] / 1e6:g}", preset=p["preset"])
+        else:
+            line = render("G_PROJECT", path=str(self.path), f0_mhz=f"{p['f0_hz'] / 1e6:g}", harmonics=p["harmonics"],
+                          preset=p["preset"])
+        self.project_status.setText(line)
         self.cost = opened.cost
         if self.command is None and opened.last and runs.lock_holder(self.path) is None:
             self.watch("run", opened.last)
@@ -668,11 +710,13 @@ class MainWindow(QMainWindow):
 
     def retune(self) -> None:
         """A row edited (results.edited): the retune's status line cleared, then the chain of the table's rows on the
-        last read's layout (control.retuned, which never raises), shown under the what-if label (show_chain), and the
-        stale indicator of those rows (show_stale)."""
+        last read's layout (control.retuned, which never raises; an antenna's lines on the far field and its layout that
+        the read holds, Opened.far and far_lay), shown under the what-if label (show_chain), and the stale indicator of
+        those rows (show_stale)."""
         self.results.retune_status.clear()
         self.results.show_chain(control.retuned(self.path, self.opened.project, self.opened.results,
-                                                self.results.rows()), self.path.parent.name)
+                                                self.results.rows(), self.opened.far, self.opened.far_lay),
+                                self.path.parent.name)
         self.show_stale()
 
     def revert(self) -> None:

@@ -12,6 +12,7 @@ import tomllib
 from importlib import metadata
 from pathlib import Path
 
+import h5py
 import numpy as np
 import pytest
 from PySide6.QtCore import QCoreApplication, QTimer
@@ -21,6 +22,7 @@ from kicad_rf_studio import button, gui, pipeline, runs
 from kicad_rf_studio.cli import main
 from kicad_rf_studio.core.kicad import load_board
 from kicad_rf_studio.core.messages import render
+from kicad_rf_studio.core.post.antenna import ANTENNA_LIMITS
 from kicad_rf_studio.core.post.chain import with_box, z_part
 from kicad_rf_studio.core.post.outputs import LIMITS
 from kicad_rf_studio.core.post.waves import grid
@@ -28,8 +30,10 @@ from kicad_rf_studio.core.project import board_file, load_project, parts, save_p
 from kicad_rf_studio.gui import control
 from kicad_rf_studio.gui.window import FIXTURE, PART, S2P, SNAP, VALUE, MainWindow
 from networks import C_BOX, star, terminate_np, write_s2p
+from test_cli_antenna import antenna_project
 from test_cli_cost import FIX, fail, new_project
 from test_gui_control import FAKE_PREFIX, press, until
+from test_match_antenna import pi_run
 from test_post_chain import M0402
 from test_run import lpf_loads, lpf_run
 from test_run_dir import events
@@ -1055,6 +1059,115 @@ def test_advanced_saves_project_json_under_the_lock_and_a_model_change_marks_the
     w.tick()
     assert not a.table.isEnabled() and not a.save_button.isEnabled()  # disabled while the lock is held
     lock.unlink()
+
+
+def test_an_antenna_shows_s11_the_smith_chart_its_far_field_and_where_it_comes_from(window, qapp, tmp_path):
+    pj = antenna_project(tmp_path / "ifa2g4").resolve()  # design 5.6, 5.10; Review Focus 1
+    assert pipeline.run(pj) == 0  # before the window, whose fixture fails run_jobs here from then on: M = 0, the fake
+    w = window()
+    w.open_project(pj)
+    opened(w)
+    d, r, fig = load_project(pj), w.results, w.results.canvas.figure
+    assert w.project_status.text() == render("G_PROJECT_ANTENNA", path=str(pj), ref="AE1", f_lo_mhz="2400",
+                                             f_hi_mhz="2483.5", preset="normal")
+    assert r.retune_box.isHidden() and r.verify_button.isHidden() and r.what_if.isHidden()  # nothing to retune
+    assert [ax.name for ax in fig.axes] == ["rectilinear"] * 3 + ["polar"] * 3  # S11, Smith, η; three cuts at f0
+    assert fig.get_suptitle().endswith("\n" + render("G_FAR_FIELD_FROM", source="T_RUN",
+                                                     run_dir=Path(d["results"]["run_dir"]).name))
+    shown = [control.text(c, p) for c, p in w.opened.results.lines]
+    assert items(r.lines) == shown + [render(c) for c in ANTENNA_LIMITS]
+    assert "I_ANTENNA_FAR_FIELD" in [c for c, _ in w.opened.results.lines]
+    a = w.advanced
+    rows = {a.table.item(k, 0).text(): k for k in range(a.table.rowCount())}
+    assert not {"kind", "copper"} & set(rows)
+    assert [a.table.item(rows["far_field.step_deg"], c).text() for c in (2, 3)] == ["5", render("G_UNIT_DEG")]
+    w.tabs.setCurrentWidget(r)
+    qapp.processEvents()  # the first paint draws the figure at the tab's size
+    assert min(ax.get_window_extent().height for ax in fig.axes) >= 100  # one row, no foot (probed: 113 px and up)
+    grab(w, "antenna-results")
+    w.tabs.setCurrentWidget(a)
+    qapp.processEvents()
+    assert not a.table.horizontalScrollBar().isVisible()  # the far-field list's default cut at 320 px
+    grab(w, "antenna-advanced")
+    assert "openEMS" not in sys.modules and "CSXCAD" not in sys.modules
+
+
+def test_an_antennas_retune_takes_0r_and_open_refuses_the_converse_and_blits(window, qapp, tmp_path, monkeypatch):
+    pj = pi_run(tmp_path, monkeypatch).resolve()  # ifa2g4_pi on the network fake; design 5.7; Review Focus 1
+    w = window()
+    w.open_project(pj)
+    opened(w)
+    r, fig = w.results, w.results.canvas.figure
+    assert column(r.parts, PART) == ["L1", "C2", "C3"] and column(r.parts, VALUE) == ["2.7nH", "1pF", "1pF"]
+    assert len(fig.axes) == 2 and render("G_ANTENNA_NO_FAR_FIELD") in items(r.lines)  # no far field before verify
+    assert r.stale.text() == render("G_VERIFY_NONE") and not r.what_if.isHidden()
+    w.tabs.setCurrentWidget(r)
+    qapp.processEvents()  # the first paint draws the canvas and keeps its background for the blits
+    axes, draws, real = list(fig.axes), [], r.canvas.draw
+    monkeypatch.setattr(r.canvas, "draw", lambda: draws.append(1) or real())
+    timings = []
+    for k, typed in ((0, "0R"), (1, "0.127pF"), (2, "open")):  # each snapped on commit: 0.127pF to E24's 0.13pF
+        start = time.perf_counter()
+        r.parts.item(k, VALUE).setText(typed)
+        timings.append(time.perf_counter() - start)
+    res = control.retuned(pj, w.opened.project, w.opened.results, r.rows(), w.opened.far, w.opened.far_lay)
+    assert column(r.parts, VALUE) == ["0R", "0.13pF", "open"] and min(timings) < 0.05
+    assert draws == [] and fig.axes == axes  # moved in place and blitted, never redrawn
+    assert np.array_equal(r.curves[0].get_ydata(), 20 * np.log10(np.abs(res.chain[:, 0, 0])))
+    assert items(r.lines) == [control.text(c, p) for c, p in res.lines] + [render(c) for c in ANTENNA_LIMITS]
+    r.parts.item(0, VALUE).setText("open")  # the series part opened: refused, in the window's words
+    assert items(r.lines)[0] == render("G_RETUNE_OPEN_SERIES", ref="L1") and fig.axes == []
+    r.parts.item(0, VALUE).setText("0R")
+    r.parts.item(2, VALUE).setText("0R")  # the shunt to GND shorted: refused
+    assert items(r.lines)[0] == render("G_RETUNE_SHORT_SHUNT", ref="C3", net="GND")
+    r.parts.item(2, VALUE).setText("open")
+    r.parts.item(1, VALUE).setText("0pF")  # a C of 0 F, neither bypass: refused, snapping leaves it as typed
+    assert items(r.lines)[0] == render("G_RETUNE_ANTENNA_VALUE", ref="C2", value="0pF")
+    assert "openEMS" not in sys.modules and "CSXCAD" not in sys.modules
+
+
+def test_verify_brings_an_antennas_far_field_and_the_retune_blits_on_its_six_panels(
+        window, qapp, tmp_path, monkeypatch):  # design 5.7, 5.10; Review Focus 1, 2
+    pj = pi_run(tmp_path, monkeypatch).resolve()
+    monkeypatch.setenv("KRS_FAKE_CBOX", "6e-16")  # the detached verify's cell C, as pi_run patches it here
+    w = window()
+    w.open_project(pj)
+    opened(w)
+    r = w.results
+    r.verify_button.click()  # the stored values: verify starts at once
+    assert w.command == "verify"
+    until(lambda: w.tick() or w.run_status.text() == render("G_END_DONE", exit_code=0))
+    opened(w)  # its end read the project again, its far field with it
+    d, fig = load_project(pj), r.canvas.figure
+    assert w.opened.far_source == ("T_VERIFY", d["verify"]["run_dir"]) and r.stale.isHidden()
+    assert [ax.name for ax in fig.axes].count("polar") == 3
+    assert fig.get_suptitle().endswith("\n".join(["", render("G_WHAT_IF"), render(
+        "G_FAR_FIELD_FROM", source="T_VERIFY", run_dir=Path(d["verify"]["run_dir"]).name)]))
+    w.tabs.setCurrentWidget(r)
+    qapp.processEvents()
+    assert min(ax.get_window_extent().height for ax in fig.axes) >= 100  # the six in one row, beside the parts' rows
+
+    def no_read(*args, **kwargs):
+        raise AssertionError("a file read on the GUI thread")
+
+    for owner, name in ((pipeline, "far_of"), (pipeline, "layout"), (h5py, "File"), (np, "load")):
+        monkeypatch.setattr(owner, name, no_read)
+    r.parts.item(1, VALUE).setText("1.2pF")  # stale: the lit indicator's row grows, so the canvas is drawn once in
+    qapp.processEvents()  # full (blit's ponytail: the first edit after a verify); the edits below keep it lit
+    axes, draws, real = list(fig.axes), [], r.canvas.draw
+    monkeypatch.setattr(r.canvas, "draw", lambda: draws.append(1) or real())
+    timings = []
+    for typed in ("1.2pF", "1pF", "1.2pF"):
+        start = time.perf_counter()
+        r.parts.item(2, VALUE).setText(typed)
+        timings.append(time.perf_counter() - start)
+    res = control.retuned(pj, w.opened.project, w.opened.results, r.rows(), w.opened.far, w.opened.far_lay)
+    assert min(timings) < 0.05 and draws == [] and fig.axes == axes
+    assert np.array_equal(r.curves[0].get_ydata(), 20 * np.log10(np.abs(res.chain[:, 0, 0])))
+    assert [c for c, _ in res.lines].count("I_ANTENNA_ETA_WHAT_IF") == 2  # the retune's own η_tot, what-if
+    assert r.stale.text() == render("G_VERIFY_STALE")
+    assert "openEMS" not in sys.modules and "CSXCAD" not in sys.modules
+    grab(w, "antenna-verify")
 
 
 def test_the_help_menu_shows_about_and_qts_about(window, monkeypatch):  # design 5.3 About

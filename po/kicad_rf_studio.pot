@@ -1243,6 +1243,11 @@ msgstr ""
 msgid "No far field for this run: a run with part ports records none, as its jobs hold ports where the matching parts sit; Verify runs one job with each part in the grid at its value, as an ideal part, and records it."
 msgstr ""
 
+#. G_FAR_FIELD_FROM
+#, python-brace-format
+msgid "Efficiency and pattern: the {source} in {run_dir}."
+msgstr ""
+
 #. G_NO_RESULTS
 msgid "No results yet: estimate the cost, then run."
 msgstr ""
@@ -1294,6 +1299,11 @@ msgstr ""
 #. G_PROJECT
 #, python-brace-format
 msgid "{path}: f0 {f0_mhz} MHz, {harmonics} harmonics, preset {preset}."
+msgstr ""
+
+#. G_PROJECT_ANTENNA
+#, python-brace-format
+msgid "{path}: antenna {ref}, band {f_lo_mhz} to {f_hi_mhz} MHz, preset {preset}."
 msgstr ""
 
 #. G_NO_COST
