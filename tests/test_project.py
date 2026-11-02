@@ -9,9 +9,9 @@ from kicad_rf_studio.core.geometry.region import air_gap
 from kicad_rf_studio.core.kicad import classify, load_board
 from kicad_rf_studio.core.messages import KrsError, render
 from kicad_rf_studio.core.model.spec import antenna_t_max
-from kicad_rf_studio.core.project import (SCHEMA, SCHEMA_ANTENNA, antenna, board_file, board_hash, check_project,
-                                          copper_model, far_field_hz, load_project, make_antenna_project, pulse_band,
-                                          read_project, save_project)
+from kicad_rf_studio.core.project import (SCHEMA, SCHEMA_ANTENNA, SCHEMA_SI, antenna, board_file, board_hash,
+                                          check_project, copper_model, far_field_hz, load_project,
+                                          make_antenna_project, pulse_band, read_project, save_project, si)
 from test_cli_new import FIX, run_new
 
 
@@ -276,3 +276,17 @@ def test_the_bands_defaults_are_new_antennas():  # Stage 3 design 5.4, 5.5; the 
         2446388888.888889, 2455666666.6666665, 2464944444.4444447, 2474222222.2222223, 2483500000.0]
     bands = ((863e6, 870e6), (902e6, 928e6), (2.4e9, 2.4835e9))
     assert [antenna_t_max(*band) for band in bands] == [85e-9, 79e-9, 30e-9]
+
+
+# --- Stage 4 plan 1, task 4: schema 3, an SI project ----------------------------------------------------------
+
+
+def test_schema_3_is_an_si_project_which_this_build_still_refuses(tmp_path):  # Stage 4 design 5.1
+    assert (SCHEMA_SI, si({"schema": 3}), si({"schema": 2}), si({}), antenna({"schema": 3})) == (
+        3, True, False, False, False)
+    p = tmp_path / "project.json"
+    p.write_text('{"schema": 3, "kind": "si"}', encoding="utf-8")
+    with pytest.raises(KrsError) as e:  # until plan 2 checks an SI project's fields
+        load_project(p)
+    assert (e.value.code, e.value.params) == ("E_PROJECT_SCHEMA", {"path": str(p), "found": 3,
+                                                                   "expected": SCHEMA_ANTENNA})

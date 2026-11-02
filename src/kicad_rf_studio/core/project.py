@@ -30,6 +30,7 @@ if TYPE_CHECKING:  # the types only: project.py imports no board code
 
 SCHEMA = 1
 SCHEMA_ANTENNA = 2  # an antenna project (Stage 3 design 5.1); v1's stay SCHEMA
+SCHEMA_SI = 3  # an SI project (Stage 4 design 5.1): load_project refuses it until Stage 4 plan 2 checks its fields
 FAR_FIELD_STEP = 5  # the far field's full sphere is sampled every 5° (Stage 3 design 5.5)
 # an antenna's copper model (Stage 3 design 5.3): Stage 1 5.3's solid copper, or every copper layer a sheet, for the
 # whole model
@@ -52,6 +53,11 @@ GATES = {"fit2d_limit": 0.03, "dt_floor": 0.8}
 def antenna(data: dict) -> bool:
     """Whether project.json `data` is an antenna's, schema SCHEMA_ANTENNA (Stage 3 design 5.1)."""
     return data.get("schema") == SCHEMA_ANTENNA
+
+
+def si(data: dict) -> bool:
+    """Whether project.json `data` is an SI project's, schema SCHEMA_SI (Stage 4 design 5.1)."""
+    return data.get("schema") == SCHEMA_SI
 
 
 def pulse_band(f_lo: float, f_hi: float) -> tuple[float, float]:

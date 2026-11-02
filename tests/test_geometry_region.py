@@ -7,7 +7,7 @@ import pytest
 
 from kicad_rf_studio.core.geometry.region import (WALL_CELLS, WALL_MM, air_cell, air_gap, band, board_region,
                                                   build_region, coarse_cell, f_max)
-from kicad_rf_studio.core.geometry.zstack import substrate_h, zstack
+from kicad_rf_studio.core.geometry.zstack import Slab, substrate_h, zstack
 from kicad_rf_studio.core.kicad import load_board, trace_chain
 from kicad_rf_studio.core.kicad.stackup import Stackup, kicad_default, preset
 from kicad_rf_studio.core.kicad.tracer import Chain, ChainPart, adopt
@@ -132,3 +132,21 @@ def test_an_antennas_region_is_the_whole_board_with_the_measured_region_as_its_r
     assert r.crop.bounds == (r.walls[0], r.walls[2], r.walls[1], r.walls[3])
     # the antenna, the feed and U1's pins 1-2, 6 substrate heights past them, cut at the outline (the prototype's)
     assert r.roi.bounds == pytest.approx((87.0, -117.21, 106.81, -94.0), abs=1e-6)
+
+
+# --- Stage 4 plan 1, task 4: the dielectric next to each layer -------------------------------------------------
+SIX = (Slab("copper", 0.0, 0.035, None, None, "B.Cu"), Slab("dielectric", 0.035, 0.235, 4.3, 0.02, None),
+       Slab("copper", 0.235, 0.27, None, None, "In4.Cu"), Slab("dielectric", 0.27, 0.57, 4.5, 0.02, None),
+       Slab("copper", 0.57, 0.605, None, None, "In3.Cu"), Slab("dielectric", 0.605, 0.755, 4.3, 0.02, None),
+       Slab("copper", 0.755, 0.79, None, None, "In2.Cu"), Slab("dielectric", 0.79, 1.09, 4.5, 0.02, None),
+       Slab("copper", 1.09, 1.125, None, None, "In1.Cu"), Slab("dielectric", 1.125, 1.325, 4.3, 0.02, None),
+       Slab("copper", 1.325, 1.36, None, None, "F.Cu"))  # bottom up: 0.2, 0.3, 0.15, 0.3 and 0.2 mm between coppers
+
+
+def test_an_si_lines_substrate_is_the_thinnest_dielectric_next_to_its_layers():  # Stage 4 design 5.3
+    assert substrate_h(SIX) == substrate_h(SIX, ["F.Cu"]) == 0.2  # v1's and the antenna's: the top layer's
+    assert substrate_h(SIX, ["B.Cu"]) == 0.2  # a bottom microstrip: the dielectric above it
+    assert substrate_h(SIX, ["In3.Cu"]) == 0.15  # a stripline 0.3 mm over In4.Cu and 0.15 mm under In2.Cu
+    assert substrate_h(SIX, ["In4.Cu"]) == 0.2 and substrate_h(SIX, ["F.Cu", "In3.Cu"]) == 0.15
+    with pytest.raises(KeyError):
+        substrate_h(SIX, ["In5.Cu"])

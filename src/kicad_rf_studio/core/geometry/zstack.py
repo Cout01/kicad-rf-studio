@@ -2,6 +2,7 @@
 """The stackup as slabs in z, in mm: bottom to top, with z = 0 at the bottom face of the bottom copper layer."""
 from __future__ import annotations
 
+from collections.abc import Iterable
 from dataclasses import dataclass
 from itertools import accumulate
 
@@ -40,9 +41,19 @@ def zstack(stackup: Stackup, copper_layers: tuple[str, ...]) -> tuple[Slab, ...]
                  for i, layer in enumerate(layers))
 
 
-def substrate_h(zs: tuple[Slab, ...]) -> float:
-    """The dielectric between the top copper, where the measured nets run, and the next copper down, in mm."""
-    # ponytail: the measured nets are taken to run on the top copper, which on 2 layers is no assumption. A chain on
-    # another layer of a board with 4 or more gets the top layer's h; pass the chain's layer in when one needs it.
-    copper = [s for s in zs if s.kind == "copper"]
-    return round(copper[-1].z0 - copper[-2].z1, 6)
+def substrate_h(zs: tuple[Slab, ...], layers: Iterable[str] = ()) -> float:
+    """The dielectric next to the measured nets' copper, in mm. Without `layers`: between the top copper, where v1's
+    and an antenna's measured nets run, and the next copper down. With `layers` (an SI project's line layers, Stage 4
+    design 5.3): the thinnest dielectric between any of them and a copper layer next to it, above or below, which sets
+    the fringing field d resolves and the reach. KeyError for a name that is not a copper layer of `zs`."""
+    # ponytail: without `layers` the measured nets are taken to run on the top copper, which on 2 layers is no
+    # assumption: on 4 or more, a chain on another layer gets the top layer's h. SI passes its lines' layers.
+    cu = [s for s in zs if s.kind == "copper"]  # bottom up
+    at = {s.copper: i for i, s in enumerate(cu)}
+    gaps = []
+    for i in [at[layer] for layer in layers] or [len(cu) - 1]:  # no layers: the top copper
+        if i > 0:
+            gaps.append(cu[i].z0 - cu[i - 1].z1)  # the dielectric below it
+        if i < len(cu) - 1:
+            gaps.append(cu[i + 1].z0 - cu[i].z1)  # and above it
+    return round(min(gaps), 6)
