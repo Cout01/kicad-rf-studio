@@ -1,15 +1,17 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
+import math
 import time
 from dataclasses import replace
 
 import numpy as np
 import pytest
+from scipy.constants import c as C_0
 
 import kicad_lines
-from kicad_rf_studio.core.cs2d import CrossSection, Rect, reference_box, solve
+from kicad_rf_studio.core.cs2d import CrossSection, Rect, ShortError, pair, reference_box, solve
 from kicad_rf_studio.core.geometry.mask import smeared_epsilon
+from p4a import WIDE, cohn, ms_pair, stripline_pair
 
-WIDE = 1e3  # mm: planes run past any box; the solver keeps what lies in it
 T_M, EPS_M = 0.010, 3.3  # the mask defaults (spec 5.3)
 DZ0 = 0.025  # mm: dz0 = max(t_m, min(d/3, h/4)) at d = 0.15 mm / 2 (spec 5.4)
 
@@ -136,3 +138,47 @@ def test_a_node_held_by_the_signal_and_a_ground_is_a_short():  # FDTD zeroes E o
     for c in (cs, replace(cs, conductors=cs.conductors[::-1])):  # whatever the conductors' order
         with pytest.raises(ValueError, match="short"):
             solve(c, x, z)
+
+
+def test_cohns_and_kirschning_jansens_coupled_lines_as_ported():  # Stage 4 design 5.11; r4's worked example
+    ze, zo = cohn(0.15, 0.15, 0.5, 4.3)
+    assert (round(ze, 2), round(zo, 2), round(2 * zo, 1), round((ze - zo) / (ze + zo), 3)) == (71.98, 52.01, 104.0,
+                                                                                               0.161)
+    assert kicad_lines.coupled_microstrip(0.15, 0.15, 0.2, 0.001, 4.3) == pytest.approx(
+        (97.1232802849029, 3.249327590191874, 65.3666499716574, 2.7706356176104663), rel=1e-9)  # KiCad 9.0's formulas
+    z, _ = kicad_lines.microstrip(0.15, 0.2, 0.0, 4.3)
+    far = kicad_lines.coupled_microstrip(0.15, 5.0, 0.2, 0.0, 4.3)  # 25 h apart: hardly coupled
+    assert far[0] == pytest.approx(z, rel=1e-3) and far[2] == pytest.approx(z, rel=1e-3)
+
+
+def test_a_coupled_stripline_against_cohn_at_thin_copper():  # Stage 4 design 5.9, 5.11: P4-A's 0.5 %
+    p = pair(stripline_pair(0.15, 0.15, 0.5, 1e-4, 4.3))
+    ze, zo = cohn(0.15, 0.15, 0.5, 4.3)
+    assert p.z_even == pytest.approx(ze, rel=0.005) and p.z_odd == pytest.approx(zo, rel=0.005)  # -0.26 %, -0.34 %
+    assert p.eps_even == pytest.approx(4.3, rel=1e-9) and p.eps_odd == pytest.approx(4.3, rel=1e-9)  # homogeneous
+    assert (p.z_diff, p.z_comm, p.k) == (2 * p.z_odd, p.z_even / 2, (p.z_even - p.z_odd) / (p.z_even + p.z_odd))
+    (c11, c12), (c21, c22) = p.c
+    assert c12 == c21 < 0 < c11 == c22
+    for z, c in ((p.z_even, c11 + c12), (p.z_odd, c11 - c12)):  # a homogeneous line: Z = √εr / (c0·C)
+        assert z * c * C_0 / math.sqrt(4.3) == pytest.approx(1, rel=1e-9)
+
+
+def test_a_coupled_microstrip_against_kirschning_jansen():  # Stage 4 design 5.11: P4-A's 3 % at 1 µm
+    p = pair(ms_pair(0.15, 0.15, 0.2, 0.001, 4.3))
+    assert (p.z_even, p.eps_even, p.z_odd, p.eps_odd) == pytest.approx(
+        kicad_lines.coupled_microstrip(0.15, 0.15, 0.2, 0.001, 4.3), rel=0.03)  # -1.32, -0.75, -0.47, -0.89 %
+
+
+def test_a_pair_is_two_mirror_image_lines_that_never_share_a_node():  # Review Focus 1
+    cs = ms_pair(0.15, 0.15, 0.2, 0.035, 4.3)
+    p_leg, n_leg, plane = cs.conductors
+    for conductors, match in (((p_leg, replace(n_leg, x1=n_leg.x1 + 0.05), plane), "mirror"),
+                              ((p_leg, replace(n_leg, z1=n_leg.z1 + 0.01), plane), "mirror"),
+                              ((p_leg, plane), "two signal"),
+                              ((p_leg, n_leg, replace(p_leg, x0=-1.0, x1=-0.9), plane), "two signal")):
+        with pytest.raises(ValueError, match=match):
+            pair(replace(cs, conductors=conductors))
+    with pytest.raises(ShortError):  # lines every 0.2 mm: the node at x 0 holds an edge of each leg
+        pair(cs, np.array([-0.4, -0.2, 0.0, 0.2, 0.4]))
+    with pytest.raises(ValueError, match="no grid edge"):  # lines that miss the N leg: a lone line, not a pair
+        pair(cs, np.array([-1.0, -0.15, 0.0, 1.0]))

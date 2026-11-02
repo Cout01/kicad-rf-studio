@@ -2,7 +2,8 @@
 """cs2d, the 2D cross-section of a line and its quasi-static solver (spec 5.5), in mm: x across the line, z up. A
 finite-volume Laplace solve on a rectilinear grid gives the capacitance per length with the dielectrics (C) and in
 vacuum (C0): Z0 = 1/(c0·√(C·C0)) and εeff = C/C0. On its own grid it is the 2D reference; on the FDTD mesh lines it is
-fit2d's estimate of what that mesh makes of the line."""
+fit2d's estimate of what that mesh makes of the line. pair() gives a coupled pair's even and odd modes from three
+solves (Stage 4 design 5.9)."""
 from __future__ import annotations
 
 import math
@@ -176,3 +177,57 @@ def solve(cs: CrossSection, x: np.ndarray | None = None, z: np.ndarray | None = 
         eps[np.ix_((xm > r.x0) & (xm < r.x1), (zm > r.z0) & (zm < r.z1))] = r.eps_r
     cap, cap0 = (_capacitance(x, z, e, fixed, phi) for e in (eps, np.ones_like(eps)))
     return Line(1 / (C_0 * EPS_0 * math.sqrt(cap * cap0)), cap / cap0)
+
+
+@dataclass(frozen=True)
+class Pair:
+    """A coupled pair's quasi-static modes (Stage 4 design 5.9): the even (common) and odd (differential) impedances in
+    Ω, their effective permittivities, and the capacitance matrix c with the dielectrics, in F/m."""
+    z_even: float
+    eps_even: float
+    z_odd: float
+    eps_odd: float
+    c: tuple[tuple[float, float], tuple[float, float]]
+
+    @property
+    def z_diff(self) -> float:  # Ω
+        return 2 * self.z_odd
+
+    @property
+    def z_comm(self) -> float:  # Ω
+        return self.z_even / 2
+
+    @property
+    def k(self) -> float:  # the coupling coefficient
+        return (self.z_even - self.z_odd) / (self.z_even + self.z_odd)
+
+
+def pair(cs: CrossSection, x: np.ndarray | None = None, z: np.ndarray | None = None) -> Pair:
+    """The even and odd modes of the pair in `cs` (Stage 4 design 5.9): its two "signal" conductors, the P leg first,
+    from three solve() calls on the lines given, or on solve's own grid, which does not depend on the roles, so the
+    three share it: each leg alone at 1 V with the other a ground (C_P, C_N), then both at 1 V (C_PN, both lines'
+    charge). Each Line gives C = √εeff/(c0·Z0) and C0 = 1/(c0·Z0·√εeff). Then Ce = C_PN/2 and Co = C_P + C_N − Ce,
+    likewise in vacuum, Z = 1/(c0·√(C·C0)), εeff = C/C0, c11 = (Ce + Co)/2 and c12 = (Ce − Co)/2. Raises ValueError
+    unless there are exactly two signal conductors with equal widths and z spans (within TOL), and solve's own errors:
+    ValueError when a leg holds no grid edge, ShortError when a node holds both legs."""
+    # ponytail: mirror-image legs only, their surroundings' symmetry unchecked; an asymmetric pair's modes are not even
+    # and odd, and plan 2 decides what its 2D table does with one. Three solves where a (1, −1) excitation takes two:
+    # 1.5 times the time, and solve unchanged
+    legs = [i for i, r in enumerate(cs.conductors) if r.role == "signal"]
+    if len(legs) != 2:
+        raise ValueError("a pair needs exactly two signal conductors")
+    p, n = (cs.conductors[i] for i in legs)
+    if max(abs((p.x1 - p.x0) - (n.x1 - n.x0)), abs(p.z0 - n.z0), abs(p.z1 - n.z1)) > TOL:
+        raise ValueError("a pair's two lines must mirror each other: equal widths and z spans")
+    cs_p, cs_n = (replace(cs, conductors=tuple(replace(r, role="ground") if i == other else r
+                                               for i, r in enumerate(cs.conductors))) for other in legs[::-1])
+
+    def caps(line: Line) -> tuple[float, float]:  # C and C0, in F/m
+        return math.sqrt(line.eps_eff) / (C_0 * line.z0), 1 / (C_0 * line.z0 * math.sqrt(line.eps_eff))
+
+    (cp, cp0), (cn, cn0), (cpn, cpn0) = (caps(solve(c, x, z)) for c in (cs_p, cs_n, cs))
+    ce, ce0 = cpn / 2, cpn0 / 2
+    co, co0 = cp + cn - ce, cp0 + cn0 - ce0
+    c11, c12 = (ce + co) / 2, (ce - co) / 2
+    return Pair(1 / (C_0 * math.sqrt(ce * ce0)), ce / ce0, 1 / (C_0 * math.sqrt(co * co0)), co / co0,
+                ((c11, c12), (c12, c11)))
