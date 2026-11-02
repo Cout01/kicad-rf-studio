@@ -520,6 +520,33 @@ def test_the_retune_session_of_an_antenna_gives_retunes_lines_and_reads_nothing(
             and control.text("I_ANTENNA_NO_FAR_FIELD", {"command": "x"}) == render("G_ANTENNA_NO_FAR_FIELD"))
 
 
+def test_an_antenna_read_whose_stored_part_is_refused_keeps_verifys_far_field_for_the_retune(
+        tmp_path, calibrated, monkeypatch):  # design 5.7, 5.10; plan 5 final review F1
+    pj = pi_run(tmp_path, monkeypatch).resolve()
+    assert pipeline.verify(pj) == 0
+    d = load_project(pj)
+    parts(d)["C3"]["value"] = "x"  # a stored value that reads as none: the read refuses it, the verify untouched
+    save_project(pj, d)
+    assert pipeline.current_verify(load_project(pj)) == d["verify"]
+    opened = control.open_project(pj)
+    assert opened.problem is None and opened.results.chain is None
+    assert opened.results.lines[-1] == ("E_PART_NO_VALUE", {"ref": "C3", "value": "x"})  # the refusal, last
+    assert opened.far is not None and opened.far_source == ("T_VERIFY", d["verify"]["run_dir"])
+    assert opened.far_lay.f.tolist() == sorted(opened.far["sphere"].f.tolist())
+    rows = [replace(row, value="1pF") if row.ref == "C3" else row
+            for row in control.rows(opened.project, pj.parent, opened.results.refs)]  # the user fixes that row
+    with monkeypatch.context() as m:  # read once, on the pool: the fix reads no far field and no waves
+        for name in ("far_of", "layout", "current_verify"):
+            m.setattr(pipeline, name, lambda *a, **k: 1 / 0)
+        res = control.retuned(pj, opened.project, opened.results, rows, opened.far, opened.far_lay)
+    codes = [c for c, _ in res.lines]
+    assert res.chain is not None and codes.count("I_ANTENNA_ETA_WHAT_IF") == 2
+    assert "I_ANTENNA_NO_FAR_FIELD" not in codes
+    lines = []  # last: retune writes the project
+    assert pipeline.retune(pj, ["C3=1pF"], lambda c, p: lines.append((c, p))) == 0
+    assert lines[:len(res.lines)] == res.lines
+
+
 def test_an_antennas_verify_is_stale_when_a_bypass_changes(tmp_path):  # design 5.7; Review Focus 4
     project = load_project(antenna_project(tmp_path / "pi", FIX / "ifa2g4_pi.kicad_pcb"))
     project = {**project, "results": {"model_hash": "M"},

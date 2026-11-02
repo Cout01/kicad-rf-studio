@@ -20,6 +20,8 @@ from functools import partial, reduce
 from importlib import metadata
 from pathlib import Path
 
+import numpy as np
+
 from kicad_rf_studio import __version__, pipeline, runs
 from kicad_rf_studio.core.geometry.region import air_gap
 from kicad_rf_studio.core.kicad import classify, load_board
@@ -197,9 +199,9 @@ class Opened:
     (core.project.board_file), None when project.json cannot be read or names no board; the last verify's comparison
     (verify_lines), [] without one; project.json as load_project reads it (`stored`), unchecked, so that Advanced can
     fix a field the checks refuse, None when it cannot be read; and the far field the plot shows (`far`: the run's with
-    no part port, else the current verify's; None without one), its `far_source` (T_RUN or T_VERIFY, and its run
-    folder) and `far_lay`, the run's layout at its frequencies for the what-if η_tot, all read here, on the pool
-    (Stage 3 design 5.10)."""
+    no part port, else the current verify's, read also when a stored part is refused, for the retune session; None
+    without one), its `far_source` (T_RUN or T_VERIFY, and its run folder) and `far_lay`, the run's layout at its
+    frequencies for the what-if η_tot, all read here, on the pool (Stage 3 design 5.10)."""
     project: dict | None
     spec_hash: str | None
     results: pipeline.ChainResults | None
@@ -217,12 +219,12 @@ class Opened:
 def open_project(path: Path) -> Opened:
     """The project file `path`, which the caller resolves, read off the GUI thread (design 5.1): pipeline.load, its
     model, the model's spec_hash (None without a spec), results_of and chain_results with errors as lines (an antenna's
-    lines are pipeline.antenna_lines', the CLI's, kept with the far field they read, its source and its layout), the
-    first KrsError stopping there as `problem`, any other exception E_INTERNAL; then `stored`, the project read when
-    pipeline.load succeeded, else load_project alone, unchecked (a project the checks refuse, or whose board fails to
-    load, still reads), and the board file it names, each None when it raises, `stored` kept when only the board file
-    does; then last_cost, the newest of ended() that is a run or a verify, and verify_lines. Never raises; starts
-    nothing."""
+    lines are pipeline.antenna_lines', the CLI's, kept with the far field they read, its source and its layout; the
+    current verify's far field is also read when a stored part is refused, for the retune session), the first KrsError
+    stopping there as `problem`, any other exception E_INTERNAL; then `stored`, the project read when pipeline.load
+    succeeded, else load_project alone, unchecked (a project the checks refuse, or whose board fails to load, still
+    reads), and the board file it names, each None when it raises, `stored` kept when only the board file does; then
+    last_cost, the newest of ended() that is a run or a verify, and verify_lines. Never raises; starts nothing."""
     project = model_hash = results = problem = far = far_source = far_lay = None
     try:
         project, board, geom, _ = pipeline.load(path)
@@ -234,6 +236,11 @@ def open_project(path: Path) -> Opened:
             # ponytail: a far-field file of another layout (read_far_field's ValueError) reads as E_INTERNAL for the
             # whole read
             lines, far, far_lay = pipeline.antenna_lines(path, project, res, errors_as_lines=True)
+            if res.chain is None and res.refs:  # a stored part refused: verify's far field all the same, for the retune
+                with contextlib.suppress(KrsError):  # E_RESULTS_WAVES, a verify folder moved meanwhile: none, as before
+                    v = pipeline.current_verify(project)
+                    if v_far := v and pipeline.far_of(v, project):
+                        far, far_lay = v_far, pipeline.layout(project, project["results"], np.sort(v_far["sphere"].f))
             res = replace(res, lines=lines)
             if far is not None:
                 far_source = (("T_RUN", project["results"]["run_dir"]) if project["results"].get("far_field")
