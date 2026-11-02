@@ -562,11 +562,12 @@ def write_outputs(path: Path, project: dict, command: str, *,
     return [*lines, *((code, {}) for code in LIMITS)]
 
 
-def s11_at(path: Path, project: dict, f: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+def s11_at(path: Path, project: dict, f: np.ndarray, lay: Layout | None = None) -> tuple[np.ndarray, np.ndarray]:
     """S11 and the loss budget's P_layout (each (F,), in f's order) of the chain at the frequencies `f` (Hz): the run's
-    layout there, every part port closed as chain_results closes it (scikit-rf takes f ascending)."""
+    layout there, every part port closed as chain_results closes it (scikit-rf takes f ascending). A given `lay` (the
+    run's layout at f ascending, which the GUI's retune session holds, plan 5) stands in for it."""
     up = np.argsort(f)
-    res = chain_results(path, project, lay=layout(project, project["results"], f[up]))
+    res = chain_results(path, project, lay=layout(project, project["results"], f[up]) if lay is None else lay)
     back = np.argsort(up)  # f's order again
     return res.chain[back, 0, 0], res.p_layout[back]
 
@@ -574,29 +575,70 @@ def s11_at(path: Path, project: dict, f: np.ndarray) -> tuple[np.ndarray, np.nda
 def current_verify(project: dict) -> dict | None:
     """project.json's verify block while it is of the model its results hold and its run folder still holds it (Stage 3
     design 5.7, 5.8): its base_hash the results' model_hash, and its model.json, its jobs' waves and, when it records a
-    far field, its far-field files present; else None (none, another run's, or its folder moved or deleted). The
-    what-if η_tot and compare read verify through it."""
-    v = project.get("verify")
-    if v is None or v["base_hash"] != project["results"]["model_hash"]:
+    far field, its far-field files present; else None (none, another run's, or its folder moved or deleted); None
+    without results either. The what-if η_tot and compare read verify through it."""
+    v, results = project.get("verify"), project.get("results")
+    if v is None or results is None or v["base_hash"] != results["model_hash"]:
         return None
     files = ["model.json", *(job["waves"] for job in v["jobs"]), *(v.get("far_field") or {}).values()]
     return v if all((Path(v["run_dir"]) / file).is_file() for file in files) else None
+
+
+_UNREAD = object()  # antenna_lines' far field when its caller read none (None, read, is "none")
+
+
+def antenna_lines(path: Path, project: dict, res: ChainResults, *, errors_as_lines: bool = False, far=_UNREAD,
+                  far_lay: Layout | None = None) -> tuple[list[tuple[str, dict]], dict | None, Layout | None]:
+    """An antenna's lines (Stage 3 design 5.5–5.7), no file written: what antenna_outputs reports before its label and
+    files, and what the GUI shows on a read and on each retune: chain_results' `res` lines (I_BASIS up to the
+    indicators); with a chain, s11_lines on its S11, then the run's far field's far_field_lines (results.far_field,
+    M = 0), or with part ports eta_what_if_lines of a current verify's far field with this chain's P_layout at its
+    frequencies (s11_at on `far_lay`, the run's layout there, ascending, built when None), else I_ANTENNA_NO_FAR_FIELD,
+    which offers `verify`. `far` stands for that far field when given (None: there is none); else it is read (far_of;
+    current_verify first with part ports). A KrsError on that read is raised, or, with `errors_as_lines`, the last line
+    in place of those lines. Returns the lines, the far field they read (None without one) and, for the what-if, the
+    layout at its frequencies."""
+    lines = [*res.lines]
+    run_far = bool(project["results"].get("far_field"))
+    if res.chain is None:
+        return lines, None, None
+    lines += s11_lines(project, res.lay.f, res.chain[:, 0, 0])
+    if not (run_far or res.refs):
+        return lines, None, None
+    try:  # the far field's whole read: a run or verify folder moved meanwhile is one line (ruling 9)
+        if far is _UNREAD:
+            record = project["results"] if run_far else current_verify(project)
+            far = record and far_of(record, project)
+        if run_far:
+            lines += far_field_lines(far) if far else []
+        elif far:
+            # ponytail: η_rad from verify's ideal network (no package model), the network assumed not to radiate nor
+            # to change the board's own loss; the line says what-if
+            if far_lay is None:
+                far_lay = layout(project, project["results"], np.sort(far["sphere"].f))
+            lines += eta_what_if_lines(far, s11_at(path, project, far["sphere"].f, far_lay)[1])
+        else:
+            lines.append(("I_ANTENNA_NO_FAR_FIELD", {"command": command_line("kicad-rf-studio", "verify", str(path))}))
+    except KrsError as err:  # far_of's, layout's or s11_at's E_RESULTS_WAVES
+        if not errors_as_lines:
+            raise
+        lines.append((err.code, err.params))
+        far = far_lay = None
+    return lines, far, far_lay
 
 
 def antenna_outputs(path: Path, project: dict, command: str, *,
                     errors_as_lines: bool = False) -> list[tuple[str, dict]]:
     """An antenna's outputs (Stage 3 design 5.5–5.7), which write_outputs writes for it, in run and retune alike: v1's
     layout.s{N}p, and chain.s1p when part ports are closed, with the what-if label as v1's; with results.far_field,
-    farfield.csv and antenna_summary.csv, from the run's far field (far_of) and S11 at the sphere's frequencies
-    (s11_at); and antenna_summary.png whenever there is a chain, with the what-if label, rendered, as the last line of
-    its title, as v1's summary.png; all written to results/ beside `path` (write, ANTENNA_OUTPUTS, with `command` as
-    E_RESULTS_WRITE's advice). Returns the lines to report: chain_results' (I_BASIS up to the indicators), s11_lines
-    on the chain's S11, far_field_lines, or, with no far field and part ports, eta_what_if_lines of a current verify's
-    far field (current_verify, far_of) with this chain's P_layout at its frequencies (s11_at), the what-if η_tot of
-    design 5.7 (verify's far field goes into no file), else I_ANTENNA_NO_FAR_FIELD, which offers `verify` (a part-port
-    job records no far field, design 5.5); the label's line, then I_OUTPUTS and ANTENNA_LIMITS. Errors as write_outputs
-    takes them, and far_of's E_RESULTS_WAVES for the run's far field (the run folder moved or deleted) is one more such
-    line, in the place of the far field's lines and files."""
+    farfield.csv and antenna_summary.csv, from the run's far field (antenna_lines reads it) and S11 at the sphere's
+    frequencies (s11_at); and antenna_summary.png whenever there is a chain, with the run's far field (verify's, which
+    the what-if η_tot reads, goes into no file, design 5.7) and the what-if label, rendered, as the last line of its
+    title, as v1's summary.png; all written to results/ beside `path` (write, ANTENNA_OUTPUTS, with `command` as
+    E_RESULTS_WRITE's advice). Returns the lines to report: antenna_lines' (I_BASIS up to the far field's lines), the
+    label's line, then I_OUTPUTS and ANTENNA_LIMITS. Errors as write_outputs takes them, and antenna_lines'
+    E_RESULTS_WAVES for the far field (a run or verify folder moved or deleted) is one more such line, in the place of
+    the far field's lines and files."""
     res = chain_results(path, project, errors_as_lines=errors_as_lines)
     results, lay, ext = project["results"], res.lay, res.ext
     folder, n = path.parent / "results", len(lay.ports)
@@ -608,27 +650,12 @@ def antenna_outputs(path: Path, project: dict, command: str, *,
         files["chain.s1p"] = touchstone(res.chain, lay.f, [lay.ports[k]["name"] for k in ext],
                                         port_map(project, results, lay, ext)
                                         + ([english("I_WHAT_IF", **what_if)] if res.what_if else []))
-    lines, far = [*res.lines], None
+    lines, far, _ = antenna_lines(path, project, res, errors_as_lines=errors_as_lines)
+    far = far if results.get("far_field") else None  # the run's alone goes into files: verify's never (design 5.7)
+    if far:
+        s11 = s11_at(path, project, far["sphere"].f)[0]
+        files["farfield.csv"], files["antenna_summary.csv"] = farfield_csv(far), antenna_csv(far, s11)
     if res.chain is not None:
-        lines += s11_lines(project, lay.f, res.chain[:, 0, 0])
-        if results.get("far_field"):
-            try:
-                far = far_of(results, project)
-            except KrsError as err:
-                if not errors_as_lines:
-                    raise
-                lines.append((err.code, err.params))
-            else:
-                s11 = s11_at(path, project, far["sphere"].f)[0]
-                files["farfield.csv"], files["antenna_summary.csv"] = farfield_csv(far), antenna_csv(far, s11)
-                lines += far_field_lines(far)
-        elif res.refs:
-            # ponytail: η_rad from verify's ideal network (no package model), the network assumed not to radiate nor to
-            # change the board's own loss; the line says what-if
-            if (v := current_verify(project)) and (verify_far := far_of(v, project)):
-                lines += eta_what_if_lines(verify_far, s11_at(path, project, verify_far["sphere"].f)[1])
-            else:
-                lines.append(("I_ANTENNA_NO_FAR_FIELD", what_if))
         files["antenna_summary.png"] = antenna_png(lay.f, res.chain[:, 0, 0], project, far,
                                                    path.absolute().parent.name, label)  # `run .` too
     lines += [("I_WHAT_IF", what_if)] if res.what_if else []
@@ -656,7 +683,10 @@ def run(path: Path, run_dir: Path | None = None) -> int:
     0, or 2 after an E_ line (C-26); else W_RUN_NOT_KEPT and 4, the previous results and results/ left as they were
     (C-24, C-29). W_GATE_LIMITS follows the gate lines and each verdict when the gate limits are not GATES (C-10). STOP
     or Ctrl+C before the jobs start propagates as KeyboardInterrupt (exit 130, results untouched); once they run, it
-    stops them, and their verdicts say so. A given `run_dir` stands in for the fresh run folder."""
+    stops them, and their verdicts say so. An antenna's run (Stage 3) saves its results with far_field null and its
+    settings fingerprint, taken before the jobs; with no part port it then transforms its far field and saves again, a
+    transform that fails being an E_ line (_run); its outputs are antenna_outputs'. A given `run_dir` stands in for
+    the fresh run folder."""
     if not read_project(path)["ports"]:
         raise KrsError("E_NO_PORTS")
     return _locked(path, _run, run_dir)

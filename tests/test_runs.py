@@ -81,6 +81,21 @@ def test_the_version_check_reads_metadata_in_an_isolated_subprocess(monkeypatch,
     assert seen[0][:3] == [sys.executable, "-I", "-c"] and "import openEMS" not in seen[0][3]  # no DLL load
 
 
+@pytest.mark.parametrize("probe", [subprocess.TimeoutExpired(["python"], 120),  # a probe that hung
+                                   subprocess.CompletedProcess([], 0, "0.37.0\n", "")])  # one word printed
+def test_a_probe_that_hangs_or_prints_one_version_reads_as_openems_missing(monkeypatch, probe):  # plan 3's minor
+    def run(cmd, **kw):
+        if isinstance(probe, Exception):
+            raise probe
+        return probe
+
+    monkeypatch.setattr(subprocess, "run", run)
+    with pytest.raises(KrsError) as e:
+        runs.openems_versions()
+    assert (e.value.code, e.value.params) == ("E_OPENEMS_MISSING", {"python": sys.executable,
+                                                                   "command": runs.install_command()})
+
+
 @pytest.mark.parametrize(("windows", "code", "text"), [
     (True, "T_INSTALL_WINDOWS", "kicad-rf-studio setup-openems <openEMS folder>"),
     (False, "T_INSTALL_LINUX", "update_openEMS.sh <prefix> --python with this venv active (see README)")])

@@ -72,12 +72,14 @@ def install_command() -> str:
 
 
 def openems_versions() -> tuple[str, str]:
-    """The openEMS and CSXCAD versions installed in this Python. Raises E_OPENEMS_MISSING."""
-    probe = subprocess.run([sys.executable, "-I", "-c", PROBE], capture_output=True, text=True, timeout=120)
-    if probe.returncode:
-        raise KrsError("E_OPENEMS_MISSING", python=sys.executable, command=install_command())
-    openems, csxcad = probe.stdout.split()
-    return openems, csxcad
+    """The openEMS and CSXCAD versions installed in this Python. Raises E_OPENEMS_MISSING, also for a probe that times
+    out or prints other than the two versions."""
+    with contextlib.suppress(subprocess.TimeoutExpired, ValueError):  # it hung, or printed other than two words
+        probe = subprocess.run([sys.executable, "-I", "-c", PROBE], capture_output=True, text=True, timeout=120)
+        if not probe.returncode:
+            openems, csxcad = probe.stdout.split()
+            return openems, csxcad
+    raise KrsError("E_OPENEMS_MISSING", python=sys.executable, command=install_command())
 
 
 def check_openems() -> list[tuple[str, dict]]:
