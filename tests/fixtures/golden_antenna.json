@@ -1,0 +1,108 @@
+{
+ "code": "8d1f387d4ebcde6fbfdb93a130113b3c4f830a48",
+ "env": [
+  "win32",
+  "AMD64 Family 25 Model 97 Stepping 2, AuthenticAMD",
+  "2.5.4",
+  "1.18.1",
+  "3.11.2",
+  "2.2.0",
+  "en"
+ ],
+ "models": {
+  "ifa2g4": {
+   "blocked": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+   "model_json": "8d9e2f3f0496b01af757c2c9aea7dd162f0316d2c36fcb9cd39b68093b88050f",
+   "notes": "f921d83282bb13e4bda664ce09cd6df91a6c84aacf01bcbd0779bfde43161c4b",
+   "project": "1dfdd1c014593d7400225ae2321366453df299cc91f343c5e325c69e14d0151a",
+   "spec_hash": "774856d620f45501fd4319054b9ea74b144f86c11be997122757886d51398d12"
+  },
+  "ifa2g4_pi": {
+   "blocked": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+   "model_json": "f45ac7b51fe72b77a0e8e10c54d2edaee898e8492c86224470507d752484cb4e",
+   "notes": "568de4a0ad98901c930e65bb8cb3a54ac578d841b27e987be84ae8f3ad3e0185",
+   "project": "8a0c5675867e04f1fce4af1877b4f499d826b264c3cfa104e2563cd6e60dc300",
+   "spec_hash": "7fe93c377d24cf16475fa230f3e524de2508f7fb70de1e3625488ebbfd5d4aeb",
+   "verify": {
+    "model_json": "41dce1be7ee6ef56ab4c081f1873b6245932de043ee4535d457a8b22a2345b27",
+    "spec_hash": "649a7adfa1e2aa0a5f413137a1e89124970dbb02efb383d4c04f8bf60808f546"
+   }
+  },
+  "ifa2g4_pi_dxm": {
+   "blocked": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+   "model_json": "67ae1f69e632b53edb55e9c9b0e6f7ef479400add5328292c3bf45807f417bf5",
+   "notes": "568de4a0ad98901c930e65bb8cb3a54ac578d841b27e987be84ae8f3ad3e0185",
+   "project": "1b9b63c56487a9aa878d2d2a66e5151b45b0a2409194e19d3bd74d374affd5ed",
+   "spec_hash": "02c087f88014aaee2356ab7d04c5e9c5cd9ada0825901cbc6bd9d8e003a9667e"
+  },
+  "ifa2g4_pi_dxp": {
+   "blocked": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+   "model_json": "1be49667177871849f0370aa3b696728013db3a811296007638c38f9b2745f61",
+   "notes": "568de4a0ad98901c930e65bb8cb3a54ac578d841b27e987be84ae8f3ad3e0185",
+   "project": "5039d699d0107a2640403457c0ce34db8c3cbefafc0b6aa77b0f720575174f0e",
+   "spec_hash": "4c8f92c5fe2926cdf26225fac659cdd5a841ef527dcdac1083d2bc9aecbae5cd"
+  },
+  "ifa2g4_pi_pour": {
+   "blocked": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+   "model_json": "46e4a2894a0085720381cb887d4703bdee0f4a8c51ae6cfc31d3031c32c7c20f",
+   "notes": "568de4a0ad98901c930e65bb8cb3a54ac578d841b27e987be84ae8f3ad3e0185",
+   "project": "c4c7bf58cf1ba9ea94e6b580d7991cbccd996b6be07cb1b8f3736ef419e78aa0",
+   "spec_hash": "e580be3d301c2a63e5ad138b2e7a7cb16228acb6eec0636f85eb76e2fc75bbf4"
+  },
+  "ifa2g4_pi_shift": {
+   "blocked": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+   "model_json": "1bf9486e07510887ea15a179b949a4005c39b3e78f87b764522d595d59803bfb",
+   "notes": "568de4a0ad98901c930e65bb8cb3a54ac578d841b27e987be84ae8f3ad3e0185",
+   "project": "8b2498c7047467d7c3502b05bb03ac07b3a9ec4144a086ebbf591f6535d0391e",
+   "spec_hash": "78a4ddf6277085381ba49e4b662b8ec1884eb33d6636435187eeb979caacfcb0"
+  },
+  "meander915": {
+   "blocked": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+   "model_json": "3c5d11d65abdab4f40e66f1049fa5ec93a5d9032a5829dbbdf4764dd20a27d58",
+   "notes": "07326e7397d0b9b937b80abb2e6a3032399d77ada3e98b483a6387e1d0f2aed2",
+   "project": "8f9222e577e2b9b0fdb4d4053c898b7c71a7f29b1a5d5bc0f282aa546865fb9c",
+   "spec_hash": "593f20e564eef0a5359d1bb27914a40bf8742aac4b0278f59d1ff503a733fcc5"
+  }
+ },
+ "outputs": {
+  "coupon_gcpw_pads": {
+   "readout": "cb256c03fbce4b9d9f087fd12e77e6331105d4cfaf53705db400ef527f6dcd73"
+  },
+  "ifa2g4": {
+   "antenna_summary.csv": "12060cf97dda9fe37dc71c1594a9b0acffa96da244908fd8f448b69a68f829b2",
+   "antenna_summary.png": "24cade2faf45bf7ef9e264fa453db0a79efb546e14303de712c91c470aa7aa53",
+   "farfield.csv": "41f7cedbe6ba64cf8cfc19f8bda6b9de6b2e896a07cebc07f50b89d9b982cd79",
+   "layout.s1p": "67951f9eccdbc9f0727df323dd4be7123788b31b4c3f8dcfca04c17d9cda204a",
+   "lines": "b440e62edda7ab43f088cb390a469f6d22dd6b6ce0c95523d3dd682bb2f456fd",
+   "readout": "e3b18e0c8921ee3c31c9a64b0df6e0708e44d7e718840c8bc1628edcb883b45a"
+  },
+  "ifa2g4_pi": {
+   "antenna_summary.png": "384c495a5b0bd59c981c1873203e246629986fbf8d4bf80fa9162e80bdbda9e7",
+   "chain.s1p": "0e1414977fa9cace9d664cf9092ead5e7d35353c881168caa144b45ed5cecd57",
+   "layout.s4p": "5425e136f018d9390b960904ff16758ff9b7c9e5d616ed22532a5de59514b440",
+   "lines": "105e5461f5a817af341b3347337503093ddc86128f89512d01162279f129c1fd",
+   "readout": "28c4819ad0a4629f2af4b11faa14cc069634dd782a6d5107f875c00dd52a3dd2"
+  },
+  "ifa2g4_pi_dxm": {
+   "readout": "28c4819ad0a4629f2af4b11faa14cc069634dd782a6d5107f875c00dd52a3dd2"
+  },
+  "ifa2g4_pi_dxp": {
+   "readout": "28c4819ad0a4629f2af4b11faa14cc069634dd782a6d5107f875c00dd52a3dd2"
+  },
+  "ifa2g4_pi_pour": {
+   "readout": "28c4819ad0a4629f2af4b11faa14cc069634dd782a6d5107f875c00dd52a3dd2"
+  },
+  "ifa2g4_pi_shift": {
+   "readout": "28c4819ad0a4629f2af4b11faa14cc069634dd782a6d5107f875c00dd52a3dd2"
+  },
+  "lpf915": {
+   "readout": "03292dd47b3ce3c42825df441603d1f63b977ed821cea0406db495a5d1389835"
+  },
+  "lpf915-45": {
+   "readout": "ce76dbea09a33fe3443c923a80ebe3d6ebc2f6a5aa9e8139d4ecc7c75f64e0bc"
+  },
+  "meander915": {
+   "readout": "13f5f71e1f9ca19deebad547d87f96714bb9ef872b0757fc8d1d084597fac96b"
+  }
+ }
+}

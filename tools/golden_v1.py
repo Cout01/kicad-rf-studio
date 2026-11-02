@@ -18,6 +18,7 @@ import json
 import platform
 import sys
 import tempfile
+from collections.abc import Callable
 from pathlib import Path
 from unittest import mock
 
@@ -102,11 +103,11 @@ def digests() -> dict:
     return {"models": models, "outputs": outputs}
 
 
-def main() -> int:
-    """Records digests(), run in a fresh temporary folder, in GOLDEN with the product tree's id (p0.code_id) and env(),
-    and returns 0; refuses with 1 when GOLDEN exists."""
-    if GOLDEN.exists():
-        print(f"golden_v1: {GOLDEN.name} exists; a new recording is a controller ruling, which deletes it first",
+def record(golden: Path, digests: Callable[[], dict]) -> int:
+    """Records digests(), run in a fresh temporary folder, in `golden` with the product tree's id (p0.code_id) and
+    env(), and returns 0; refuses with 1 when `golden` exists. tools/golden_antenna.py records through it too."""
+    if golden.exists():
+        print(f"{golden.stem}: {golden.name} exists; a new recording is a controller ruling, which deletes it first",
               file=sys.stderr)
         return 1
     with tempfile.TemporaryDirectory() as folder:
@@ -116,9 +117,14 @@ def main() -> int:
             pins = digests()
         finally:
             os.chdir(here)  # out of the folder first: Windows cannot remove a working folder
-    GOLDEN.write_text(json.dumps({"code": p0.code_id(), "env": env(), **pins}, indent=1, sort_keys=True) + "\n",
+    golden.write_text(json.dumps({"code": p0.code_id(), "env": env(), **pins}, indent=1, sort_keys=True) + "\n",
                       encoding="utf-8")
     return 0
+
+
+def main() -> int:
+    """Records digests() in GOLDEN through record; 1 when GOLDEN exists."""
+    return record(GOLDEN, digests)
 
 
 if __name__ == "__main__":
