@@ -1,7 +1,7 @@
 # kicad-rf-studio — Stage 1 design: a validated simulation engine
 
 - **Date:** 2026-10-16
-- **Status:** design approved section by section in conversation, revised on 2026-10-19 after an independent review, and approved by the owner. On 2026-10-21 the owner confirmed one amendment to §5.4: the substrate height now counts in the cell size. On 2026-10-22, plan 5 amended §1.1, §7.6, §9.1, §9.2 and §9.6 (A-1 to A-4) as controller recommendations while the owner was unavailable; the owner reviews them. On 2026-10-24, D-45's fix amended §5.6 (A-6) and §7.6 (A-7) the same way. On 2026-10-25, P0-B's TX-side outcome amended §1.1 and §12 (A-5) the same way. On 2026-10-26, plan 6's mesh-rule calibration amended §5.4 and §12 (A-8) the same way. On 2026-10-27, Stage 2's plan 1 amended §3.2, §3.3, §3.4 and §6.1 (A-13 to A-15) the same way. On 2026-10-28, Stage 2's plan 3 amended §3.2, §3.4, §4.3 and §10 (A-16 to A-18) the same way. On 2026-10-28, Stage 2's plan 4 amended §3.4, §3.6, §9.1 and §12 (A-19 to A-21) the same way. On 2026-10-29, the pt-BR translation plan amended §1.1 and §3.5 (A-22) the same way. On 2026-10-29, Stage 3's plan 1 amended §2, §5.1 and §9 (A-23 to A-25) the same way. On 2026-10-30, Stage 3's plan 2 amended §1.1, §3.2, §3.3, §5.1, §5.5, §6.3, §6.4, §7.4, §7.5 and §10 (A-26 to A-32) the same way. On 2026-10-30, Stage 3's plan 3 amended §3.2, §3.3 and §7.6 (A-33 and A-34) the same way. On 2026-11-01, Stage 3's plan 4 amended §3.2, §5.1, §5.3, §5.4, §6.3, §6.4 and §9 (A-35 to A-40) the same way.
+- **Status:** design approved section by section in conversation, revised on 2026-10-19 after an independent review, and approved by the owner. On 2026-10-21 the owner confirmed one amendment to §5.4: the substrate height now counts in the cell size. On 2026-10-22, plan 5 amended §1.1, §7.6, §9.1, §9.2 and §9.6 (A-1 to A-4) as controller recommendations while the owner was unavailable; the owner reviews them. On 2026-10-24, D-45's fix amended §5.6 (A-6) and §7.6 (A-7) the same way. On 2026-10-25, P0-B's TX-side outcome amended §1.1 and §12 (A-5) the same way. On 2026-10-26, plan 6's mesh-rule calibration amended §5.4 and §12 (A-8) the same way. On 2026-10-27, Stage 2's plan 1 amended §3.2, §3.3, §3.4 and §6.1 (A-13 to A-15) the same way. On 2026-10-28, Stage 2's plan 3 amended §3.2, §3.4, §4.3 and §10 (A-16 to A-18) the same way. On 2026-10-28, Stage 2's plan 4 amended §3.4, §3.6, §9.1 and §12 (A-19 to A-21) the same way. On 2026-10-29, the pt-BR translation plan amended §1.1 and §3.5 (A-22) the same way. On 2026-10-29, Stage 3's plan 1 amended §2, §5.1 and §9 (A-23 to A-25) the same way. On 2026-10-30, Stage 3's plan 2 amended §1.1, §3.2, §3.3, §5.1, §5.5, §6.3, §6.4, §7.4, §7.5 and §10 (A-26 to A-32) the same way. On 2026-10-30, Stage 3's plan 3 amended §3.2, §3.3 and §7.6 (A-33 and A-34) the same way. On 2026-11-01, Stage 3's plan 4 amended §3.2, §5.1, §5.3, §5.4, §6.3, §6.4 and §9 (A-35 to A-40) the same way. On 2026-11-03, Stage 4's plan 1 amended §2, §5.3, §5.4, §5.6, §5.8, §6.3, §9 and §10 (A-41 to A-47) the same way.
 - **Scope:** Stage 1 of the project: the headless engine, the command-line orchestrator and the validation gates. The GUI and the KiCad toolbar button (Stage 2) get their own spec, written with Stage 1's results.
 
 ---
@@ -72,7 +72,8 @@ The users are hardware engineers who use KiCad and are not FDTD experts. The pro
 | 1 | Headless core, CLI orchestrator, worker, validation gates P0-0 to P0-D | This document |
 | 2 (completes v1) | PySide6 GUI client, KiCad toolbar button, live import through kicad-python | Own spec, written with Stage 1's results |
 | 3 | PCB antenna placement, with relative results (PML, NF2FF) | `docs/superpowers/specs/2026-10-29-stage3-antenna-placement-design.md` (A-23, Stage 3 plan 1: controller recommendation, owner unavailable.) |
-| Later | SI, EMC and differential pairs, a GPU engine, a bundled installer | — |
+| 4 | Signal integrity of a net or a differential pair: the TDR, mixed-mode S and crosstalk, with relative results | `docs/superpowers/specs/2026-11-02-stage4-signal-integrity-design.md` (A-41, Stage 4 plan 1: controller recommendation, owner unavailable.) |
+| Later | EMC, a GPU engine, a bundled installer | — |
 
 ---
 
@@ -292,6 +293,7 @@ Per footprint, the reader takes:
   In a 2D check on three lines, this model was within 0.07 % in Z0 and 0.13 % in εeff of the exact mask, with no extra z-line and no timestep cost. P0-A confirms it in FDTD. The mask moves a 50 Ω GCPW's Z0 by −2.8 to −7.8 %, up to more than the 5 % budget, so it cannot be ignored.
 - **Dielectric loss:** a constant κ, set at f0. This is exact for the insertion loss at f0. At the harmonics it underestimates the loss, which is conservative for rejection. A Debye fit is deferred.
 - **Antennas** (Stage 3): an antenna project's `copper` is "solid", this section's copper, or "sheet": every copper layer a zero-thickness PEC sheet at its dielectric face, the masks resting on it, for the whole model. Gate P3-C compared them on both fixtures at mesh n 2, and sheet failed and is not offered. It moved the 2.4 GHz fixture's resonance by 0.27 %, within the 0.5 % limit, but shifted the 915 MHz meander's response by 0.87 % in band, as this section's narrow-gap evidence predicts for the meander's closely spaced turns. With sheet copper openEMS's timestep was 1.86 times solid's (2.143e-13 against 1.150e-13 s on the 2.4 GHz fixture), the copper's thickness no longer resolved (`docs/validation/2026-11-01-p3-c.md`). A project may still set "sheet", at its own risk, where every gap stays wide: on a coplanar gap under 30·t this section's evidence (a sheet read Z0 8.7 % high on a 50 Ω GCPW) holds. (A-35, Stage 3 plan 4: controller recommendation, owner unavailable.)
+- **Signal integrity** (Stage 4): an SI project's copper is solid, never openEMS's conducting sheet, which read a coupled pair's Zdiff 11 % high in the Stage 4 research's probe and takes its thickness in metres whatever the drawing unit. Its dielectric is lossless, or a Debye fit of the stackup's εr and tan δ at 1 GHz in the Djordjevic–Sarkar manner: one pole a decade from f_max/100 to f_max, each Δε positive, ε∞ at least 1 and no DC loss, built as CSXCAD's CSPropDebyeMaterial. This section's constant κ is never used for SI: it gives a flat loss and a DC leakage. Gate P4-D sets the default. (A-42, Stage 4 plan 1: controller recommendation, owner unavailable.)
 
 ### 5.4 Mesh
 
@@ -311,6 +313,7 @@ Per footprint, the reader takes:
 - **Quantisation:** every coordinate and mesh line goes to 1e-6 mm. The XML preview's 7 significant digits affect only the display.
 - **Validity:** the rule is validated for 35 µm copper only.
 - **Antennas** (Stage 3): the antenna's mesh n is 2. On both fixtures n 2 lies within 1 % of the finest mesh's resonance: the 2.4 GHz fixture's sequence oscillates within 0.58 % of n 4, and the 915 MHz meander, whose resonance lies above its simulated grid, sits within 0.52 % of n 4 by its fitted response shift. So the cell d taken from the feed network alone stands, and the copper models were compared at n 2. At n 3 and 4 the 2.4 GHz fixture's 0.6 mm stub reads 4–5 % high from a shared edge cell, at most 0.06 % on the resonance, and its P3-C runs set gates.fit2d_limit 0.05. A staircased 45° track at n 3 or more takes openEMS's timestep under the dt floor (the meander's read 0.72 and 0.63 of its reference at n 3 and 4), so such a project lowers gates.dt_floor to refine its mesh (`docs/validation/2026-11-01-p3-c.md`). (A-35, Stage 3 plan 4: controller recommendation, owner unavailable.)
+- **Signal integrity** (Stage 4): an SI project's d and reach take the thinnest dielectric next to any copper layer its lines use, above or below, not the top layer's alone. Its mesh rule fills at d only the copper edges' patterns and a margin around each via. Between them, inside the protected extent, the cells grade at 1.3 up to max_cell, λ_eff(f_max)/40 by default, and outside the extent up to the coarse cell. On a synthetic 100 mm straight pair the rule placed about 270 lines along the run where the d fill placed about 1,370, and the edge lint passed. Gate P4-C compares it with the d fill, which stays if it fails. The edge lint and fit2d apply unchanged, and an SI project's gates.dt_floor defaults to 0.6, against v1's 0.8, since a staircased 45° track at n 3 read 0.72 of its reference (A-35). (A-43, Stage 4 plan 1: controller recommendation, owner unavailable.)
 
 ### 5.5 Mesh gates
 
@@ -344,6 +347,7 @@ Only the edge lint first tries one automatic re-mesh; the other gates block dire
   - so no copper lies in a box: openEMS keeps PEC on every edge whose midpoint lies in metal, except a lumped element's own edges along its axis. On `lpf915`, boxes from pad to pad had 2 to 8 shorted cells each: `verify`'s C2 and C3 acted as 8.8 pF instead of 3.3 pF, C1 gained 57–72 pF to ground, and the co-simulation's six-port was non-reciprocal by 0.16 (P0-B, D-45).
 - **After setup** (setup-only plus a PEC dump), the PEC edges are grouped into connected pieces. Each port's two ends must lie in the pieces of its declared signal pad and reference pad, and those must be different pieces. The dump has no labels, and a lumped port's own end caps are PEC, so touching PEC alone proves nothing. Otherwise the run is blocked.
 - An "unused primitive" on a port, excitation, probe or lumped part is an error.
+- **The vertical port** (Stage 4): for an SI project only, an end pad with no same-layer reference within the reach gets a 50 Ω lumped port in z. It runs from the nearest plane toward the board's middle to the pad: the first copper layer on which one ground or power net's copper covers the pad, every layer before it bare over the pad's footprint. The port is a sheet across the pad's centre line, along its longer side. Its nodes are the plane's and the pad's faces and their far faces, which the PEC-roots gate checks as any port's. A pad with no such plane (none, an antipad, a split, or another net's copper on the way) has no vertical port. This lifts C-14's "no vertical ports" for SI alone; v1's reference order, and its refusal of a reference on another layer, stay. Gate P4-D compares it with the horizontal port on a pad coupon. (A-44, Stage 4 plan 1: controller recommendation, owner unavailable.)
 
 ### 5.7 Parts
 
@@ -370,6 +374,7 @@ Roles are assigned automatically and can be edited in `project.json`.
   - a plane-pair mode at 3.45 GHz sits at −34.9 dB.
 - **Diagnostics:** |a(f)| is shown next to every reported frequency in the detailed output.
 - **T_max:** a required project field, default 40 ns, set with `SetMaxTime`. The custom pulse allocates its samples before the run, so T_max must always be set.
+- **The SI pulse** (Stage 4): an SI project's pulse is openEMS's Gaussian with f0 = 0 as a custom expression, exp(−(2π·f_max·t/3 − 3)²)·(t < 2·t0) with t0 = 9/(2π·f_max), passed as v1's with f2 = f_max, so its DC point is measured. This section's DC-free pulse stays for v1 and the antennas. (A-45, Stage 4 plan 1: controller recommendation, owner unavailable.)
 
 ---
 
@@ -418,6 +423,8 @@ The orchestrator polls each worker's port probe files at a fixed wall-clock rate
 | Strict | −70 dB | 5e-4 |
 
 **Antennas** (Stage 3): T_max defaults to 2·t0 + 60/f0, rounded up to a whole ns, f0 being the band's centre, and the flat window is max(5 ns, 20/f0); every other constant is v1's. (A-28, Stage 3 plan 2: controller recommendation, owner unavailable.) Gate P3-C measured the stop times and kept both. Every compared run converged before T_max (the 2.4 GHz fixture at 9.6–10.5 ns of 30, the 915 MHz meander at 14.8–15.4 ns of 79), and none ended flat. An antenna's project.json may set `flat_s`, its flat window in s, for a run that ends flat. The Normal preset matched Strict within 0.0008 % in resonance and 0.001 dB in radiation efficiency (`docs/validation/2026-11-01-p3-c.md`). (A-37, Stage 3 plan 4: controller recommendation, owner unavailable.)
+
+**Signal integrity** (Stage 4): with the DC pulse, openEMS's field energy never decays (a soft source leaves a static charge), so the port residual is the only stop and EndCriteria stays 1e-15. The residual's window is max(2 ns, 1.5 × the longest port-to-port round trip), written only in an SI model's excitation as `window_s`, so a pulse still travelling on a long line cannot read as converged. Its flat window is 5 ns plus that window's excess over 2 ns, since a window holds the residual at its last peak for its whole length. T_max defaults to the pulse's length plus 6 of the longest round trips plus 2 ns, rounded up to a whole ns, the round trip from the route's length and the 2D εeff. The growth detector and the other constants stay. (A-46, Stage 4 plan 1: controller recommendation, owner unavailable.)
 
 **Evidence.** On a real-board crop, the port residual reached −60 dB at 13.1–13.6 ns, and S cut there differed by at most 5.7e-3 from the full record.
 
@@ -658,6 +665,10 @@ Gates P3-B to P3-E (Stage 3 design §5.11) ran by `tools/p3b.py`, `tools/p3c.py`
 
 The reports are `docs/validation/2026-10-31-p3-b.md`, `2026-11-01-p3-c.md`, `2026-11-01-p3-d.md` and `2026-11-01-p3-e.md`, and the cost refit's is `2026-11-01-p3-refit.md`. The machine time was about 33 h, within this plan's estimate of 20–82 h. (A-40, Stage 3 plan 4: controller recommendation, owner unavailable.)
 
+### 9.10 P4-A: 2D and formulas (Stage 4)
+
+Stage 4's first gate (Stage 4 design §5.11), in CI: `tests/test_p4a.py` runs `tools/p4a.py`'s checks against `tests/fixtures/p4a/references.json`. cs2d's coupled pair is checked against Cohn's exact zero-thickness coupled stripline at 0.1 µm copper, within 0.5 %. It is checked against Kirschning–Jansen's coupled microstrip, as KiCad 9's calculator computes it, within 3 % in Z and εeff at 1 µm, and within 5 % in Z at 35 µm on 1.0 and 1.5 mm substrates, where t/h ≤ 0.035; εeff at 35 µm is recorded, not gated (cs2d's εodd reads 4.3–5.0 % under KiCad's there). The tool holds the even/odd 4-port of a uniform lossless pair, whose identities hold to 1e-9: a homogeneous stripline's FEXT and S11 are zero at a reference of √(Ze·Zo), NEXT peaks at k at the quarter wave, and a line's S11 is the bounce series of its step's Γ. The TDR routine reads an ideal 60 Ω line as 60.0 Ω, then 50.0 Ω after its second round trip. KiCad's coupled microstrip builds on a zero-thickness single line, so its thickness terms raise Zeven and εodd as the copper thickens, where both must fall: on the fixtures' 0.2 mm stack at 35 µm cs2d reads Zeven and Zodd about 9 % under KiCad's, while an openEMS probe read cs2d's Zdiff within 1.9 %, a stated limit of KiCad's formula, recorded in the report. A failure is a code bug, which blocks Stage 4. Result on 2026-11-03: passed, `docs/validation/2026-11-03-p4-a.md`. (A-47, Stage 4 plan 1: controller recommendation, owner unavailable.)
+
 ---
 
 ## 10. Deferred (YAGNI)
@@ -670,7 +681,7 @@ These are not in Stage 1 or v1:
 - live attach to Flatpak KiCad (Flatpak users import the file);
 - a weekly canary build against openEMS master;
 - 3-port switch-state assembly;
-- Debye dielectric loss;
+- Debye dielectric loss, except for signal integrity (§5.3, A-42);
 - the reciprocity least-squares fit;
 - automatic refinement driven by fit2d;
 - Linux/GCC or GPU engine backends;

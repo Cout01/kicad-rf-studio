@@ -1,0 +1,677 @@
+{
+  "gate": "P4-A",
+  "versions": {
+    "commit": "dd0e345",
+    "code": "9cd8c2235a1614312f8298be609c3cd0d1a9f15b",
+    "python": "3.14.2",
+    "openems": "0.37.0",
+    "csxcad": "0.7.0",
+    "os": "Windows-11-10.0.26200-SP0",
+    "cpus": 16
+  },
+  "references": {
+    "source": "Stage 4 design 5.11, gate P4-A: Cohn's exact zero-thickness edge-coupled stripline (S. B. Cohn, IRE Trans. MTT 3(5), 1955; tools/p4a.py cohn); Kirschning and Jansen's coupled microstrip, quasi-static with no cover, as KiCad 9.0's calculator computes it (pcb_calculator/transline/c_microstrip.cpp; tests/kicad_lines.py coupled_microstrip); the even/odd 4-port of a uniform lossless pair (tools/p4a.py even_odd_s); an ideal 60 ohm line between 50 ohm ports. A case's own t_mm overrides its group's.",
+    "cohn": {
+      "t_mm": 0.0001,
+      "limit": 0.005,
+      "cases": [
+        {
+          "w": 0.15,
+          "s": 0.15,
+          "b": 0.5,
+          "er": 4.3,
+          "z_even": 71.98342405099247,
+          "z_odd": 52.01461048031955
+        },
+        {
+          "w": 0.2,
+          "s": 0.2,
+          "b": 0.6,
+          "er": 4.3,
+          "z_even": 67.40168654593361,
+          "z_odd": 50.86779321065293
+        },
+        {
+          "w": 0.3,
+          "s": 0.1,
+          "b": 0.5,
+          "er": 4.3,
+          "z_even": 50.23427299274296,
+          "z_odd": 35.51848782321822
+        },
+        {
+          "w": 0.1,
+          "s": 0.3,
+          "b": 0.4,
+          "er": 4.3,
+          "z_even": 70.20240112588493,
+          "z_odd": 64.80026504967648
+        }
+      ]
+    },
+    "kj_1um": {
+      "t_mm": 0.001,
+      "limit": 0.03,
+      "cases": [
+        {
+          "w": 0.15,
+          "s": 0.15,
+          "h": 0.2,
+          "er": 4.3,
+          "z_even": 97.1232802849029,
+          "eps_even": 3.249327590191874,
+          "z_odd": 65.3666499716574,
+          "eps_odd": 2.7706356176104663
+        },
+        {
+          "w": 0.2,
+          "s": 0.15,
+          "h": 0.2,
+          "er": 4.3,
+          "z_even": 84.30662805401742,
+          "eps_even": 3.3163721381158924,
+          "z_odd": 57.98344450068376,
+          "eps_odd": 2.806460633589963
+        },
+        {
+          "w": 0.5,
+          "s": 0.5,
+          "h": 1.0,
+          "er": 4.5,
+          "z_even": 118.74442214862536,
+          "eps_even": 3.29194691205046,
+          "z_odd": 68.20906264670947,
+          "eps_odd": 2.816993971162812
+        },
+        {
+          "w": 1.0,
+          "s": 0.3,
+          "h": 1.5,
+          "er": 4.5,
+          "z_even": 113.05710843070086,
+          "eps_even": 3.330009916997594,
+          "z_odd": 49.67941809199963,
+          "eps_odd": 2.8046458927388223
+        }
+      ]
+    },
+    "kj_35um": {
+      "t_mm": 0.035,
+      "limit": 0.05,
+      "cases": [
+        {
+          "w": 0.5,
+          "s": 0.5,
+          "h": 1.0,
+          "er": 4.5,
+          "z_even": 120.2953356947341,
+          "eps_even": 3.288029518974082,
+          "z_odd": 66.89353287968208,
+          "eps_odd": 2.829986140855531
+        },
+        {
+          "w": 1.0,
+          "s": 0.3,
+          "h": 1.5,
+          "er": 4.5,
+          "z_even": 113.8467971645535,
+          "eps_even": 3.3289028663936624,
+          "z_odd": 49.02436030751428,
+          "eps_odd": 2.813901231029615
+        },
+        {
+          "w": 0.6,
+          "s": 0.6,
+          "h": 1.5,
+          "er": 4.5,
+          "z_even": 134.4796342831145,
+          "eps_even": 3.242019437992506,
+          "z_odd": 68.24462487539876,
+          "eps_odd": 2.805699126510386
+        }
+      ]
+    },
+    "kj_recorded": {
+      "t_mm": 0.035,
+      "limit": null,
+      "cases": [
+        {
+          "w": 0.15,
+          "s": 0.15,
+          "h": 0.2,
+          "er": 4.3,
+          "t_mm": 0.018,
+          "z_even": 98.79154746313598,
+          "eps_even": 3.236372605411727,
+          "z_odd": 63.83106586042997,
+          "eps_odd": 2.798536029747614
+        },
+        {
+          "w": 0.15,
+          "s": 0.15,
+          "h": 0.2,
+          "er": 4.3,
+          "z_even": 100.11659603731445,
+          "eps_even": 3.2167332716612065,
+          "z_odd": 62.79235617601896,
+          "eps_odd": 2.8201147786863157
+        }
+      ]
+    },
+    "identity": {
+      "limit": 1e-09,
+      "length_mm": 50.0
+    },
+    "tdr": {
+      "z_line": 60.0,
+      "z_ref": 50.0,
+      "eps": 4.0,
+      "length_mm": 50.0,
+      "f_max_hz": 10000000000.0
+    }
+  },
+  "wall_s": 11.872159600025043,
+  "rows": [
+    {
+      "check": "cohn",
+      "case": "w 0.15 s 0.15 b 0.5 er 4.3",
+      "quantity": "z_even",
+      "reference": 71.98342405099247,
+      "measured": 71.79956435880743,
+      "error": -0.002554194866512538,
+      "limit": 0.005,
+      "pass": true
+    },
+    {
+      "check": "cohn",
+      "case": "w 0.15 s 0.15 b 0.5 er 4.3",
+      "quantity": "z_odd",
+      "reference": 52.01461048031955,
+      "measured": 51.836873987750955,
+      "error": -0.0034170493814587033,
+      "limit": 0.005,
+      "pass": true
+    },
+    {
+      "check": "cohn",
+      "case": "w 0.2 s 0.2 b 0.6 er 4.3",
+      "quantity": "z_even",
+      "reference": 67.40168654593361,
+      "measured": 67.24335275501684,
+      "error": -0.0023491072557786374,
+      "limit": 0.005,
+      "pass": true
+    },
+    {
+      "check": "cohn",
+      "case": "w 0.2 s 0.2 b 0.6 er 4.3",
+      "quantity": "z_odd",
+      "reference": 50.86779321065293,
+      "measured": 50.71292053033016,
+      "error": -0.0030446117385397597,
+      "limit": 0.005,
+      "pass": true
+    },
+    {
+      "check": "cohn",
+      "case": "w 0.3 s 0.1 b 0.5 er 4.3",
+      "quantity": "z_even",
+      "reference": 50.23427299274296,
+      "measured": 50.13679951348281,
+      "error": -0.0019403780218781863,
+      "limit": 0.005,
+      "pass": true
+    },
+    {
+      "check": "cohn",
+      "case": "w 0.3 s 0.1 b 0.5 er 4.3",
+      "quantity": "z_odd",
+      "reference": 35.51848782321822,
+      "measured": 35.41167384202641,
+      "error": -0.003007278398884705,
+      "limit": 0.005,
+      "pass": true
+    },
+    {
+      "check": "cohn",
+      "case": "w 0.1 s 0.3 b 0.4 er 4.3",
+      "quantity": "z_even",
+      "reference": 70.20240112588493,
+      "measured": 69.970781385052,
+      "error": -0.0032993136576282556,
+      "limit": 0.005,
+      "pass": true
+    },
+    {
+      "check": "cohn",
+      "case": "w 0.1 s 0.3 b 0.4 er 4.3",
+      "quantity": "z_odd",
+      "reference": 64.80026504967648,
+      "measured": 64.56367632859036,
+      "error": -0.0036510455768159478,
+      "limit": 0.005,
+      "pass": true
+    },
+    {
+      "check": "kj_1um",
+      "case": "w 0.15 s 0.15 h 0.2 er 4.3",
+      "quantity": "z_even",
+      "reference": 97.1232802849029,
+      "measured": 95.84392061037956,
+      "error": -0.013172533616764737,
+      "limit": 0.03,
+      "pass": true
+    },
+    {
+      "check": "kj_1um",
+      "case": "w 0.15 s 0.15 h 0.2 er 4.3",
+      "quantity": "eps_even",
+      "reference": 3.249327590191874,
+      "measured": 3.2250977622183385,
+      "error": -0.007456874476637454,
+      "limit": 0.03,
+      "pass": true
+    },
+    {
+      "check": "kj_1um",
+      "case": "w 0.15 s 0.15 h 0.2 er 4.3",
+      "quantity": "z_odd",
+      "reference": 65.3666499716574,
+      "measured": 65.05714155974313,
+      "error": -0.004734959066258759,
+      "limit": 0.03,
+      "pass": true
+    },
+    {
+      "check": "kj_1um",
+      "case": "w 0.15 s 0.15 h 0.2 er 4.3",
+      "quantity": "eps_odd",
+      "reference": 2.7706356176104663,
+      "measured": 2.746056758399585,
+      "error": -0.00887119874394715,
+      "limit": 0.03,
+      "pass": true
+    },
+    {
+      "check": "kj_1um",
+      "case": "w 0.2 s 0.15 h 0.2 er 4.3",
+      "quantity": "z_even",
+      "reference": 84.30662805401742,
+      "measured": 83.17374264934443,
+      "error": -0.01343767899182402,
+      "limit": 0.03,
+      "pass": true
+    },
+    {
+      "check": "kj_1um",
+      "case": "w 0.2 s 0.15 h 0.2 er 4.3",
+      "quantity": "eps_even",
+      "reference": 3.3163721381158924,
+      "measured": 3.2885855519552942,
+      "error": -0.008378609216149191,
+      "limit": 0.03,
+      "pass": true
+    },
+    {
+      "check": "kj_1um",
+      "case": "w 0.2 s 0.15 h 0.2 er 4.3",
+      "quantity": "z_odd",
+      "reference": 57.98344450068376,
+      "measured": 57.724346956463926,
+      "error": -0.004468474518045884,
+      "limit": 0.03,
+      "pass": true
+    },
+    {
+      "check": "kj_1um",
+      "case": "w 0.2 s 0.15 h 0.2 er 4.3",
+      "quantity": "eps_odd",
+      "reference": 2.806460633589963,
+      "measured": 2.784924578359353,
+      "error": -0.007673742140847928,
+      "limit": 0.03,
+      "pass": true
+    },
+    {
+      "check": "kj_1um",
+      "case": "w 0.5 s 0.5 h 1.0 er 4.5",
+      "quantity": "z_even",
+      "reference": 118.74442214862536,
+      "measured": 117.98580375483685,
+      "error": -0.0063886655058120745,
+      "limit": 0.03,
+      "pass": true
+    },
+    {
+      "check": "kj_1um",
+      "case": "w 0.5 s 0.5 h 1.0 er 4.5",
+      "quantity": "eps_even",
+      "reference": 3.29194691205046,
+      "measured": 3.2751485735338544,
+      "error": -0.005102858267584387,
+      "limit": 0.03,
+      "pass": true
+    },
+    {
+      "check": "kj_1um",
+      "case": "w 0.5 s 0.5 h 1.0 er 4.5",
+      "quantity": "z_odd",
+      "reference": 68.20906264670947,
+      "measured": 68.16879883763376,
+      "error": -0.0005902999911354678,
+      "limit": 0.03,
+      "pass": true
+    },
+    {
+      "check": "kj_1um",
+      "case": "w 0.5 s 0.5 h 1.0 er 4.5",
+      "quantity": "eps_odd",
+      "reference": 2.816993971162812,
+      "measured": 2.8024742092438686,
+      "error": -0.005154346110634367,
+      "limit": 0.03,
+      "pass": true
+    },
+    {
+      "check": "kj_1um",
+      "case": "w 1.0 s 0.3 h 1.5 er 4.5",
+      "quantity": "z_even",
+      "reference": 113.05710843070086,
+      "measured": 112.5523742142737,
+      "error": -0.0044644182345823236,
+      "limit": 0.03,
+      "pass": true
+    },
+    {
+      "check": "kj_1um",
+      "case": "w 1.0 s 0.3 h 1.5 er 4.5",
+      "quantity": "eps_even",
+      "reference": 3.330009916997594,
+      "measured": 3.30722014850775,
+      "error": -0.006843753940045771,
+      "limit": 0.03,
+      "pass": true
+    },
+    {
+      "check": "kj_1um",
+      "case": "w 1.0 s 0.3 h 1.5 er 4.5",
+      "quantity": "z_odd",
+      "reference": 49.67941809199963,
+      "measured": 49.54831944165664,
+      "error": -0.0026388926315564776,
+      "limit": 0.03,
+      "pass": true
+    },
+    {
+      "check": "kj_1um",
+      "case": "w 1.0 s 0.3 h 1.5 er 4.5",
+      "quantity": "eps_odd",
+      "reference": 2.8046458927388223,
+      "measured": 2.7917253128235866,
+      "error": -0.004606848924738394,
+      "limit": 0.03,
+      "pass": true
+    },
+    {
+      "check": "kj_35um",
+      "case": "w 0.5 s 0.5 h 1.0 er 4.5",
+      "quantity": "z_even",
+      "reference": 120.2953356947341,
+      "measured": 115.56805632860252,
+      "error": -0.039297278974537275,
+      "limit": 0.05,
+      "pass": true
+    },
+    {
+      "check": "kj_35um",
+      "case": "w 0.5 s 0.5 h 1.0 er 4.5",
+      "quantity": "eps_even",
+      "reference": 3.288029518974082,
+      "measured": 3.226136889885307,
+      "error": -0.018823623307398507,
+      "limit": null,
+      "pass": null
+    },
+    {
+      "check": "kj_35um",
+      "case": "w 0.5 s 0.5 h 1.0 er 4.5",
+      "quantity": "z_odd",
+      "reference": 66.89353287968208,
+      "measured": 64.8089727570704,
+      "error": -0.03116235655188171,
+      "limit": 0.05,
+      "pass": true
+    },
+    {
+      "check": "kj_35um",
+      "case": "w 0.5 s 0.5 h 1.0 er 4.5",
+      "quantity": "eps_odd",
+      "reference": 2.829986140855531,
+      "measured": 2.687540312535785,
+      "error": -0.050334461453116264,
+      "limit": null,
+      "pass": null
+    },
+    {
+      "check": "kj_35um",
+      "case": "w 1.0 s 0.3 h 1.5 er 4.5",
+      "quantity": "z_even",
+      "reference": 113.8467971645535,
+      "measured": 111.24285384435694,
+      "error": -0.022872345863474974,
+      "limit": 0.05,
+      "pass": true
+    },
+    {
+      "check": "kj_35um",
+      "case": "w 1.0 s 0.3 h 1.5 er 4.5",
+      "quantity": "eps_even",
+      "reference": 3.3289028663936624,
+      "measured": 3.2780564186161083,
+      "error": -0.015274235932464464,
+      "limit": null,
+      "pass": null
+    },
+    {
+      "check": "kj_35um",
+      "case": "w 1.0 s 0.3 h 1.5 er 4.5",
+      "quantity": "z_odd",
+      "reference": 49.02436030751428,
+      "measured": 47.21488922906321,
+      "error": -0.036909631601530934,
+      "limit": 0.05,
+      "pass": true
+    },
+    {
+      "check": "kj_35um",
+      "case": "w 1.0 s 0.3 h 1.5 er 4.5",
+      "quantity": "eps_odd",
+      "reference": 2.813901231029615,
+      "measured": 2.679996225641424,
+      "error": -0.04758696002247209,
+      "limit": null,
+      "pass": null
+    },
+    {
+      "check": "kj_35um",
+      "case": "w 0.6 s 0.6 h 1.5 er 4.5",
+      "quantity": "z_even",
+      "reference": 134.4796342831145,
+      "measured": 130.01863185848882,
+      "error": -0.033172327158728865,
+      "limit": 0.05,
+      "pass": true
+    },
+    {
+      "check": "kj_35um",
+      "case": "w 0.6 s 0.6 h 1.5 er 4.5",
+      "quantity": "eps_even",
+      "reference": 3.242019437992506,
+      "measured": 3.189478896764933,
+      "error": -0.016206115426657286,
+      "limit": null,
+      "pass": null
+    },
+    {
+      "check": "kj_35um",
+      "case": "w 0.6 s 0.6 h 1.5 er 4.5",
+      "quantity": "z_odd",
+      "reference": 68.24462487539876,
+      "measured": 66.61354231444543,
+      "error": -0.02390052790137487,
+      "limit": 0.05,
+      "pass": true
+    },
+    {
+      "check": "kj_35um",
+      "case": "w 0.6 s 0.6 h 1.5 er 4.5",
+      "quantity": "eps_odd",
+      "reference": 2.805699126510386,
+      "measured": 2.684939182973749,
+      "error": -0.043040945622288884,
+      "limit": null,
+      "pass": null
+    },
+    {
+      "check": "kj_recorded",
+      "case": "w 0.15 s 0.15 h 0.2 er 4.3 t 0.018",
+      "quantity": "z_even",
+      "reference": 98.79154746313598,
+      "measured": 92.72158824182956,
+      "error": -0.061442090717036546,
+      "limit": null,
+      "pass": null
+    },
+    {
+      "check": "kj_recorded",
+      "case": "w 0.15 s 0.15 h 0.2 er 4.3 t 0.018",
+      "quantity": "eps_even",
+      "reference": 3.236372605411727,
+      "measured": 3.1522075902158893,
+      "error": -0.02600597194992338,
+      "limit": null,
+      "pass": null
+    },
+    {
+      "check": "kj_recorded",
+      "case": "w 0.15 s 0.15 h 0.2 er 4.3 t 0.018",
+      "quantity": "z_odd",
+      "reference": 63.83106586042997,
+      "measured": 60.31945218196063,
+      "error": -0.05501417892891958,
+      "limit": null,
+      "pass": null
+    },
+    {
+      "check": "kj_recorded",
+      "case": "w 0.15 s 0.15 h 0.2 er 4.3 t 0.018",
+      "quantity": "eps_odd",
+      "reference": 2.798536029747614,
+      "measured": 2.586167329766863,
+      "error": -0.07588564082196347,
+      "limit": null,
+      "pass": null
+    },
+    {
+      "check": "kj_recorded",
+      "case": "w 0.15 s 0.15 h 0.2 er 4.3",
+      "quantity": "z_even",
+      "reference": 100.11659603731445,
+      "measured": 90.72515066408334,
+      "error": -0.09380508072538563,
+      "limit": null,
+      "pass": null
+    },
+    {
+      "check": "kj_recorded",
+      "case": "w 0.15 s 0.15 h 0.2 er 4.3",
+      "quantity": "eps_even",
+      "reference": 3.2167332716612065,
+      "measured": 3.1058361930865406,
+      "error": -0.03447506187461902,
+      "limit": null,
+      "pass": null
+    },
+    {
+      "check": "kj_recorded",
+      "case": "w 0.15 s 0.15 h 0.2 er 4.3",
+      "quantity": "z_odd",
+      "reference": 62.79235617601896,
+      "measured": 56.94172206791722,
+      "error": -0.09317430439624375,
+      "limit": null,
+      "pass": null
+    },
+    {
+      "check": "kj_recorded",
+      "case": "w 0.15 s 0.15 h 0.2 er 4.3",
+      "quantity": "eps_odd",
+      "reference": 2.8201147786863157,
+      "measured": 2.4741646864456186,
+      "error": -0.12267234470571786,
+      "limit": null,
+      "pass": null
+    },
+    {
+      "check": "identity",
+      "case": "w 0.15 s 0.15 b 0.5 er 4.3 l 50.0",
+      "quantity": "fext",
+      "reference": 0.0,
+      "measured": 0.0,
+      "error": 0.0,
+      "limit": 1e-09,
+      "pass": true
+    },
+    {
+      "check": "identity",
+      "case": "w 0.15 s 0.15 b 0.5 er 4.3 l 50.0",
+      "quantity": "s11",
+      "reference": 0.0,
+      "measured": 3.469446951953614e-17,
+      "error": 3.469446951953614e-17,
+      "limit": 1e-09,
+      "pass": true
+    },
+    {
+      "check": "identity",
+      "case": "w 0.15 s 0.15 b 0.5 er 4.3 l 50.0",
+      "quantity": "next_peak",
+      "reference": 0.16104137171327818,
+      "measured": 0.1610413717132782,
+      "error": 2.7755575615628914e-17,
+      "limit": 1e-09,
+      "pass": true
+    },
+    {
+      "check": "identity",
+      "case": "z 60.0 eps 4.0 l 50.0",
+      "quantity": "bounce",
+      "reference": 0.0,
+      "measured": 6.804363002006077e-16,
+      "error": 6.804363002006077e-16,
+      "limit": 1e-09,
+      "pass": true
+    },
+    {
+      "check": "tdr",
+      "case": "z 60.0 eps 4.0 l 50.0",
+      "quantity": "plateau",
+      "reference": 60.0,
+      "measured": 59.999036498632584,
+      "error": -0.0009635013674156312,
+      "limit": 0.05,
+      "pass": true
+    },
+    {
+      "check": "tdr",
+      "case": "z 60.0 eps 4.0 l 50.0",
+      "quantity": "late",
+      "reference": 50.0,
+      "measured": 49.99865628367098,
+      "error": -0.0013437163290177523,
+      "limit": 0.05,
+      "pass": true
+    }
+  ],
+  "verdict": "pass"
+}
