@@ -80,7 +80,8 @@ def test_a_band_with_no_unit_is_warned(tmp_path):  # RF 5: "2400:2483.5" reads a
 
 def test_end_goes_with_f0_and_antenna_with_band(tmp_path, capsys):  # design 5.1
     for argv in (["--end", "AE1.1", "--band", "2.4GHz:2.5GHz"],
-                 ["--antenna", "AE1", "--band", "2.4GHz:2.5GHz", "--harmonics", "3"]):  # harmonics do not apply
+                 ["--antenna", "AE1", "--band", "2.4GHz:2.5GHz", "--harmonics", "3"],  # harmonics do not apply
+                 ["--end", "AE1.1", "--f0", "915MHz", "--pair"], ["--antenna", "AE1", "--interface", "se50"]):
         assert main(["new", str(IFA), "--start", "U1.1", *argv, "-o", str(tmp_path)]) == 2
         assert render("E_NEW_KIND") in capsys.readouterr().err
 

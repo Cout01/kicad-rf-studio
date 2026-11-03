@@ -109,9 +109,11 @@ def copper_model(data: dict) -> str:
 
 
 def parts(data: dict) -> dict[str, dict]:
-    """project.json's parts by ref: chain.series, chain.shunt, then others. The dicts are the ones `data` holds, not
-    copies, so an edit through them is an edit of `data`."""
-    return {q["ref"]: q for q in (*data["chain"]["series"], *data["chain"]["shunt"], *data["others"])}
+    """project.json's parts by ref: chain.series, chain.shunt, then others; an SI project's (Stage 4 design 5.1) every
+    line's chain series, then every line's chain shunt, then others. The dicts are the ones `data` holds, not copies,
+    so an edit through them is an edit of `data`."""
+    chains = [line["chain"] for line in data["lines"]] if si(data) else [data["chain"]]
+    return {q["ref"]: q for q in (*(q for key in ("series", "shunt") for c in chains for q in c[key]), *data["others"])}
 
 
 def shown_reference(ref: dict | None) -> str:

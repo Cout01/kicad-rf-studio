@@ -308,6 +308,11 @@ msgstr ""
 msgid "Port {name}: signal {signal}, no reference."
 msgstr ""
 
+#. I_PORT_PLANE
+#, python-brace-format
+msgid "Port {name}: signal {signal}, vertical to the plane on {layer}."
+msgstr ""
+
 #. I_F0
 #, python-brace-format
 msgid "f0 {f0_mhz} MHz, with {harmonics} harmonics."
@@ -329,7 +334,7 @@ msgid "The band {f_lo_mhz} to {f_hi_mhz} MHz spans more than an octave. An anten
 msgstr ""
 
 #. E_NEW_KIND
-msgid "`new` takes --end with --f0 (and --harmonics) for a matching chain, or --antenna with --band for an antenna."
+msgid "`new` takes --end with --f0 (and --harmonics) for a matching chain, --antenna with --band for an antenna, or --end with --interface (and --pair, --pair-with, --victim, --f-max, --target) for signal integrity."
 msgstr ""
 
 #. E_SI_NEEDS_PAIR
@@ -359,6 +364,46 @@ msgstr ""
 #. E_SI_NO_REFERENCE
 #, python-brace-format
 msgid "Pad {pad} has no ground copper on {layer} within {reach_mm} mm that a port can reach across clear copper, and no ground or power plane under it, so its port has no reference. Add ground copper beside the pad or a plane under it in KiCad, or end the line at another pad."
+msgstr ""
+
+#. E_SI_VICTIMS
+#, python-brace-format
+msgid "{count} victims given; a project takes up to two."
+msgstr ""
+
+#. E_SI_VICTIM_OUTSIDE
+#, python-brace-format
+msgid "Victim {victim}: its end {pad} lies outside the region the measured lines set, their copper and parts and {reach_mm} mm past them, which a victim cannot grow. Pick a victim whose ends lie near the route, or leave it out."
+msgstr ""
+
+#. E_SI_LINE_SHARED
+#, python-brace-format
+msgid "The line from {start} to {end} runs on net {net}, which an earlier line of this project holds: each line needs nets of its own. Name the partner's two ends with --pair-with, or a victim's with --victim, on another net."
+msgstr ""
+
+#. I_SI_INTERFACE
+#, python-brace-format
+msgid "Interface {interface}: target {target} Ω {kind} ± {tolerance_pct} %, the link's rise time {rise_ps} ps, marker {marker_mhz} MHz, simulated to {f_max_ghz} GHz, where the localising TDR's rise time is {local_ps} ps."
+msgstr ""
+
+#. I_SI_PAIR
+#, python-brace-format
+msgid "Pair: {p} with {n}, by {how}."
+msgstr ""
+
+#. I_SI_VICTIM
+#, python-brace-format
+msgid "Victim {start} → {end} on net {net}: its two ends are ports, so the waves coupled into it end in 50 Ω."
+msgstr ""
+
+#. I_SI_DEFAULTS
+#, python-brace-format
+msgid "Preset {preset} (provisional default), T_max {t_max_ns} ns, stop window {window_ns} ns, mesh n {mesh_n} with cells up to {max_cell_mm} mm between the copper edges (λ/40 at f_max, the 2D εeff {eeff}), dielectric {dielectric}, timestep floor {dt_floor}, region and protected reach {reach_h} substrate heights ({reach_mm} mm)."
+msgstr ""
+
+#. W_SI_LONG_PORT
+#, python-brace-format
+msgid "Port {name} spans {length_mm} mm from its pad to its reference, more than λ/20 at f_max ({limit_mm} mm): its launch reads as an inductive bump, which the TDR marks as the port's own. A lower --f-max shortens it in wavelengths."
 msgstr ""
 
 #. I_ANTENNA
@@ -2035,6 +2080,26 @@ msgstr ""
 
 #. T_SOURCE_BOARD
 msgid "board"
+msgstr ""
+
+#. T_DIFFERENTIAL
+msgid "differential"
+msgstr ""
+
+#. T_SINGLE_ENDED
+msgid "single-ended"
+msgstr ""
+
+#. T_PAIR_RULE
+msgid "KiCad's pair rule"
+msgstr ""
+
+#. T_PAIR_ALIAS
+msgid "the DP/DM alias"
+msgstr ""
+
+#. T_PAIR_WITH
+msgid "--pair-with"
 msgstr ""
 
 #. T_HATCHED_ZONE

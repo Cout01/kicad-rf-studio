@@ -310,6 +310,11 @@ msgstr "Porta {name}: sinal {signal}, referência ({x}, {y}) em {layer} (regra \
 msgid "Port {name}: signal {signal}, no reference."
 msgstr "Porta {name}: sinal {signal}, sem referência."
 
+#. I_PORT_PLANE
+#, python-brace-format
+msgid "Port {name}: signal {signal}, vertical to the plane on {layer}."
+msgstr "Porta {name}: sinal {signal}, vertical até o plano em {layer}."
+
 #. I_F0
 #, python-brace-format
 msgid "f0 {f0_mhz} MHz, with {harmonics} harmonics."
@@ -331,8 +336,8 @@ msgid "The band {f_lo_mhz} to {f_hi_mhz} MHz spans more than an octave. An anten
 msgstr "A banda de {f_lo_mhz} a {f_hi_mhz} MHz passa de uma oitava. Um projeto de antena simula uma banda: crie um projeto por banda, como um para 868 MHz e outro para 2.4 GHz."
 
 #. E_NEW_KIND
-msgid "`new` takes --end with --f0 (and --harmonics) for a matching chain, or --antenna with --band for an antenna."
-msgstr "`new` recebe --end com --f0 (e --harmonics) para uma cadeia de casamento, ou --antenna com --band para uma antena."
+msgid "`new` takes --end with --f0 (and --harmonics) for a matching chain, --antenna with --band for an antenna, or --end with --interface (and --pair, --pair-with, --victim, --f-max, --target) for signal integrity."
+msgstr "`new` recebe --end com --f0 (e --harmonics) para uma cadeia de casamento, --antenna com --band para uma antena, ou --end com --interface (e --pair, --pair-with, --victim, --f-max, --target) para integridade de sinal."
 
 #. E_SI_NEEDS_PAIR
 #, python-brace-format
@@ -362,6 +367,46 @@ msgstr "A linha de {start} a {end} passa por {refs}, um componente com três ou 
 #, python-brace-format
 msgid "Pad {pad} has no ground copper on {layer} within {reach_mm} mm that a port can reach across clear copper, and no ground or power plane under it, so its port has no reference. Add ground copper beside the pad or a plane under it in KiCad, or end the line at another pad."
 msgstr "A ilha {pad} não tem cobre de GND em {layer} a até {reach_mm} mm que uma porta alcance sem cruzar outro cobre, nem um plano de GND ou de alimentação abaixo dela, então a porta dela não tem referência. Acrescente cobre de GND ao lado da ilha ou um plano abaixo dela no KiCad, ou termine a linha em outra ilha."
+
+#. E_SI_VICTIMS
+#, python-brace-format
+msgid "{count} victims given; a project takes up to two."
+msgstr "{count} vítimas indicadas; um projeto recebe até duas."
+
+#. E_SI_VICTIM_OUTSIDE
+#, python-brace-format
+msgid "Victim {victim}: its end {pad} lies outside the region the measured lines set, their copper and parts and {reach_mm} mm past them, which a victim cannot grow. Pick a victim whose ends lie near the route, or leave it out."
+msgstr "Vítima {victim}: a ponta {pad} fica fora da região que as linhas medidas definem, o cobre e os componentes delas e {reach_mm} mm além, que uma vítima não pode aumentar. Escolha uma vítima com as pontas perto da rota, ou deixe-a de fora."
+
+#. E_SI_LINE_SHARED
+#, python-brace-format
+msgid "The line from {start} to {end} runs on net {net}, which an earlier line of this project holds: each line needs nets of its own. Name the partner's two ends with --pair-with, or a victim's with --victim, on another net."
+msgstr "A linha de {start} a {end} passa pela rede {net}, que uma linha anterior deste projeto já tem: cada linha precisa de redes próprias. Indique as duas pontas do par com --pair-with, ou as de uma vítima com --victim, em outra rede."
+
+#. I_SI_INTERFACE
+#, python-brace-format
+msgid "Interface {interface}: target {target} Ω {kind} ± {tolerance_pct} %, the link's rise time {rise_ps} ps, marker {marker_mhz} MHz, simulated to {f_max_ghz} GHz, where the localising TDR's rise time is {local_ps} ps."
+msgstr "Interface {interface}: alvo de {target} Ω {kind} ± {tolerance_pct} %, tempo de subida do enlace de {rise_ps} ps, marcador em {marker_mhz} MHz, simulada até {f_max_ghz} GHz, onde o tempo de subida do TDR de localização é de {local_ps} ps."
+
+#. I_SI_PAIR
+#, python-brace-format
+msgid "Pair: {p} with {n}, by {how}."
+msgstr "Par: {p} com {n}, por {how}."
+
+#. I_SI_VICTIM
+#, python-brace-format
+msgid "Victim {start} → {end} on net {net}: its two ends are ports, so the waves coupled into it end in 50 Ω."
+msgstr "Vítima {start} → {end} na rede {net}: as duas pontas dela são portas, então as ondas acopladas nela terminam em 50 Ω."
+
+#. I_SI_DEFAULTS
+#, python-brace-format
+msgid "Preset {preset} (provisional default), T_max {t_max_ns} ns, stop window {window_ns} ns, mesh n {mesh_n} with cells up to {max_cell_mm} mm between the copper edges (λ/40 at f_max, the 2D εeff {eeff}), dielectric {dielectric}, timestep floor {dt_floor}, region and protected reach {reach_h} substrate heights ({reach_mm} mm)."
+msgstr "Predefinição {preset} (padrão provisório), T_max {t_max_ns} ns, janela de parada de {window_ns} ns, malha n {mesh_n} com células de até {max_cell_mm} mm entre as bordas do cobre (λ/40 em f_max, εeff 2D de {eeff}), dielétrico {dielectric}, piso do passo de tempo {dt_floor}, região e alcance protegido de {reach_h} alturas de substrato ({reach_mm} mm)."
+
+#. W_SI_LONG_PORT
+#, python-brace-format
+msgid "Port {name} spans {length_mm} mm from its pad to its reference, more than λ/20 at f_max ({limit_mm} mm): its launch reads as an inductive bump, which the TDR marks as the port's own. A lower --f-max shortens it in wavelengths."
+msgstr "A porta {name} se estende por {length_mm} mm da ilha até a referência, mais que λ/20 em f_max ({limit_mm} mm): a entrada dela aparece como um degrau indutivo, que o TDR marca como da própria porta. Um --f-max menor a encurta em comprimentos de onda."
 
 #. I_ANTENNA
 #, python-brace-format
@@ -2047,6 +2092,26 @@ msgstr "ausente"
 msgid "board"
 msgstr "da placa"
 
+#. T_DIFFERENTIAL
+msgid "differential"
+msgstr "diferencial"
+
+#. T_SINGLE_ENDED
+msgid "single-ended"
+msgstr "single-ended"
+
+#. T_PAIR_RULE
+msgid "KiCad's pair rule"
+msgstr "regra de pares do KiCad"
+
+#. T_PAIR_ALIAS
+msgid "the DP/DM alias"
+msgstr "apelido DP/DM"
+
+#. T_PAIR_WITH
+msgid "--pair-with"
+msgstr "--pair-with"
+
 #. T_HATCHED_ZONE
 msgid "hatched zone"
 msgstr "zona hachurada"
@@ -2307,4 +2372,7 @@ msgstr "uma ilha, um ponto, um plano (o nome da camada de cobre dele) ou null"
 
 #~ msgid "Opens kicad-rf-studio on this board, with the selected pads as the chain's start and end."
 #~ msgstr "Abre o kicad-rf-studio nesta placa, com as ilhas selecionadas como início e fim da cadeia."
+
+#~ msgid "`new` takes --end with --f0 (and --harmonics) for a matching chain, or --antenna with --band for an antenna."
+#~ msgstr "`new` recebe --end com --f0 (e --harmonics) para uma cadeia de casamento, ou --antenna com --band para uma antena."
 

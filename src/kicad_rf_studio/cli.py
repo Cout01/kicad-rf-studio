@@ -9,7 +9,8 @@ a retune at the same values (pipeline.verify). `preview` has a worker write the 
 AppCSXCAD (pipeline.preview).
 `new --antenna REF --band F_LO:F_HI` writes an antenna's project instead, schema 2, its chain from the start pad to the
 antenna's feed (new_antenna, Stage 3). `compare BASE VARIANT` compares two antenna projects' full simulations
-(pipeline.compare_projects, Stage 3).
+(pipeline.compare_projects, Stage 3). `new --interface NAME` writes a signal-integrity project, schema 3: the line from
+the start pad to the end pad, a differential pair's partner and up to two victims (new_si, Stage 4).
 `setup-openems` installs openEMS from the official Windows package into this Python, and `calibrate` measures this
 machine's simulation speed. `install-kicad-plugin` writes the KiCad toolbar button (button.install) into KiCad's
 plugin folders, or removes it. `cost`, `run` and `verify` take `--run-dir DIR`, the run folder to use instead of a new
@@ -28,12 +29,13 @@ from pathlib import Path
 from kicad_rf_studio import runs
 from kicad_rf_studio.core.kicad import choose_reference, classify, load_board, trace_chain
 from kicad_rf_studio.core.kicad.stackup import preset as stackup_preset
-from kicad_rf_studio.core.kicad.tracer import adopt, check_antenna, feed_pad, signal_layer
+from kicad_rf_studio.core.kicad.tracer import (Chain, adopt, check_antenna, feed_pad, partner_ends, signal_layer,
+                                               trace_line)
 from kicad_rf_studio.core.kicad.values import parse_band, parse_frequency
 from kicad_rf_studio.core.messages import KrsError, detail, reason, render
-from kicad_rf_studio.core.project import (BAND_FACTOR, DEFAULT_PRESET, EXPAND_H, HARMONICS, MARGIN_SCALE, MESH_N,
-                                          REACH_H, T_MAX_S, board_hash, make_antenna_project, make_project, pulse_band,
-                                          relative_path, save_project)
+from kicad_rf_studio.core.project import (BAND_FACTOR, DEFAULT_PRESET, EXPAND_H, HARMONICS, INTERFACES, MARGIN_SCALE,
+                                          MESH_N, REACH_H, T_MAX_S, board_hash, make_antenna_project, make_project,
+                                          make_si_project, pulse_band, relative_path, save_project, si_interface)
 
 PRESETS = ("draft", "normal", "strict")  # the run presets; `--stackup` names a stackup preset, which is another thing
 
@@ -47,6 +49,14 @@ def _positive(kind):
         return value
     convert.__name__ = f"positive {kind.__name__}"  # argparse says: invalid positive int value: '0'
     return convert
+
+
+def _ends(text: str) -> tuple[str, str]:
+    """An argparse type: REF.PAD:REF.PAD as two pad names."""
+    ends = tuple(text.split(":"))
+    if len(ends) != 2 or not all(ends):
+        raise ValueError(text)
+    return ends
 
 
 def _list(names) -> str:
@@ -76,14 +86,25 @@ def _part_note(part: dict) -> tuple[str, dict]:
 
 def _port_note(port: dict) -> tuple[str, dict]:
     """A port as `new` prints it: I_PORT with a pad reference, I_PORT_POINT with a point on a layer (KiCad's frame, as
-    stored; x and y as f"{v:.3f}"), I_PORT_NO_REFERENCE with none (a port with no reference has no rule)."""
+    stored; x and y as f"{v:.3f}"), I_PORT_PLANE with an SI end's plane (vertical, Stage 4 design 5.5),
+    I_PORT_NO_REFERENCE with none (a port with no reference has no rule)."""
     named, ref = {"name": port["name"], "signal": port["signal"]}, port["reference"]
     if ref is None:
         return "I_PORT_NO_REFERENCE", named
+    if "plane" in ref:
+        return "I_PORT_PLANE", {**named, "layer": ref["plane"]}
     if "pad" in ref:
         return "I_PORT", {**named, "reference": ref["pad"], "rule": port["rule"]}
     x, y = ref["point"]
     return "I_PORT_POINT", {**named, "x": f"{x:.3f}", "y": f"{y:.3f}", "layer": ref["layer"], "rule": port["rule"]}
+
+
+def _head_notes(board, stackup, classes: dict) -> list[tuple[str, dict]]:
+    """The notes every `new` starts with: the board's warnings, W_FILLS_AS_SAVED, the stackup (_stackup_note) and
+    I_CLASSES, from project.json's `classes`."""
+    return [*board.warnings, ("W_FILLS_AS_SAVED", {}), _stackup_note(stackup),
+            ("I_CLASSES", {"gnd": _list(classes["gnd_nets"]), "power": _list(classes["power_nets"]),
+                           "connectors": _list(classes["connectors"]), "shields": _list(classes["shields"])})]
 
 
 def _reference(ref) -> dict | None:
@@ -161,10 +182,7 @@ def new(board: str | Path, start: str, end: str, f0: float, *, harmonics: int = 
         ports, harmonics=harmonics, preset=preset, lid_height_mm=lid_height)
     target = _write(folder, project)
 
-    c = project["classes"]
-    notes = [*board.warnings, ("W_FILLS_AS_SAVED", {}), _stackup_note(stackup),
-             ("I_CLASSES", {"gnd": _list(c["gnd_nets"]), "power": _list(c["power_nets"]),
-                            "connectors": _list(c["connectors"]), "shields": _list(c["shields"])}),
+    notes = [*_head_notes(board, stackup, project["classes"]),
              ("I_CHAIN", {"start": chain.start, "end": chain.end, "series": _list(p.ref for p in chain.series),
                           "shunt": _list(p.ref for p in chain.shunt)}),
              *map(_part_note, series + shunt + others),
@@ -223,10 +241,8 @@ def new_antenna(board: str | Path, start: str, antenna: str, band: tuple[float, 
         ports, antenna, join, t_max_s=t_max, air_gap_mm=air_gap(f_lo), preset=preset, lid_height_mm=lid_height)
     target = _write(folder, project)
 
-    c, far = project["classes"], project["far_field"]
-    notes = [*board.warnings, ("W_FILLS_AS_SAVED", {}), _stackup_note(stackup),
-             ("I_CLASSES", {"gnd": _list(c["gnd_nets"]), "power": _list(c["power_nets"]),
-                            "connectors": _list(c["connectors"]), "shields": _list(c["shields"])}),
+    far = project["far_field"]
+    notes = [*_head_notes(board, stackup, project["classes"]),
              ("I_ANTENNA", {"ref": antenna, "feed": feed.name, "net": feed.net})]
     if join:
         notes.append(("I_ANTENNA_JOIN", {"ref": antenna, "pads": ", ".join(join)}))
@@ -254,12 +270,150 @@ def new_antenna(board: str | Path, start: str, antenna: str, band: tuple[float, 
     return target, notes
 
 
+def _merged(lines: list[Chain]) -> Chain:
+    """SI lines as one chain (Stage 4 design 5.1, the lines ruling): the first line's start and end, every line's nets
+    in order, every series part, and every shunt part once, as the first line that has it holds it."""
+    shunt = {}
+    for p in (p for line in lines for p in line.shunt):
+        shunt.setdefault(p.ref, p)
+    return Chain(lines[0].start, lines[0].end, tuple(n for line in lines for n in line.nets),
+                 tuple(p for line in lines for p in line.series), tuple(shunt.values()))
+
+
+def _port_length(board, pieces, zs, port: dict) -> float:
+    """An SI port's length in mm (W_SI_LONG_PORT): a vertical one's plane-to-pad height, between the facing faces of
+    their copper slabs; a horizontal one's distance from its pad to its reference copper."""
+    from kicad_rf_studio.core.model.ports import _pad, _reference as reference_copper  # here, as in `new`
+
+    ref = port["reference"]
+    if "plane" in ref:
+        a, b = (next(s for s in zs if s.copper == layer) for layer in (port["layer"], ref["plane"]))
+        return max(a.z0, b.z0) - min(a.z1, b.z1)
+    sig = _pad(board, port["signal"], port["signal_uuid"], port["layer"])
+    return sig.polygon.distance(reference_copper(board, pieces, port["name"], sig, port["layer"], ref))
+
+
+def new_si(board: str | Path, start: str, end: str, interface: str, *, pair: bool = False,
+           pair_with: tuple[str, str] | None = None, victims=(), f_max: float | None = None,
+           target: float | None = None, preset: str = DEFAULT_PRESET, stackup: str | None = None,
+           lid_height: float | None = None, output: str | Path | None = None) -> tuple[Path, list[tuple[str, dict]]]:
+    """`new` for signal integrity (Stage 4 design 5.1): every refusal before anything is written; returns as `new`."""
+    from kicad_rf_studio.core.geometry.copper import copper_pieces  # here, as in `new`
+    from kicad_rf_studio.core.geometry.lid import find_lid
+    from kicad_rf_studio.core.geometry.region import build_region, lambda_min, si_max_cell
+    from kicad_rf_studio.core.geometry.sections import eps_eff_2d, line_layers, route_length
+    from kicad_rf_studio.core.geometry.zstack import substrate_h
+    from kicad_rf_studio.core.model.parts import project_parts
+    from kicad_rf_studio.core.model.ports import si_reference
+    from kicad_rf_studio.core.model.spec import round_trip, si_t_max
+    from kicad_rf_studio.core.post.si import LOCAL_RISE
+    from kicad_rf_studio.stoprule import stop_window
+
+    paired = pair or pair_with is not None
+    interface = si_interface(interface, f_max, target, paired)
+    if len(victims) > 2:
+        raise KrsError("E_SI_VICTIMS", count=len(victims))
+    f_max = interface["f_max_hz"]
+    board, stackup, zs, classes = _load(board, stackup)
+    lines = [trace_line(board, classes, start, end)]
+    if paired:
+        n_start, n_end, how = partner_ends(board, classes, start, end) if pair_with is None else (*pair_with, "given")
+        lines.append(trace_line(board, classes, n_start, n_end))
+    m = len(lines)  # the measured lines, then the victims
+    lines += [trace_line(board, classes, a, b) for a, b in victims]
+    held = set()
+    for line in lines:
+        if shared := [n for n in line.nets if n in held]:
+            raise KrsError("E_SI_LINE_SHARED", start=line.start, end=line.end, net=shared[0])
+        held.update(line.nets)
+    merged = _merged(lines)
+    # [P start, N start, P end, N end, each victim's start and end] (design 5.1: se2gmm's order)
+    ends = [x.start for x in lines[:m]] + [x.end for x in lines[:m]] + [e for x in lines[m:] for e in (x.start, x.end)]
+    ports = [_port(board, classes, f"P{k}", signal) for k, signal in enumerate(ends, 1)]
+    bare = [{**p, "reference": None} for p in ports]  # so a far v1 reference stretches no region
+    layers = line_layers(board, merged.nets)
+    reach = REACH_H * substrate_h(zs, layers)
+    roi = build_region(board, _merged(lines[:m]), bare[:2 * m], zs, f_max, REACH_H, layers=layers).roi
+    for x in lines[m:]:  # a victim cannot grow the region (design 5.1)
+        for name in (x.start, x.end):
+            if not roi.covers(next(p for p in board.pads(name) if p.layers).polygon):  # _port's signal pad
+                raise KrsError("E_SI_VICTIM_OUTSIDE", victim=f"{x.start}:{x.end}", pad=name, reach_mm=f"{reach:g}")
+    first = build_region(board, merged, bare, zs, f_max, REACH_H, layers=layers)
+    pieces, _ = copper_pieces(board, first.crop, {s.copper: round(s.z1 - s.z0, 6) for s in zs if s.kind == "copper"})
+    for p in ports:
+        p["reference"] = si_reference(board, classes, pieces, zs, p["name"], p["signal"], p["reference"], reach)
+        if "plane" in p["reference"]:
+            p["rule"] = "plane"
+    # build_geometry's region, its kept references within the reach: the parts and the lid come from the model's ROI
+    region = build_region(board, merged, ports, zs, f_max, REACH_H, layers=layers)
+    series, shunt, others, part_notes = project_parts(board, merged, classes, region.roi, 0.0, f_max, si=True)
+    chains, taken = [], set()
+    for x in lines:  # each line's own parts in v1's chain shape, a part on two lines kept by the first
+        own = {q.ref for q in x.series + x.shunt} - taken
+        taken |= own
+        chains.append({"start": x.start, "end": x.end, "nets": list(x.nets),
+                       "series": [q for q in series if q["ref"] in own],
+                       "shunt": [q for q in shunt if q["ref"] in own]})
+    _, gate = find_lid(board, classes, region, zs, {"lid": True, "lid_height_mm": lid_height})
+    eps = eps_eff_2d(board, merged.nets, pieces, zs) or max(s.eps_r for s in zs if s.kind == "dielectric")
+    rt = round_trip(max(route_length(board, x.nets) for x in lines), eps)
+    window_s, t_max_s, max_cell = stop_window(rt), si_t_max(f_max, rt), round(si_max_cell(f_max, eps), 6)
+    limit = lambda_min(f_max, max(s.eps_r for s in zs if s.eps_r is not None)) / 20  # λ/20 in the highest εr
+    long_ports = [("W_SI_LONG_PORT", {"name": p["name"], "length_mm": f"{length:.3f}", "limit_mm": f"{limit:.3f}"})
+                  for p in ports if (length := _port_length(board, pieces, zs, p)) > limit]
+    folder = Path(output or ".")
+    board_path, other_drive = relative_path(board.path, folder)
+    pair_of = {"p": lines[0].nets[0], "n": lines[1].nets[0], "by": how} if paired else None
+    project = make_si_project(
+        board_path, board_hash(board.path), stackup, classes,
+        [{"role": "measured" if k < m else "victim", "chain": c} for k, c in enumerate(chains)], pair_of, others,
+        ports, interface, t_max_s=t_max_s, window_s=window_s, max_cell_mm=max_cell, preset=preset,
+        lid_height_mm=lid_height)
+    path = _write(folder, project)
+
+    notes = [*_head_notes(board, stackup, project["classes"]),
+             ("I_SI_INTERFACE", {"interface": interface["interface"], "target": f"{interface['target_ohm']:g}",
+                                 "kind": "T_DIFFERENTIAL" if paired else "T_SINGLE_ENDED",
+                                 "tolerance_pct": f"{100 * interface['tolerance']:g}",
+                                 "rise_ps": f"{interface['rise_s'] * 1e12:g}",
+                                 "marker_mhz": f"{interface['marker_hz'] / 1e6:g}", "f_max_ghz": f"{f_max / 1e9:g}",
+                                 "local_ps": f"{LOCAL_RISE / f_max * 1e12:g}"})]
+    if paired:
+        terms = {"rule": "T_PAIR_RULE", "alias": "T_PAIR_ALIAS", "given": "T_PAIR_WITH"}
+        notes.append(("I_SI_PAIR", {"p": pair_of["p"], "n": pair_of["n"], "how": terms[how]}))
+    notes += [*(("I_CHAIN", {"start": c["start"], "end": c["end"], "series": _list(q["ref"] for q in c["series"]),
+                             "shunt": _list(q["ref"] for q in c["shunt"])}) for c in chains[:m]),
+              *(("I_SI_VICTIM", {"start": c["start"], "end": c["end"], "net": c["nets"][0]}) for c in chains[m:]),
+              *map(_part_note, series + shunt + others),
+              *map(_port_note, ports),
+              ("I_SI_DEFAULTS", {"preset": preset, "t_max_ns": f"{t_max_s * 1e9:g}", "window_ns": f"{window_s * 1e9:g}",
+                                 "mesh_n": project["mesh"]["n"], "max_cell_mm": f"{max_cell:.3f}",
+                                 "eeff": f"{eps:.2f}", "dielectric": project["dielectric"],
+                                 "dt_floor": f"{project['gates']['dt_floor']:g}",
+                                 "reach_h": f"{project['mesh']['reach_h']:g}", "reach_mm": f"{reach:g}"})]
+    if heavy := stackup.nonstandard_copper():
+        notes.append(("W_COPPER_WEIGHT", {"layers": _list(heavy)}))
+    notes += [("W_LID_HEIGHT_MISSING", params) for code, params in gate if code == "E_LID_HEIGHT"]
+    notes += part_notes  # W_VALUE_UNREADABLE (DNP parts too), W_PART_OPEN, I_SI_SHUNT_OPEN
+    notes += long_ports
+    if other_drive:
+        notes.append(("W_ABSOLUTE_BOARD_PATH", {}))
+    notes.append(("I_WROTE", {"path": path}))
+    return path, notes
+
+
 def _new(a: argparse.Namespace) -> None:
-    """`new` with --end and --f0, or new_antenna with --antenna and --band; E_NEW_KIND for any other mix, --harmonics
-    with --antenna too."""
-    if (a.antenna is None) != (a.band is None) or (a.antenna is not None and a.harmonics is not None):
+    """`new` with --end and --f0, new_antenna with --antenna and --band, or new_si with --end and --interface;
+    E_NEW_KIND for any other mix, --harmonics without --f0 and an SI option without --interface too."""
+    si_option = a.pair or a.pair_with is not None or a.victim or a.f_max is not None or a.target is not None
+    if ((a.antenna is None) != (a.band is None) or a.harmonics is not None and a.f0 is None
+            or si_option and a.interface is None):
         raise KrsError("E_NEW_KIND")
-    if a.antenna is None:
+    if a.interface is not None:
+        _, notes = new_si(a.board, a.start, a.end, a.interface, pair=a.pair, pair_with=a.pair_with, victims=a.victim,
+                          f_max=a.f_max, target=a.target, preset=a.preset, stackup=a.stackup,
+                          lid_height=a.lid_height, output=a.output)
+    elif a.antenna is None:
         _, notes = new(a.board, a.start, a.end, a.f0, harmonics=a.harmonics or HARMONICS, preset=a.preset,
                        stackup=a.stackup, lid_height=a.lid_height, output=a.output)
     else:
@@ -331,12 +485,19 @@ def _parser() -> argparse.ArgumentParser:
     new = commands.add_parser("new")
     new.add_argument("board")
     new.add_argument("--start", required=True, metavar="REF.PAD")
-    end = new.add_mutually_exclusive_group(required=True)  # a matching chain's end, or an antenna (_new pairs them)
+    end = new.add_mutually_exclusive_group(required=True)  # a chain's or a line's end, or an antenna (_new pairs them)
     end.add_argument("--end", metavar="REF.PAD")
     end.add_argument("--antenna", metavar="REF")
     frequency = new.add_mutually_exclusive_group(required=True)
     frequency.add_argument("--f0", type=parse_frequency, metavar="F")
     frequency.add_argument("--band", type=parse_band, metavar="F_LO:F_HI")
+    frequency.add_argument("--interface", choices=(*INTERFACES, "custom"), metavar="NAME")
+    pairing = new.add_mutually_exclusive_group()  # the SI options: _new refuses them without --interface
+    pairing.add_argument("--pair", action="store_true")
+    pairing.add_argument("--pair-with", type=_ends, metavar="REF.PAD:REF.PAD")
+    new.add_argument("--victim", type=_ends, action="append", default=[], metavar="REF.PAD:REF.PAD")
+    new.add_argument("--f-max", type=parse_frequency, metavar="F")
+    new.add_argument("--target", type=_positive(float), metavar="OHMS")
     new.add_argument("--harmonics", type=_positive(int), metavar="N")  # None: HARMONICS, for a matching chain only
     new.add_argument("--preset", choices=PRESETS, default=DEFAULT_PRESET)
     new.add_argument("--stackup", metavar="NAME")
