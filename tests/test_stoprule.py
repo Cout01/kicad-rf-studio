@@ -5,7 +5,8 @@ from dataclasses import replace
 import numpy as np
 import pytest
 
-from kicad_rf_studio.stoprule import GROWTH_DB, Records, flat_window, growth_rise, stop_rule
+from kicad_rf_studio.core.model.spec import dc_pulse
+from kicad_rf_studio.stoprule import GROWTH_DB, Z0, Records, flat_window, growth_rise, stop_rule, stop_window
 from traces import trace
 
 EXC = {"f1": 457.5e6, "f2": 3.0195e9, "t0": 9 / (2 * math.pi * 1.281e9)}
@@ -54,3 +55,35 @@ def test_an_antennas_flat_window_counts_20_periods_of_f0():  # design 5.4
     v = stop_rule(rec, 0, "normal", {**exc, "flat_s": flat_window(2.44175e9)})
     assert (v.kind, round(v.t * 1e9, 3)) == ("flat", 20.377)
     assert (flat_window(5e9), flat_window(915e6)) == (5e-9, pytest.approx(21.858e-9, rel=1e-4))
+
+
+F_MAX = 10e9
+SI = dc_pulse(F_MAX, 30e-9, 2e-9)  # f1 0, window_s 2 ns, flat_s 5 ns
+
+
+def far_end(delay, offset=0.0, dt=2e-12, t_end=30e-9):
+    """A 2-port record of SI's pulse sent into a matched line at port 1 and arriving at port 2 `delay` later, half its
+    size; `offset` a level that stays on port 1 after the pulse, a charge its port cannot drain. Its log energy is held
+    at 1, as openEMS's field energy under the DC pulse hardly decays (design 5.4; r1: −1.43 dB in 30 ns): the ports'
+    own power falls to 0 between the pulses, which the growth detector would read as growth."""
+    def pulse(t):
+        return np.exp(-(2 * math.pi * F_MAX * t / 3 - 3) ** 2) * (t < 2 * SI["t0"])
+
+    t_u = np.arange(0, t_end, dt)
+    t_i = t_u + dt / 2
+    u = np.array([pulse(t_u) + offset * (t_u > 2 * SI["t0"]), 0.5 * pulse(t_u - delay)])
+    i = np.array([pulse(t_i), -0.5 * pulse(t_i - delay)]) / Z0
+    return Records(t_u, u, t_i, i, t_u, np.ones_like(t_u))
+
+
+def test_a_pulse_still_travelling_on_a_long_line_never_reads_as_converged():  # design 5.4; Review Focus 5
+    rec = far_end(5e-9)  # 5 ns one way: a 10 ns round trip
+    early = stop_rule(rec, 0, "normal", SI)  # the 2 ns window: converged at 2.27 ns, before port 2 sees anything
+    assert early.kind == "converged" and early.t < 5e-9
+    late = stop_rule(rec, 0, "normal", dc_pulse(F_MAX, 30e-9, stop_window(10e-9)))  # 15 ns, its flat window 18 ns
+    assert late.kind == "converged" and 20e-9 < late.t < 21e-9  # 20.26 ns: the far end's pulse has left the window
+
+
+def test_a_port_level_the_dc_pulse_leaves_behind_ends_flat_not_converged():  # design 5.4; Review Focus 5
+    v = stop_rule(far_end(1e-9, offset=1e-2), 0, "normal", SI)  # a floating charge holding 1 % on port 1
+    assert (v.kind, round(v.residual_db)) == ("flat", -43) and v.t < 10e-9  # 8.248 ns: S kept, flagged

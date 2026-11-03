@@ -30,7 +30,7 @@ from kicad_rf_studio.core.model.parts import COPPER
 from kicad_rf_studio.core.model.ports import _pad
 from kicad_rf_studio.core.model.readers import c_box
 from kicad_rf_studio.core.project import antenna, copper_model, pulse_band
-from kicad_rf_studio.stoprule import flat_window
+from kicad_rf_studio.stoprule import FLAT_S, WINDOW_S, flat_window
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -63,6 +63,28 @@ def antenna_t_max(f_lo: float, f_hi: float) -> float:
     """An antenna's default T_max in s (Stage 3 design 5.4, A-28): 2·t0 + 60/f0 of its band's pulse (pulse_band,
     pulse), f0 the band's centre, rounded up to a whole ns."""
     return math.ceil((2 * pulse(*pulse_band(f_lo, f_hi), 0)["t0"] + 60 / ((f_lo + f_hi) / 2)) * 1e9) / 1e9
+
+
+def dc_pulse(f_max: float, t_max: float, window_s: float) -> dict:
+    """An SI project's pulse (Stage 4 design 5.4): openEMS's Gaussian with f0 = 0 and fc = f_max as a custom expression,
+    exp(−(2π·f_max·t/3 − 3)²) cut at 2·t0, t0 = 9/(2π·f_max), which build_csx passes as v1's with f2 = f_max. f1 is 0:
+    the DC point is measured. `window_s` is the residual's window (stop_window), and "flat_s" is FLAT_S + (window_s −
+    WINDOW_S). A residual window W holds the residual at its last peak for W, so a flat window under W would call every
+    SI run flat."""
+    t0 = 9 / (2 * math.pi * f_max)
+    return {"f1": 0.0, "f2": f_max, "t0": t0, "t_max": t_max, "window_s": window_s,
+            "flat_s": FLAT_S + (window_s - WINDOW_S), "expr": f"exp(-(2*pi*{f_max:.12g}*t/3-3)^2)*(t<{2 * t0:.12g})"}
+
+
+def round_trip(length_mm: float, eps_eff: float) -> float:
+    """A line's round trip in s, from its length and its 2D εeff (Stage 4 design 5.4)."""
+    return 2 * length_mm * 1e-3 * math.sqrt(eps_eff) / scipy.constants.c
+
+
+def si_t_max(f_max: float, round_trip_s: float) -> float:
+    """An SI project's default T_max in s (Stage 4 design 5.4): the pulse's length 2·t0, plus 6 of the longest round
+    trips, plus 2 ns, rounded up to a whole ns as antenna_t_max does (A-28)."""
+    return math.ceil((9 / (math.pi * f_max) + 6 * round_trip_s + 2e-9) * 1e9) / 1e9
 
 
 def excitation(project: dict) -> dict:

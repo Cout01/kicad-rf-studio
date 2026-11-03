@@ -42,11 +42,11 @@ class Verdict:
     residual_db: float
 
 
-def residual_db(rec: Records) -> np.ndarray:
-    """The port residual R_dB at each t_u: the peak of p = Σ_ports u² + (Z0·i)² over the last WINDOW_S, relative to the
-    peak of p so far; nan while p has been 0."""
+def residual_db(rec: Records, window: float = WINDOW_S) -> np.ndarray:
+    """The port residual R_dB at each t_u: the peak of p = Σ_ports u² + (Z0·i)² over the last `window` (s; an SI
+    pulse's stop_window, else WINDOW_S), relative to the peak of p so far; nan while p has been 0."""
     p = (rec.u ** 2 + (Z0 * rec.i) ** 2).sum(0)
-    lo = np.searchsorted(rec.t_u, rec.t_u - WINDOW_S, "right")
+    lo = np.searchsorted(rec.t_u, rec.t_u - window, "right")
     r = np.array([p[a:b + 1].max() for b, a in enumerate(lo)])
     with np.errstate(divide="ignore", invalid="ignore"):  # 0/0 before anything reaches the ports
         return 10 * np.log10(r / np.maximum.accumulate(p))
@@ -57,12 +57,18 @@ def flat_window(f0: float) -> float:
     return max(FLAT_S, FLAT_PERIODS / f0)
 
 
+def stop_window(round_trip_s: float) -> float:
+    """An SI run's residual window in s (Stage 4 design 5.4): 1.5 × the longest port-to-port round trip, at least
+    WINDOW_S, so a pulse still travelling on a long line cannot read as converged."""
+    return max(WINDOW_S, 1.5 * round_trip_s)
+
+
 def stop_rule(rec: Records, k: int, preset: str, exc: dict) -> Verdict | None:
     """The earliest verdict on `rec`, a tie going to the first of diverged, growth, converged and flat, or None when
     there is none yet or `rec` has fewer than 2 samples. `k` is the 0-based row of the excited port, `preset` a key of
-    PRESETS and `exc` the spec's excitation (f1, f2, t0, and an antenna's flat window "flat_s", else FLAT_S). Causal: a
-    verdict at t uses no sample after t, so the verdict on a prefix of a record is the earliest verdict of the whole
-    record."""
+    PRESETS and `exc` the spec's excitation (f1, f2, t0, an antenna's or an SI pulse's flat window "flat_s", else
+    FLAT_S, and an SI pulse's "window_s", the residual's window, else WINDOW_S). Causal: a verdict at t uses no sample
+    after t, so the verdict on a prefix of a record is the earliest verdict of the whole record."""
     # ponytail: each poll recomputes the rule on the whole record; fine below about 1e4 samples, make it incremental
     # if polls lag
     if len(rec.t_u) < 2:
@@ -72,7 +78,9 @@ def stop_rule(rec: Records, k: int, preset: str, exc: dict) -> Verdict | None:
     keep, keep_e = (rec.t_u < t_bad) & (rec.t_i < t_bad), rec.te < t_bad  # the other rules see only finite samples
     rec = Records(rec.t_u[keep], rec.u[:, keep], rec.t_i[keep], rec.i[:, keep], rec.te[keep_e], rec.e[keep_e])
     level, tol = PRESETS[preset]
-    r_db = residual_db(rec)
+    r_db = residual_db(rec, exc.get("window_s", WINDOW_S))
+    # ponytail: the growth detector keeps v1's 2 ns window under an SI pulse, whose field energy holds; an SI ruling if
+    # P4-D sees false growth
     found = {"diverged": t_bad, "growth": _growth(rec, exc["t0"]),
              "converged": _converged(rec, r_db, k, level, tol, exc),
              "flat": _flat(rec, r_db, level, exc["t0"], exc.get("flat_s", FLAT_S))}

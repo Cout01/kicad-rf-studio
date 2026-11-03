@@ -18,8 +18,9 @@ from kicad_rf_studio.core.messages import KrsError
 from kicad_rf_studio.core.model.csx import PML_CELLS
 from kicad_rf_studio.core.model.ports import ends, nominal_boxes, place
 from kicad_rf_studio.core.model.readers import c_box
-from kicad_rf_studio.core.model.spec import (K_MAX, PML_CLEAR, excitation, grid_entry, kappa, metal_in_pml,
-                                             model_spec, pulse, spec_hash, verify_spec, with_pml)
+from kicad_rf_studio.core.model.spec import (K_MAX, PML_CLEAR, dc_pulse, excitation, grid_entry, kappa, metal_in_pml,
+                                             model_spec, pulse, round_trip, si_t_max, spec_hash, verify_spec, with_pml)
+from kicad_rf_studio.stoprule import stop_window
 from test_cli_cost import SEG
 from test_gates import mini, project_of
 from test_geometry_sections import four_layer, plane
@@ -48,6 +49,22 @@ def test_the_pulse_is_spec_5_8s_over_any_band_and_excitation_is_it_over_the_proj
     assert p["t0"] == pytest.approx(9 / (2 * math.pi * 0.575e9)) and p["expr"].startswith("sin(2*pi*2425000000*(t-")
     project = {"f0_hz": 915e6, "harmonics": 3, "band_factor": 1.1, "t_max_s": 40e-9}
     assert excitation(project) == pulse(*band(project), 40e-9)
+
+
+def test_the_si_pulse_is_openems_gaussian_from_dc_to_f_max():  # Stage 4 design 5.4
+    p = dc_pulse(10e9, 10e-9, 2e-9)
+    assert (p["f1"], p["f2"], p["t_max"], p["window_s"], p["flat_s"]) == (0.0, 10e9, 10e-9, 2e-9, 5e-9)
+    assert p["t0"] == 9 / (2 * math.pi * 10e9)
+    assert p["expr"] == "exp(-(2*pi*10000000000*t/3-3)^2)*(t<2.86478897565e-10)"  # openEMS's Gaussian at f0 = 0
+    assert dc_pulse(10e9, 25e-9, 5.4e-9)["flat_s"] == pytest.approx(8.4e-9)  # the flat window past the residual's
+
+
+def test_the_si_round_trip_t_max_and_stop_window():  # Stage 4 design 5.4
+    rt = round_trip(100.0, 3.3)
+    assert rt == pytest.approx(1.2119e-9, rel=1e-4)  # 2 × 100 mm at εeff 3.3
+    assert (si_t_max(10e9, rt), stop_window(rt)) == (10e-9, 2e-9)  # 0.29 + 7.27 + 2 ns, up to a whole ns; 2 ns floor
+    rt = round_trip(300.0, 3.3)
+    assert (si_t_max(10e9, rt), stop_window(rt)) == (25e-9, pytest.approx(5.4535e-9, rel=1e-4))
 
 
 def test_with_pml_adds_8_lines_past_each_end_at_its_outer_cell():  # design 5.2

@@ -5,7 +5,7 @@ import types
 import pytest
 
 from kicad_rf_studio.core.model.csx import METAL_PRIORITY, _prism, build_csx
-from kicad_rf_studio.core.model.spec import excitation
+from kicad_rf_studio.core.model.spec import dc_pulse, excitation
 
 
 class Rec:
@@ -55,6 +55,14 @@ def test_build_csx_follows_the_spec_and_the_engine_settings(monkeypatch):  # spe
     assert ("AddMaterial", ("substrate_0",), {"epsilon": 4.5, "kappa": 0.0046}) in log
     assert [kw["priority"] for n, _, kw in log if n == "AddLinPoly"] == [10, METAL_PRIORITY]
     assert ("AddLumpedPort", (1, 50, [2.0, 2.0, 0.0], [2.0, 2.0, 1.0], "z"), {"excite": 1}) in log
+
+
+def test_the_si_pulse_goes_through_v1s_custom_excitation(monkeypatch):  # Stage 4 design 5.4
+    log = fake_openems(monkeypatch)
+    exc = dc_pulse(10e9, 10e-9, 2e-9)
+    build_csx({**TINY, "excitation": exc}, 1, 10e-9)
+    assert ("SetCustomExcite", (exc["expr"], 10e9, 10e9), {}) in log and ("SetMaxTime", (10e-9,), {}) in log
+    assert log[0] == ("openEMS", (), {"EndCriteria": 1e-15})  # the port residual alone stops it (design 5.4)
 
 
 def test_the_boundary_is_mur_without_the_key_and_pml_8_on_all_six_faces_with_it(monkeypatch):  # design 5.2; S1 5.1
