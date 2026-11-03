@@ -1,0 +1,20 @@
+{"source": "Stage 4 design 5.11, gate P4-A: Cohn's exact zero-thickness edge-coupled stripline (S. B. Cohn, IRE Trans. MTT 3(5), 1955; tools/p4a.py cohn); Kirschning and Jansen's coupled microstrip, quasi-static with no cover, as KiCad 9.0's calculator computes it (pcb_calculator/transline/c_microstrip.cpp; tests/kicad_lines.py coupled_microstrip); the even/odd 4-port of a uniform lossless pair (tools/p4a.py even_odd_s); an ideal 60 ohm line between 50 ohm ports. A case's own t_mm overrides its group's.",
+ "cohn": {"t_mm": 0.0001, "limit": 0.005, "cases": [
+  {"w": 0.15, "s": 0.15, "b": 0.5, "er": 4.3, "z_even": 71.98342405099247, "z_odd": 52.01461048031955},
+  {"w": 0.2, "s": 0.2, "b": 0.6, "er": 4.3, "z_even": 67.40168654593361, "z_odd": 50.86779321065293},
+  {"w": 0.3, "s": 0.1, "b": 0.5, "er": 4.3, "z_even": 50.23427299274296, "z_odd": 35.51848782321822},
+  {"w": 0.1, "s": 0.3, "b": 0.4, "er": 4.3, "z_even": 70.20240112588493, "z_odd": 64.80026504967648}]},
+ "kj_1um": {"t_mm": 0.001, "limit": 0.03, "cases": [
+  {"w": 0.15, "s": 0.15, "h": 0.2, "er": 4.3, "z_even": 97.1232802849029, "eps_even": 3.249327590191874, "z_odd": 65.3666499716574, "eps_odd": 2.7706356176104663},
+  {"w": 0.2, "s": 0.15, "h": 0.2, "er": 4.3, "z_even": 84.30662805401742, "eps_even": 3.3163721381158924, "z_odd": 57.98344450068376, "eps_odd": 2.806460633589963},
+  {"w": 0.5, "s": 0.5, "h": 1.0, "er": 4.5, "z_even": 118.74442214862536, "eps_even": 3.29194691205046, "z_odd": 68.20906264670947, "eps_odd": 2.816993971162812},
+  {"w": 1.0, "s": 0.3, "h": 1.5, "er": 4.5, "z_even": 113.05710843070086, "eps_even": 3.330009916997594, "z_odd": 49.67941809199963, "eps_odd": 2.8046458927388223}]},
+ "kj_35um": {"t_mm": 0.035, "limit": 0.05, "cases": [
+  {"w": 0.5, "s": 0.5, "h": 1.0, "er": 4.5, "z_even": 120.2953356947341, "eps_even": 3.288029518974082, "z_odd": 66.89353287968208, "eps_odd": 2.829986140855531},
+  {"w": 1.0, "s": 0.3, "h": 1.5, "er": 4.5, "z_even": 113.8467971645535, "eps_even": 3.3289028663936624, "z_odd": 49.02436030751428, "eps_odd": 2.813901231029615},
+  {"w": 0.6, "s": 0.6, "h": 1.5, "er": 4.5, "z_even": 134.4796342831145, "eps_even": 3.242019437992506, "z_odd": 68.24462487539876, "eps_odd": 2.805699126510386}]},
+ "kj_recorded": {"t_mm": 0.035, "limit": null, "cases": [
+  {"w": 0.15, "s": 0.15, "h": 0.2, "er": 4.3, "t_mm": 0.018, "z_even": 98.79154746313598, "eps_even": 3.236372605411727, "z_odd": 63.83106586042997, "eps_odd": 2.798536029747614},
+  {"w": 0.15, "s": 0.15, "h": 0.2, "er": 4.3, "z_even": 100.11659603731445, "eps_even": 3.2167332716612065, "z_odd": 62.79235617601896, "eps_odd": 2.8201147786863157}]},
+ "identity": {"limit": 1e-9, "length_mm": 50.0},
+ "tdr": {"z_line": 60.0, "z_ref": 50.0, "eps": 4.0, "length_mm": 50.0, "f_max_hz": 1e10}}
