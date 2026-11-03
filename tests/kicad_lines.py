@@ -7,7 +7,8 @@ Ported from KiCad's 9.0 branch (https://gitlab.com/kicad/code/kicad, branch 9.0 
 - pcb_calculator/transline/microstrip.cpp: MICROSTRIP::microstrip_Z0 and the helpers it calls;
 - pcb_calculator/transline/c_microstrip.cpp (branch 9.0, read on 2026-11-02): C_MICROSTRIP::delta_u_thickness,
   filling_factor_even, filling_factor_odd, er_eff_static and Z0_even_odd, quasi-static and with no cover (every cover
-  term vanishes past its range), with compute_single_line's zero-thickness single line;
+  term vanishes for s/h up to about 7.6; past that, KiCad's delta_Z0_even_cover tends to 540 Ω/√εe, which this port
+  leaves out), with compute_single_line's zero-thickness single line;
 - pcb_calculator/transline/coplanar.cpp: COPLANAR::calcAnalyze with backMetal (GROUNDEDCOPLANAR);
 - pcb_calculator/transline/transline.cpp: TRANSLINE::ellipk and TRANSLINE::ellipke;
 - pcb_calculator/transline/units.h: ZF0.

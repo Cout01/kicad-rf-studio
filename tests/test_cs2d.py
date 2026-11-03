@@ -147,8 +147,8 @@ def test_cohns_and_kirschning_jansens_coupled_lines_as_ported():  # Stage 4 desi
     assert kicad_lines.coupled_microstrip(0.15, 0.15, 0.2, 0.001, 4.3) == pytest.approx(
         (97.1232802849029, 3.249327590191874, 65.3666499716574, 2.7706356176104663), rel=1e-9)  # KiCad 9.0's formulas
     z, _ = kicad_lines.microstrip(0.15, 0.2, 0.0, 4.3)
-    far = kicad_lines.coupled_microstrip(0.15, 5.0, 0.2, 0.0, 4.3)  # 25 h apart: hardly coupled
-    assert far[0] == pytest.approx(z, rel=1e-3) and far[2] == pytest.approx(z, rel=1e-3)
+    far = kicad_lines.coupled_microstrip(0.15, 1.4, 0.2, 0.0, 4.3)  # 7 h apart, inside the formula's range: weak
+    assert far[0] == pytest.approx(z, rel=1e-2) and far[2] == pytest.approx(z, rel=1e-2)  # even +0.67 %, odd -0.87 %
 
 
 def test_a_coupled_stripline_against_cohn_at_thin_copper():  # Stage 4 design 5.9, 5.11: P4-A's 0.5 %
