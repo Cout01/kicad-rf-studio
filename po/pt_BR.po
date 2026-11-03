@@ -348,6 +348,16 @@ msgstr "A interface {interface} é de uma rede single-ended: retire --pair e --p
 msgid "--f-max and --target set the band and the target of --interface custom, which needs both; a preset interface takes neither."
 msgstr "--f-max e --target definem a banda e o alvo de --interface custom, que precisa dos dois; uma interface predefinida não recebe nenhum deles."
 
+#. E_SI_PARTNER
+#, python-brace-format
+msgid "The partner of net {net} (pad {pad}) on {ref} is {partner} by KiCad's pair rule or the DP/DM alias, with pads {pads} on {ref}, where one is needed. Name the partner's two ends with --pair-with REF.PAD:REF.PAD."
+msgstr "O par da rede {net} (ilha {pad}) em {ref} é {partner} pela regra de pares do KiCad ou pelo apelido DP/DM, com ilhas {pads} em {ref}, onde uma é necessária. Indique as duas pontas do par com --pair-with REF.PAD:REF.PAD."
+
+#. E_SI_THROUGH_PART
+#, python-brace-format
+msgid "The line from {start} to {end} runs through {refs}, a part with three or more pads (a common-mode choke, say), which this simulation cannot hold: measure each side of it as a project of its own, ending at its pads."
+msgstr "A linha de {start} a {end} passa por {refs}, um componente com três ou mais ilhas (um choke de modo comum, por exemplo), que esta simulação não comporta: meça cada lado dele como um projeto próprio, terminando nas ilhas dele."
+
 #. I_ANTENNA
 #, python-brace-format
 msgid "Antenna {ref}, fed at pad {feed} on net {net}: its copper drawn without a net takes that net."
@@ -399,6 +409,11 @@ msgstr "Deixados em aberto na região simulada: {refs}. A autorressonância dele
 #, python-brace-format
 msgid "Left open on the antenna's board: {refs}: inductors, beads, parts whose value does not read, capacitors neither close to a short nor fit for the grid, and resistors or capacitors past the measured region that would sit in the grid. The stated limits count them as approximations."
 msgstr "Deixados em aberto na placa da antena: {refs}: indutores, ferrites, componentes cujo valor não pode ser lido, capacitores que nem ficam perto de um curto nem cabem na grade, e resistores ou capacitores fora da região medida que ficariam na grade. Os limites declarados os contam como aproximações."
+
+#. I_SI_SHUNT_OPEN
+#, python-brace-format
+msgid "Left open: {refs}, shunt resistors of 1 kΩ or more to a supply or to ground (pull-ups), which barely load a fast line; each would cost a run as a part port. Make one a port in project.json if it matters."
+msgstr "Deixados em aberto: {refs}, resistores shunt de 1 kΩ ou mais para uma alimentação ou para o GND (pull-ups), que quase não carregam uma linha rápida; cada um custaria uma execução como porta de componente. Faça de um deles uma porta em project.json se isso importar."
 
 #. W_F0_RANGE
 #, python-brace-format

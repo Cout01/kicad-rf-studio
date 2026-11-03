@@ -156,3 +156,17 @@ def test_every_part_on_an_antennas_chain_is_a_port(mini_board):  # Stage 3 desig
         series, shunt, _, notes = project_parts(b, chain, classify(b), box(-5, -5, 25, 5), 70e6, 100e6, antenna=antenna)
         assert [(q["ref"], q["role"], q["value"]) for q in series + shunt] == expected
         assert [note for note in notes if note[0] == "W_VALUE_UNREADABLE"] == unreadable
+
+
+# --- Stage 4 plan 2, task 3: an SI project's parts off its lines -----------------------------------------------
+
+
+@pytest.mark.parametrize(("kind", "value", "expected"), [
+    ("C", 100e-9, "copper"),   # a decoupling C: 0.32 mΩ less 15.7 Ω of ESL at 5 GHz, f_max/2
+    ("C", 1.5e-12, "copper"),  # 21.2 − 15.7 = 5.5 Ω ≤ Z0/5
+    ("C", 1e-12, "open"),      # 16.1 Ω, and its SRF of 7.1 GHz under 3·f_max
+    ("R", 1e3, "grid"),        # v1's: SRF 41 GHz
+    ("L", 10e-9, "port")])     # v1's: an inductor in the region is a port (no choke from DC)
+def test_an_si_projects_other_parts_keep_v1s_roles_and_bridge_a_decoupling_c(kind, value, expected):  # design 5.1
+    assert role(kind, value, C0402, False, 0, "other", 0.0, 10e9, bridge=True) == expected
+    assert role("C", 100e-9, C0402, False, 0, "other", 0.0, 10e9) == "open"  # v1's, without the bridge

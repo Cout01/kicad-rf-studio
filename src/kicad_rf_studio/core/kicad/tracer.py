@@ -1,12 +1,14 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
-"""Net classes, the RF chain between two pads and the reference of a port (spec 4.6 and 5.6). Only pads that carry
-copper count here: a paste-only pad, or a hole with no copper, is left out of every rule."""
+"""Net classes, the RF chain between two pads and the reference of a port (spec 4.6 and 5.6), and an SI line with its
+differential pair's partner (Stage 4 design 5.1). Only pads that carry copper count here: a paste-only pad, or a hole
+with no copper, is left out of every rule."""
 from __future__ import annotations
 
 import difflib
 import math
 import re
 from collections import deque
+from collections.abc import Collection
 from dataclasses import dataclass, replace
 
 import shapely
@@ -21,6 +23,7 @@ GND = re.compile(r"(?i)[ADPSC]?GND\w*|\w*_GND|VSS\w*|0V|EARTH")
 POWER = re.compile(r"(?i)\+\w+|\d+V\d*|V(CC|DD|BAT|IN|SYS|BUS|USB|IO|CORE)\w*")
 CONNECTOR_PREFIXES = {"J", "P", "X", "CN"}  # the letters before a reference's digits
 TIE_DECIMALS = 6  # centres whose distances agree to a nanometre are equally near; the rest is float noise
+_ALIAS = re.compile(r"(.*D)([PM])([0-9_]*)")  # D+ and D- as DP and DM, which KiCad's rule pairs with DN
 
 
 def _base(net: str) -> str:
@@ -126,6 +129,44 @@ def _resolve(board: Board, classes: Classes, name: str) -> list[Pad]:
     return pads
 
 
+def _parts(board: Board, classes: Classes, antenna: str | None = None) -> dict[str, list[Pad]]:
+    """By ref, in ref order: the footprints with exactly two pads with a net, on two nets; a connector, a shield or the
+    footprint `antenna` is none."""
+    not_parts = classes.connectors | classes.shields | {antenna}
+    parts = {}
+    for ref in sorted(board.footprints):
+        pads = _netted(board.footprints[ref])
+        if len(pads) == 2 and pads[0].net != pads[1].net and ref not in not_parts:
+            parts[ref] = pads
+    return parts
+
+
+def _links(board: Board, classes: Classes, antenna: str | None = None) -> dict[str, list[tuple[str, Pad, Pad]]]:
+    """The walk's steps, net -> (ref, its pad on the net, its pad on the other net), in ref order: every part of
+    `_parts` that is not DNP and has no pad on a GND or power net."""
+    blocked = classes.gnd | classes.power
+    links: dict[str, list[tuple[str, Pad, Pad]]] = {}
+    for ref, (a, b) in _parts(board, classes, antenna).items():
+        if not (board.footprints[ref].dnp or a.net in blocked or b.net in blocked):
+            links.setdefault(a.net, []).append((ref, a, b))
+            links.setdefault(b.net, []).append((ref, b, a))
+    return links
+
+
+def _walk(links: dict[str, list[tuple[str, Pad, Pad]]], net: str) -> dict:
+    """The nets a breadth-first walk through `links` reaches from `net`: net -> (from net, ref, near pad, far pad),
+    `net` itself -> None."""
+    came: dict[str, tuple[str, str, Pad, Pad] | None] = {net: None}
+    queue = deque([net])
+    while queue:
+        here = queue.popleft()
+        for ref, near, far in links.get(here, ()):
+            if far.net not in came:
+                came[far.net] = (here, ref, near, far)
+                queue.append(far.net)
+    return came
+
+
 def trace_chain(board: Board, start: str, end: str, classes: Classes | None = None,
                 antenna: str | None = None) -> Chain:
     """The chain from pad `start` to pad `end`: the nets on the way, the series parts between them and the shunt
@@ -138,25 +179,7 @@ def trace_chain(board: Board, start: str, end: str, classes: Classes | None = No
     classes = classify(board) if classes is None else classes
     start_net = _resolve(board, classes, start)[0].net
     end_net = _resolve(board, classes, end)[0].net
-    blocked, not_parts = classes.gnd | classes.power, classes.connectors | classes.shields | {antenna}
-    parts: dict[str, list[Pad]] = {}  # by ref: the footprints with exactly two pads with a net, on two nets
-    for ref in sorted(board.footprints):
-        pads = _netted(board.footprints[ref])
-        if len(pads) == 2 and pads[0].net != pads[1].net and ref not in not_parts:
-            parts[ref] = pads
-    links: dict[str, list[tuple[str, Pad, Pad]]] = {}  # net -> (ref, its pad on the net, its pad on the other net)
-    for ref, (a, b) in parts.items():
-        if not (board.footprints[ref].dnp or a.net in blocked or b.net in blocked):
-            links.setdefault(a.net, []).append((ref, a, b))
-            links.setdefault(b.net, []).append((ref, b, a))
-    came: dict[str, tuple[str, str, Pad, Pad] | None] = {start_net: None}  # net -> (from net, ref, near pad, far pad)
-    queue = deque([start_net])
-    while queue:
-        net = queue.popleft()
-        for ref, near, far in links.get(net, ()):
-            if far.net not in came:
-                came[far.net] = (net, ref, near, far)
-                queue.append(far.net)
+    came = _walk(_links(board, classes, antenna), start_net)
     if end_net not in came:
         raise KrsError("E_NO_CHAIN", start=start, end=end, reached=", ".join(sorted(came)))
     nets, series = [end_net], []
@@ -167,11 +190,33 @@ def trace_chain(board: Board, start: str, end: str, classes: Classes | None = No
     nets.reverse()
     series.reverse()
     on_chain, used, shunt = set(nets), {p.ref for p in series}, []
-    for ref, (a, b) in parts.items():
+    for ref, (a, b) in _parts(board, classes, antenna).items():
         if ref not in used and (a.net in on_chain or b.net in on_chain):
             a, b = (a, b) if a.net in on_chain else (b, a)
             shunt.append(ChainPart(ref, (a.name, b.name), (a.net, b.net)))
     return Chain(start, end, tuple(nets), tuple(series), tuple(shunt))
+
+
+def trace_line(board: Board, classes: Classes, start: str, end: str) -> Chain:
+    """An SI line from pad `start` to pad `end` (Stage 4 design 5.1): trace_chain's chain. Where it raises E_NO_CHAIN
+    and a footprint of three or more copper pads with a net, no connector or shield, has a pad on a net the walk
+    reaches from `start` and another on one it reaches from `end`, E_SI_THROUGH_PART {start, end, refs} names those
+    footprints instead: the line runs through a part the model cannot hold."""
+    try:
+        return trace_chain(board, start, end, classes)
+    except KrsError as e:
+        if e.code != "E_NO_CHAIN":
+            raise
+        # ponytail: a part of three or more pads is found by the nets it bridges, not by geometry; a choke whose other
+        # side the walk cannot reach (a GND net) still reads E_NO_CHAIN
+        links, not_parts = _links(board, classes), classes.connectors | classes.shields
+        near, far = (_walk(links, _resolve(board, classes, name)[0].net) for name in (start, end))
+        refs = [ref for ref in sorted(board.footprints) if ref not in not_parts
+                and len(pads := _netted(board.footprints[ref])) >= 3
+                and any(p.net in near for p in pads) and any(p.net in far for p in pads)]
+        if not refs:
+            raise
+        raise KrsError("E_SI_THROUGH_PART", start=start, end=end, refs=", ".join(refs)) from None
 
 
 @dataclass(frozen=True)
@@ -229,6 +274,39 @@ def choose_reference(board: Board, classes: Classes, signal: str, rank: int = 0)
         order += sorted((nearest_points(here, q)[1] for q in pieces),
                         key=lambda p: (round(here.distance(p), TIE_DECIMALS), p.x, p.y))
     return Reference("copper", None, None, order[rank].coords[0], layer) if rank < len(order) else None
+
+
+def partner_net(net: str, nets: Collection[str]) -> tuple[str, str] | None:
+    """The partner of `net` among the board's `nets` (Stage 4 design 5.1), and how: KiCad's own rule
+    (BOARD::MatchDpSuffix, KiCad 10 pcbnew/board.cpp): from the name's end, past digits and underscores, a + or -, or
+    an upper-case P or N, swapped ("rule"); else the DP/DM alias of a name whose last letters there are DP or DM
+    ("alias"); None when neither complement is a net of the board."""
+    stem = net.rstrip("0123456789_")
+    swap = {"+": "-", "-": "+", "P": "N", "N": "P"}.get(stem[-1:])
+    if swap and (other := stem[:-1] + swap + net[len(stem):]) in nets:
+        return other, "rule"
+    if (m := _ALIAS.fullmatch(net)) and (other := m[1] + {"P": "M", "M": "P"}[m[2]] + m[3]) in nets:
+        return other, "alias"
+    return None
+
+
+def partner_ends(board: Board, classes: Classes, start: str, end: str) -> tuple[str, str, str]:
+    """The partner's two ends (Stage 4 design 5.1): for each of pads `start` and `end`, its net's partner (partner_net,
+    among board.nets) and that net's one copper pad on the same footprint; and how, "alias" when either end took the
+    alias, else "rule". E_SI_PARTNER {net, pad, ref, partner, pads}, naming --pair-with, when a net has no partner
+    (partner and pads T_NONE) or its footprint holds not exactly one pad of it (pads joined by ", ", T_NONE for
+    none)."""
+    ends, hows = [], []
+    for name in (start, end):
+        pad = _resolve(board, classes, name)[0]
+        partner, how = partner_net(pad.net, board.nets) or (None, None)
+        pads = sorted({p.name for p in _copper(board.footprints[pad.ref]) if p.net == partner})
+        if len(pads) != 1:
+            raise KrsError("E_SI_PARTNER", net=pad.net, pad=name, ref=pad.ref, partner=partner or "T_NONE",
+                           pads=", ".join(pads) or "T_NONE")
+        ends.append(pads[0])
+        hows.append(how)
+    return ends[0], ends[1], "alias" if "alias" in hows else "rule"
 
 
 def antenna_kind(board: Board, ref: str) -> str | None:

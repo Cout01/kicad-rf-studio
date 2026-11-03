@@ -346,6 +346,16 @@ msgstr ""
 msgid "--f-max and --target set the band and the target of --interface custom, which needs both; a preset interface takes neither."
 msgstr ""
 
+#. E_SI_PARTNER
+#, python-brace-format
+msgid "The partner of net {net} (pad {pad}) on {ref} is {partner} by KiCad's pair rule or the DP/DM alias, with pads {pads} on {ref}, where one is needed. Name the partner's two ends with --pair-with REF.PAD:REF.PAD."
+msgstr ""
+
+#. E_SI_THROUGH_PART
+#, python-brace-format
+msgid "The line from {start} to {end} runs through {refs}, a part with three or more pads (a common-mode choke, say), which this simulation cannot hold: measure each side of it as a project of its own, ending at its pads."
+msgstr ""
+
 #. I_ANTENNA
 #, python-brace-format
 msgid "Antenna {ref}, fed at pad {feed} on net {net}: its copper drawn without a net takes that net."
@@ -396,6 +406,11 @@ msgstr ""
 #. W_BOARD_PARTS_OPEN
 #, python-brace-format
 msgid "Left open on the antenna's board: {refs}: inductors, beads, parts whose value does not read, capacitors neither close to a short nor fit for the grid, and resistors or capacitors past the measured region that would sit in the grid. The stated limits count them as approximations."
+msgstr ""
+
+#. I_SI_SHUNT_OPEN
+#, python-brace-format
+msgid "Left open: {refs}, shunt resistors of 1 kΩ or more to a supply or to ground (pull-ups), which barely load a fast line; each would cost a run as a part port. Make one a port in project.json if it matters."
 msgstr ""
 
 #. W_F0_RANGE
