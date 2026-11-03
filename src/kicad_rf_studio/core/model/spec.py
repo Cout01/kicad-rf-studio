@@ -31,7 +31,7 @@ from kicad_rf_studio.core.model.parts import COPPER
 from kicad_rf_studio.core.model.ports import _pad
 from kicad_rf_studio.core.model.readers import c_box
 from kicad_rf_studio.core.project import antenna, copper_model, pulse_band
-from kicad_rf_studio.stoprule import FLAT_S, WINDOW_S, flat_window
+from kicad_rf_studio.stoprule import FLAT_S, WINDOW_S, flat_window, stop_window
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -84,8 +84,13 @@ def round_trip(length_mm: float, eps_eff: float) -> float:
 
 def si_t_max(f_max: float, round_trip_s: float) -> float:
     """An SI project's default T_max in s (Stage 4 design 5.4): the pulse's length 2·t0, plus 6 of the longest round
-    trips, plus 2 ns, rounded up to a whole ns as antenna_t_max does (A-28)."""
-    return math.ceil((9 / (math.pi * f_max) + 6 * round_trip_s + 2e-9) * 1e9) / 1e9
+    trips, plus 2 ns, rounded up to a whole ns as antenna_t_max does (A-28); and at least the pulse plus the
+    residual's window w = stop_window(round_trip_s), which holds the pulse's 0 dB peak, the flat window dc_pulse writes
+    and 1 ns to settle, rounded up likewise, so that a level held on a short route ends flat, not at T_max (plan 1's
+    open issue 4): 9 ns at 10 GHz with the 2 ns window, where plan 1's 10 ns (100 mm) and 25 ns (300 mm) stand."""
+    t0, w = 9 / (2 * math.pi * f_max), stop_window(round_trip_s)
+    return max(math.ceil((2 * t0 + 6 * round_trip_s + 2e-9) * 1e9),
+               math.ceil((2 * t0 + w + FLAT_S + (w - WINDOW_S) + 1e-9) * 1e9)) / 1e9
 
 
 def excitation(project: dict) -> dict:

@@ -9,7 +9,8 @@ from shapely.geometry import LineString, Point, box
 from kicad_rf_studio.core.cs2d import solve
 from kicad_rf_studio.core.geometry.copper import SIMPLIFY, copper_pieces
 from kicad_rf_studio.core.geometry.mask import mask_model, smeared_epsilon
-from kicad_rf_studio.core.geometry.sections import cross_section, sections, staircase_gap
+from kicad_rf_studio.core.geometry.sections import (cross_section, eps_eff_2d, line_layers, route_length, sections,
+                                                    staircase_gap)
 from kicad_rf_studio.core.geometry.zstack import zstack
 from kicad_rf_studio.core.kicad import load_board
 from kicad_rf_studio.core.kicad.stackup import kicad_default
@@ -231,3 +232,22 @@ def test_copper_that_touches_the_line_is_no_gap(mini_board):
     (sec,), _ = sections(b, ("SIG",), pieces_of(b))
     assert sec.gap == pytest.approx(1.7, abs=SIMPLIFY)
     assert cell_size([sec], sec.width, 2, 1e9) > 0
+
+
+# --- Stage 4 plan 2, task 4: an SI line's layers, route length and 2D εeff ----------------------------------------
+
+
+def test_an_si_lines_layers_route_length_and_2d_eps_eff():  # Stage 4 design 5.3, 5.4; replica-checked numbers
+    usb, qspi = (load_board(FIX / f"{n}.kicad_pcb") for n in ("usb2_hs", "qspi_clk"))
+    legs, clock = ("USB_D+", "MCU_D+"), ("QSPI_CLK", "FLASH_CLK")
+    assert (line_layers(usb, legs), line_layers(qspi, clock), line_layers(usb, ("NONE",))) == (
+        ("F.Cu",), ("F.Cu", "B.Cu"), ())
+    assert (route_length(usb, legs), route_length(qspi, clock)) == (pytest.approx(30.405), pytest.approx(17.0425))
+    zs = zstack(usb.stackup, usb.copper_layers)
+    pieces, _ = copper_pieces(usb, box(94, -106, 134, -94), {s.copper: round(s.z1 - s.z0, 6) for s in zs if s.copper})
+    nets = ("USB_D+", "MCU_D+", "USB_D-", "MCU_D-", "AUX")
+    assert eps_eff_2d(usb, nets, pieces, zs) == pytest.approx(3.276, abs=1e-3)  # the 0.6 mm run through U2's pads
+    assert eps_eff_2d(usb, ("NONE",), pieces, zs) is None
+    sec = sections(usb, ("AUX",), pieces)[0][0]
+    wide, narrow = (cross_section(sec, pieces, zs, None, "none", h=h).box for h in (None, 0.1))
+    assert (wide[1] - wide[0], narrow[1] - narrow[0]) == (pytest.approx(0.2 + 4.0), pytest.approx(0.2 + 2.0))

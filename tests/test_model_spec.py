@@ -22,13 +22,14 @@ from kicad_rf_studio.core.model.readers import c_box
 from kicad_rf_studio.core.model.spec import (DEBYE_F_REF, K_MAX, PML_CLEAR, dc_pulse, debye, excitation, grid_entry,
                                              kappa, metal_in_pml, model_spec, pulse, round_trip, si_t_max, spec_hash,
                                              verify_spec, with_pml)
-from kicad_rf_studio.stoprule import stop_window
+from kicad_rf_studio.stoprule import stop_rule, stop_window
 from test_cli_cost import SEG
 from test_gates import mini, project_of
 from test_geometry_sections import four_layer, plane
 from test_model_csx import TINY
 from test_model_ports import lpf_model
 from test_readers import DUMPS, LINES
+from test_stoprule import far_end
 
 P915 = {"f0_hz": 915e6, "harmonics": 3, "band_factor": 1.1, "t_max_s": 40e-9}
 
@@ -67,6 +68,14 @@ def test_the_si_round_trip_t_max_and_stop_window():  # Stage 4 design 5.4
     assert (si_t_max(10e9, rt), stop_window(rt)) == (10e-9, 2e-9)  # 0.29 + 7.27 + 2 ns, up to a whole ns; 2 ns floor
     rt = round_trip(300.0, 3.3)
     assert (si_t_max(10e9, rt), stop_window(rt)) == (25e-9, pytest.approx(5.4535e-9, rel=1e-4))
+
+
+def test_a_short_routes_t_max_lets_a_held_level_end_flat():  # plan 1's open issue 4; Review Focus (short route)
+    for length in (17.0, 31.0):  # the fixtures' routes; a 1 % level the DC pulse leaves held on port 1
+        rt = round_trip(length, 3.3)
+        t_max = si_t_max(10e9, rt)
+        v = stop_rule(far_end(rt / 2, offset=1e-2, t_end=t_max), 0, "normal", dc_pulse(10e9, t_max, stop_window(rt)))
+        assert (t_max, v.kind) == (9e-9, "flat")  # flat near 7.4 ns: the 2 ns window, then 5 ns flat, then settled
 
 
 def test_with_pml_adds_8_lines_past_each_end_at_its_outer_cell():  # design 5.2

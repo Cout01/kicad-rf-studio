@@ -356,6 +356,11 @@ msgstr ""
 msgid "The line from {start} to {end} runs through {refs}, a part with three or more pads (a common-mode choke, say), which this simulation cannot hold: measure each side of it as a project of its own, ending at its pads."
 msgstr ""
 
+#. E_SI_NO_REFERENCE
+#, python-brace-format
+msgid "Pad {pad} has no ground copper on {layer} within {reach_mm} mm that a port can reach across clear copper, and no ground or power plane under it, so its port has no reference. Add ground copper beside the pad or a plane under it in KiCad, or end the line at another pad."
+msgstr ""
+
 #. I_ANTENNA
 #, python-brace-format
 msgid "Antenna {ref}, fed at pad {feed} on net {net}: its copper drawn without a net takes that net."

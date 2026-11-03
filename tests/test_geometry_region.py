@@ -150,3 +150,13 @@ def test_an_si_lines_substrate_is_the_thinnest_dielectric_next_to_its_layers(): 
     assert substrate_h(SIX, ["In4.Cu"]) == 0.2 and substrate_h(SIX, ["F.Cu", "In3.Cu"]) == 0.15
     with pytest.raises(KeyError):
         substrate_h(SIX, ["In5.Cu"])
+
+
+# --- Stage 4 plan 2, task 4: an SI region by its lines' own dielectric ------------------------------------------
+
+
+def test_an_si_region_grows_by_its_lines_substrate():  # Stage 4 design 5.3; Review Focus 4
+    b, p = load_fixture_project("coupon_ms")
+    top, line = (build_region(b, chain_of(p), p["ports"], SIX, f_max(p), 6.0, layers=layers).roi.bounds
+                 for layers in ((), ("In3.Cu",)))
+    assert line[1] - top[1] == pytest.approx(6 * (0.2 - 0.15))  # 6 × the stripline's 0.15 mm, not the top's 0.2 mm

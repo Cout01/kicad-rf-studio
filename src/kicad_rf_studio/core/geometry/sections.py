@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """The measured sections (spec 5.5), in mm: the straight runs of the measured nets along x or y, which fit2d and the
-2D readout of `cost` check, and the cross-section cut across each one where it is bare line."""
+2D readout of `cost` check, and the cross-section cut across each one where it is bare line; and an SI line's layers,
+route length and 2D εeff (Stage 4 design 5.3, 5.4)."""
 from __future__ import annotations
 
 import math
@@ -12,12 +13,12 @@ import shapely
 from shapely.geometry import LineString, Polygon, box
 from shapely.geometry.base import BaseGeometry
 
-from kicad_rf_studio.core.cs2d import CrossSection, Rect
+from kicad_rf_studio.core.cs2d import CrossSection, Rect, ShortError, solve
 from kicad_rf_studio.core.geometry.copper import SIMPLIFY, Piece
 from kicad_rf_studio.core.geometry.mask import MaskModel, smeared_epsilon
 from kicad_rf_studio.core.geometry.zstack import Slab, substrate_h
 from kicad_rf_studio.core.kicad.board import Board
-from kicad_rf_studio.core.kicad.shapes import XY
+from kicad_rf_studio.core.kicad.shapes import XY, arc_points
 
 ALIGN = 1.5e-6  # mm: ends one 1e-6 mm grid step apart still share x or y; the half step is float noise
 REACH = 1e4  # mm, half the cut a gap is looked for along: past any crop
@@ -199,7 +200,7 @@ def staircased(polygons: Iterable[BaseGeometry]) -> bool:
 
 
 def cross_section(sec: Section, pieces: list[Piece], zs: tuple[Slab, ...], mask: MaskModel | None, mode: str,
-                  dz0: float | None = None, box_h: float = BOX_H) -> CrossSection:
+                  dz0: float | None = None, box_h: float = BOX_H, h: float | None = None) -> CrossSection:
     """The cut perpendicular to `sec` at `sec.cut`, `box_h` substrate heights past its edges either side, through every
     piece it meets there, each as thick as its layer: the strip of `sec`'s net under its centre line is the signal,
     and any other conductor ground, its net's other copper too (as signal, a hairpin's two arms read as one line of
@@ -211,10 +212,12 @@ def cross_section(sec: Section, pieces: list[Piece], zs: tuple[Slab, ...], mask:
     thick on the copper and the gaps; "smeared" fills the same gaps and smears the coat over the first z-cell, `dz0`
     thick, as the FDTD model does. The box runs `box_h` substrate heights past the stack too, in air: the default BOX_H
     reads a microstrip's Z0 about 0.7 % under a 45 h box, which P0-A's 2D references take (D-14); fit2d's two solves
-    share the box, so its bias cancels there."""
+    share the box, so its bias cancels there. The substrate height is `h`, None for substrate_h(zs), the top layer's:
+    an SI section's own layer's substrate (`substrate_h(zs, (sec.layer,))`), which a B.Cu or inner line needs; fit2d
+    keeps the default, its two solves sharing the box."""
     if mode not in MODES:
         raise ValueError(f"cross-section mode {mode!r} is not one of {MODES}")
-    m = box_h * substrate_h(zs)
+    m = box_h * (substrate_h(zs) if h is None else h)
     line, k, c = _cut(sec, sec.width / 2 + m)
     lo, hi = round(c - sec.width / 2 - m, 6), round(c + sec.width / 2 + m, 6)
     own = (sec.net, sec.layer)
@@ -230,3 +233,36 @@ def cross_section(sec: Section, pieces: list[Piece], zs: tuple[Slab, ...], mask:
         dielectrics += [Rect(a, b, z0, round(z0 + t, 6), eps) for a, b in _spans(mask.coat, line, k)]
     box = (lo, hi, round(zs[0].z0 - m, 6), round(zs[-1].z1 + m, 6))
     return CrossSection(tuple(conductors), tuple(dielectrics), box)
+
+
+def line_layers(board: Board, nets: Iterable[str]) -> tuple[str, ...]:
+    """The copper layers of the tracks of `nets`, an SI project's lines' (Stage 4 design 5.3), in board.copper_layers'
+    order; () with none, so substrate_h keeps the top layer's."""
+    nets = set(nets)
+    used = {t.layer for t in board.tracks if t.net in nets}
+    return tuple(layer for layer in board.copper_layers if layer in used)
+
+
+def route_length(board: Board, nets: Iterable[str]) -> float:
+    """The centre-line length of the tracks of `nets`, in mm (Stage 4 design 5.4): an arc by arc_points, stubs
+    included."""
+    # ponytail: every track of the line's nets, a stub too, and no via barrel: a longer route, a longer T_max
+    nets = set(nets)
+    return sum(LineString([t.start, t.end] if t.mid is None else arc_points(t.start, t.mid, t.end)).length
+               for t in board.tracks if t.net in nets)
+
+
+def eps_eff_2d(board: Board, nets: Iterable[str], pieces: list[Piece], zs: tuple[Slab, ...]) -> float | None:
+    """The largest εeff of the sections of `nets` (Stage 4 design 5.3, 5.4), each cut solved alone on cs2d's own grid,
+    without the mask, in a box of its own layer's substrate (cross_section's `h`); a cut that other copper touches
+    (ShortError) is skipped. None with no section solved."""
+    # ponytail: without the mask, which raises a 0.3 mm line's εeff by about 8 %: max_cell about 4 % coarser than λ/40
+    # on the coated line and the round trip about 4 % short; the widest section sets it (the 0.6 mm run through an ESD
+    # array's pads)
+    found = []
+    for s in sections(board, nets, pieces)[0]:
+        try:
+            found.append(solve(cross_section(s, pieces, zs, None, "none", h=substrate_h(zs, (s.layer,)))).eps_eff)
+        except ShortError:
+            continue
+    return max(found, default=None)

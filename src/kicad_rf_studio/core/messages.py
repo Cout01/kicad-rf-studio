@@ -83,6 +83,7 @@ CATALOG: dict[str, str] = {
     "E_SI_CUSTOM": "--f-max and --target set the band and the target of --interface custom, which needs both; a preset interface takes neither.",
     "E_SI_PARTNER": "The partner of net {net} (pad {pad}) on {ref} is {partner} by KiCad's pair rule or the DP/DM alias, with pads {pads} on {ref}, where one is needed. Name the partner's two ends with --pair-with REF.PAD:REF.PAD.",
     "E_SI_THROUGH_PART": "The line from {start} to {end} runs through {refs}, a part with three or more pads (a common-mode choke, say), which this simulation cannot hold: measure each side of it as a project of its own, ending at its pads.",
+    "E_SI_NO_REFERENCE": "Pad {pad} has no ground copper on {layer} within {reach_mm} mm that a port can reach across clear copper, and no ground or power plane under it, so its port has no reference. Add ground copper beside the pad or a plane under it in KiCad, or end the line at another pad.",
     "I_ANTENNA": "Antenna {ref}, fed at pad {feed} on net {net}: its copper drawn without a net takes that net.",
     "I_ANTENNA_JOIN": "Antenna {ref} joins its feed to ground through {pads} by design, as an inverted-F does; the connectivity and port checks accept that join and no other.",
     "I_BAND": "Band {f_lo_mhz} to {f_hi_mhz} MHz, f0 {f0_mhz} MHz; the pulse spans {f1_mhz} to {f2_mhz} MHz.",

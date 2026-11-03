@@ -11,12 +11,14 @@ from shapely.geometry import Point, box
 from kicad_rf_studio import runs
 from kicad_rf_studio.cli import main
 from kicad_rf_studio.core.geometry import build_geometry
-from kicad_rf_studio.core.geometry.copper import Piece, split_holes
-from kicad_rf_studio.core.geometry.zstack import Slab
+from kicad_rf_studio.core.geometry.copper import Piece, copper_pieces, split_holes
+from kicad_rf_studio.core.geometry.zstack import Slab, zstack
+from kicad_rf_studio.core.kicad import classify, load_board
 from kicad_rf_studio.core.mesh import Mesh
 from kicad_rf_studio.core.mesh.gates import mesh_with_lint
 from kicad_rf_studio.core.messages import KrsError, render
-from kicad_rf_studio.core.model.ports import End, ends, nominal_boxes, place, plane_under
+from kicad_rf_studio.core.model.ports import (End, clear_between, ends, nominal_boxes, place, plane_under,
+                                              si_reference)
 from kicad_rf_studio.core.project import load_project, save_project
 from kicad_rf_studio.pipeline import build_model
 from test_cli_cost import FIX
@@ -307,6 +309,30 @@ def test_a_vertical_port_needs_a_mesh_line_inside_its_pad():  # D-11: a coded re
     with pytest.raises(KrsError) as e:
         place(End("P9", tiny, tiny, "F.Cu", "external", ref_layer="In1.Cu"), V_MESH, FOUR, [])
     assert (e.value.code, e.value.params) == ("E_PORT_BOX", {"name": "P9"})
+
+
+def test_an_si_end_reaches_a_reference_only_across_clear_copper():  # Stage 4 design 5.5; Review Focus 2
+    sig, gnd, mid = box(0, 0, 0.4, 1.35), box(1.3, 0, 1.7, 1.35), box(0.65, 0, 1.05, 1.35)  # micro-B D+, GND, ID
+    pieces = [Piece("F.Cu", "D+", sig, True), Piece("F.Cu", "GND", gnd, True)]
+    assert clear_between(sig, gnd, pieces, "F.Cu", {"D+", "GND"})
+    assert not clear_between(sig, gnd, [*pieces, Piece("F.Cu", "", mid, True)], "F.Cu", {"D+", "GND"})  # the ID pad
+    assert clear_between(sig, gnd, [*pieces, Piece("In1.Cu", "", mid, True)], "F.Cu", {"D+", "GND"})  # another layer
+    assert not clear_between(sig, box(1, 2, 2, 3), pieces, "F.Cu", {"D+", "GND"})  # apart both ways: no box
+
+
+def test_an_si_ends_reference_is_v1s_or_the_plane_under_its_pad():  # Stage 4 design 5.5; Review Focus 2
+    b = load_board(FIX / "usb2_hs.kicad_pcb")
+    c, zs = classify(b), zstack(b.stackup, b.copper_layers)
+    pieces, _ = copper_pieces(b, box(94, -106, 134, -94), {s.copper: round(s.z1 - s.z0, 6) for s in zs if s.copper})
+    pad = {n: next(p for p in b.pads(n) if p.layers) for n in ("J1.5", "U1.17")}
+    j15, u17 = ({"pad": n, "uuid": pad[n].uuid} for n in ("J1.5", "U1.17"))
+    assert si_reference(b, c, pieces, zs, "P1", "J1.3", j15, 1.2) == {"plane": "In1.Cu"}  # J1.4 lies between
+    assert si_reference(b, c, pieces, zs, "P3", "U1.3", u17, 1.2) == u17  # 0.2 mm across clear copper
+    far = {"point": [102.521, 100.183], "layer": "F.Cu"}  # TP1.1's nearest ground copper, 5 mm off
+    assert si_reference(b, c, pieces, zs, "P5", "TP1.1", far, 1.2) == {"plane": "In1.Cu"}  # never E_REFERENCE_POINT
+    with pytest.raises(KrsError) as e:
+        si_reference(b, c, [pc for pc in pieces if pc.layer == "F.Cu"], zs, "P5", "TP1.1", far, 1.2)  # no plane
+    assert (e.value.code, e.value.params) == ("E_SI_NO_REFERENCE", {"pad": "TP1.1", "layer": "F.Cu", "reach_mm": "1.2"})
 
 
 @pytest.mark.openems

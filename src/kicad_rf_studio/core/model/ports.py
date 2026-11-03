@@ -25,6 +25,7 @@ if TYPE_CHECKING:
     from kicad_rf_studio.core.geometry.zstack import Slab
     from kicad_rf_studio.core.kicad.board import Board, Pad
     from kicad_rf_studio.core.kicad.shapes import XY
+    from kicad_rf_studio.core.kicad.tracer import Classes
     from kicad_rf_studio.core.mesh import Mesh
 
 
@@ -144,6 +145,53 @@ def plane_under(pad: BaseGeometry, layer: str, zs: tuple[Slab, ...], pieces: lis
     return None
 
 
+def _apart_axis(s: tuple, r: tuple) -> int | None:
+    """The in-plane axis (0 for x, 1 for y) along which the bounds `s` and `r` are apart while their spans across it
+    overlap; None when they are apart on both axes or neither."""
+    apart = [s[k + 2] <= r[k] or r[k + 2] <= s[k] for k in (0, 1)]  # their spans along k do not overlap
+    return None if apart[0] == apart[1] else apart.index(True)
+
+
+def clear_between(sig: BaseGeometry, ref: BaseGeometry, pieces: list[Piece], layer: str,
+                  nets: Collection[str]) -> bool:
+    """Whether a horizontal port's box between `sig` and `ref` (place's: along _apart_axis, across their spans'
+    overlap) holds no copper of `layer` but of `nets`, an SI end's test (Stage 4 design 5.5): a pad between them, an
+    unconnected one too, would leave the box no copper-free run (E_PORT_BOX). False when _apart_axis is None. A piece
+    blocks when its intersection with the box has an area."""
+    s, r = sig.bounds, ref.bounds
+    p = _apart_axis(s, r)
+    if p is None:
+        return False
+    t = 1 - p
+    lo, hi = (s[p + 2], r[p]) if s[p + 2] <= r[p] else (r[p + 2], s[p])  # along p: between their facing sides
+    a, b = max(s[t], r[t]), min(s[t + 2], r[t + 2])  # across: the spans' overlap
+    gap = box(lo, a, hi, b) if p == 0 else box(a, lo, b, hi)
+    return not any(pc.polygon.intersection(gap).area > 0 for pc in pieces if pc.layer == layer and pc.net not in nets)
+
+
+def si_reference(board: Board, classes: Classes, pieces: list[Piece], zs: tuple[Slab, ...], name: str, signal: str,
+                 ref: dict | None, reach: float) -> dict:
+    """An SI end's reference as project.json keeps it (Stage 4 design 5.5): `ref`, v1's choice (a pad or a point),
+    when its copper (_reference, for port `name`) lies within `reach` mm of pad `signal` and clear_between holds for
+    them with the signal's and the ground nets; else {"plane": layer}, plane_under the pad with the ground and power
+    nets; E_SI_NO_REFERENCE {pad, layer, reach_mm (:g)} when neither. The distance is checked first, on the pad's or
+    the point's raw copper, so a far point never meets _reference's E_REFERENCE_POINT."""
+    # ponytail: v1's first choice only; a blocked ground pad does not fall back to the next one (choose_reference's
+    # rank), and a pair's two ends on one footprint may take different kinds
+    sig = _pad(board, signal)
+    layer = signal_layer(board, sig)
+    if ref is not None:
+        raw = (Point(ref["point"][0], -ref["point"][1]) if "point" in ref  # project.json has y down, the board y up
+               else _pad(board, ref["pad"], ref["uuid"], layer).polygon)
+        if sig.polygon.distance(raw) <= reach:
+            copper = _reference(board, pieces, name, sig, layer, ref)
+            if clear_between(sig.polygon, copper, pieces, layer, {sig.net, *classes.gnd}):
+                return ref
+    if plane := plane_under(sig.polygon, layer, zs, pieces, classes.gnd | classes.power):
+        return {"plane": plane}
+    raise KrsError("E_SI_NO_REFERENCE", pad=signal, layer=layer, reach_mm=f"{reach:g}")
+
+
 def vertical(end: End, mesh: Mesh, zs: tuple[Slab, ...]) -> dict:
     """The vertical lumped port of `end`, an SI end over a plane (Stage 4 design 5.5): a sheet in z from the plane's
     face (end.ref_layer's slab) to the pad's (end.layer's), starting at the plane, the reference, so that openEMS's u
@@ -201,6 +249,7 @@ def place(end: End, mesh: Mesh, zs: tuple[Slab, ...], pieces: list[Piece]) -> di
     the copper's top face; its `nodes` are those two ends. openEMS puts its one-edge port at their middle, joined to
     both by PEC curves, and orders them along its axis itself: its u is V_signal − V_reference only when the
     reference lies lower along it.
+    The axis p is _apart_axis's, which an SI end's clear_between shares, so the two never disagree.
     An end with a `ref_layer`, an SI end over a plane (Stage 4 design 5.5), takes the vertical port (`vertical`).
     Every coordinate is a line of `mesh` and every value JSON-native: lists of Python floats. Raises E_PORT_SPANS, and
     E_PORT_BOX when no line across qualifies, copper fills every line between the facing lines, or a cap touches no
@@ -218,10 +267,9 @@ def place(end: End, mesh: Mesh, zs: tuple[Slab, ...], pieces: list[Piece]) -> di
     # outer line's node, a cap whose copper lay only on a cut line, a gap with no mesh line) is refused, not walked
     # again; model_spec's 0R hulls come later and are not counted
     s, r = end.signal.bounds, end.reference.bounds
-    apart = [s[k + 2] <= r[k] or r[k + 2] <= s[k] for k in (0, 1)]  # their spans along k do not overlap
-    if apart[0] == apart[1]:
+    p = _apart_axis(s, r)  # along the box; t = 1 - p across it
+    if p is None:
         raise KrsError("E_PORT_SPANS", name=end.name)
-    p = apart.index(True)  # along the box; t = 1 - p across it
     t = 1 - p
     along, across = (mesh.x, mesh.y)[p], (mesh.x, mesh.y)[t]
 

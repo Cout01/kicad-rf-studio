@@ -5,6 +5,7 @@ the whole board (board_region, Stage 3 design 5.2)."""
 from __future__ import annotations
 
 import math
+from collections.abc import Iterable
 from dataclasses import dataclass
 
 import shapely
@@ -67,10 +68,12 @@ class Region:
 
 
 def build_region(board: Board, chain: Chain, ports: list[dict], zs: tuple[Slab, ...], f_max: float,
-                 expand_h: float = 3.0, margin_scale: float = 1.0) -> Region:
+                 expand_h: float = 3.0, margin_scale: float = 1.0, layers: Iterable[str] = ()) -> Region:
     """The region of `chain`. The ROI is the bounding box of the copper of the chain's nets (tracks, areas and pads),
     the chain parts' pads and the ports' pads and reference points (project.json's `ports`), grown by `expand_h`
-    substrate heights. It is clipped to the board outline unless it lies inside it to within the outline's 1 µm grid.
+    substrate heights: substrate_h(zs, layers), the thinnest dielectric next to `layers`, an SI project's line layers
+    (Stage 4 design 5.3); with none, the top layer's, where v1's and an antenna's chain run. It is clipped to the board
+    outline unless it lies inside it to within the outline's 1 µm grid.
     The walls sit `margin_scale` × (WALL_MM + WALL_CELLS coarse cells) past it, on all six faces.
     Every coordinate is quantised to 1e-6 mm. Raises E_CHAIN_OFF_OUTLINE when the chain's nets have no copper, or a
     piece of it (a track, an area, a pad) misses the outline: of several Edge.Cuts loops (a panel, a frame, a coupon
@@ -91,7 +94,7 @@ def build_region(board: Board, chain: Chain, ports: list[dict], zs: tuple[Slab, 
     if not copper or board.outline is not None and not shapely.intersects(board.outline, copper).all():
         raise KrsError("E_CHAIN_OFF_OUTLINE", nets=", ".join(chain.nets))
     x0, y0, x1, y1 = shapely.total_bounds(shapes)
-    grow = expand_h * substrate_h(zs)
+    grow = expand_h * substrate_h(zs, layers)
     roi = box(x0 - grow, y0 - grow, x1 + grow, y1 + grow)
     if board.outline is not None and not board.outline.buffer(OUTLINE_GRID).contains(roi):
         roi = roi.intersection(board.outline)
