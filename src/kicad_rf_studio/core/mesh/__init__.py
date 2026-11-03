@@ -27,6 +27,7 @@ if TYPE_CHECKING:
     from kicad_rf_studio.core.mesh.rule import Edge
 
 ALONG = 50  # a segment runs along an axis when it leaves it by under 1/ALONG of its length (and under 2·SIMPLIFY)
+VIA_MARGIN_MM = 1.0  # an SI mesh fills d this far either side of a measured net's via (r1: 1 mm); gate P4-C may move it
 
 
 @dataclass(frozen=True)
@@ -48,8 +49,8 @@ class Mesh:
     exempt: dict[str, frozenset[Edge]] = field(default_factory=dict)
 
 
-def build_mesh(geom: Geometry, prot: Protected, n: int,
-               extra_edges: dict[str, list[tuple[float, int]]] | None = None) -> Mesh:
+def build_mesh(geom: Geometry, prot: Protected, n: int, extra_edges: dict[str, list[tuple[float, int]]] | None = None,
+               *, max_cell: float | None = None) -> Mesh:
     """The mesh of `geom` for the protected set `prot`, n cells across the narrowest width, gap or substrate height (2
     standard, 3 fine).
     Each in-plane axis comes from xy_lines with the protected edges (_edges; those at a section's cut are preferred in
@@ -59,9 +60,15 @@ def build_mesh(geom: Geometry, prot: Protected, n: int,
     the lid as from the board (R-P2-3; spec 5.2: the lid is never the boundary) and snap_lid finds a line near its
     top. A rod that is not solid moves to the nearest x and y lines in `snapped_rods`; `geom` is not changed. For an
     antenna's geometry alone (Geometry.antenna), each axis's xy_lines also takes its two-layer pairs (_pairs), which
-    the edge lint spares its third test, and the Mesh holds them in `exempt`; every other geometry exempts none."""
+    the edge lint spares its third test, and the Mesh holds them in `exempt`; every other geometry exempts none.
+    The substrate h, which d, the edge patterns and z take, is that of the geometry's layers (Geometry.layers: an SI
+    project's lines'; the top layer's without them). With `max_cell` (an SI project's mesh.max_cell_mm, Stage 4 design
+    5.3) each in-plane axis takes xy_lines' SI rule: the edges keep their patterns, d fills only the spans of _spans
+    (every solid rod, and every staircased track's copper) and the extent's other cells grade up to max_cell. A rod
+    that is not solid is snapped to the lines (`snapped_rods`) and needs no span. With None, d fills the whole extent,
+    as for v1 and an antenna."""
     region, zs = geom.region, geom.zs
-    h, coarse, walls = substrate_h(zs), region.coarse, region.walls
+    h, coarse, walls = substrate_h(zs, geom.layers), region.coarse, region.walls
     d = cell_size(geom.sections, geom.track_width, n, 20 * coarse, geom.track_gap, h)  # the coarse cell is λ_min/20
     t_m = max((m.t_m for m in geom.masks.values()), default=0.0)
     edges, prefer = _edges(geom.pieces, prot, geom.sections)
@@ -76,7 +83,8 @@ def build_mesh(geom: Geometry, prot: Protected, n: int,
     for k, axis in enumerate("xy"):
         extent = (box[k], box[k + 2]) if not np.isnan(box[k]) else (np.inf, -np.inf)
         lines[axis], pinned[axis] = xy_lines(edges[axis], extent, walls[2 * k:2 * k + 2], free[:, k], d, coarse,
-                                             prefer[axis], force[axis], h, exempt.get(axis, frozenset()))
+                                             prefer[axis], force[axis], h, exempt.get(axis, frozenset()),
+                                             max_cell=max_cell, spans=_spans(geom, prot, k))
     z_walls = walls[4:]
     if geom.lid is not None:
         z_walls = (walls[4], round(walls[5] + max(0.0, geom.lid.z1 - zs[-1].z1), 6))
@@ -88,6 +96,20 @@ def build_mesh(geom: Geometry, prot: Protected, n: int,
     rods = tuple(r if r.solid else replace(r, at=(_nearest(lines["x"], r.at[0]), _nearest(lines["y"], r.at[1])))
                  for r in geom.rods)
     return Mesh(lines["x"], lines["y"], z, d, dz, pinned, edges, rods, exempt)
+
+
+def _spans(geom: Geometry, prot: Protected, k: int) -> list[tuple[float, float]]:
+    """The SI rule's spans on in-plane axis `k` (0 for x, 1 for y), on the 1e-6 mm grid: every solid rod by its own
+    coordinate on that axis, whatever its other one, VIA_MARGIN_MM either side for a measured net's (`prot.nets`) and
+    its radius for any other (a stitching or thermal via); then every staircased track's copper bounds along the axis
+    (Geometry.stairs). xy_lines lines a coordinate only d or more past the extent, so a rod whose centre lies just past
+    it on one axis would otherwise keep no line on the other."""
+    # ponytail: another rod keeps d over its barrel only; its ring and the planes' antipads grade, which P4-C's twin
+    # measures
+    spans = [(r.at[k] - m, r.at[k] + m) for r in geom.rods if r.solid
+             for m in [VIA_MARGIN_MM if r.net in prot.nets else r.radius]]
+    spans += [(s[k], s[k + 2]) for s in geom.stairs]
+    return [(round(a, 6), round(b, 6)) for a, b in spans]
 
 
 def _edges(pieces: list[Piece], prot: Protected, sections: Iterable[Section] = ()

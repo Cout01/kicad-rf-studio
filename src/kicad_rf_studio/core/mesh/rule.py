@@ -111,6 +111,8 @@ def xy_lines(edges: list[Edge], extent: tuple[float, float], walls: tuple[float,
       than its inside line, and the lint's one re-mesh could not move it (verifier).
     - With `max_cell` (an SI project's, Stage 4 design 5.3), d fills only the `spans` (lo, hi) the caller gives on
       this axis: the margins around vias, and any copper its edges cannot pattern. Their ends are lines where clear.
+      Each span is (lo, hi) with lo ≤ hi, in mm (a backwards one raises ValueError), clipped to the walls and dropped
+      outside them; overlapping spans fill as their union.
       A `free` coordinate inside the extent and outside every span gets no line of its own (the `free` bullet below
       lines only coordinates d or more from the extent), so the caller spans every via rod in the extent, stitching
       vias included, or the rod can lose every mesh node.

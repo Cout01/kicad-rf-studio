@@ -983,3 +983,8 @@ def test_a_span_never_moves_a_wall_and_a_backwards_span_is_refused():  # plan 1 
         assert walls[0] - 1e-6 <= lines.min() and lines.max() <= walls[1] + 1e-6  # no line past either wall
     with pytest.raises(ValueError, match="backwards"):
         si_axis(STRAIGHT, extent, max_cell=SI_CELL, spans=[(51.0, 49.0)])
+
+
+def test_without_max_cell_spans_are_ignored():  # plan 1's span contract
+    assert np.array_equal(si_axis(STRAIGHT, (-1.2, 101.2)),
+                          si_axis(STRAIGHT, (-1.2, 101.2), spans=[(49.0, 51.0), (99.0, 101.0)]))

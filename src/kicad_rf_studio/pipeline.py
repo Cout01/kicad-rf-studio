@@ -51,7 +51,7 @@ from kicad_rf_studio.core.post.outputs import (LIMITS, OUTPUTS, VERIFY_OUTPUT, g
                                                summary_csv, summary_png, touchstone, write)
 from kicad_rf_studio.core.post.waves import layout
 from kicad_rf_studio.core.project import (GATES, antenna, board_file, board_hash, copper_model, load_project, mesh_n,
-                                          parts, read_project, relative_path, save_project)
+                                          parts, read_project, relative_path, save_project, si)
 from kicad_rf_studio.stoprule import KEPT, PRESETS, Records, Verdict, residual_db, stop_rule
 from kicad_rf_studio.worker import GRIDS, LOG
 
@@ -88,10 +88,10 @@ def load(path: Path) -> tuple[dict, Board, Geometry, list[tuple[str, dict]]]:
     """The project at `path` (read_project), its board and its geometry, and the notes to report, in this order:
     W_BOARD_CHANGED when the board's sha256 is not the one `new` stored (C-30), the board's warnings, the geometry's
     notes (its E_ gate entries too, which stops() reads), then W_OFF_TOP_LAYER for each measured section off the top
-    copper (C-9). An antenna project's antenna is checked again as `new` checks it (tracer.check_antenna: an edited ref
-    or a re-annotated board raises E_ANTENNA_UNKNOWN, E_ANTENNA_MODULE, E_ANTENNA_CHIP or E_NOT_AN_ANTENNA); then its
-    netless copper takes the feed net, the chain's last (tracer.adopt, Stage 3 design 5.3), before the geometry is
-    built."""
+    copper (C-9), but in an SI project, whose geometry takes its lines' layers (Stage 4 design 5.3). An antenna
+    project's antenna is checked again as `new` checks it (tracer.check_antenna: an edited ref or a re-annotated board
+    raises E_ANTENNA_UNKNOWN, E_ANTENNA_MODULE, E_ANTENNA_CHIP or E_NOT_AN_ANTENNA); then its netless copper takes the
+    feed net, the chain's last (tracer.adopt, Stage 3 design 5.3), before the geometry is built."""
     project = read_project(path)
     file = board_file(path, project)
     board = load_board(file)
@@ -102,7 +102,8 @@ def load(path: Path) -> tuple[dict, Board, Geometry, list[tuple[str, dict]]]:
     notes = [("W_BOARD_CHANGED", {"path": str(file)})] if board_hash(file) != project["board"]["sha256"] else []
     top = board.copper_layers[0]  # top to bottom
     notes += [*board.warnings, *geom.notes,
-              *(("W_OFF_TOP_LAYER", {"net": s.net, "layer": s.layer}) for s in geom.sections if s.layer != top)]
+              *(("W_OFF_TOP_LAYER", {"net": s.net, "layer": s.layer}) for s in geom.sections
+                if s.layer != top and not si(project))]
     return project, board, geom, notes
 
 
@@ -118,16 +119,18 @@ class Model:
 
 
 def build_model(project: dict, board: Board, geom: Geometry) -> Model:
-    """The model of `project` (spec 6.1 step 2, C-42): its port ends; the mesh, finest across their nominal boxes, with
-    the edge lint (on E_EDGE_LINT no mesh and no spec, and that gate blocked); fit2d against gates.fit2d_limit (E_FIT2D,
-    E_FIT2D_FINE or E_FIT2D_SHORT blocked, the model still built); the timestep floor's reference, from the mesh before
-    any port is placed on it; an antenna's mesh in its air box (Stage 3 design 5.2); each end placed on the mesh, a
-    grid part's through grid_entry with its entry in project.json; then the model spec. Raises the refusals of ends,
-    place and grid_entry; the caller handles stops() of load()'s notes first."""
+    """The model of `project` (spec 6.1 step 2, C-42): its port ends; the mesh, finest across their nominal boxes, an
+    SI project's at its mesh.max_cell_mm (Stage 4 design 5.3), with the edge lint (on E_EDGE_LINT no mesh and no spec,
+    and that gate blocked); fit2d against gates.fit2d_limit (E_FIT2D, E_FIT2D_FINE or E_FIT2D_SHORT blocked, the model
+    still built); the timestep floor's reference, from the mesh before any port is placed on it; an antenna's mesh in
+    its air box (Stage 3 design 5.2); each end placed on the mesh, a grid part's through grid_entry with its entry in
+    project.json; then the model spec. Raises the refusals of ends, place and grid_entry; the caller handles stops() of
+    load()'s notes first."""
     e = ends(board, project, geom.pieces)
     n = mesh_n(project)
     try:
-        mesh = mesh_with_lint(geom, replace(geom.protected, boxes=nominal_boxes(e)), n)
+        mesh = mesh_with_lint(geom, replace(geom.protected, boxes=nominal_boxes(e)), n,
+                              max_cell=project["mesh"]["max_cell_mm"] if si(project) else None)
     except KrsError as err:  # E_EDGE_LINT
         return Model(None, None, [(err.code, err.params)], None)
     blocked = []

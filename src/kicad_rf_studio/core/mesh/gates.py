@@ -51,14 +51,16 @@ def edge_lint(mesh: Mesh) -> list[LintHit]:
                                        mesh.exempt.get(axis, ()))]
 
 
-def mesh_with_lint(geom: Geometry, prot: Protected, n: int) -> Mesh:
-    """build_mesh's mesh, linted; on a failure rebuilt once (spec 5.5) with the failing edges as `extra_edges`, which
-    keep their own pattern. Raises E_EDGE_LINT with `n`, naming the first edge that still fails (a neighbour may fail
-    instead after the re-mesh, T10) as KiCad shows it: y down, and the reason in words (T_ON_EDGE)."""
-    mesh = build_mesh(geom, prot, n)
+def mesh_with_lint(geom: Geometry, prot: Protected, n: int, *, max_cell: float | None = None) -> Mesh:
+    """build_mesh's mesh, at `max_cell` (an SI project's, Stage 4 design 5.3; None for Stage 1's d fill), linted; on a
+    failure rebuilt once (spec 5.5) with the failing edges as `extra_edges`, which keep their own pattern. Raises
+    E_EDGE_LINT with `n`, naming the first edge that still fails (a neighbour may fail instead after the re-mesh, T10)
+    as KiCad shows it: y down, and the reason in words (T_ON_EDGE)."""
+    mesh = build_mesh(geom, prot, n, max_cell=max_cell)
     if hits := edge_lint(mesh):
         bad = {(h.axis, h.edge) for h in hits}
-        mesh = build_mesh(geom, prot, n, {axis: [e for e in mesh.edges[axis] if (axis, e[0]) in bad] for axis in "xy"})
+        extra = {axis: [e for e in mesh.edges[axis] if (axis, e[0]) in bad] for axis in "xy"}
+        mesh = build_mesh(geom, prot, n, extra, max_cell=max_cell)
         if hits := edge_lint(mesh):
             hit = hits[0]
             # ponytail: the term by name; a new reason in rule.lint_hits needs its T_ code

@@ -96,9 +96,9 @@ def test_remesh_once_fixes(monkeypatch):  # spec 5.5: the lint's one automatic r
     geom, prot = geom_of("coupon_gcpw")
     calls = []
 
-    def first_puts_a_line_on_an_edge(g, p, n, extra_edges=None):
+    def first_puts_a_line_on_an_edge(g, p, n, extra_edges=None, *, max_cell=None):
         calls.append(extra_edges)
-        m = build_mesh(g, p, n, extra_edges)
+        m = build_mesh(g, p, n, extra_edges, max_cell=max_cell)
         return m if extra_edges else replace(m, x=np.union1d(m.x, [m.edges["x"][0][0]]))
 
     monkeypatch.setattr(gates, "build_mesh", first_puts_a_line_on_an_edge)
@@ -110,8 +110,8 @@ def test_remesh_failure_blocks(monkeypatch):
     geom, prot = geom_of("coupon_gcpw")
     edge = build_mesh(geom, prot, 2).edges["x"][0][0]
 
-    def always_puts_a_line_on_the_edge(g, p, n, extra_edges=None):
-        m = build_mesh(g, p, n, extra_edges)
+    def always_puts_a_line_on_the_edge(g, p, n, extra_edges=None, *, max_cell=None):
+        m = build_mesh(g, p, n, extra_edges, max_cell=max_cell)
         return replace(m, x=np.union1d(m.x, [edge]))
 
     monkeypatch.setattr(gates, "build_mesh", always_puts_a_line_on_the_edge)

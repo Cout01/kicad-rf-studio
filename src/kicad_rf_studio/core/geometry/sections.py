@@ -17,7 +17,7 @@ from kicad_rf_studio.core.cs2d import CrossSection, Rect, ShortError, solve
 from kicad_rf_studio.core.geometry.copper import SIMPLIFY, Piece
 from kicad_rf_studio.core.geometry.mask import MaskModel, smeared_epsilon
 from kicad_rf_studio.core.geometry.zstack import Slab, substrate_h
-from kicad_rf_studio.core.kicad.board import Board
+from kicad_rf_studio.core.kicad.board import Board, Track
 from kicad_rf_studio.core.kicad.shapes import XY, arc_points
 
 ALIGN = 1.5e-6  # mm: ends one 1e-6 mm grid step apart still share x or y; the half step is float noise
@@ -169,6 +169,13 @@ def sections(board: Board, nets: Iterable[str], pieces: list[Piece]) -> tuple[li
     return out, notes
 
 
+def off_axis(t: Track) -> bool:
+    """Whether `t` is a track the mesh staircases: an arc, or a segment whose ends share neither x nor y within ALIGN.
+    A zero-length track runs nowhere, as sections() reads it."""
+    (x0, y0), (x1, y1) = t.start, t.end
+    return t.start != t.end and (t.mid is not None or min(abs(x1 - x0), abs(y1 - y0)) >= ALIGN)
+
+
 def staircase_gap(board: Board, nets: Iterable[str], pieces: list[Piece]) -> float | None:
     """The narrowest gap of the measured `nets` that no section measures: from each of their staircased tracks (a 45°
     segment or an arc) to the copper of the other nets on its layer; None without such a track or copper. The d rule
@@ -178,8 +185,7 @@ def staircase_gap(board: Board, nets: Iterable[str], pieces: list[Piece]) -> flo
     # ponytail: other nets only, so a staircased hairpin's gap to its own arm is not seen (a section's gap counts it).
     nets, gaps = set(nets), []
     for t in board.tracks:
-        (x0, y0), (x1, y1) = t.start, t.end
-        if t.net in nets and t.start != t.end and (t.mid is not None or min(abs(x1 - x0), abs(y1 - y0)) >= ALIGN):
+        if t.net in nets and off_axis(t):
             other = [pc.polygon for pc in pieces if pc.layer == t.layer and pc.net != t.net]
             gaps += [g for g in shapely.distance(t.polygon(), other) if g > 0]
     return round(float(min(gaps)), 6) if gaps else None

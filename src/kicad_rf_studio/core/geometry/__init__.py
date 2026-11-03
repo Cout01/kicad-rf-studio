@@ -11,7 +11,7 @@ import shapely
 from kicad_rf_studio.core.kicad.stackup import Stackup
 from kicad_rf_studio.core.kicad.tracer import Chain, ChainPart, classify
 from kicad_rf_studio.core.project import (ANTENNA_BOUNDARY, antenna, copper_model, mesh_reach_h, region_expand_h,
-                                          region_margin_scale)
+                                          region_margin_scale, si)
 
 if TYPE_CHECKING:  # the types only: importing a submodule must not pull in the others
     from kicad_rf_studio.core.geometry.copper import Piece
@@ -33,7 +33,10 @@ class Geometry:
     `notes`, `track_width`, the narrowest track of the measured nets, and `track_gap`, sections.staircase_gap (None
     without a staircased track), which the d rule takes with the sections' widths and gaps. `antenna`: an antenna's
     geometry (Stage 3 design 5.3), whose mesh exempts its two-layer pairs (core.mesh._pairs) from the edge lint's third
-    test."""
+    test. An SI project's (Stage 4 design 5.3) has `layers`, its lines' copper layers (sections.line_layers), whose
+    thinnest dielectric sets d and the reach, `legs`, a pair's two measured lines' nets (None without a pair), and
+    `stairs`, the copper bounds (x0, y0, x1, y1) of its lines' staircased tracks (sections.off_axis), which its mesh
+    fills at d; every other geometry has none of them."""
     region: Region
     zs: tuple[Slab, ...]
     pieces: list[Piece]
@@ -46,14 +49,24 @@ class Geometry:
     track_width: float
     track_gap: float | None
     antenna: bool = False
+    layers: tuple[str, ...] = ()
+    legs: tuple[frozenset[str], frozenset[str]] | None = None
+    stairs: tuple[tuple[float, float, float, float], ...] = ()
+
+    def partners(self, net: str) -> frozenset[str]:
+        """The nets of an SI pair's other line for a net of one of its lines (`legs`), else none."""
+        p, n = self.legs or (frozenset(), frozenset())
+        return n if net in p else p if net in n else frozenset()
 
 
 def chain_of(project: dict) -> Chain:
-    """The chain project.json holds, as `new` writes it."""
-    c = project["chain"]
-    series, shunt = (tuple(ChainPart(p["ref"], tuple(p["pads"]), tuple(p["nets"])) for p in c[key])
+    """The chain project.json holds, as `new` writes it; an SI project's lines merged (Stage 4 design 5.1): the first
+    line's start and end, every line's nets in order, every series part, then every shunt part. `new` stores a part on
+    two lines once and refuses a net two lines share (E_SI_LINE_SHARED), so none repeats."""
+    chains = [line["chain"] for line in project["lines"]] if si(project) else [project["chain"]]
+    series, shunt = (tuple(ChainPart(p["ref"], tuple(p["pads"]), tuple(p["nets"])) for c in chains for p in c[key])
                      for key in ("series", "shunt"))
-    return Chain(c["start"], c["end"], tuple(c["nets"]), series, shunt)
+    return Chain(chains[0]["start"], chains[0]["end"], tuple(n for c in chains for n in c["nets"]), series, shunt)
 
 
 def build_geometry(board: Board, project: dict) -> Geometry:
@@ -71,19 +84,25 @@ def build_geometry(board: Board, project: dict) -> Geometry:
     not named it. Every top-side shield on the board is a lid candidate, and W_LIDS_LEFT_OUT names those the one lid
     leaves out. W_AIR_BOX comes last when the air box is not the one gate P3-C tested, ANTENNA_BOUNDARY past a gap of
     λ/4 at f_lo (air_gap) or more.
-    An antenna's sheet copper (Stage 3 design 5.3) is a stack whose copper layers have no thickness."""
+    An antenna's sheet copper (Stage 3 design 5.3) is a stack whose copper layers have no thickness.
+    For an SI project (Stage 4 design 5.1-5.3) the chain is its lines merged (chain_of), so every line's copper and
+    parts are measured. Its `layers`, the lines' copper layers (sections.line_layers), give the region and the
+    protected set their substrate height, substrate_h(zs, layers): the thinnest dielectric next to them, which grows
+    the ROI and sets the reach. `legs` are a pair's two measured lines' nets, and `stairs` the copper bounds of each of
+    the lines' tracks that the mesh staircases (sections.off_axis), its round ends included."""
     # imported here, so that importing a submodule still pulls in none of the others, nor core.mesh, built on them
     from kicad_rf_studio.core.geometry.copper import SIMPLIFY, connectivity, copper_pieces
     from kicad_rf_studio.core.geometry.lid import find_lid
     from kicad_rf_studio.core.geometry.mask import mask_model
     from kicad_rf_studio.core.geometry.region import air_gap, board_region, build_region, f_max
-    from kicad_rf_studio.core.geometry.sections import sections, staircase_gap, staircased
+    from kicad_rf_studio.core.geometry.sections import line_layers, off_axis, sections, staircase_gap, staircased
     from kicad_rf_studio.core.geometry.vias import via_rods
     from kicad_rf_studio.core.geometry.zstack import substrate_h, zstack
     from kicad_rf_studio.core.mesh.protect import protected_set
 
     chain, classes = chain_of(project), classify(board, project.get("classes"))
     ports, ant = project.get("ports", []), antenna(project)
+    layers = line_layers(board, chain.nets) if si(project) else ()  # none: the top layer's substrate, as before
     stack = project["stackup"]
     if ant and copper_model(project) == "sheet":  # each copper slab collapses onto its dielectric face, the masks on it
         stack = {**stack, "layers": [{**layer, "thickness_mm": 0.0} if layer["kind"] == "copper" else layer
@@ -95,12 +114,13 @@ def build_geometry(board: Board, project: dict) -> Geometry:
         region = board_region(board, chain, ports, zs, f_max(project), region_expand_h(project))
     else:
         region = build_region(board, chain, ports, zs, f_max(project), region_expand_h(project),
-                              region_margin_scale(project))
+                              region_margin_scale(project), layers=layers)
     thickness = {s.copper: round(s.z1 - s.z0, 6) for s in zs if s.kind == "copper"}
     pieces, notes = copper_pieces(board, region.crop, thickness)
     pads = tuple(name for part in project.get("others", ()) if part["role"] in ("port", "curve_port", "grid")
                  for name in part["pads"])
-    protected = protected_set(board, chain, classes, pieces, substrate_h(zs), reach_h=mesh_reach_h(project), pads=pads)
+    protected = protected_set(board, chain, classes, pieces, substrate_h(zs, layers), reach_h=mesh_reach_h(project),
+                              pads=pads)
     rods = via_rods(board, region.crop, zs, protected)
     join = None
     if ant and project["antenna"]["join"]:
@@ -127,5 +147,9 @@ def build_geometry(board: Board, project: dict) -> Geometry:
         if project["boundary"] != ANTENNA_BOUNDARY or gap < default:
             gate.append(("W_AIR_BOX", {"gap_mm": f"{gap:.1f}", "quarter_mm": f"{default:.1f}",
                                        "boundary": project["boundary"]}))  # an event before plan 4 carries these
+    legs, stair_bounds = None, ()
+    if si(project):
+        legs = tuple(frozenset(x["chain"]["nets"]) for x in project["lines"][:2]) if project["pair"] else None
+        stair_bounds = tuple(t.polygon().bounds for t in board.tracks if t.net in chain.nets and off_axis(t))
     return Geometry(region, zs, pieces, protected, rods, masks, secs, lid, notes + stairs + gate, width,
-                    staircase_gap(board, chain.nets, pieces), ant)
+                    staircase_gap(board, chain.nets, pieces), ant, layers, legs, stair_bounds)

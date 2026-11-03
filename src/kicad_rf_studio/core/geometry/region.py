@@ -16,7 +16,7 @@ from kicad_rf_studio.core.kicad.board import OUTLINE_GRID, Board
 from kicad_rf_studio.core.kicad.shapes import pt
 from kicad_rf_studio.core.kicad.tracer import Chain
 from kicad_rf_studio.core.messages import KrsError
-from kicad_rf_studio.core.project import REACH_H, antenna, pulse_band
+from kicad_rf_studio.core.project import REACH_H, antenna, pulse_band, si
 
 C0 = 299_792_458.0  # m/s
 WALL_MM, WALL_CELLS = 4.0, 8  # the walls sit 4 mm and 8 coarse cells past the ROI, on all six faces (× margin_scale)
@@ -24,8 +24,10 @@ CROP_MM = 1.0  # the through-crop, past the walls
 
 
 def f_max(project: dict) -> float:
-    """The top of the band, in Hz: band(project)[1] for an antenna (Stage 3 design 5.4), else band_factor × harmonics
-    × f0."""
+    """The top of the band, in Hz: an SI project's f_max_hz (Stage 4 design 5.1); band(project)[1] for an antenna
+    (Stage 3 design 5.4); else band_factor × harmonics × f0."""
+    if si(project):
+        return project["f_max_hz"]
     if antenna(project):
         return band(project)[1]
     return project["band_factor"] * project["harmonics"] * project["f0_hz"]
