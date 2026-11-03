@@ -6,7 +6,7 @@ from __future__ import annotations
 
 import math
 from collections import defaultdict
-from collections.abc import Iterable
+from collections.abc import Collection, Iterable
 from dataclasses import dataclass, replace
 
 import shapely
@@ -206,7 +206,8 @@ def staircased(polygons: Iterable[BaseGeometry]) -> bool:
 
 
 def cross_section(sec: Section, pieces: list[Piece], zs: tuple[Slab, ...], mask: MaskModel | None, mode: str,
-                  dz0: float | None = None, box_h: float = BOX_H, h: float | None = None) -> CrossSection:
+                  dz0: float | None = None, box_h: float = BOX_H, h: float | None = None,
+                  partners: Collection[str] = ()) -> CrossSection:
     """The cut perpendicular to `sec` at `sec.cut`, `box_h` substrate heights past its edges either side, through every
     piece it meets there, each as thick as its layer: the strip of `sec`'s net under its centre line is the signal,
     and any other conductor ground, its net's other copper too (as signal, a hairpin's two arms read as one line of
@@ -220,15 +221,30 @@ def cross_section(sec: Section, pieces: list[Piece], zs: tuple[Slab, ...], mask:
     reads a microstrip's Z0 about 0.7 % under a 45 h box, which P0-A's 2D references take (D-14); fit2d's two solves
     share the box, so its bias cancels there. The substrate height is `h`, None for substrate_h(zs), the top layer's:
     an SI section's own layer's substrate (`substrate_h(zs, (sec.layer,))`), which a B.Cu or inner line needs; fit2d
-    keeps the default, its two solves sharing the box."""
+    keeps the default, its two solves sharing the box. With `partners`, an SI pair's other line's nets (Stage 4 design
+    5.9), the cut's strip on `sec.layer` of a net in `partners` whose middle lies nearest the centre line is a second
+    signal, for cs2d.pair; within 2·SIMPLIFY of the signal strip's width it takes that width about its own middle, as
+    pair needs mirror images to 1e-9 mm and the 10 µm simplification leaves real legs 0.3–3 µm apart (usb2_hs's MCU
+    run, every cut of usb2_hs_45). With no partner strip the cross-section is the one above."""
     if mode not in MODES:
         raise ValueError(f"cross-section mode {mode!r} is not one of {MODES}")
     m = box_h * (substrate_h(zs) if h is None else h)
     line, k, c = _cut(sec, sec.width / 2 + m)
     lo, hi = round(c - sec.width / 2 - m, 6), round(c + sec.width / 2 + m, 6)
     own = (sec.net, sec.layer)
-    conductors = [Rect(a, b, s.z0, s.z1, role="signal" if (net, s.copper) == own and a <= c <= b else "ground")
-                  for s in zs if s.kind == "copper" for net, a, b in _strips(pieces, s.copper, line, k)]
+    strips = [[net, s, a, b] for s in zs if s.kind == "copper" for net, a, b in _strips(pieces, s.copper, line, k)]
+    signal = [i for i, (net, s, a, b) in enumerate(strips) if (net, s.copper) == own and a <= c <= b]
+    mates = [i for i, (net, s, _, _) in enumerate(strips) if s.copper == sec.layer and net in partners]
+    if signal and mates:
+        mate = min(mates, key=lambda i: abs((strips[i][2] + strips[i][3]) / 2 - c))
+        (_, _, a, b), w = strips[mate], strips[signal[0]][3] - strips[signal[0]][2]
+        # ponytail: a partner within 20 µm takes the signal's width; wider legs read as a leg alone (I_SI_2D_LEG)
+        if abs(b - a - w) <= 2 * SIMPLIFY:
+            mid = (a + b) / 2
+            strips[mate][2:] = mid - w / 2, mid + w / 2
+        signal.append(mate)
+    conductors = [Rect(a, b, s.z0, s.z1, role="signal" if i in signal else "ground")
+                  for i, (_, s, a, b) in enumerate(strips)]
     dielectrics = [Rect(lo, hi, s.z0, s.z1, s.eps_r) for s in zs if s.kind == "dielectric"]
     dielectrics += [Rect(lo, hi, s.z0, s.z1, (a.eps_r + b.eps_r) / 2) for a, s, b in zip(zs, zs[1:], zs[2:])
                     if s.kind == "copper" and a.kind == b.kind == "dielectric"]

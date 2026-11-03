@@ -73,6 +73,12 @@ def si(data: dict) -> bool:
     return data.get("schema") == SCHEMA_SI
 
 
+def default_gates(data: dict) -> dict:
+    """The gate limits project.json `data`'s verdicts are built for: GATES_SI for an SI project (Stage 4 design 5.3),
+    else GATES."""
+    return GATES_SI if si(data) else GATES
+
+
 def pulse_band(f_lo: float, f_hi: float) -> tuple[float, float]:
     """The pulse's band (f1, f2) of an antenna's band, in Hz (Stage 3 design 5.4): f_lo/1.3 rounded down and 1.2·f_hi
     rounded up, each to 3 significant digits, as floats."""

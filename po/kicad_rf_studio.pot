@@ -144,6 +144,31 @@ msgstr ""
 msgid "{net} on {layer}: width {width_mm} mm, length {length_mm} mm — other copper touches this line, so there is no 2D estimate. Check the copper in KiCad and refill zones (B)."
 msgstr ""
 
+#. I_SI_2D_HEADER
+#, python-brace-format
+msgid "2D table against the target {target} Ω ± {tolerance_pct} % (a pair's Zdiff, a net's Z0), mask included; bends, vias, pads and parts not included: a screening before the run, not its result."
+msgstr ""
+
+#. I_SI_2D_LINE
+#, python-brace-format
+msgid "{net} on {layer}: width {width_mm} mm, gap {gap_mm}, length {length_mm} mm — Z0 {z0} Ω, εeff {eeff}, delay {delay_ps} ps: {verdict}."
+msgstr ""
+
+#. I_SI_2D_LEG
+#, python-brace-format
+msgid "{net} on {layer}: width {width_mm} mm, length {length_mm} mm, its partner not alongside — Z0 {z0} Ω, so Zdiff {z_diff} Ω uncoupled, εeff {eeff}, delay {delay_ps} ps: {verdict}."
+msgstr ""
+
+#. I_SI_2D_PAIR
+#, python-brace-format
+msgid "{net} on {layer}, coupled: width {width_mm} mm, gap {gap_mm} mm, length {length_mm} mm — Zdiff {z_diff} Ω (Zodd {z_odd} Ω, Zeven {z_even} Ω), εeff odd {eeff_odd}, even {eeff_even}, delay {delay_ps} ps: {verdict}."
+msgstr ""
+
+#. I_SI_SHORT_ROUTE
+#, python-brace-format
+msgid "The route {net} is {delay_ps} ps long, under a sixth of the link's {rise_ps} ps rise time: it is electrically short, and the 2D table above, with a lumped estimate, may answer the question without a run."
+msgstr ""
+
 #. W_PADSTACK
 #, python-brace-format
 msgid "Pad {pad} uses a per-layer padstack; its front shape is used on every layer."
@@ -669,6 +694,16 @@ msgstr ""
 msgid "Worst case: {time} for {runs} runs to T_max {t_max_ns} ns, {pool} at once with {threads} threads each."
 msgstr ""
 
+#. I_SI_COST_JOBS
+#, python-brace-format
+msgid "Runs: {lines} for the measured lines' ends, {victims} for the victims' ends, {parts} for the part ports."
+msgstr ""
+
+#. W_SI_LONG_RUN
+#, python-brace-format
+msgid "The worst case is {time}, over two hours: the draft preset, or a shorter route between nearer pads, cuts it."
+msgstr ""
+
 #. I_COST_PREDICTED
 #, python-brace-format
 msgid "Predicted from the last run's stop times: {time}."
@@ -726,6 +761,11 @@ msgstr ""
 #. W_GATE_LIMITS
 #, python-brace-format
 msgid "project.json sets gates.fit2d_limit {fit2d_limit} and gates.dt_floor {dt_floor}, not 0.03 and 0.8, so this verdict is outside the validated limits. Set them back to 0.03 and 0.8 for a validated result."
+msgstr ""
+
+#. W_GATE_LIMITS_SI
+#, python-brace-format
+msgid "project.json sets gates.fit2d_limit {fit2d_limit} and gates.dt_floor {dt_floor}, not a signal-integrity project's 0.03 and 0.6, so this verdict is outside the limits it was built for. Set them back to 0.03 and 0.6."
 msgstr ""
 
 #. I_GATES_PASSED
@@ -2115,6 +2155,18 @@ msgstr ""
 
 #. T_PAIR_WITH
 msgid "--pair-with"
+msgstr ""
+
+#. T_IN_BAND
+msgid "in the target band"
+msgstr ""
+
+#. T_OUT_OF_BAND
+msgid "outside the target band"
+msgstr ""
+
+#. T_VICTIM
+msgid "a victim, no target"
 msgstr ""
 
 #. T_HATCHED_ZONE

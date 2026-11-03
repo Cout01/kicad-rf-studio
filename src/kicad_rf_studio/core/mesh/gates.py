@@ -10,7 +10,7 @@ from typing import TYPE_CHECKING
 import numpy as np
 from scipy.constants import c as C_0
 
-from kicad_rf_studio.core.cs2d import ShortError, solve
+from kicad_rf_studio.core.cs2d import ShortError, pair, solve
 from kicad_rf_studio.core.geometry.sections import cross_section
 from kicad_rf_studio.core.mesh import build_mesh
 from kicad_rf_studio.core.mesh.rule import lint_hits
@@ -34,7 +34,8 @@ class LintHit:
 
 @dataclass(frozen=True)
 class Fit:
-    """fit2d of `section`: Z0 on the mesh lines and on cs2d's own grid (Ω), and `err`, |z0_mesh/z0_ref − 1|."""
+    """fit2d of `section`: Z0 on the mesh lines and on cs2d's own grid (Ω), and `err`, |z0_mesh/z0_ref − 1|; a coupled
+    Fit's (fit2d) z0 fields hold Zdiff, and `err` its worse mode's."""
     section: Section
     z0_mesh: float
     z0_ref: float
@@ -75,20 +76,37 @@ def fit2d(geom: Geometry, mesh: Mesh) -> list[Fit]:
     the coat smeared over dz0 as in the FDTD model, against cs2d's own grid with the exact mask. A mesh that puts a
     grid node on the line and on another conductor (a short in FDTD) or holds no grid edge in it (the line is lost)
     carries no such line: z0_mesh 0 and err 1, never a skip or NaN (T7). Raises E_FIT2D_SHORT when other copper
-    touches the line at its cut, which leaves the reference no line to solve."""
+    touches the line at its cut, which leaves the reference no line to solve. A section of an SI pair's line
+    (geom.partners of its net, Stage 4 design 5.3, 5.9) then gets a second Fit, coupled: the cut with its partner
+    (cross_section's `partners`) through cs2d.pair, Zdiff in both z0 fields and `err` the larger of the odd and even
+    modes' errors, z0_mesh 0 and err 1 when the pair does not solve on the mesh lines; none when it does not solve on
+    cs2d's own grid (no partner alongside at the cut, legs of other widths, a short), where the leg's own Fit stands."""
     fits = []
     for sec in geom.sections:
-        mask = geom.masks.get(sec.layer)
+        mask, lines = geom.masks.get(sec.layer), (mesh.y if sec.axis == "x" else mesh.x, mesh.z)
         try:
             ref = solve(cross_section(sec, geom.pieces, geom.zs, mask, "exact")).z0
         except ShortError:
             raise KrsError("E_FIT2D_SHORT", net=sec.net, layer=sec.layer) from None
         cs = cross_section(sec, geom.pieces, geom.zs, mask, "smeared", mesh.dz0)
         try:
-            z0 = solve(cs, mesh.y if sec.axis == "x" else mesh.x, mesh.z).z0
+            z0 = solve(cs, *lines).z0
         except ValueError:
             z0 = 0.0
         fits.append(Fit(sec, z0, ref, abs(z0 / ref - 1)))
+        if not (partners := geom.partners(sec.net)):
+            continue
+        # ponytail: both legs' sections check the same coupled cut, twice
+        try:
+            coupled = pair(cross_section(sec, geom.pieces, geom.zs, mask, "exact", partners=partners))
+        except ValueError:  # ShortError too: no coupled check, the leg's own Fit stands
+            continue
+        try:
+            on = pair(cross_section(sec, geom.pieces, geom.zs, mask, "smeared", mesh.dz0, partners=partners), *lines)
+            z, err = on.z_diff, max(abs(on.z_odd / coupled.z_odd - 1), abs(on.z_even / coupled.z_even - 1))
+        except ValueError:
+            z, err = 0.0, 1.0
+        fits.append(Fit(sec, z, coupled.z_diff, err))
     return fits
 
 

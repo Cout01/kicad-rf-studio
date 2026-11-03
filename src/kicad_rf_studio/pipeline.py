@@ -27,10 +27,11 @@ from typing import TYPE_CHECKING
 import numpy as np
 
 from kicad_rf_studio import __version__, runs
-from kicad_rf_studio.core.cs2d import ShortError, solve
+from kicad_rf_studio.core.cs2d import ShortError, pair, solve
 from kicad_rf_studio.core.geometry import build_geometry
 from kicad_rf_studio.core.geometry.region import air_cell, band
-from kicad_rf_studio.core.geometry.sections import cross_section
+from kicad_rf_studio.core.geometry.sections import cross_section, route_length
+from kicad_rf_studio.core.geometry.zstack import substrate_h
 from kicad_rf_studio.core.kicad import load_board
 from kicad_rf_studio.core.kicad.tracer import adopt, check_antenna
 from kicad_rf_studio.core.kicad.values import bypass, port_value
@@ -40,7 +41,7 @@ from kicad_rf_studio.core.model.parts import CURVE_PORT, GRID, PORT
 from kicad_rf_studio.core.model.ports import ends, nominal_boxes, place
 from kicad_rf_studio.core.model.readers import read_log, read_probe, read_run_stats, read_stats
 from kicad_rf_studio.core.model.spec import (air_box, cell_split, far_field_box, grid_entry, metal_in_pml, model_spec,
-                                             spec_hash, verify_spec)
+                                             round_trip, spec_hash, verify_spec)
 from kicad_rf_studio.core.post.antenna import (ANTENNA_LIMITS, ANTENNA_OUTPUTS, ANTENNA_VERIFY_OUTPUTS, COMPARE_OUTPUTS,
                                                antenna_csv, antenna_png, compare_png, compare_s11, delta_lines, deltas,
                                                deltas_csv, eta_what_if_lines, far_field_lines, far_field_of,
@@ -50,8 +51,8 @@ from kicad_rf_studio.core.post.checks import compare, indicator_lines, loss_budg
 from kicad_rf_studio.core.post.outputs import (LIMITS, OUTPUTS, VERIFY_OUTPUT, grid_lines, marker_lines, port_map,
                                                summary_csv, summary_png, touchstone, write)
 from kicad_rf_studio.core.post.waves import layout
-from kicad_rf_studio.core.project import (GATES, antenna, board_file, board_hash, copper_model, load_project, mesh_n,
-                                          parts, read_project, relative_path, save_project, si)
+from kicad_rf_studio.core.project import (GATES, GATES_SI, antenna, board_file, board_hash, copper_model, default_gates,
+                                          load_project, mesh_n, parts, read_project, relative_path, save_project, si)
 from kicad_rf_studio.stoprule import KEPT, PRESETS, WINDOW_S, Records, Verdict, residual_db, stop_rule
 from kicad_rf_studio.worker import GRIDS, LOG
 
@@ -69,6 +70,7 @@ VERDICTS = {"converged": "I_JOB_CONVERGED", "flat": "W_JOB_FLAT", "t_max": "W_JO
 # spec 7.6 (amendment A-4): the instant retune is labelled relative / what-if until P0-C passes; the owner sets True
 # after P0-C (controller recommendation, owner unavailable)
 RETUNE_VALIDATED = False
+LONG_RUN_S = 7200  # design 5.9: a warning past two hours
 
 
 def project_path(arg: str) -> Path:
@@ -217,10 +219,12 @@ def cost_notes(model: Model, project: dict, setup: dict, threads: int, pool: int
     ceil(runs / pool) rounds; the time predicted from the longest stop time of the last run's jobs that kept S, when
     that run was of this model; the RAM; the main cost (driver). An antenna's two times take the cost refit's
     corrections: each PML cell counts as runs.PML_WEIGHT cells, at runs.small_speed(`pool`) × `per_job_mcs`; its RAM
-    counts the cells."""
+    counts the cells. An SI project's worst case (Stage 4 design 5.9) is followed by its runs broken down into the
+    measured lines' ends, the victims' ends and the part ports (I_SI_COST_JOBS), then W_SI_LONG_RUN when it exceeds
+    LONG_RUN_S."""
     mesh, ports, dt = model.mesh, model.spec["ports"], setup["dt"]
     nx, ny, nz = len(mesh.x), len(mesh.y), len(mesh.z)
-    cells, n_runs = nx * ny * nz, len(ports)
+    cells, n_runs, n_parts = nx * ny * nz, len(ports), sum(q["part"] for q in ports)
     weighted, mcs, split = cells, per_job_mcs, []  # the cells a timestep costs, at mcs MC/s a job
     if antenna(project):
         board, air, pml = cell_split(model.spec)
@@ -229,8 +233,8 @@ def cost_notes(model: Model, project: dict, setup: dict, threads: int, pool: int
         split = [("I_COST_SPLIT", {"board": f"{board / 1e6:.2f}", "air": f"{air / 1e6:.2f}", "pml": f"{pml / 1e6:.2f}",
                                    "weight": f"{runs.PML_WEIGHT:g}", "ratio": f"{ratio:g}"})]
 
-    def time(t_stop: float) -> str:
-        return duration(math.ceil(n_runs / pool) * weighted * (t_stop / dt) / (mcs * 1e6))
+    def seconds(t_stop: float) -> float:
+        return math.ceil(n_runs / pool) * weighted * (t_stop / dt) / (mcs * 1e6)
 
     size, axis, at = smallest_cell(mesh)
     t_max = project["t_max_s"]
@@ -240,16 +244,22 @@ def cost_notes(model: Model, project: dict, setup: dict, threads: int, pool: int
         *split,
         ("I_COST_SMALLEST", {"size_um": f"{size * 1e3:.1f}", "axis": axis, "at_mm": f"{at:.3f}"}),
         ("I_COST_DT", dt_params(model, project["gates"]["dt_floor"], setup)),
-        ("I_COST_TIME", {"time": time(t_max), "runs": n_runs, "t_max_ns": f"{t_max * 1e9:g}", "pool": pool,
-                         "threads": threads})]
+        ("I_COST_TIME", {"time": duration(seconds(t_max)), "runs": n_runs, "t_max_ns": f"{t_max * 1e9:g}",
+                         "pool": pool, "threads": threads})]
+    if si(project):
+        # ponytail: a Debye cell counts as a plain one until gate P4-D measures its weight (design 5.9)
+        roles = [line["role"] for line in project["lines"]]
+        notes.append(("I_SI_COST_JOBS", {"lines": 2 * roles.count("measured"), "victims": 2 * roles.count("victim"),
+                                         "parts": n_parts}))
+        if seconds(t_max) > LONG_RUN_S:
+            notes.append(("W_SI_LONG_RUN", {"time": duration(seconds(t_max))}))
     results = project.get("results", {})  # a job with no samples has no stop time, and a stopped one a wrong one
     t_stops = [j["t_stop"] for j in results.get("jobs", ()) if j["verdict"] in KEPT and j["t_stop"] is not None]
     if t_stops and results.get("model_hash") == spec_hash(model.spec):  # another model stops elsewhere
-        notes.append(("I_COST_PREDICTED", {"time": time(max(t_stops))}))
+        notes.append(("I_COST_PREDICTED", {"time": duration(seconds(max(t_stops)))}))
     # ponytail: RAM counts the cells, not the far-field dumps (12 MB at 2.4 GHz, r1); add them if W_RAM misleads
     gb = pool * (runs.MB_PER_MCELL * cells / 1e6 + runs.MB_PER_WORKER) / 1024
-    return [*notes, ("I_COST_RAM", {"gb": f"{gb:.1f}", "pool": pool}),
-            driver(mesh, n_runs, sum(q["part"] for q in ports))]
+    return [*notes, ("I_COST_RAM", {"gb": f"{gb:.1f}", "pool": pool}), driver(mesh, n_runs, n_parts)]
 
 
 def prepare(model: Model, emit: Callable[[str, dict], None], run_dir: Path | None = None, *,
@@ -328,6 +338,75 @@ def readout_2d(geom: Geometry) -> list[tuple[str, dict]]:
     return lines
 
 
+def si_readout(board: Board, geom: Geometry, project: dict) -> list[tuple[str, dict]]:
+    """The 2D table of an SI project (Stage 4 design 5.9), no file written: I_SI_2D_HEADER (W_NO_SECTIONS without a
+    section), then each section of `geom` in order, its cut solved on cs2d's own grid with the exact mask of its side,
+    in a box of its own layer's substrate (cross_section's `h`): a pair's line whose partner runs alongside at the cut
+    as I_SI_2D_PAIR (cs2d.pair: Zdiff, Zodd, Zeven, the odd and even εeff, the delay at the odd mode's); a pair's line
+    alone there as I_SI_2D_LEG (Z0, Zdiff 2·Z0 uncoupled); a single net's as I_SI_2D_LINE; each against the target
+    band, |Z − target| ≤ tolerance·target, a victim's as T_VICTIM; W_2D_SHORT where other copper touches the line at
+    its cut. Then I_SI_SHORT_ROUTE for the longest measured route (route_length) when its delay, at the largest εeff
+    its rows read, is under rise_s/6."""
+    target, tolerance, rise = project["target_ohm"], project["tolerance"], project["rise_s"]
+    victims = {net for line in project["lines"] if line["role"] == "victim" for net in line["chain"]["nets"]}
+    rows = [("I_SI_2D_HEADER", {"target": f"{target:g}", "tolerance_pct": f"{100 * tolerance:g}"})
+            if geom.sections else ("W_NO_SECTIONS", {})]
+    read = []  # each row's net and the largest εeff it reads, for the short route
+
+    def verdict(net: str, z: float) -> str:
+        if net in victims:
+            return "T_VICTIM"
+        return "T_IN_BAND" if abs(z - target) <= tolerance * target else "T_OUT_OF_BAND"
+
+    def delay_s(length_mm: float, eps_eff: float) -> float:
+        return round_trip(length_mm, eps_eff) / 2
+
+    # ponytail: no skip rule for a cut that is no line's until plan 4's P4-C sets one; the fixtures have none
+    for s in geom.sections:
+        named = {"net": s.net, "layer": s.layer, "width_mm": f"{s.width:.3f}", "length_mm": f"{s.length:.3f}"}
+        cut = partial(cross_section, s, geom.pieces, geom.zs, geom.masks.get(s.layer), "exact",
+                      h=substrate_h(geom.zs, (s.layer,)))
+        coupled = None
+        if partners := geom.partners(s.net):
+            with contextlib.suppress(ValueError):  # no partner at the cut, widths over 2·SIMPLIFY apart, or a short
+                cs = cut(partners=partners)
+                coupled = pair(cs)
+        if coupled is not None:
+            # ponytail: mean-c11 modes as a screening; on usb2_hs's long cut the legs alone read 51.01 and 51.10 Ω
+            p, n = (r for r in cs.conductors if r.role == "signal")
+            rows.append(("I_SI_2D_PAIR", {**named, "gap_mm": f"{max(n.x0 - p.x1, p.x0 - n.x1):.3f}",
+                                          "z_diff": f"{coupled.z_diff:.2f}", "z_odd": f"{coupled.z_odd:.2f}",
+                                          "z_even": f"{coupled.z_even:.2f}", "eeff_odd": f"{coupled.eps_odd:.3f}",
+                                          "eeff_even": f"{coupled.eps_even:.3f}",
+                                          "delay_ps": f"{delay_s(s.length, coupled.eps_odd) * 1e12:.1f}",
+                                          "verdict": verdict(s.net, coupled.z_diff)}))
+            read.append((s.net, max(coupled.eps_odd, coupled.eps_even)))
+            continue
+        try:
+            line = solve(cut())
+        except ShortError:  # another net's copper (E_SHORT_IN_ROI) or copper with none, which no check reports
+            rows.append(("W_2D_SHORT", named))
+            continue
+        read.append((s.net, line.eps_eff))
+        named |= {"z0": f"{line.z0:.2f}", "eeff": f"{line.eps_eff:.3f}",
+                  "delay_ps": f"{delay_s(s.length, line.eps_eff) * 1e12:.1f}"}
+        if partners:
+            # ponytail: such a pair reads 2·Z0 with its partner grounded, which overstates Zdiff by the coupling;
+            # cs2d's asymmetric modes if real boards need it
+            rows.append(("I_SI_2D_LEG", {**named, "z_diff": f"{2 * line.z0:.2f}",
+                                         "verdict": verdict(s.net, 2 * line.z0)}))
+        else:
+            rows.append(("I_SI_2D_LINE", {**named, "gap_mm": "T_NONE" if s.gap is None else f"{s.gap:.3f}",
+                                          "verdict": verdict(s.net, line.z0)}))
+    route = max((line["chain"]["nets"] for line in project["lines"] if line["role"] == "measured"),
+                key=lambda nets: route_length(board, nets))
+    eps = max((e for net, e in read if net in route), default=None)
+    if eps is not None and (delay := delay_s(route_length(board, route), eps)) < rise / 6:
+        rows.append(("I_SI_SHORT_ROUTE", {"net": route[0], "delay_ps": f"{delay * 1e12:.1f}",
+                                          "rise_ps": f"{rise * 1e12:g}"}))
+    return rows
+
+
 def expected_loss(geom: Geometry, f0: float) -> float:
     """loss_expected at `f0` (C-25) of the measured sections of `geom`: each with its εeff with mask (the exact one),
     as the 2D readout prints it, the εr and tanδ (None for 0) of the dielectric next to its copper in geom.zs, the one
@@ -346,21 +425,24 @@ def expected_loss(geom: Geometry, f0: float) -> float:
     return loss_expected(terms, f0)
 
 
-def gate_lines(gates: dict) -> list[tuple[str, dict]]:
-    """W_GATE_LIMITS when the gate limits `gates` are not GATES (C-10), else none."""
-    if gates == GATES:
+def gate_lines(gates: dict, defaults: dict = GATES) -> list[tuple[str, dict]]:
+    """W_GATE_LIMITS when the gate limits `gates` are not `defaults` (C-10), W_GATE_LIMITS_SI when those are GATES_SI
+    (an SI project's, default_gates), else none."""
+    if gates == defaults:
         return []
-    return [("W_GATE_LIMITS", {"fit2d_limit": f"{gates['fit2d_limit']:g}", "dt_floor": f"{gates['dt_floor']:g}"})]
+    return [("W_GATE_LIMITS_SI" if defaults == GATES_SI else "W_GATE_LIMITS",
+             {"fit2d_limit": f"{gates['fit2d_limit']:g}", "dt_floor": f"{gates['dt_floor']:g}"})]
 
 
 def cost(path: Path, run_dir: Path | None = None) -> int:
-    """`cost` on the project at `path` (spec 3.2), returning its exit code (C-22): W_FILLS_AS_SAVED, the 2D readout and
-    load()'s notes, then 2 on a refusal among them; a project without ports stops there with W_NO_PORTS. Then the
-    model and its mesh gates; with a spec, prepare (a first-use calibration inside the run folder), the setup gate in
-    `run_dir`, else a run folder of its own, its lines as events, W_GATE_LIMITS when the gate limits are not GATES
-    (C-10), and the cost lines. 3 if any gate blocked (geometry, mesh or setup), else 0. A `run_dir` that exists at the
-    start (--run-dir, A-14) gets every line as an event from the first: the readout as cost events, the mesh gates as
-    verdict events with job None, the others message events; otherwise those first lines are printed only."""
+    """`cost` on the project at `path` (spec 3.2), returning its exit code (C-22): W_FILLS_AS_SAVED, the 2D readout (an
+    SI project's 2D table, si_readout) and load()'s notes, then 2 on a refusal among them; a project without ports
+    stops there with W_NO_PORTS. Then the model and its mesh gates; with a spec, prepare (a first-use calibration
+    inside the run folder), the setup gate in `run_dir`, else a run folder of its own, its lines as events,
+    gate_lines when the gate limits are not default_gates' (C-10), and the cost lines. 3 if any gate blocked
+    (geometry, mesh or setup), else 0. A `run_dir` that exists at the start (--run-dir, A-14) gets every line as an
+    event from the first: the readout as cost events, the mesh gates as verdict events with job None, the others
+    message events; otherwise those first lines are printed only."""
     # absolute: `cost .` names the run folder after the project's folder too
     run_dir = run_dir or runs.run_dir_for(path.absolute().parent.name)
     # ponytail: a folder made first (--run-dir) gets every line; a terminal cost prints its first lines only, so the
@@ -368,7 +450,7 @@ def cost(path: Path, run_dir: Path | None = None) -> int:
     say = partial(runs.emit, run_dir if run_dir.is_dir() else None)  # (kind, code, params, job=None)
     project, board, geom, notes = load(path)
     say("message", "W_FILLS_AS_SAVED", {})
-    for code, params in readout_2d(geom):
+    for code, params in si_readout(board, geom, project) if si(project) else readout_2d(geom):
         say("cost", code, params)
     for code, params in notes:
         say("message", code, params)
@@ -389,7 +471,7 @@ def cost(path: Path, run_dir: Path | None = None) -> int:
         runs.emit(run_dir, "verdict", code, params, job=0)
     for code, params in warnings:
         runs.emit(run_dir, "message", code, params, job=0)
-    for code, params in gate_lines(project["gates"]):
+    for code, params in gate_lines(project["gates"], default_gates(project)):
         runs.emit(run_dir, "message", code, params)
     for code, params in cost_notes(model, project, setup, threads, pool, per_job_mcs):
         runs.emit(run_dir, "cost", code, params)
@@ -685,12 +767,12 @@ def run(path: Path, run_dir: Path | None = None) -> int:
     replaced), I_RESULTS, then write_outputs' lines as result events, an E_ line (a part's refusal, the layout N-port
     still written; E_RESULTS_WRITE for a file held open, the lines and LIMITS still printed) as a message event, and
     0, or 2 after an E_ line (C-26); else W_RUN_NOT_KEPT and 4, the previous results and results/ left as they were
-    (C-24, C-29). W_GATE_LIMITS follows the gate lines and each verdict when the gate limits are not GATES (C-10). STOP
-    or Ctrl+C before the jobs start propagates as KeyboardInterrupt (exit 130, results untouched); once they run, it
-    stops them, and their verdicts say so. An antenna's run (Stage 3) saves its results with far_field null and its
-    settings fingerprint, taken before the jobs; with no part port it then transforms its far field and saves again, a
-    transform that fails being an E_ line (_run); its outputs are antenna_outputs'. A given `run_dir` stands in for
-    the fresh run folder."""
+    (C-24, C-29). W_GATE_LIMITS (an SI project's W_GATE_LIMITS_SI) follows the gate lines and each verdict when the
+    gate limits are not default_gates' (C-10). STOP or Ctrl+C before the jobs start propagates as KeyboardInterrupt
+    (exit 130, results untouched); once they run, it stops them, and their verdicts say so. An antenna's run (Stage 3)
+    saves its results with far_field null and its settings fingerprint, taken before the jobs; with no part port it
+    then transforms its far field and saves again, a transform that fails being an E_ line (_run); its outputs are
+    antenna_outputs'. A given `run_dir` stands in for the fresh run folder."""
     if not read_project(path)["ports"]:
         raise KrsError("E_NO_PORTS")
     return _locked(path, _run, run_dir)
@@ -762,7 +844,7 @@ def _model_phase(path: Path, emit: Callable[..., None]) -> tuple[dict, Board, Ge
     """The model phase that run and verify share under the lock (spec 6.1, C-42): the project at `path`, its board,
     its geometry and its model, with W_FILLS_AS_SAVED and load()'s notes as message events through `emit` (runs.emit
     bound to the run folder). Instead the exit code where it stops: stops()'s, or 3 when a mesh gate blocks, its gates
-    as verdict events followed by gate_lines (C-10)."""
+    as verdict events followed by gate_lines against default_gates (C-10)."""
     project, board, geom, notes = load(path)
     for code, params in [("W_FILLS_AS_SAVED", {}), *notes]:
         emit("message", code, params)
@@ -772,7 +854,7 @@ def _model_phase(path: Path, emit: Callable[..., None]) -> tuple[dict, Board, Ge
     if model.blocked:
         for code, params in model.blocked:
             emit("verdict", code, params)
-        for code, params in gate_lines(project["gates"]):  # C-10
+        for code, params in gate_lines(project["gates"], default_gates(project)):  # C-10
             emit("message", code, params)
         return 3
     return project, board, geom, model
@@ -788,7 +870,7 @@ def simulate(model: Model, project: dict, run_dir: Path) -> tuple[list[dict], di
     setup.json, the job phase's wall time in s). STOP or Ctrl+C before the jobs start propagates as KeyboardInterrupt;
     once they run, it stops them, and their verdicts say so."""
     emit = partial(runs.emit, run_dir)  # (kind, code, params, job=None)
-    gates = project["gates"]
+    gates, defaults = project["gates"], default_gates(project)
     threads, pool, per_job_mcs = prepare(model, partial(emit, "message"), run_dir, small=antenna(project))
     setup, blocked, warnings = setup_gate(model, project, run_dir, runs.load_settings(), threads)
     for code, params in blocked:
@@ -796,16 +878,17 @@ def simulate(model: Model, project: dict, run_dir: Path) -> tuple[list[dict], di
     for code, params in warnings:
         emit("message", code, params, 0)
     if blocked:
-        for code, params in gate_lines(gates):  # C-10
+        for code, params in gate_lines(gates, defaults):  # C-10
             emit("message", code, params)
         return None
     emit("message", "I_GATES_PASSED_PML" if "boundary" in model.spec else "I_GATES_PASSED",
          {"dt": f"{setup['dt']:.4e}"})
-    for code, params in gate_lines(gates):
+    for code, params in gate_lines(gates, defaults):
         emit("message", code, params)
     for code, params in cost_notes(model, project, setup, threads, pool, per_job_mcs):
         emit("cost", code, params)
-    done, speeds, wall_s = run_ports(model, run_dir, setup, threads, pool, project["preset"], gates)
+    done, speeds, wall_s = run_ports(model, run_dir, setup, threads, pool, project["preset"], gates,
+                                     defaults=defaults)
     # spec 6.4: refreshed from the run's Speed lines; a run whose every job died measured nothing; and an antenna's
     # speed holds the PML and the small model, which cost applies to the calibration's own (Stage 3 design 5.9)
     if speeds and not antenna(project):
@@ -817,14 +900,15 @@ def simulate(model: Model, project: dict, run_dir: Path) -> tuple[list[dict], di
 
 
 def run_ports(model: Model, run_dir: Path, setup: dict, threads: int, pool: int, preset: str, gates: dict,
-              ports: list[int] | None = None, t_max: float | None = None) -> tuple[list[dict], list[float], float]:
+              ports: list[int] | None = None, t_max: float | None = None,
+              defaults: dict = GATES) -> tuple[list[dict], list[float], float]:
     """The jobs of a built `model` in `run_dir` once its setup gate passed (`setup`: setup.json), which simulate and
     the P0 harnesses share (spec 6.1): I_RUN_START; one job job-{k}-{name} per port number k in `ports` (1-based,
     default every port) to `t_max` (default the spec's), `pool` at once with `threads` threads each under the stop rule
     at `preset`, with I_PROGRESS as its energy log grows; each job's verdict (classify_job) followed by
-    gate_lines(`gates`), then its excitation arrays et and ht removed (D-17), the run folder itself kept (C-23). The
-    residuals I_PROGRESS and a verdict without a cut report are last_sample's over the stop rule's window, an SI
-    pulse's window_s.
+    gate_lines(`gates`, `defaults`), then its excitation arrays et and ht removed (D-17), the run folder itself kept
+    (C-23). The residuals I_PROGRESS and a verdict without a cut report are last_sample's over the stop rule's window,
+    an SI pulse's window_s.
     Returns (the jobs as project.json's results record them, openEMS's speed in cells/s of each job that wrote its
     stats, the job phase's wall time in s). STOP or Ctrl+C stops the jobs, and their verdicts say so."""
     emit = partial(runs.emit, run_dir)  # (kind, code, params, job=None)
@@ -861,7 +945,7 @@ def run_ports(model: Model, run_dir: Path, setup: dict, threads: int, pool: int,
         r = r if r is not None and math.isfinite(r) else None  # a diverged job's NaN is no residual, nor in JSON
         emit("verdict", VERDICTS[kind], {"port": names[k - 1], "t_ns": None if t is None else f"{t * 1e9:.2f}",
                                          "residual_db": None if r is None else f"{r:.1f}", "log": str(job / LOG)}, k)
-        for code, params in gate_lines(gates):
+        for code, params in gate_lines(gates, defaults):
             emit("message", code, params)
         for array in ("et", "ht"):  # up to 32 MB a job, and nothing reads them
             with contextlib.suppress(OSError):  # Windows: an antivirus or the indexer may still hold it; it stays
