@@ -52,7 +52,7 @@ from kicad_rf_studio.core.post.outputs import (LIMITS, OUTPUTS, VERIFY_OUTPUT, g
 from kicad_rf_studio.core.post.waves import layout
 from kicad_rf_studio.core.project import (GATES, antenna, board_file, board_hash, copper_model, load_project, mesh_n,
                                           parts, read_project, relative_path, save_project, si)
-from kicad_rf_studio.stoprule import KEPT, PRESETS, Records, Verdict, residual_db, stop_rule
+from kicad_rf_studio.stoprule import KEPT, PRESETS, WINDOW_S, Records, Verdict, residual_db, stop_rule
 from kicad_rf_studio.worker import GRIDS, LOG
 
 if TYPE_CHECKING:
@@ -413,9 +413,10 @@ def records(job: Path, ports: int, dt: float) -> Records:
     return Records(t_u, u, t_i, i, steps * dt, e)
 
 
-def last_sample(rec: Records) -> tuple[float | None, float | None]:
-    """The time and the port residual (dB) of the last sample of `rec`; None and None without samples."""
-    return (float(rec.t_u[-1]), float(residual_db(rec)[-1])) if len(rec.t_u) else (None, None)
+def last_sample(rec: Records, window: float = WINDOW_S) -> tuple[float | None, float | None]:
+    """The time and the port residual (dB) of the last sample of `rec`, the residual over the last `window` s (the
+    stop rule's: an SI pulse's window_s, else WINDOW_S); None and None without samples."""
+    return (float(rec.t_u[-1]), float(residual_db(rec, window)[-1])) if len(rec.t_u) else (None, None)
 
 
 def classify_job(job: Path, result: dict, live: Verdict | None, rec: Records, k: int, preset: str,
@@ -821,7 +822,9 @@ def run_ports(model: Model, run_dir: Path, setup: dict, threads: int, pool: int,
     the P0 harnesses share (spec 6.1): I_RUN_START; one job job-{k}-{name} per port number k in `ports` (1-based,
     default every port) to `t_max` (default the spec's), `pool` at once with `threads` threads each under the stop rule
     at `preset`, with I_PROGRESS as its energy log grows; each job's verdict (classify_job) followed by
-    gate_lines(`gates`), then its excitation arrays et and ht removed (D-17), the run folder itself kept (C-23).
+    gate_lines(`gates`), then its excitation arrays et and ht removed (D-17), the run folder itself kept (C-23). The
+    residuals I_PROGRESS and a verdict without a cut report are last_sample's over the stop rule's window, an SI
+    pulse's window_s.
     Returns (the jobs as project.json's results record them, openEMS's speed in cells/s of each job that wrote its
     stats, the job phase's wall time in s). STOP or Ctrl+C stops the jobs, and their verdicts say so."""
     emit = partial(runs.emit, run_dir)  # (kind, code, params, job=None)
@@ -838,7 +841,7 @@ def run_ports(model: Model, run_dir: Path, setup: dict, threads: int, pool: int,
         live[job] = stop_rule(rec, k - 1, preset, exc)
         if len(rec.e) > rows.get(job, 0) and len(rec.t_u):
             rows[job] = len(rec.e)
-            t, r = last_sample(rec)
+            t, r = last_sample(rec, exc.get("window_s", WINDOW_S))
             speed = read_run_stats((job / "openEMS_run_stats.txt").read_text(encoding="utf-8"))[1][-1]
             emit("progress", "I_PROGRESS", {"port": names[k - 1], "t_ns": f"{t * 1e9:.2f}", "residual_db": f"{r:.1f}",
                                             "speed_mcs": f"{speed / 1e6:.1f}"}, k)
@@ -853,7 +856,7 @@ def run_ports(model: Model, run_dir: Path, setup: dict, threads: int, pool: int,
     for job, k in jobs.items():
         rec = records(job, len(names), dt)
         kind, verdict = classify_job(job, out[job], live.get(job), rec, k, preset, exc)
-        t_stop, r_last = last_sample(rec)
+        t_stop, r_last = last_sample(rec, exc.get("window_s", WINDOW_S))
         t, r = (verdict.t, verdict.residual_db) if verdict else (t_stop, r_last)
         r = r if r is not None and math.isfinite(r) else None  # a diverged job's NaN is no residual, nor in JSON
         emit("verdict", VERDICTS[kind], {"port": names[k - 1], "t_ns": None if t is None else f"{t * 1e9:.2f}",

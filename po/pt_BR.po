@@ -557,6 +557,16 @@ msgstr "Porta {name}: as duas ilhas dela não ficam frente a frente nem ao longo
 msgid "Port {name}: its box finds no mesh line inside its pads, or no copper-free mesh line between them with each end on its own pad's copper. Change mesh.n in project.json (another value moves the mesh lines), use larger pads, or clear other copper from between the pads."
 msgstr "Porta {name}: a caixa dela não encontra nenhuma linha da malha dentro das ilhas, ou nenhuma linha da malha livre de cobre entre elas com cada extremidade no cobre da própria ilha. Altere mesh.n no project.json (outro valor move as linhas da malha), use ilhas maiores, ou tire o outro cobre de entre as ilhas."
 
+#. E_PORT_PLANE
+#, python-brace-format
+msgid "Port {name} cannot take {layer} as its reference plane: it must be a copper layer of the board other than its pad's, {signal_layer}. Run `new` again, or set ports[].reference.plane in project.json."
+msgstr "A porta {name} não pode tomar {layer} como plano de referência: ele precisa ser uma camada de cobre da placa diferente da camada da ilha, {signal_layer}. Execute `new` de novo, ou defina ports[].reference.plane em project.json."
+
+#. E_PORT_VERTICAL_BOX
+#, python-brace-format
+msgid "Port {name}: no mesh line lies inside its pad's copper, so its vertical port has no sheet. Change mesh.n in project.json (another value moves the mesh lines), or end the line at a larger pad."
+msgstr "Porta {name}: nenhuma linha da malha fica dentro do cobre da ilha dela, então a porta vertical não tem folha. Mude mesh.n em project.json (outro valor move as linhas da malha), ou termine a linha em uma ilha maior."
+
 #. E_PART_VALUE
 #, python-brace-format
 msgid "Part {ref} is in the grid but its value \"{value}\" cannot be read. Fix its value in project.json, or set its role to \"open\" or \"port\"."
@@ -566,6 +576,11 @@ msgstr "O componente {ref} está na grade, mas o valor dele, \"{value}\", não p
 #, python-brace-format
 msgid "Part {ref} cannot sit in the grid: only a C or an R can. Set its role to \"port\" or \"open\" in project.json."
 msgstr "O componente {ref} não pode ficar na grade: só um C ou um R pode. Defina o papel dele como \"port\" ou \"open\" no project.json."
+
+#. E_DEBYE_FIT
+#, python-brace-format
+msgid "A Debye fit of a dielectric with εr {eps_r} and tan δ {tan_d} has no valid poles: it falls below vacuum or keeps none. Set \"dielectric\": \"lossless\" in project.json, or check that layer's εr and loss tangent in KiCad."
+msgstr "Um ajuste de Debye de um dielétrico com εr {eps_r} e tan δ {tan_d} não tem polos válidos: fica abaixo do vácuo ou não mantém nenhum. Defina \"dielectric\": \"lossless\" em project.json, ou confira o εr e a tangente de perdas dessa camada no KiCad."
 
 #. E_LOCKED
 #, python-brace-format

@@ -41,7 +41,7 @@ def build_csx(spec: dict, excite: int, t_max: float) -> tuple[object, object, ob
     pole's relaxation time 1/(2π·f_relax); its κ is ignored. openEMS 0.37 puts each pole on an edge at the edge's own
     point, over its whole area (operator_ext_debyematerial.cpp), where the static ε is averaged over the quarter cells,
     so the edges on a Debye substrate's top face carry its full Δε over dual cells half in air: a stated limit gate
-    P4-D isolates."""
+    P4-D isolates. A "debye" whose two lists differ in length raises ValueError."""
     from CSXCAD import ContinuousStructure
     from openEMS import openEMS
 
@@ -64,7 +64,7 @@ def build_csx(spec: dict, excite: int, t_max: float) -> tuple[object, object, ob
 
             material = CSPropDebyeMaterial(csx.GetParameterSet(), order=len(db["delta"]), name=m["name"],
                                            epsilon=db["eps_inf"])
-            for k, (delta, f_relax) in enumerate(zip(db["delta"], db["f_relax_hz"])):
+            for k, (delta, f_relax) in enumerate(zip(db["delta"], db["f_relax_hz"], strict=True)):
                 material.SetDispersiveMaterialProperty(k, eps_delta=delta, eps_relax=1 / (2 * math.pi * f_relax))
             csx.AddProperty(material)
         else:

@@ -30,7 +30,7 @@ from kicad_rf_studio.core.model.csx import PML_CELLS
 from kicad_rf_studio.core.model.parts import COPPER
 from kicad_rf_studio.core.model.ports import _pad
 from kicad_rf_studio.core.model.readers import c_box
-from kicad_rf_studio.core.project import antenna, copper_model, pulse_band
+from kicad_rf_studio.core.project import antenna, copper_model, parts, pulse_band, si
 from kicad_rf_studio.stoprule import FLAT_S, WINDOW_S, flat_window, stop_window
 
 if TYPE_CHECKING:
@@ -96,7 +96,10 @@ def si_t_max(f_max: float, round_trip_s: float) -> float:
 def excitation(project: dict) -> dict:
     """pulse() over the band (f1, f2) of `project` (project.json), run to the project's T_max; an antenna's also holds
     its flat window "flat_s": project.json's flat_s when it sets one (gate P3-C's widened window), else flat_window() of
-    its f0 (Stage 3 design 5.4)."""
+    its f0 (Stage 3 design 5.4). An SI project's is dc_pulse() to its f_max_hz, T_max and window_s (Stage 4 design
+    5.4)."""
+    if si(project):
+        return dc_pulse(project["f_max_hz"], project["t_max_s"], project["window_s"])
     exc = pulse(*band(project), project["t_max_s"])
     return {**exc, "flat_s": project.get("flat_s") or flat_window(project["f0_hz"])} if antenna(project) else exc
 
@@ -179,8 +182,8 @@ def debye(eps_r: float, tan_d: float, f_max: float) -> dict:
     j·f/f_relax), one pole a decade at f_max/10^k, k = DEBYE_DECADES down to 0. It is fitted in the Djordjevic–Sarkar
     manner to `eps_r` and `tan_d` at DEBYE_F_REF, ε″ = εr·tan δ flat and ε′ = εr − (2/π)·ε″·ln(f/DEBYE_F_REF), on 61
     log-spaced points from the first pole to f_max, its ε″ rows weighted 1/tan δ, by non-negative least squares: every
-    Δε ≥ 0, a pole that takes 0 dropped, and no κ, so no DC loss. ValueError ("Debye") for a tan δ of 0 or less, and for
-    an ε∞ under 1, a fit below vacuum."""
+    Δε ≥ 0, a pole that takes 0 dropped, and no κ, so no DC loss. ValueError ("Debye") for a tan δ of 0 or less, for an
+    ε∞ under 1, a fit below vacuum, and for a fit that keeps no pole, which would be a Debye material of order 0."""
     # ponytail: one pole a decade ripples tan δ by about 6 % on FR-4 (−4.7 to +4.8 % against Djordjevic–Sarkar's
     # ε″/√ε′); gate P4-D may ask for poles past the band's edges (4 from f_max/10^2.2 to f_max·10^0.2 read 3.9 %),
     # at a higher cell weight
@@ -195,8 +198,19 @@ def debye(eps_r: float, tan_d: float, f_max: float) -> dict:
     if x[0] < 1:
         raise ValueError(f"a Debye fit below vacuum: ε∞ {x[0]:.3f} under 1 (εr {eps_r}, tan δ {tan_d})")
     keep = x[1:] > 0
+    if not keep.any():
+        raise ValueError("a Debye fit keeps no pole")
     return {"eps_inf": float(x[0]), "delta": x[1:][keep].tolist(),
             "f_relax_hz": [p for p, k in zip(poles, keep) if k]}
+
+
+def _debye(eps_r: float, tan_d: float, f_max: float) -> dict:
+    """debye() of a substrate material, its ValueError raised as E_DEBYE_FIT {eps_r, tan_d} (:g): the ValueError's
+    text never reaches the user."""
+    try:
+        return debye(eps_r, tan_d, f_max)
+    except ValueError:
+        raise KrsError("E_DEBYE_FIT", eps_r=f"{eps_r:g}", tan_d=f"{tan_d:g}") from None
 
 
 def grid_entry(placed: dict, part: dict) -> dict:
@@ -246,37 +260,50 @@ def model_spec(project: dict, board: Board, geom: Geometry, mesh: Mesh, ports: l
     with no solids is left out, as is one of no thickness under sheet copper, and each is at priority 10 + its place
     in the list: openEMS breaks ties arbitrarily.
     The metal: every copper piece, solid (C-5) or, under sheet copper, a sheet, and the convex hull of the two pads of
-    each part whose role is copper (spec 5.7), cut back from other nets' copper on its layer to the pads' own
+    each part (parts()) whose role is copper (spec 5.7), cut back from other nets' copper on its layer to the pads' own
     clearance, each over its layer's slab; the solid rods as cylinders, the others as curves on the mesh lines (C-40);
     the lid's plate on the z line nearest its top, and its walls up to it (C-39, X-5). Every solid is cut by
-    split_holes. Raises E_UNKNOWN_PAD for a copper part's pad that does not exist."""
-    f0, zs, crop, dz = project["f0_hz"], geom.zs, geom.region.crop, mesh.dz0
+    split_holes. Raises E_UNKNOWN_PAD for a copper part's pad that does not exist.
+    An SI project's (Stage 4 design 5.2–5.5) holds no antenna key, so MUR walls and solid copper, and its excitation
+    is dc_pulse(). It reads no f0: every material's κ is 0.0, v1's constant κ never entering it (design 3). With
+    "dielectric": "debye", each substrate material whose tan δ is above 0 (a copper slab's, its neighbours' mean, a None
+    read as 0) also holds "debye", debye() of its εr and tan δ to f_max_hz; the masks stay plain. Raises E_DEBYE_FIT
+    for a fit debye() refuses (_debye)."""
+    # an SI spec's κ is kappa() at 0 Hz: 0.0 on every material
+    f0, zs, crop, dz = 0.0 if si(project) else project["f0_hz"], geom.zs, geom.region.crop, mesh.dz0
     sheet = antenna(project) and copper_model(project) == "sheet"
+    fit = si(project) and project["dielectric"] == "debye"
 
     def k(s: Slab) -> float:
         return kappa(s.eps_r, s.tan_d, f0)
 
+    def tan_d(s: Slab) -> float:
+        return s.tan_d or 0.0
+
     outline = crop if board.outline is None else board.outline
     area = clean(outline, crop)
-    layers = [(s.eps_r, k(s), s) for s in zs if s.kind == "dielectric"]
-    layers += [((a.eps_r + b.eps_r) / 2, (k(a) + k(b)) / 2, s)
+    layers = [(s.eps_r, k(s), tan_d(s), s) for s in zs if s.kind == "dielectric"]
+    layers += [((a.eps_r + b.eps_r) / 2, (k(a) + k(b)) / 2, (tan_d(a) + tan_d(b)) / 2, s)
                for a, s, b in zip(zs, zs[1:], zs[2:]) if s.kind == "copper" and a.kind == b.kind == "dielectric"]
-    mats = [("substrate", eps, kap, _solids(area, s.z0, s.z1)) for eps, kap, s in layers]
+    mats = [("substrate", eps, kap, _solids(area, s.z0, s.z1),
+             {"debye": _debye(eps, t, project["f_max_hz"])} if fit and t > 0 else {}) for eps, kap, t, s in layers]
+    # ponytail: a 10 µm mask's loss is left out under Debye; a mask fit if P4-D needs it
     for m in geom.masks.values():
         km = kappa(m.eps_m, (zs[-1] if m.side == "F" else zs[0]).tan_d, f0)
         coat = (m.z_coat0, round(m.z_coat0 + dz, 6)) if m.side == "F" else (round(m.z_coat0 - dz, 6), m.z_coat0)
-        mats += [(f"mask_{m.side}_fill", m.eps_m, km, _solids(m.gap_fill, *m.z_fill)),
-                 (f"mask_{m.side}_coat", smeared_epsilon(m.t_m, m.eps_m, dz), km * m.t_m / dz, _solids(m.coat, *coat))]
+        mats += [(f"mask_{m.side}_fill", m.eps_m, km, _solids(m.gap_fill, *m.z_fill), {}),
+                 (f"mask_{m.side}_coat", smeared_epsilon(m.t_m, m.eps_m, dz), km * m.t_m / dz,
+                  _solids(m.coat, *coat), {})]
     # an antenna's sheet copper leaves its slab and mask fill no thickness; v1's materials stay as they are, 0 mm copper
     # included
     materials = [{"name": f"substrate_{i}" if name == "substrate" else name, "eps": eps, "kappa": kap,
-                  "priority": 10 + i, "solids": solids}
-                 for i, (name, eps, kap, solids) in enumerate(
+                  "priority": 10 + i, "solids": solids, **debye_entry}
+                 for i, (name, eps, kap, solids, debye_entry) in enumerate(
                      x for x in mats if x[3] and not (sheet and x[3][0]["z"][0] == x[3][0]["z"][1]))]
 
     cu = {s.copper: (s.z0, s.z1) for s in zs if s.kind == "copper"}
     copper = [solid for pc in geom.pieces for solid in _solids(pc.polygon, *cu[pc.layer])]
-    for part in (*project["chain"]["series"], *project["chain"]["shunt"], *project["others"]):
+    for part in parts(project).values():
         if part["role"] == COPPER:
             pads = [_pad(board, name) for name in part["pads"]]
             layer, both = signal_layer(board, pads[0]), GeometryCollection([p.polygon for p in pads])

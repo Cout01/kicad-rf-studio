@@ -85,6 +85,15 @@ def test_a_debye_material_is_csxcads_debye_property_and_a_plain_one_is_not(monke
     assert "CSPropDebyeMaterial" not in [n for n, _, _ in log]
 
 
+def test_a_debye_entry_whose_lists_differ_is_refused(monkeypatch):  # plan 1's carried item: zip(strict=True)
+    log = fake_openems(monkeypatch)
+    monkeypatch.setitem(sys.modules, "CSXCAD.CSProperties",
+                        types.SimpleNamespace(CSPropDebyeMaterial=Rec(log, "CSPropDebyeMaterial")))
+    db = {"eps_inf": 4.0, "delta": [0.2], "f_relax_hz": [1e9, 1e10]}
+    with pytest.raises(ValueError):
+        build_csx({**TINY, "materials": [{**TINY["materials"][0], "kappa": 0.0, "debye": db}]}, 1, 1e-9)
+
+
 def test_the_boundary_is_mur_without_the_key_and_pml_8_on_all_six_faces_with_it(monkeypatch):  # design 5.2; S1 5.1
     log = fake_openems(monkeypatch)
     assert build_csx(TINY, 1, 1e-9)[2] is None  # a v1 spec: MUR (the test above) and no far-field box

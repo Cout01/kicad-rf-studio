@@ -24,10 +24,12 @@ from kicad_rf_studio.core.post.outputs import COLUMNS, LIMITS, summary_csv, summ
 from kicad_rf_studio.core.post.waves import grid, layout
 from kicad_rf_studio.core.project import GATES, load_project, parts, save_project
 from kicad_rf_studio.pipeline import command_line, expected_loss, load, write_outputs
+from kicad_rf_studio.stoprule import residual_db
 from networks import C_BOX, read_s, star, synth_records, terminate_np, write_s2p
 from test_cli_cost import FIX, SEG, by_hand, fail, gcpw, new_project
 from test_post_chain import LPF, M0402
 from test_post_waves import fake_run, port
+from test_stoprule import far_end
 
 F, _ = grid(915e6, 3, 1.1)
 
@@ -448,6 +450,12 @@ def test_a_job_stopped_before_it_started_has_no_time_or_residual(tmp_path, calib
     assert [e["params"] for e in events if e["kind"] == "verdict" and e["job"] == 2] == [
         {"port": "P2", "t_ns": None, "residual_db": None, "log": str(run / "job-2-P2" / "log.txt")}]
     assert "results" not in load_project(pj)
+
+
+def test_the_last_sample_reads_an_si_pulses_window():  # plan 1's carried item
+    rec = far_end(5e-9, t_end=12e-9)  # the first pulse's peak inside a 15 ns window at the last sample, not a 2 ns one
+    assert pipeline.last_sample(rec, 15e-9)[1] == residual_db(rec, 15e-9)[-1] == 0.0
+    assert pipeline.last_sample(rec)[1] == -np.inf
 
 
 def test_the_expected_loss_takes_the_core_by_the_copper_and_skips_a_short(tmp_path, mini_board_file):  # C-25

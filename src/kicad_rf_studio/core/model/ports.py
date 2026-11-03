@@ -14,6 +14,7 @@ from kicad_rf_studio.core.geometry.copper import SIMPLIFY
 from kicad_rf_studio.core.kicad.tracer import signal_layer, unknown_pad
 from kicad_rf_studio.core.messages import KrsError
 from kicad_rf_studio.core.model.parts import CURVE_PORT, GRID, PORT
+from kicad_rf_studio.core.project import parts
 
 if TYPE_CHECKING:
     from collections.abc import Collection
@@ -91,21 +92,25 @@ def _reference(board: Board, pieces: list[Piece], name: str, sig: Pad, layer: st
 
 def ends(board: Board, project: dict, pieces: list[Piece]) -> list[End]:
     """The ports of `project` (project.json) in job order: its external ports in order, then the parts whose role is
-    port, curve_port or grid, series, shunt and others in order. A port's pads are found by uuid, else by name
-    (`_pad`); a part's signal is its first pad and its reference its second, on the signal pad's layer
-    (`signal_layer`). Raises KrsError: E_NO_PORTS, E_NO_REFERENCE, E_UNKNOWN_PAD, E_REFERENCE_LAYER,
-    E_REFERENCE_POINT, and E_ROTATED_PART for a curve_port while allow_curve_port is false (C-12, C-37)."""
+    port, curve_port or grid in parts()' order (series, shunt and others; an SI project's, every line's). A port's pads
+    are found by uuid, else by name (`_pad`); a part's signal is its first pad and its reference its second, on the
+    signal pad's layer (`signal_layer`). A port whose reference is {"plane": layer}, an SI end's vertical port (Stage 4
+    design 5.5), has its pad as its signal and its reference, and that layer as its ref_layer. Raises KrsError:
+    E_NO_PORTS, E_NO_REFERENCE, E_UNKNOWN_PAD, E_REFERENCE_LAYER, E_REFERENCE_POINT, and E_ROTATED_PART for a
+    curve_port while allow_curve_port is false (C-12, C-37)."""
     if not project["ports"]:
         raise KrsError("E_NO_PORTS")
     out = []
     for port in project["ports"]:
-        if port["reference"] is None:
+        if (ref := port["reference"]) is None:
             raise KrsError("E_NO_REFERENCE", signal=port["signal"])
         name, layer = port["name"], port["layer"]
         sig = _pad(board, port["signal"], port["signal_uuid"], layer)
-        out.append(End(name, sig.polygon, _reference(board, pieces, name, sig, layer, port["reference"]), layer,
-                       "external"))
-    for part in (*project["chain"]["series"], *project["chain"]["shunt"], *project["others"]):
+        if "plane" in ref:
+            out.append(End(name, sig.polygon, sig.polygon, layer, "external", ref_layer=ref["plane"]))
+        else:
+            out.append(End(name, sig.polygon, _reference(board, pieces, name, sig, layer, ref), layer, "external"))
+    for part in parts(project).values():
         if part["role"] == CURVE_PORT and not project["allow_curve_port"]:
             raise KrsError("E_ROTATED_PART", ref=part["ref"])
         if part["role"] in (PORT, CURVE_PORT, GRID):
@@ -198,11 +203,14 @@ def vertical(end: End, mesh: Mesh, zs: tuple[Slab, ...]) -> dict:
     is V_pad − V_plane. Across, the sheet runs along the longer side of the pad's copper shrunk by SIMPLIFY (x on a
     tie), on the lines inside that copper. It sits at the line across within the copper's bounds nearest their middle,
     a tie to the lower. Its `nodes` are the plane's cap, the pad's cap, then the plane's and the pad's far faces (the
-    witnesses), the lumped port's order, all at the sheet's middle line (a tie to the lower). E_PORT_BOX when no line
-    lies inside the pad either way."""
+    witnesses), the lumped port's order, all at the sheet's middle line (a tie to the lower). E_PORT_PLANE when
+    end.ref_layer is the pad's own layer or no copper layer of `zs`; E_PORT_VERTICAL_BOX when no line lies inside the
+    pad either way."""
     # ponytail: a sheet across the pad's centre line; a box over the whole pad would need its corners inside a rounded
     # pad's copper
-    slabs = {c.copper: c for c in zs}
+    slabs = {c.copper: c for c in zs if c.copper}
+    if end.ref_layer == end.layer or end.ref_layer not in slabs:
+        raise KrsError("E_PORT_PLANE", name=end.name, layer=end.ref_layer, signal_layer=end.layer)
     pad, plane = slabs[end.layer], slabs[end.ref_layer]
     below = plane.z0 < pad.z0
     face, far = ((plane.z1, pad.z0), (plane.z0, pad.z1)) if below else ((plane.z0, pad.z1), (plane.z1, pad.z0))
@@ -213,11 +221,11 @@ def vertical(end: End, mesh: Mesh, zs: tuple[Slab, ...]) -> dict:
     along, across = (mesh.x, mesh.y)[p], (mesh.x, mesh.y)[t]
     width = across[(across > b[t]) & (across < b[t + 2])]
     if not width.size:
-        raise KrsError("E_PORT_BOX", name=end.name)
+        raise KrsError("E_PORT_VERTICAL_BOX", name=end.name)
     tc = min(width, key=lambda v: abs(v - (b[t] + b[t + 2]) / 2))  # a tie: the lower
     run = along[shapely.contains_xy(cu, *((along, tc) if p == 0 else (tc, along)))]  # the lines inside the copper
     if not run.size:
-        raise KrsError("E_PORT_BOX", name=end.name)
+        raise KrsError("E_PORT_VERTICAL_BOX", name=end.name)
     mid = min(run, key=lambda v: abs(v - (run[0] + run[-1]) / 2))  # a tie: the lower
 
     def at(u: float, z: float) -> list[float]:
@@ -250,7 +258,8 @@ def place(end: End, mesh: Mesh, zs: tuple[Slab, ...], pieces: list[Piece]) -> di
     both by PEC curves, and orders them along its axis itself: its u is V_signal − V_reference only when the
     reference lies lower along it.
     The axis p is _apart_axis's, which an SI end's clear_between shares, so the two never disagree.
-    An end with a `ref_layer`, an SI end over a plane (Stage 4 design 5.5), takes the vertical port (`vertical`).
+    An end with a `ref_layer`, an SI end over a plane (Stage 4 design 5.5), takes the vertical port (`vertical`, with
+    its own refusals).
     Every coordinate is a line of `mesh` and every value JSON-native: lists of Python floats. Raises E_PORT_SPANS, and
     E_PORT_BOX when no line across qualifies, copper fills every line between the facing lines, or a cap touches no
     piece of metal or another than its witness's."""

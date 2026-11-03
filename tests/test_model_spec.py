@@ -16,6 +16,7 @@ from kicad_rf_studio.core.geometry.region import band
 from kicad_rf_studio.core.kicad import load_board
 from kicad_rf_studio.core.mesh.gates import mesh_with_lint
 from kicad_rf_studio.core.messages import KrsError
+from kicad_rf_studio.core.model import spec as spec_module
 from kicad_rf_studio.core.model.csx import PML_CELLS
 from kicad_rf_studio.core.model.ports import ends, nominal_boxes, place
 from kicad_rf_studio.core.model.readers import c_box
@@ -151,6 +152,12 @@ def test_a_debye_fit_holds_the_loss_tangent_across_the_band_and_none_at_dc(eps_r
 def test_a_debye_fit_below_vacuum_or_without_loss_is_refused(eps_r, tan_d):  # design 5.3
     with pytest.raises(ValueError, match="Debye"):
         debye(eps_r, tan_d, 10e9)
+
+
+def test_a_debye_fit_that_keeps_no_pole_is_refused(monkeypatch):  # plan 1's carried item: no order-0 material
+    monkeypatch.setattr(spec_module, "nnls", lambda a, b: (np.r_[4.0, 0.0, 0.0, 0.0], 0.0))
+    with pytest.raises(ValueError, match="no pole"):
+        debye(4.3, 0.02, 10e9)
 
 
 @cache

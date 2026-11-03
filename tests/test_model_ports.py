@@ -308,7 +308,14 @@ def test_a_vertical_port_needs_a_mesh_line_inside_its_pad():  # D-11: a coded re
     tiny = box(0.02, 0.02, 0.08, 0.08)  # between the lines at 0 and 0.1
     with pytest.raises(KrsError) as e:
         place(End("P9", tiny, tiny, "F.Cu", "external", ref_layer="In1.Cu"), V_MESH, FOUR, [])
-    assert (e.value.code, e.value.params) == ("E_PORT_BOX", {"name": "P9"})
+    assert (e.value.code, e.value.params) == ("E_PORT_VERTICAL_BOX", {"name": "P9"})
+
+
+@pytest.mark.parametrize("plane", ["F.Cu", "In9.Cu"])
+def test_a_vertical_port_needs_another_copper_layer_as_its_plane(plane):  # plan 1's carried item
+    with pytest.raises(KrsError) as e:
+        place(End("P1", PAD, PAD, "F.Cu", "external", ref_layer=plane), V_MESH, FOUR, [])
+    assert (e.value.code, e.value.params) == ("E_PORT_PLANE", {"name": "P1", "layer": plane, "signal_layer": "F.Cu"})
 
 
 def test_an_si_end_reaches_a_reference_only_across_clear_copper():  # Stage 4 design 5.5; Review Focus 2

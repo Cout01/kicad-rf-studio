@@ -555,6 +555,16 @@ msgstr ""
 msgid "Port {name}: its box finds no mesh line inside its pads, or no copper-free mesh line between them with each end on its own pad's copper. Change mesh.n in project.json (another value moves the mesh lines), use larger pads, or clear other copper from between the pads."
 msgstr ""
 
+#. E_PORT_PLANE
+#, python-brace-format
+msgid "Port {name} cannot take {layer} as its reference plane: it must be a copper layer of the board other than its pad's, {signal_layer}. Run `new` again, or set ports[].reference.plane in project.json."
+msgstr ""
+
+#. E_PORT_VERTICAL_BOX
+#, python-brace-format
+msgid "Port {name}: no mesh line lies inside its pad's copper, so its vertical port has no sheet. Change mesh.n in project.json (another value moves the mesh lines), or end the line at a larger pad."
+msgstr ""
+
 #. E_PART_VALUE
 #, python-brace-format
 msgid "Part {ref} is in the grid but its value \"{value}\" cannot be read. Fix its value in project.json, or set its role to \"open\" or \"port\"."
@@ -563,6 +573,11 @@ msgstr ""
 #. E_GRID_KIND
 #, python-brace-format
 msgid "Part {ref} cannot sit in the grid: only a C or an R can. Set its role to \"port\" or \"open\" in project.json."
+msgstr ""
+
+#. E_DEBYE_FIT
+#, python-brace-format
+msgid "A Debye fit of a dielectric with εr {eps_r} and tan δ {tan_d} has no valid poles: it falls below vacuum or keeps none. Set \"dielectric\": \"lossless\" in project.json, or check that layer's εr and loss tangent in KiCad."
 msgstr ""
 
 #. E_LOCKED
