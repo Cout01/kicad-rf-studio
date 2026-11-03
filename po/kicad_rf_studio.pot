@@ -332,6 +332,20 @@ msgstr ""
 msgid "`new` takes --end with --f0 (and --harmonics) for a matching chain, or --antenna with --band for an antenna."
 msgstr ""
 
+#. E_SI_NEEDS_PAIR
+#, python-brace-format
+msgid "Interface {interface} is a differential pair's: add --pair, or --pair-with REF.PAD:REF.PAD."
+msgstr ""
+
+#. E_SI_NOT_PAIR
+#, python-brace-format
+msgid "Interface {interface} is a single-ended net's: leave out --pair and --pair-with, or choose --interface custom."
+msgstr ""
+
+#. E_SI_CUSTOM
+msgid "--f-max and --target set the band and the target of --interface custom, which needs both; a preset interface takes neither."
+msgstr ""
+
 #. I_ANTENNA
 #, python-brace-format
 msgid "Antenna {ref}, fed at pad {feed} on net {net}: its copper drawn without a net takes that net."
@@ -1306,6 +1320,11 @@ msgstr ""
 msgid "{path}: antenna {ref}, band {f_lo_mhz} to {f_hi_mhz} MHz, preset {preset}."
 msgstr ""
 
+#. G_SI_LATER
+#, python-brace-format
+msgid "{path} is a signal-integrity project (schema 3), which this window does not open yet: use the command line, `kicad-rf-studio cost` and `kicad-rf-studio run`."
+msgstr ""
+
 #. G_NO_COST
 msgid "No cost of this model yet: estimate it, then Run… asks to start the run."
 msgstr ""
@@ -2196,5 +2215,45 @@ msgstr ""
 
 #. T_EXPECT_COPPER
 msgid "\"solid\" or \"sheet\""
+msgstr ""
+
+#. T_EXPECT_SI
+msgid "the text \"si\""
+msgstr ""
+
+#. T_EXPECT_INTERFACE
+msgid "usb2-hs, 100base-tx, se50 or custom"
+msgstr ""
+
+#. T_EXPECT_RISE
+msgid "a time in s of at least 1.25/f_max_hz, the localising TDR's rise time"
+msgstr ""
+
+#. T_EXPECT_DIELECTRIC
+msgid "\"lossless\" or \"debye\""
+msgstr ""
+
+#. T_EXPECT_SI_LINES
+msgid "a list of lines, each with its role and chain: the measured line, or a pair's two, first, then up to two victims"
+msgstr ""
+
+#. T_EXPECT_LINE_ROLE
+msgid "measured or victim"
+msgstr ""
+
+#. T_EXPECT_SI_PAIR
+msgid "null for one measured line, or p and n, the first nets of the two measured lines, with by \"rule\", \"alias\" or \"given\""
+msgstr ""
+
+#. T_EXPECT_SI_PORTS
+msgid "a list of ports whose signals are the lines' ends in order: each measured line's start, then each one's end, then each victim's start and end"
+msgstr ""
+
+#. T_EXPECT_SI_RULE
+msgid "connector, ic, copper, plane or null"
+msgstr ""
+
+#. T_EXPECT_SI_REFERENCE
+msgid "a pad, a point, a plane (its copper layer's name) or null"
 msgstr ""
 

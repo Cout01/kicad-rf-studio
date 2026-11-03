@@ -32,8 +32,8 @@ from kicad_rf_studio.core.model import spec
 from kicad_rf_studio.core.model.spec import antenna_t_max
 from kicad_rf_studio.core.post.waves import Layout
 from kicad_rf_studio.core.project import (ANTENNA_BOUNDARY, BAND_FACTOR, DEFAULT_PRESET, EXPAND_H, FAR_FIELD_STEP, GATES,
-                                          HARMONICS, MARGIN_SCALE, MESH_N, REACH_H, T_MAX_S, antenna, board_file,
-                                          far_field_hz, load_project, parts)
+                                          GATES_SI, HARMONICS, MARGIN_SCALE, MESH_N, REACH_H, T_MAX_S, antenna,
+                                          board_file, far_field_hz, load_project, parts, si)
 
 END = {0: "G_END_DONE", 2: "G_END_REFUSED", 3: "G_END_BLOCKED", 4: "G_END_NOT_KEPT", 130: "G_END_STOPPED"}
 # the CLI's lines that the GUI words its own way, with the same params (design 5.3)
@@ -221,12 +221,16 @@ def open_project(path: Path) -> Opened:
     model, the model's spec_hash (None without a spec), results_of and chain_results with errors as lines (an antenna's
     lines are pipeline.antenna_lines', the CLI's, kept with the far field they read, its source and its layout; the
     current verify's far field is also read when a stored part is refused, for the retune session), the first KrsError
-    stopping there as `problem`, any other exception E_INTERNAL; then `stored`, the project read when pipeline.load
-    succeeded, else load_project alone, unchecked (a project the checks refuse, or whose board fails to load, still
-    reads), and the board file it names, each None when it raises, `stored` kept when only the board file does; then
-    last_cost, the newest of ended() that is a run or a verify, and verify_lines. Never raises; starts nothing."""
+    stopping there as `problem` (an SI project's is G_SI_LATER, before pipeline.load), any other exception E_INTERNAL;
+    then `stored`, the project read when pipeline.load succeeded, else load_project alone, unchecked (a project the
+    checks refuse, or whose board fails to load, still reads), and the board file it names, each None when it raises,
+    `stored` kept when only the board file does; then last_cost, the newest of ended() that is a run or a verify, and
+    verify_lines. Never raises; starts nothing."""
     project = model_hash = results = problem = far = far_source = far_lay = None
     try:
+        # ponytail: plan 5 opens SI projects; until then the window's project line reads f0 and harmonics
+        if si(load_project(path)):
+            raise KrsError("G_SI_LATER", path=str(path))
         project, board, geom, _ = pipeline.load(path)
         model = pipeline.build_model(project, board, geom)
         model_hash = None if model.spec is None else spec.spec_hash(model.spec)
@@ -626,10 +630,12 @@ def _leaves(value, path: tuple):
 
 def fields(data: dict) -> list[Field]:
     """Advanced's fields of project.json `data` (design 5.3): every leaf (_leaves) in file order, but those under
-    schema, results and verify (records, not settings), and an antenna's kind and copper (sheet copper is not offered,
-    Stage 3 plan 4), each with the default that `new` writes when it has one, an antenna's its own (Stage 3 design
-    5.10): its T_max, air gap and far-field frequencies those of its band. The preset is read through str(), so a
-    hand-edited one that is not text (a list) cannot raise: unchecked data is what Advanced is there to fix."""
+    schema, results and verify (records, not settings), an antenna's kind and copper (sheet copper is not offered,
+    Stage 3 plan 4) and an SI project's kind, each with the default that `new` writes when it has one, an antenna's its
+    own (Stage 3 design 5.10): its T_max, air gap and far-field frequencies those of its band; an SI project's its own
+    (Stage 4 design 5.1): lid true, region.expand_h REACH_H and gates.dt_floor GATES_SI's, and none for t_max_s and
+    mesh.max_cell_mm, which `new` derives from the route. The preset is read through str(), so a hand-edited one that
+    is not text (a list) cannot raise: unchecked data is what Advanced is there to fix."""
     # ponytail: a list of objects can be edited but not grown, and a reference cannot switch between pad and point
     # here; a text editor does both
     defaults = {"harmonics": HARMONICS, "preset": DEFAULT_PRESET, "band_factor": BAND_FACTOR, "t_max_s": T_MAX_S,
@@ -648,6 +654,10 @@ def fields(data: dict) -> list[Field]:
             f_lo, f_hi = data["band"]["f_lo_hz"], data["band"]["f_hi_hz"]
             defaults.update({"t_max_s": antenna_t_max(f_lo, f_hi), "air_gap_mm": air_gap(f_lo),
                              "far_field.f_hz": far_field_hz(f_lo, f_hi)})
+    elif si(data):
+        hidden += ("kind",)
+        defaults.update({"lid": True, "region.expand_h": REACH_H, "gates.dt_floor": GATES_SI["dt_floor"]})
+        del defaults["t_max_s"]
     found = []
     for path, value in _leaves({k: v for k, v in data.items() if k not in hidden}, ()):
         name = "".join(f"[{k}]" if isinstance(k, int) else f".{k}" for k in path)[1:]

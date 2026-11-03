@@ -334,6 +334,20 @@ msgstr "A banda de {f_lo_mhz} a {f_hi_mhz} MHz passa de uma oitava. Um projeto d
 msgid "`new` takes --end with --f0 (and --harmonics) for a matching chain, or --antenna with --band for an antenna."
 msgstr "`new` recebe --end com --f0 (e --harmonics) para uma cadeia de casamento, ou --antenna com --band para uma antena."
 
+#. E_SI_NEEDS_PAIR
+#, python-brace-format
+msgid "Interface {interface} is a differential pair's: add --pair, or --pair-with REF.PAD:REF.PAD."
+msgstr "A interface {interface} é de um par diferencial: acrescente --pair, ou --pair-with REF.PAD:REF.PAD."
+
+#. E_SI_NOT_PAIR
+#, python-brace-format
+msgid "Interface {interface} is a single-ended net's: leave out --pair and --pair-with, or choose --interface custom."
+msgstr "A interface {interface} é de uma rede single-ended: retire --pair e --pair-with, ou escolha --interface custom."
+
+#. E_SI_CUSTOM
+msgid "--f-max and --target set the band and the target of --interface custom, which needs both; a preset interface takes neither."
+msgstr "--f-max e --target definem a banda e o alvo de --interface custom, que precisa dos dois; uma interface predefinida não recebe nenhum deles."
+
 #. I_ANTENNA
 #, python-brace-format
 msgid "Antenna {ref}, fed at pad {feed} on net {net}: its copper drawn without a net takes that net."
@@ -1308,6 +1322,11 @@ msgstr "{path}: f0 {f0_mhz} MHz, harmônicos: {harmonics}, predefinição {prese
 msgid "{path}: antenna {ref}, band {f_lo_mhz} to {f_hi_mhz} MHz, preset {preset}."
 msgstr "{path}: antena {ref}, banda de {f_lo_mhz} a {f_hi_mhz} MHz, predefinição {preset}."
 
+#. G_SI_LATER
+#, python-brace-format
+msgid "{path} is a signal-integrity project (schema 3), which this window does not open yet: use the command line, `kicad-rf-studio cost` and `kicad-rf-studio run`."
+msgstr "{path} é um projeto de integridade de sinal (schema 3), que esta janela ainda não abre: use a linha de comando, `kicad-rf-studio cost` e `kicad-rf-studio run`."
+
 #. G_NO_COST
 msgid "No cost of this model yet: estimate it, then Run… asks to start the run."
 msgstr "Ainda não há custo deste modelo: estime-o, e então o botão Executar… pede para iniciar a execução."
@@ -2207,6 +2226,46 @@ msgstr "um número inteiro de graus que divide 180"
 #. T_EXPECT_COPPER
 msgid "\"solid\" or \"sheet\""
 msgstr "\"solid\" ou \"sheet\""
+
+#. T_EXPECT_SI
+msgid "the text \"si\""
+msgstr "o texto \"si\""
+
+#. T_EXPECT_INTERFACE
+msgid "usb2-hs, 100base-tx, se50 or custom"
+msgstr "usb2-hs, 100base-tx, se50 ou custom"
+
+#. T_EXPECT_RISE
+msgid "a time in s of at least 1.25/f_max_hz, the localising TDR's rise time"
+msgstr "um tempo em s de pelo menos 1.25/f_max_hz, o tempo de subida do TDR de localização"
+
+#. T_EXPECT_DIELECTRIC
+msgid "\"lossless\" or \"debye\""
+msgstr "\"lossless\" ou \"debye\""
+
+#. T_EXPECT_SI_LINES
+msgid "a list of lines, each with its role and chain: the measured line, or a pair's two, first, then up to two victims"
+msgstr "uma lista de linhas, cada uma com seu role e sua chain: a linha medida, ou as duas de um par, primeiro, depois até duas vítimas"
+
+#. T_EXPECT_LINE_ROLE
+msgid "measured or victim"
+msgstr "measured ou victim"
+
+#. T_EXPECT_SI_PAIR
+msgid "null for one measured line, or p and n, the first nets of the two measured lines, with by \"rule\", \"alias\" or \"given\""
+msgstr "null para uma linha medida, ou p e n, as primeiras redes das duas linhas medidas, com by \"rule\", \"alias\" ou \"given\""
+
+#. T_EXPECT_SI_PORTS
+msgid "a list of ports whose signals are the lines' ends in order: each measured line's start, then each one's end, then each victim's start and end"
+msgstr "uma lista de portas cujos sinais são as pontas das linhas em ordem: o início de cada linha medida, depois o fim de cada uma, depois o início e o fim de cada vítima"
+
+#. T_EXPECT_SI_RULE
+msgid "connector, ic, copper, plane or null"
+msgstr "connector, ic, copper, plane ou null"
+
+#. T_EXPECT_SI_REFERENCE
+msgid "a pad, a point, a plane (its copper layer's name) or null"
+msgstr "uma ilha, um ponto, um plano (o nome da camada de cobre dele) ou null"
 
 #~ msgid "Cells: {board} M in the board, {air} M of air and {pml} M of PML; the time counts a PML cell as {weight} cells and runs this model at {ratio} × the calibrated speed (gate P3-A)."
 #~ msgstr "Células: {board} M na placa, {air} M de ar e {pml} M de PML; o tempo conta uma célula de PML como {weight} células e executa este modelo a {ratio} × a velocidade calibrada (checagem prévia P3-A)."

@@ -579,6 +579,18 @@ def test_advanced_shows_an_antennas_fields_with_its_own_defaults_and_units():  #
     assert (v1["t_max_s"], v1["region.expand_h"], v1["lid"]) == ("4e-08", "3.0", "null")  # v1's as before
 
 
+def test_an_si_project_is_refused_until_plan_5(tmp_path, fake):  # Stage 4 plan 2: the window reads f0 and harmonics
+    from test_project import si_dict
+    p = tmp_path / "project.json"
+    save_project(p, si_dict())
+    opened = control.open_project(p)
+    assert opened.project is None and opened.problem == ("G_SI_LATER", {"path": str(p)})
+    assert opened.stored["schema"] == 3  # Advanced still opens it, with an SI project's own defaults
+    shown = {f.name: f.default for f in control.fields(opened.stored)}
+    assert "kind" not in shown and (shown["gates.dt_floor"], shown["region.expand_h"], shown["lid"],
+                                    shown["t_max_s"]) == ("0.6", "6.0", "true", "")
+
+
 def test_compare_runs_into_the_bases_own_folder_and_gives_its_table_in_the_windows_words(tmp_path, calibrated):
     from test_compare import twin  # design 5.8, 5.10
     a = antenna_project(tmp_path / "a").resolve()

@@ -9,9 +9,10 @@ from kicad_rf_studio.core.geometry.region import air_gap
 from kicad_rf_studio.core.kicad import classify, load_board
 from kicad_rf_studio.core.messages import KrsError, render
 from kicad_rf_studio.core.model.spec import antenna_t_max
-from kicad_rf_studio.core.project import (SCHEMA, SCHEMA_ANTENNA, SCHEMA_SI, antenna, board_file, board_hash,
+from kicad_rf_studio.core.project import (INTERFACES, SCHEMA, SCHEMA_SI, antenna, board_file, board_hash,
                                           check_project, copper_model, far_field_hz, load_project,
-                                          make_antenna_project, pulse_band, read_project, save_project, si)
+                                          make_antenna_project, make_si_project, pulse_band, read_project,
+                                          save_project, si, si_interface)
 from test_cli_new import FIX, run_new
 
 
@@ -29,10 +30,10 @@ def test_schema_mismatch_names_the_file_and_both_versions(tmp_path):
     p = tmp_path / "project.json"; p.write_text('{"schema": 99}', encoding="utf-8")
     with pytest.raises(KrsError) as e:
         load_project(p)
-    assert e.value.params == {"path": str(p), "found": 99, "expected": SCHEMA_ANTENNA}  # the newest it reads (Stage 3)
-    assert "schema 99" in str(e.value) and "schema 2" in str(e.value)
-    p.write_text('{"schema": 2}', encoding="utf-8")
-    assert load_project(p) == {"schema": 2}  # an antenna project (Stage 3 design 5.1); check_project reads its fields
+    assert e.value.params == {"path": str(p), "found": 99, "expected": SCHEMA_SI}  # the newest it reads (Stage 4)
+    assert "schema 99" in str(e.value) and "schema 3" in str(e.value)
+    p.write_text('{"schema": 3}', encoding="utf-8")
+    assert load_project(p) == {"schema": 3}  # an SI project (Stage 4 design 5.1); check_project reads its fields
 
 
 @pytest.mark.parametrize("text", ["{}", '{"board": {}}', "[]", "null", "7"])
@@ -281,12 +282,78 @@ def test_the_bands_defaults_are_new_antennas():  # Stage 3 design 5.4, 5.5; the 
 # --- Stage 4 plan 1, task 4: schema 3, an SI project ----------------------------------------------------------
 
 
-def test_schema_3_is_an_si_project_which_this_build_still_refuses(tmp_path):  # Stage 4 design 5.1
-    assert (SCHEMA_SI, si({"schema": 3}), si({"schema": 2}), si({}), antenna({"schema": 3})) == (
-        3, True, False, False, False)
+def test_schema_3_is_an_si_project_whose_fields_are_checked(tmp_path):  # Stage 4 design 5.1
+    assert (SCHEMA_SI, si({"schema": 3}), si({"schema": 2}), antenna({"schema": 3})) == (3, True, False, False)
     p = tmp_path / "project.json"
     p.write_text('{"schema": 3, "kind": "si"}', encoding="utf-8")
-    with pytest.raises(KrsError) as e:  # until plan 2 checks an SI project's fields
-        load_project(p)
-    assert (e.value.code, e.value.params) == ("E_PROJECT_SCHEMA", {"path": str(p), "found": 3,
-                                                                   "expected": SCHEMA_ANTENNA})
+    assert load_project(p) == {"schema": 3, "kind": "si"}
+    with pytest.raises(KrsError) as e:
+        read_project(p)
+    assert (e.value.code, e.value.params["field"]) == ("E_PROJECT_FIELD", "board")
+
+
+# --- Stage 4 plan 2, task 2: schema 3's fields, the interfaces ------------------------------------------------
+
+
+def si_dict():
+    """A schema 3 dict for usb2_hs's pair and victim, as new_si writes it, its parts left out."""
+    b = load_board(FIX / "usb2_hs.kicad_pcb")
+    lines = [{"role": role, "chain": {"start": s, "end": e, "nets": nets, "series": [], "shunt": []}}
+             for role, s, e, nets in (("measured", "J1.3", "U1.3", ["USB_D+", "MCU_D+"]),
+                                      ("measured", "J1.2", "U1.2", ["USB_D-", "MCU_D-"]),
+                                      ("victim", "TP1.1", "TP2.1", ["AUX"]))]
+    ports = [{"name": f"P{k}", "signal": s, "signal_uuid": "", "layer": "F.Cu", "rule": "plane",
+              "reference": {"plane": "In1.Cu"}}
+             for k, s in enumerate(("J1.3", "J1.2", "U1.3", "U1.2", "TP1.1", "TP2.1"), 1)]
+    return make_si_project("usb2_hs.kicad_pcb", "0" * 64, b.stackup, classify(b), lines,
+                           {"p": "USB_D+", "n": "USB_D-", "by": "rule"}, [], ports,
+                           si_interface("usb2-hs", None, None, True), t_max_s=9e-9, window_s=2e-9, max_cell_mm=0.414)
+
+
+def test_an_si_project_holds_the_design_fields():  # Stage 4 design 5.1, 5.3, 5.4
+    d = si_dict()
+    assert (d["schema"], d["kind"], d["interface"], d["f_max_hz"], d["rise_s"], d["marker_hz"], d["target_ohm"],
+            d["tolerance"]) == (3, "si", "usb2-hs", 10e9, 5e-10, 2.4e8, 90.0, 0.1)
+    assert (d["dielectric"], d["t_max_s"], d["window_s"], d["lid"]) == ("lossless", 9e-9, 2e-9, True)
+    assert d["gates"] == {"fit2d_limit": 0.03, "dt_floor": 0.6}  # SI's floor (design 5.3, A-43)
+    assert d["mesh"] == {"n": 2, "reach_h": 6.0, "max_cell_mm": 0.414} and d["region"] == {"expand_h": 6.0,
+                                                                                            "margin_scale": 1.0}
+    assert not {"f0_hz", "harmonics", "band_factor", "chain"} & set(d) and check_project(d, Path("p.json")) is d
+    assert {k: (v["target_ohm"], v["rise_s"], v["marker_hz"], v["pair"]) for k, v in INTERFACES.items()} == {
+        "usb2-hs": (90.0, 5e-10, 2.4e8, True), "100base-tx": (100.0, 3e-9, 62.5e6, True),
+        "se50": (50.0, 1e-9, 133e6, False)}
+
+
+def test_the_custom_interface_and_the_presets_refusals():  # design 5.1
+    c = si_interface("custom", 5e9, 85.0, True)
+    assert (c["interface"], c["f_max_hz"], c["target_ohm"], c["tolerance"]) == ("custom", 5e9, 85.0, 0.1)
+    assert c["rise_s"] == pytest.approx(2.5e-10) and c["marker_hz"] == pytest.approx(1.4e9)  # 1.25/f_max, 0.35/rise
+    for args, code, params in [(("usb2-hs", None, None, False), "E_SI_NEEDS_PAIR", {"interface": "usb2-hs"}),
+                               (("se50", None, None, True), "E_SI_NOT_PAIR", {"interface": "se50"}),
+                               (("custom", None, 85.0, True), "E_SI_CUSTOM", {}),
+                               (("se50", 5e9, None, False), "E_SI_CUSTOM", {})]:
+        with pytest.raises(KrsError) as e:
+            si_interface(*args)
+        assert (e.value.code, e.value.params) == (code, params)
+
+
+@pytest.mark.parametrize(("change", "field", "expected"), [
+    ({"kind": "antenna"}, "kind", "T_EXPECT_SI"),
+    ({"interface": "usb3"}, "interface", "T_EXPECT_INTERFACE"),
+    ({"rise_s": 1e-10}, "rise_s", "T_EXPECT_RISE"),  # faster than 1.25/f_max, the localising TDR's 125 ps
+    ({"dielectric": "kappa"}, "dielectric", "T_EXPECT_DIELECTRIC"),  # never v1's κ (design 3)
+    ({"mesh": {"n": 2, "reach_h": 6.0, "max_cell_mm": 0}}, "mesh.max_cell_mm", "T_EXPECT_ABOVE_0_OR_NULL"),
+    ({"pair": None}, "pair", "T_EXPECT_SI_PAIR"),  # two measured lines are a pair
+    (lambda d: {"lines": d["lines"][::-1]}, "lines", "T_EXPECT_SI_LINES"),  # the measured lines come first
+    (lambda d: {"lines": [{**d["lines"][0], "role": "aggressor"}, *d["lines"][1:]]}, "lines[0].role",
+     "T_EXPECT_LINE_ROLE"),
+    (lambda d: {"ports": d["ports"][1:] + d["ports"][:1]}, "ports", "T_EXPECT_SI_PORTS"),  # se2gmm reads this order
+    (lambda d: {"ports": [{**d["ports"][0], "rule": "vertical"}, *d["ports"][1:]]}, "ports[0].rule",
+     "T_EXPECT_SI_RULE"),
+    (lambda d: {"ports": [{**d["ports"][0], "reference": {"plane": 3}}, *d["ports"][1:]]}, "ports[0].reference",
+     "T_EXPECT_SI_REFERENCE")])
+def test_an_si_field_out_of_its_range_is_named(change, field, expected):  # design 5.1; Review Focus (ports by hand)
+    d = si_dict()
+    with pytest.raises(KrsError) as e:
+        check_project({**d, **(change(d) if callable(change) else change)}, Path("p.json"))
+    assert (e.value.code, e.value.params["field"], e.value.params["expected"]) == ("E_PROJECT_FIELD", field, expected)

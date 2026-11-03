@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
-"""project.json, schema 1 for a matching chain and schema 2 for an antenna (Stage 3 design 5.1): the project and the
-job spec in one file. Its board path is relative to the project file and has forward slashes, so a project folder and
-its board can move together.
+"""project.json, schema 1 for a matching chain, schema 2 for an antenna (Stage 3 design 5.1) and schema 3 for an SI
+project (Stage 4 design 5.1): the project and the job spec in one file. Its board path is relative to the project file
+and has forward slashes, so a project folder and its board can move together.
 
 Coordinates in it are in KiCad's frame: mm, with y pointing down, as KiCad shows them and as a user types them in. The
 board as read (core.kicad) has y up, so a point [x, y] here is (x, -y) there, and the other way round.
@@ -23,6 +23,7 @@ from typing import TYPE_CHECKING
 
 from kicad_rf_studio.core.messages import KrsError, reason
 from kicad_rf_studio.core.model.csx import NF2FF_MAX
+from kicad_rf_studio.core.post.si import LOCAL_RISE
 
 if TYPE_CHECKING:  # the types only: project.py imports no board code
     from kicad_rf_studio.core.kicad.stackup import Stackup
@@ -30,7 +31,7 @@ if TYPE_CHECKING:  # the types only: project.py imports no board code
 
 SCHEMA = 1
 SCHEMA_ANTENNA = 2  # an antenna project (Stage 3 design 5.1); v1's stay SCHEMA
-SCHEMA_SI = 3  # an SI project (Stage 4 design 5.1): load_project refuses it until Stage 4 plan 2 checks its fields
+SCHEMA_SI = 3  # an SI project (Stage 4 design 5.1)
 FAR_FIELD_STEP = 5  # the far field's full sphere is sampled every 5° (Stage 3 design 5.5)
 # an antenna's copper model (Stage 3 design 5.3): Stage 1 5.3's solid copper, or every copper layer a sheet, for the
 # whole model
@@ -48,6 +49,18 @@ DEFAULT_PRESET, HARMONICS, BAND_FACTOR, T_MAX_S = "normal", 3, 1.1, 40e-9
 # P0-A confirmed the fit2d limit and the floor on 2026-10-24 and again under plan 6's mesh rule on 2026-10-26
 # (docs/validation/2026-10-26-p0-a.md)
 GATES = {"fit2d_limit": 0.03, "dt_floor": 0.8}
+GATES_SI = {"fit2d_limit": 0.03, "dt_floor": 0.6}  # an SI project's: SI's timestep floor 0.6, Stage 4 design 5.3, A-43
+SI_F_MAX = 10e9  # the presets' band, for the localising TDR, design 5.1
+SI_TOLERANCE = 0.1  # the target impedance's ± fraction, every interface's (design 5.1)
+DIELECTRICS = ("lossless", "debye")  # an SI project's dielectric models (design 5.3), never v1's constant κ
+SI_DIELECTRIC = "lossless"  # lossless until gate P4-D sets the default, design 5.3
+LINE_ROLES = ("measured", "victim")  # an SI line's role (design 5.1): the measured line or a pair's leg, or a victim
+# Stage 4 design 5.1: each target from a public application note; rise_s the edge the link's driver makes, marker_hz the
+# link's Nyquist frequency or its clock; every preset runs to SI_F_MAX
+INTERFACES = {
+    "usb2-hs": {"target_ohm": 90.0, "rise_s": 500e-12, "marker_hz": 240e6, "pair": True},  # TI SPRAAR7J Table A-1
+    "100base-tx": {"target_ohm": 100.0, "rise_s": 3e-9, "marker_hz": 62.5e6, "pair": True},  # TI SNLA387, ANSI X3.263
+    "se50": {"target_ohm": 50.0, "rise_s": 1e-9, "marker_hz": 133e6, "pair": False}}  # QSPI, SDIO, SPI, a clock
 
 
 def antenna(data: dict) -> bool:
@@ -162,6 +175,46 @@ def make_antenna_project(board_path: str, board_sha256: str, f_lo_hz: float, f_h
     return data
 
 
+def si_interface(name: str, f_max: float | None, target: float | None, paired: bool) -> dict:
+    """An SI project's interface fields (Stage 4 design 5.1): a preset's at SI_F_MAX, or custom's from `f_max` (Hz) and
+    `target` (Ω), its rise time LOCAL_RISE/f_max, the localising TDR's, and its marker 0.35/that, the rise time's
+    bandwidth; tolerance SI_TOLERANCE. E_SI_CUSTOM unless custom has both `f_max` and `target` and a preset neither;
+    E_SI_NEEDS_PAIR for a pair's preset without `paired`, E_SI_NOT_PAIR for a net's with it."""
+    custom = name == "custom"
+    if (f_max is not None, target is not None) != (custom, custom):
+        raise KrsError("E_SI_CUSTOM")
+    if custom:
+        # ponytail: custom's rise time and marker are derived; project.json holds them for an edit
+        rise = LOCAL_RISE / f_max
+        fields = {"f_max_hz": f_max, "rise_s": rise, "marker_hz": 0.35 / rise, "target_ohm": target}
+    else:
+        preset = INTERFACES[name]
+        if preset["pair"] != paired:
+            raise KrsError("E_SI_NEEDS_PAIR" if preset["pair"] else "E_SI_NOT_PAIR", interface=name)
+        fields = {"f_max_hz": SI_F_MAX, "rise_s": preset["rise_s"], "marker_hz": preset["marker_hz"],
+                  "target_ohm": preset["target_ohm"]}
+    return {"interface": name, **fields, "tolerance": SI_TOLERANCE}
+
+
+def make_si_project(board_path: str, board_sha256: str, stackup: Stackup, classes: Classes, lines: list[dict],
+                    pair: dict | None, others: list[dict], ports: list[dict], interface: dict, *, t_max_s: float,
+                    window_s: float, max_cell_mm: float, preset: str = DEFAULT_PRESET,
+                    lid_height_mm: float | None = None) -> dict:
+    """project.json of an SI project (schema 3, Stage 4 design 5.1) as `new --interface` writes it: make_project's dict
+    without f0_hz, harmonics, band_factor and chain, with schema SCHEMA_SI, `t_max_s`, region {"expand_h": REACH_H,
+    "margin_scale": MARGIN_SCALE} (the protected set's reach, design 5.2), mesh {"n", "reach_h", "max_cell_mm"}, lid
+    true and gates GATES_SI in their places; then kind, the `interface` fields, dielectric SI_DIELECTRIC, `window_s`,
+    `lines` and `pair`."""
+    data = make_project(board_path, board_sha256, 0.0, stackup, classes, {}, others, ports, preset=preset,
+                        lid_height_mm=lid_height_mm)
+    del data["f0_hz"], data["harmonics"], data["band_factor"], data["chain"]
+    data.update(schema=SCHEMA_SI, t_max_s=t_max_s, region={"expand_h": REACH_H, "margin_scale": MARGIN_SCALE},
+                mesh={**data["mesh"], "max_cell_mm": max_cell_mm}, lid=True, gates=dict(GATES_SI))  # in their places
+    data.update(kind="si", **interface, dielectric=SI_DIELECTRIC, window_s=window_s, lines=lines,
+                pair=pair)  # appended, in this order
+    return data
+
+
 def save_project(path: Path, data: dict) -> None:
     """Writes UTF-8 JSON, indented by 2 and with its non-ASCII text as it is. Lines end in "\\n" on every platform. The
     text goes to a temporary file next to `path`, which then replaces it, so a failed write never leaves half a
@@ -180,8 +233,8 @@ def save_project(path: Path, data: dict) -> None:
 
 def load_project(path: Path) -> dict:
     """The project as stored. Raises KrsError: E_PROJECT_UNREADABLE for a path that is not a file, or a file that is
-    not UTF-8 JSON (a hand edit can break it); E_PROJECT_SCHEMA for a file of neither SCHEMA nor SCHEMA_ANTENNA, its
-    `expected` SCHEMA_ANTENNA, the newest it reads."""
+    not UTF-8 JSON (a hand edit can break it); E_PROJECT_SCHEMA for a file of none of SCHEMA, SCHEMA_ANTENNA and
+    SCHEMA_SI, its `expected` SCHEMA_SI, the newest it reads."""
     try:
         if not path.is_file():  # Windows reads a folder as PermissionError, so look before reading (as load_board)
             raise IsADirectoryError() if path.exists() else FileNotFoundError()
@@ -189,8 +242,8 @@ def load_project(path: Path) -> dict:
     except (OSError, ValueError) as e:  # ValueError: UnicodeError or json.JSONDecodeError
         raise KrsError("E_PROJECT_UNREADABLE", path=str(path), reason=reason(e)) from None
     found = data.get("schema") if isinstance(data, dict) else None
-    if found not in (SCHEMA, SCHEMA_ANTENNA):
-        raise KrsError("E_PROJECT_SCHEMA", path=str(path), found=found, expected=SCHEMA_ANTENNA)
+    if found not in (SCHEMA, SCHEMA_ANTENNA, SCHEMA_SI):
+        raise KrsError("E_PROJECT_SCHEMA", path=str(path), found=found, expected=SCHEMA_SI)
     return data
 
 
@@ -227,6 +280,7 @@ def _reference(v) -> bool:
 # says what it must be; a dict is an object with those fields; a (dict, expected) pair is a list of such objects.
 _TEXT = (lambda v: isinstance(v, str), "T_EXPECT_TEXT")
 _ABOVE_0 = (lambda v: _number(v) and v > 0, "T_EXPECT_ABOVE_0")
+_ABOVE_0_OR_NULL = (lambda v: v is None or _number(v) and v > 0, "T_EXPECT_ABOVE_0_OR_NULL")
 _OPTIONAL_ABOVE_0 = (lambda v: v is _MISSING or _number(v) and v > 0, "T_EXPECT_ABOVE_0")  # missing reads the default
 _FLAG = (lambda v: isinstance(v, bool), "T_EXPECT_FLAG")
 _TWO_NAMES = (lambda v: _names(v) and len(v) == 2, "T_EXPECT_TWO_NAMES")
@@ -250,7 +304,7 @@ _FIELDS = {
     "stackup": {"source": _TEXT, "layers": ({
         "name": _TEXT, "kind": (lambda v: v in ("mask", "copper", "dielectric"), "T_EXPECT_KIND"),
         "thickness_mm": (lambda v: _number(v) and v >= 0, "T_EXPECT_0_OR_MORE"),
-        "epsilon_r": (lambda v: v is None or _number(v) and v > 0, "T_EXPECT_ABOVE_0_OR_NULL"),
+        "epsilon_r": _ABOVE_0_OR_NULL,
         "loss_tangent": (lambda v: v is None or _number(v) and v >= 0, "T_EXPECT_0_OR_MORE_OR_NULL")},
         "T_EXPECT_LAYERS")},
     "lid_height_mm": (lambda v: v is None or _number(v) and v > 0, "T_EXPECT_LID_HEIGHT"),
@@ -276,6 +330,24 @@ _FIELDS_ANTENNA = {  # schema 2 (Stage 3 design 5.1): no harmonics or band_facto
                   "step_deg": (lambda v: type(v) is int and v > 0 and 180 % v == 0, "T_EXPECT_STEP")},
     "copper": (lambda v: v is _MISSING or v in COPPER_MODELS, "T_EXPECT_COPPER"),  # missing reads solid
     "flat_s": _OPTIONAL_ABOVE_0}
+_FIELDS_SI = {  # schema 3 (Stage 4 design 5.1): no f0_hz, harmonics, band_factor or chain, then the SI project's fields
+    **{key: spec for key, spec in _FIELDS.items() if key not in ("f0_hz", "harmonics", "band_factor", "chain")},
+    "mesh": {**_FIELDS["mesh"], "max_cell_mm": _ABOVE_0_OR_NULL},
+    "lid": _FLAG,  # as an antenna's: find_lid reads harmonics for a null lid, and schema 3 has none
+    "ports": ({**_FIELDS["ports"][0],
+               "rule": (lambda v: v in (None, "connector", "ic", "copper", "plane"), "T_EXPECT_SI_RULE"),
+               "reference": (lambda v: _reference(v) or (isinstance(v, dict) and v.keys() == {"plane"}
+                                                         and isinstance(v["plane"], str)), "T_EXPECT_SI_REFERENCE")},
+              "T_EXPECT_PORTS"),
+    "kind": (lambda v: v == "si", "T_EXPECT_SI"),
+    "interface": (lambda v: v in (*INTERFACES, "custom"), "T_EXPECT_INTERFACE"),
+    **dict.fromkeys(("f_max_hz", "rise_s", "marker_hz", "target_ohm", "tolerance"), _ABOVE_0),
+    "dielectric": (lambda v: v in DIELECTRICS, "T_EXPECT_DIELECTRIC"),
+    "window_s": _ABOVE_0,
+    "lines": ({"role": (lambda v: v in LINE_ROLES, "T_EXPECT_LINE_ROLE"), "chain": _FIELDS["chain"]},
+              "T_EXPECT_SI_LINES"),
+    "pair": (lambda v: v is None or (isinstance(v, dict) and isinstance(v.get("p"), str) and isinstance(v.get("n"), str)
+                                     and v.get("by") in ("rule", "alias", "given")), "T_EXPECT_SI_PAIR")}
 _MISSING = object()  # a key that is not there, which only an optional field accepts (null is a value)
 
 
@@ -296,15 +368,19 @@ def _check(value, spec, field: str, path: Path) -> None:
 
 
 def check_project(data: dict, path: Path) -> dict:
-    """`data`, the project read from `path`, when each field has the kind and range that `new` writes (_FIELDS, or
-    _FIELDS_ANTENNA for an antenna); else E_PROJECT_FIELD names the first that is missing or has not, with dots and
-    [index] as in ports[0].reference (C-3). So a hand edit never ends in E_INTERNAL further on, nor in a field read as
-    something it is not. An antenna's band then holds f_lo < f_hi ≤ 2·f_lo (Stage 3 design 3: one band a run), its
-    f0_hz lies in the band, and its far field's first frequency is f0_hz (the worker draws the cuts at the first) and
-    each lies within pulse_band, in that order. An antenna's `copper` and `flat_s` are optional (a project made before
-    plan 4 has neither): solid copper (copper_model) and flat_window's (excitation). `results` is optional, and an
-    object."""
-    _check(data, _FIELDS_ANTENNA if antenna(data) else _FIELDS, "", path)
+    """`data`, the project read from `path`, when each field has the kind and range that `new` writes (_FIELDS,
+    _FIELDS_ANTENNA for an antenna, _FIELDS_SI for an SI project); else E_PROJECT_FIELD names the first that is missing
+    or has not, with dots and [index] as in ports[0].reference (C-3). So a hand edit never ends in E_INTERNAL further
+    on, nor in a field read as something it is not. An antenna's band then holds f_lo < f_hi ≤ 2·f_lo (Stage 3 design
+    3: one band a run), its f0_hz lies in the band, and its far field's first frequency is f0_hz (the worker draws the
+    cuts at the first) and each lies within pulse_band, in that order. An SI project's rise_s is then at least
+    LOCAL_RISE/f_max_hz, the localising TDR's (Stage 4 design 5.1), its lines' roles are 1 or 2 measured, then 0 to 2
+    victims, its pair is null with one measured line, else p and n are the two measured lines' first nets, and its
+    ports' signals are each measured line's start, each one's end, then each victim's start and end (the order se2gmm
+    reads a pair's ports in), checked in that order. An antenna's `copper` and `flat_s` are optional (a project made
+    before plan 4 has neither): solid copper (copper_model) and flat_window's (excitation). `results` is optional, and
+    an object."""
+    _check(data, _FIELDS_ANTENNA if antenna(data) else _FIELDS_SI if si(data) else _FIELDS, "", path)
     if antenna(data):
         f_lo, f_hi, f0, far = data["band"]["f_lo_hz"], data["band"]["f_hi_hz"], data["f0_hz"], data["far_field"]["f_hz"]
         f1, f2 = pulse_band(f_lo, f_hi)
@@ -312,6 +388,21 @@ def check_project(data: dict, path: Path) -> dict:
                                     ("f0_hz", "T_EXPECT_F0_BAND", f_lo <= f0 <= f_hi),
                                     ("far_field.f_hz", "T_EXPECT_FAR_FIELD_HZ",
                                      far[0] == f0 and all(f1 <= f <= f2 for f in far))):
+            if not ok:
+                raise KrsError("E_PROJECT_FIELD", path=str(path), field=field, expected=expected)
+    if si(data):
+        lines, pair = data["lines"], data["pair"]
+        roles = [line["role"] for line in lines]
+        m, v = roles.count("measured"), roles.count("victim")
+        measured, victims = [line["chain"] for line in lines[:m]], [line["chain"] for line in lines[m:]]
+        ends = [*(c["start"] for c in measured), *(c["end"] for c in measured),
+                *(end for c in victims for end in (c["start"], c["end"]))]
+        for field, expected, ok in (
+                ("rise_s", "T_EXPECT_RISE", data["rise_s"] >= LOCAL_RISE / data["f_max_hz"] * (1 - 1e-9)),
+                ("lines", "T_EXPECT_SI_LINES", m in (1, 2) and v <= 2 and roles == ["measured"] * m + ["victim"] * v),
+                ("pair", "T_EXPECT_SI_PAIR", pair is None if m == 1 else
+                 pair is not None and [pair["p"], pair["n"]] == [n for c in measured for n in c["nets"][:1]]),
+                ("ports", "T_EXPECT_SI_PORTS", [port["signal"] for port in data["ports"]] == ends)):
             if not ok:
                 raise KrsError("E_PROJECT_FIELD", path=str(path), field=field, expected=expected)
     if not isinstance(data.get("results", {}), dict):
