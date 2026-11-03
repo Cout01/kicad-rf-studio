@@ -6,7 +6,7 @@ from collections import Counter
 from pathlib import Path
 
 import pytest
-from shapely.geometry import MultiPolygon, Polygon
+from shapely.geometry import MultiPolygon, Point, Polygon
 from shapely.ops import unary_union
 
 from kicad_rf_studio.core.kicad import load_board
@@ -14,10 +14,12 @@ from kicad_rf_studio.core.kicad.board import Pad
 
 FIX = Path(__file__).parent / "fixtures"
 MAX_ERR = 0.001  # mm, the arc tolerance of shapes.py
+QFN = "Package_DFN_QFN:QFN-16-1EP_3x3mm_P0.5mm_EP1.7x1.7mm"
 
 
 @pytest.mark.parametrize("name", ["pads_zoo", "lpf915", "lpf915-45", "coupon_gcpw_pads", "ifa2g4", "ifa2g4_pi",
-                                  "meander915", "ifa2g4_pi_shift", "ifa2g4_pi_dxp", "ifa2g4_pi_dxm", "ifa2g4_pi_pour"])
+                                  "meander915", "ifa2g4_pi_shift", "ifa2g4_pi_dxp", "ifa2g4_pi_dxm", "ifa2g4_pi_pour",
+                                  "usb2_hs", "usb2_hs_neck", "usb2_hs_gap", "usb2_hs_45", "qspi_clk"])
 def test_pads_match_pcbnew(name):
     b = load_board(FIX / f"{name}.kicad_pcb")
     truth = json.loads((FIX / f"{name}.pads.json").read_text(encoding="utf-8"))
@@ -55,6 +57,39 @@ def test_the_antenna_fixtures():  # Stage 3 design 5.11: KiCad's own RF_Antenna 
     assert ifa.footprints["C1"].value == "100nF" and "C1" not in mea.footprints
     for b in (ifa, pi, mea):
         assert {(a.layer, a.net) for a in b.areas if a.source == "zone"} == {("F.Cu", "GND"), ("B.Cu", "GND")}
+
+
+def test_the_si_fixtures():  # Stage 4 design 5.11: four layers, KiCad's own footprints, a USB 2.0 pair, a QSPI clock
+    usb, qspi = (load_board(FIX / f"{n}.kicad_pcb") for n in ("usb2_hs", "qspi_clk"))
+    for b in (usb, qspi):
+        assert b.copper_layers == ("F.Cu", "In1.Cu", "In2.Cu", "B.Cu") and b.thickness == pytest.approx(1.6)
+        assert [(x.thickness, x.epsilon_r) for x in b.stackup.layers if x.kind == "dielectric"] == [
+            (0.2, 4.3), (1.04, 4.5), (0.2, 4.3)]
+        assert {(a.layer, a.net) for a in b.areas if a.source == "zone"} == {("In1.Cu", "GND"), ("In2.Cu", "+3V3")}
+        # three netted pads or more: the tracer never reads an IC as a two-pad part
+        assert all(len([p for p in f.pads if p.net]) >= 3 for r, f in b.footprints.items() if r[0] == "U")
+    fp = usb.footprints
+    assert [fp[r].lib_id for r in ("J1", "U2", "U1")] == ["Connector_USB:USB_Micro-B_Molex-105017-0001",
+                                                          "Package_TO_SOT_SMD:SOT-23-6", QFN]
+    assert [(p.number, p.net) for p in fp["U2"].pads] == [("1", "USB_D-"), ("2", "GND"), ("3", "USB_D+"),
+                                                         ("4", "USB_D+"), ("5", "VBUS"), ("6", "USB_D-")]
+    assert {r: (fp[r].value, [p.net for p in fp[r].pads]) for r in ("R1", "R2", "C1")} == {
+        "R1": ("22", ["USB_D+", "MCU_D+"]), "R2": ("22", ["USB_D-", "MCU_D-"]), "C1": ("100nF", ["+3V3", "GND"])}
+    for name, (x, y) in {"J1.2": (98.4625, 99.675), "J1.3": (98.4625, 100.325), "J1.5": (98.4625, 101.625),
+                         "U1.2": (128.5375, 99.75), "U1.3": (128.5375, 100.25), "R1.1": (122.99, 100.445),
+                         "TP1.1": (108, 101.15), "TP2.1": (120, 101.15)}.items():
+        assert math.dist(usb.pads(name)[0].center, (x, -y)) <= 1e-6, name
+    assert usb.pads("J1.4")[0].net == "" and usb.outline.bounds == (94.0, -106.0, 134.0, -94.0)
+    assert {t.width for t in usb.tracks if t.net in ("USB_D+", "USB_D-", "MCU_D+", "MCU_D-")} == {0.3, 0.6}
+    assert {t.width for t in usb.tracks if t.net == "AUX"} == {0.2}
+    assert {(t.layer, t.width) for t in qspi.tracks if t.net == "FLASH_CLK"} == {("F.Cu", 0.33), ("B.Cu", 0.33)}
+    assert [v.net for v in qspi.vias].count("FLASH_CLK") == 2
+    assert math.dist(qspi.pads("U2.6")[0].center, (119.525, -99.75)) <= 1e-6 and qspi.pads("U2.4")[0].net == "GND"
+    neck, gap, bend = (load_board(FIX / f"usb2_hs_{n}.kicad_pcb") for n in ("neck", "gap", "45"))
+    assert {t.width for t in neck.tracks if t.net == "USB_D+"} == {0.2, 0.3, 0.6}
+    assert any(a.polygon.contains(Point(116.5, -100)) for a in usb.areas if a.layer == "In1.Cu")
+    assert not any(a.polygon.contains(Point(116.5, -100)) for a in gap.areas if a.layer == "In1.Cu")
+    assert sum(min(abs(t.end[0] - t.start[0]), abs(t.end[1] - t.start[1])) > 0.5 for t in bend.tracks) == 4
 
 
 # --- beyond the brief's two tests: what pcbnew's pad truth cannot show --------------------------------

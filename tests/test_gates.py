@@ -215,6 +215,19 @@ def test_rule_meshes_pass_the_lint_and_never_trip_the_timestep_floor(name, start
     assert openems_dt(m) >= 0.8 * dt_floor_reference(m)
 
 
+@pytest.mark.parametrize("name", ["usb2_hs", "usb2_hs_neck", "usb2_hs_gap", "usb2_hs_45", "qspi_clk"])
+def test_an_si_fixture_passes_the_edge_lint_and_fit2d_with_every_line_measured(name):  # design 5.11
+    board = load_board(FIX / f"{name}.kicad_pcb")
+    nets = sorted({t.net for t in board.tracks} - {"GND", "+3V3"})  # every line, as an SI project measures them
+    geom = build_geometry(board, {"f0_hz": 10e9 / 3, "harmonics": 3, "band_factor": 1.0, "ports": [],
+                                  "stackup": board.stackup.to_json(), "region": {"expand_h": 6.0, "margin_scale": 1.0},
+                                  "mesh": {"n": 2, "reach_h": 6.0},
+                                  "chain": {"start": "", "end": "", "nets": nets, "series": [], "shunt": []}})
+    mesh = mesh_with_lint(geom, geom.protected, 2)  # E_EDGE_LINT would raise
+    check_fit2d(fit2d(geom, mesh), 0.03, 2)  # E_FIT2D would raise
+    assert mesh.d == pytest.approx(0.1)
+
+
 @pytest.mark.parametrize("name", [name for name, start, _ in FIXTURES if not start])
 def test_build_geometry_assembles_tasks_2_to_6(name):
     # test_mesh_rule's builder does by hand what build_geometry does from project.json; on the coupons the

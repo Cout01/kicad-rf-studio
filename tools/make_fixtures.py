@@ -70,20 +70,21 @@ def net(b, name):
     return n
 
 
-def copper(b, item, name, width):
+def copper(b, item, name, width, layer=pcbnew.F_Cu):
+    """`item`, `width` mm wide on net `name`, added on `layer` (F.Cu unless told)."""
     item.SetWidth(MM(width))
-    item.SetLayer(pcbnew.F_Cu)
+    item.SetLayer(layer)
     item.SetNet(net(b, name))
     b.Add(item)
 
 
-def track(b, name, width, *points):
-    """F.Cu segments through `points` (mm)."""
+def track(b, name, width, *points, layer=pcbnew.F_Cu):
+    """Segments on `layer` (F.Cu unless told) through `points` (mm)."""
     for p, q in zip(points, points[1:]):
         t = pcbnew.PCB_TRACK(b)
         t.SetStart(pt(*p))
         t.SetEnd(pt(*q))
-        copper(b, t, name, width)
+        copper(b, t, name, width, layer)
 
 
 def arc(b, name, width, start, mid, end):
@@ -94,20 +95,22 @@ def arc(b, name, width, start, mid, end):
     copper(b, a, name, width)
 
 
-def via(b, at):
+def via(b, at, name="GND"):
+    """A through via at `at`, 0.6 mm across with a 0.3 mm drill, on net `name` (GND unless told)."""
     v = pcbnew.PCB_VIA(b)
     v.SetPosition(pt(*at))
     v.SetDrill(MM(0.3))
     v.SetWidth(MM(0.6))
-    v.SetNet(net(b, "GND"))
+    v.SetNet(net(b, name))
     b.Add(v)
 
 
-def zone(b, layer, corners, clearance=0.15):
-    """A GND zone joined solidly to GND pads, `clearance` mm from other nets (0.15: the GCPW gap)."""
+def zone(b, layer, corners, clearance=0.15, name="GND"):
+    """A zone of net `name` (GND unless told) joined solidly to its net's pads, `clearance` mm from other nets (0.15:
+    the GCPW gap)."""
     z = pcbnew.ZONE(b)
     z.SetLayer(layer)
-    z.SetNet(net(b, "GND"))
+    z.SetNet(net(b, name))
     z.SetLocalClearance(MM(clearance))
     z.SetPadConnection(pcbnew.ZONE_CONNECTION_FULL)
     z.Outline().NewOutline()
@@ -328,6 +331,122 @@ def pads_zoo(b):
          box.GetRight() / 1e6 + 1, box.GetBottom() / 1e6 + 1)
 
 
+# Stage 4's boards (design 5.11): signal, GND, +3V3, signal, 0.2 mm of prepreg under each outer copper, 1.6 mm
+STACKUP_4L = """(stackup
+ (layer "F.SilkS" (type "Top Silk Screen")) (layer "F.Paste" (type "Top Solder Paste"))
+ (layer "F.Mask" (type "Top Solder Mask") (thickness 0.01)) (layer "F.Cu" (type "copper") (thickness 0.035))
+ (layer "dielectric 1" (type "prepreg") (thickness 0.2) (material "FR4") (epsilon_r 4.3) (loss_tangent 0.02))
+ (layer "In1.Cu" (type "copper") (thickness 0.035))
+ (layer "dielectric 2" (type "core") (thickness 1.04) (material "FR4") (epsilon_r 4.5) (loss_tangent 0.02))
+ (layer "In2.Cu" (type "copper") (thickness 0.035))
+ (layer "dielectric 3" (type "prepreg") (thickness 0.2) (material "FR4") (epsilon_r 4.3) (loss_tangent 0.02))
+ (layer "B.Cu" (type "copper") (thickness 0.035)) (layer "B.Mask" (type "Bottom Solder Mask") (thickness 0.01))
+ (layer "B.Paste" (type "Bottom Solder Paste")) (layer "B.SilkS" (type "Bottom Silk Screen"))
+ (copper_finish "None") (dielectric_constraints no))
+"""
+# cs2d with the mask: a 90.3 Ω pair (95.4 bare) and a 50.0 Ω line on 0.2 mm of εr 4.3. Every line shares one set of mesh
+# lines per axis, so the pair's inner edges sit on J1's and U1's inner pin edges and the QSPI line's top edge on U1.11's:
+# edges 25 µm apart read fit2d 5.6-7 % off
+W_PAIR, GAP, W_SE = 0.3, 0.25, 0.33
+QFN = "Package_DFN_QFN:QFN-16-1EP_3x3mm_P0.5mm_EP1.7x1.7mm"
+R0402, C0402 = "Resistor_SMD:R_0402_1005Metric", "Capacitor_SMD:C_0402_1005Metric"
+
+
+def square(b, layer, name, x0, y0, x1, y1):
+    zone(b, layer, [(x0, y0), (x1, y0), (x1, y1), (x0, y1)], name=name)
+
+
+def planes(b, box, slot=None):
+    """GND on In1.Cu and +3V3 on In2.Cu, 0.5 mm inside the outline `box` (x0, y0, x1, y1); with `slot`, In1.Cu's GND as
+    four zones that leave that box bare."""
+    x0, y0, x1, y1 = box[0] + 0.5, box[1] + 0.5, box[2] - 0.5, box[3] - 0.5
+    if slot:
+        sx0, sy0, sx1, sy1 = slot
+        for r in ((x0, y0, sx0, y1), (sx1, y0, x1, y1), (sx0 - 0.5, y0, sx1 + 0.5, sy0), (sx0 - 0.5, sy1, sx1 + 0.5, y1)):
+            square(b, pcbnew.In1_Cu, "GND", *r)
+    else:
+        square(b, pcbnew.In1_Cu, "GND", x0, y0, x1, y1)
+    square(b, pcbnew.In2_Cu, "+3V3", x0, y0, x1, y1)
+
+
+def decoupled(b, at):
+    """C1, 100 nF, joining +3V3 to GND at `at`, each pad down a track to a via of its net."""
+    place(b, C0402, "C1", "100nF", at, 0, {"1": "+3V3", "2": "GND"})
+    for dx, name in ((-0.48, "+3V3"), (0.48, "GND")):
+        track(b, name, 0.3, (at[0] + dx, at[1]), (at[0] + dx, at[1] + 1.2))
+        via(b, (at[0] + dx, at[1] + 1.2), name)
+
+
+def usb2_hs(b, neck=False, gap=False, bend=False):
+    """A USB 2.0 high-speed pair along y = 100, left to right (Stage 4 design 5.11): J1, a micro-B (USB_D- J1.2, USB_D+
+    J1.3); U2, a SOT-23-6 ESD array whose pads 1 and 6 (USB_D-) and 3 and 4 (USB_D+) the lines run straight through,
+    0.6 mm wide; the pair at a 0.25 mm gap; the 22 Ω series resistors R2 and R1; U1, a QFN-16 "MCU" (MCU_D- U1.2,
+    MCU_D+ U1.3, GND on its exposed pad U1.17). AUX, the victim, runs from TP1.1 to TP2.1 0.625 mm under the pair; C1,
+    100 nF, joins +3V3 to GND by U1. `neck` narrows each line to 0.2 mm on its inner side over x 112-117, `gap` leaves
+    In1.Cu bare over x 116-117, y 97-103, and `bend` takes the pair up 1.5 mm over x 110-117 through 45° bends at
+    constant pitch."""
+    rect(b, pcbnew.Edge_Cuts, 94, 94, 134, 106)
+    planes(b, (94, 94, 134, 106), (116, 97, 117, 103) if gap else None)
+    place(b, "Connector_USB:USB_Micro-B_Molex-105017-0001", "J1", "USB_B_Micro", (97, 100.325), 270,
+          {"1": "VBUS", "2": "USB_D-", "3": "USB_D+", "5": "GND", "6": "GND"})  # pins at x 98.4625, y 99.025-101.625
+    track(b, "GND", 0.3, (98.4625, 101.625), (98.4625, 102.825))  # J1.5 to its shield's plated hole
+    place(b, "Package_TO_SOT_SMD:SOT-23-6", "U2", "USBLC6-2SC6", (103, 100), 0,
+          {"1": "USB_D-", "2": "GND", "3": "USB_D+", "4": "USB_D+", "5": "VBUS", "6": "USB_D-"})
+    via(b, (101.8625, 100))  # U2.2 to In1.Cu, in its pad
+    place(b, R0402, "R2", "22", (123.5, 99.555), 0, {"1": "USB_D-", "2": "MCU_D-"})  # pad edges on the lines' inner
+    place(b, R0402, "R1", "22", (123.5, 100.445), 0, {"1": "USB_D+", "2": "MCU_D+"})  # edges: no jog to them
+    place(b, QFN, "U1", "MCU", (130, 100), 0, {"2": "MCU_D-", "3": "MCU_D+", "17": "GND"})
+    for x in (129.55, 130.45):
+        for y in (99.55, 100.45):
+            via(b, (x, y))  # the exposed pad to In1.Cu
+    p = (W_PAIR + GAP) / 2  # each line's centre off y = 100
+    t = p * math.tan(math.pi / 8)  # a 45° bend moves each line's vertex this far along x, at constant pitch
+    for usb, mcu, s in (("USB_D-", "MCU_D-", -1), ("USB_D+", "MCU_D+", 1)):  # s: the line's side of y = 100
+        y_p, y_s = 100 + s * p, 100 + s * 0.95  # the pair; through U2's pads
+        track(b, usb, W_PAIR, (98.4625, y_p), (100.5, y_p), (100.5, y_s))
+        track(b, usb, 0.6, (100.5, y_s), (105.5, y_s))  # as tall as U2's pads: one pair of edges, not two
+        mid = [(110 + s * t, y_p), (111.5 + s * t, y_p - 1.5), (115.5 - s * t, y_p - 1.5), (117 - s * t, y_p)] if bend else []
+        if neck:
+            track(b, usb, W_PAIR, (105.5, y_s), (105.5, y_p), (112, y_p))
+            track(b, usb, 0.2, (112, y_p + s * 0.05), (117, y_p + s * 0.05))  # the outer edge kept
+            track(b, usb, W_PAIR, (117, y_p), (122.99, y_p))
+        else:
+            track(b, usb, W_PAIR, (105.5, y_s), (105.5, y_p), *mid, (122.99, y_p))
+        track(b, mcu, W_PAIR, (124.01, y_p), (128.5375, y_p))
+    for ref, x in (("TP1", 108), ("TP2", 120)):
+        place(b, "TestPoint:TestPoint_Pad_1.0x1.0mm", ref, "TP", (x, 101.15), 0, {"1": "AUX"})
+    track(b, "AUX", 0.2, (108, 101.15), (120, 101.15))
+    decoupled(b, (127, 102))
+
+
+def qspi_clk(b):
+    """A QSPI clock (Stage 4 design 5.11): QSPI_CLK from U1.11, a QFN-16 "MCU" pin (+3V3 on U1.16, GND on its exposed
+    pad U1.17), through R1, 33 Ω, then FLASH_CLK down a via to 10 mm on B.Cu and up another to U2.6, the clock pin of
+    U2, a SOIC-8 flash turned 180° (U2.4 GND, U2.8 +3V3). C1, 100 nF, joins +3V3 to GND by the first via, where the
+    return current leaves In1.Cu's GND for In2.Cu's +3V3."""
+    rect(b, pcbnew.Edge_Cuts, 94, 94, 128, 106)
+    planes(b, (94, 94, 128, 106))
+    place(b, QFN, "U1", "MCU", (100, 100), 0, {"11": "QSPI_CLK", "16": "+3V3", "17": "GND"})
+    for x in (99.55, 100.45):
+        for y in (99.55, 100.45):
+            via(b, (x, y))
+    place(b, R0402, "R1", "33", (104.5, 99.75), 0, {"1": "QSPI_CLK", "2": "FLASH_CLK"})
+    place(b, "Package_SO:SOIC-8_3.9x4.9mm_P1.27mm", "U2", "FLASH", (122, 100.385), 180,
+          {"4": "GND", "6": "FLASH_CLK", "8": "+3V3"})  # U2.6 at (119.525, 99.75)
+    y = 99.75 + (W_SE - 0.25) / 2  # the line's top edge on U1.11's, a 0.25 mm pin
+    track(b, "QSPI_CLK", W_SE, (101.4625, y), (103.99, y))
+    track(b, "FLASH_CLK", W_SE, (105.01, y), (107, y))
+    via(b, (107, y), "FLASH_CLK")
+    track(b, "FLASH_CLK", W_SE, (107, y), (117, y), layer=pcbnew.B_Cu)
+    via(b, (117, y), "FLASH_CLK")
+    track(b, "FLASH_CLK", W_SE, (117, y), (119.525, y))
+    track(b, "GND", 0.3, (124.475, 98.48), (124.475, 97.3))
+    via(b, (124.475, 97.3))
+    track(b, "+3V3", 0.3, (119.525, 102.29), (119.525, 103.5))
+    via(b, (119.525, 103.5), "+3V3")
+    decoupled(b, (107, 102))
+
+
 # an antenna board's 50 Ω microstrip keeps its top ground 1 mm off: the fill's clearance, and the gap fit2d reads
 ANTENNA_RULES = '(version 1)\n(rule "microstrip gap" (constraint clearance (min 1mm)))\n'
 
@@ -424,19 +543,27 @@ BOARDS = {
     "ifa2g4_pi_pour": lambda b: antenna_board(b, *IFA, pi=True, pour=POUR),
     "meander915": lambda b: antenna_board(b, "RF_Antenna:Texas_SWRA416_868MHz_915MHz", {"1": "RF"}, (110, 100),
                                           (89, 92.5, 129, 146.5), 106.5, 111.0, decap=False),
+    "usb2_hs": usb2_hs,
+    "usb2_hs_neck": lambda b: usb2_hs(b, neck=True),
+    "usb2_hs_gap": lambda b: usb2_hs(b, gap=True),
+    "usb2_hs_45": lambda b: usb2_hs(b, bend=True),
+    "qspi_clk": qspi_clk,
 }
 
 
-def new_board(path, seed, rules=RULES):
-    """An empty 0.8 mm, 2-layer board with KiCad's default stackup, saved at `path` and loaded back under the
-    design `rules` (a .kicad_dru's text)."""
+def new_board(path, seed, rules=RULES, copper=2, thickness=0.8, stackup=STACKUP):
+    """An empty board of `copper` copper layers, `thickness` mm thick, with `stackup` (a stackup's text: by default
+    KiCad's own for 2 layers and 0.8 mm), saved at `path` and loaded back under the design `rules` (a .kicad_dru's
+    text)."""
     pcbnew.KIID.SeedGenerator(seed)
     b = pcbnew.CreateEmptyBoard()
-    b.GetDesignSettings().SetBoardThickness(MM(0.8))
+    if copper != 2:
+        b.SetCopperLayerCount(copper)
+    b.GetDesignSettings().SetBoardThickness(MM(thickness))
     pcbnew.SaveBoard(str(path), b, True)
     text = path.read_text(encoding="utf-8")
     assert "\t(setup\n" in text, "KiCad's board format changed: splice the stackup elsewhere"
-    path.write_text(text.replace("\t(setup\n", "\t(setup\n" + STACKUP, 1), encoding="utf-8", newline="\n")
+    path.write_text(text.replace("\t(setup\n", "\t(setup\n" + stackup, 1), encoding="utf-8", newline="\n")
     dru = path.with_suffix(".kicad_dru")
     dru.write_text(rules, encoding="utf-8")
     try:
@@ -476,8 +603,9 @@ def save(b, path):
 
 
 def main(out, names=()):
-    """Build the boards `names` (every one in BOARDS when empty) into the folder `out`. An unknown name exits first,
-    before any board is written."""
+    """Build the boards `names` (every one in BOARDS when empty) into the folder `out`: the antenna boards under
+    ANTENNA_RULES, the rest under RULES; Stage 4's (usb2_hs*, qspi_clk) with four copper layers, 1.6 mm and STACKUP_4L,
+    the rest on KiCad's default two-layer 0.8 mm stackup. An unknown name exits first, before any board is written."""
     if unknown := [n for n in names if n not in BOARDS]:
         sys.exit(f"unknown boards: {' '.join(unknown)}; known: {' '.join(BOARDS)}")
     out = Path(out)
@@ -485,7 +613,8 @@ def main(out, names=()):
     for name in names or BOARDS:
         path = out / f"{name}.kicad_pcb"
         rules = ANTENNA_RULES if name.startswith(("ifa2g4", "meander915")) else RULES
-        b = new_board(path, zlib.crc32(name.encode()), rules)
+        layers = dict(copper=4, thickness=1.6, stackup=STACKUP_4L) if name.startswith(("usb2_hs", "qspi_clk")) else {}
+        b = new_board(path, zlib.crc32(name.encode()), rules, **layers)
         BOARDS[name](b)
         save(b, path)
         print(name)
