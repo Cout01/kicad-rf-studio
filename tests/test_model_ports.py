@@ -286,6 +286,8 @@ def test_the_plane_under_a_pad_is_the_nearest_one_nets_copper_that_covers_it(): 
     assert plane_under(PAD, "F.Cu", FOUR, [plane("In2.Cu")], {"GND"}) == "In2.Cu"  # past In1.Cu, bare under the pad
     away = plane("In1.Cu", "SIG", box(1, -1, 2, 1))  # In1.Cu's copper beside the pad, not over it
     assert plane_under(PAD, "F.Cu", FOUR, [away, plane("In2.Cu")], {"GND"}) == "In2.Cu"
+    touch = plane("In1.Cu", "SIG", box(0.15, -1, 1, 1))  # on the pad's right edge (x 0.15), with no overlap: beside it
+    assert plane_under(PAD, "F.Cu", FOUR, [touch, plane("In2.Cu")], {"GND"}) == "In2.Cu"
     two = (FOUR[0], Slab("dielectric", 0.035, 1.535, 4.5, 0.02, None), Slab("copper", 1.535, 1.57, None, None, "F.Cu"))
     assert plane_under(PAD, "F.Cu", two, [plane("B.Cu")], {"GND"}) == "B.Cu"  # two layers: the bottom copper
 

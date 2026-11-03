@@ -139,7 +139,7 @@ def plane_under(pad: BaseGeometry, layer: str, zs: tuple[Slab, ...], pieces: lis
         if any(shapely.union_all([pc.polygon for pc in here if pc.net == net]).buffer(SIMPLIFY).covers(pad)
                for net in nets):
             return name
-        if any(pc.polygon.intersects(pad) for pc in here):
+        if any(pc.polygon.intersection(pad).area > 0 for pc in here):  # copper over the pad, not beside it
             return None
     return None
 

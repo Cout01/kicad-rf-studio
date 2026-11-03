@@ -971,3 +971,15 @@ def test_the_si_rule_fills_a_via_margin_at_d_clear_of_or_over_an_edge(edges, ext
     assert lint_hits(si, edges, SI_D) == [] and bad_pairs(si, [e for e, _ in edges]) == []
     assert np.diff(si).min() >= SI_D / 3 - GRID_TOL
     assert si_max_cell(10e9, 3.3) == pytest.approx(0.412576, abs=1e-6)  # 30 mm/√3.3/40
+
+
+def test_a_span_never_moves_a_wall_and_a_backwards_span_is_refused():  # plan 1 final review F2
+    extent = (-1.2, 101.2)
+    walls = si_axis(STRAIGHT, extent, max_cell=SI_CELL)[[0, -1]]  # with no span the axis runs from wall to wall
+    over = si_axis(STRAIGHT, extent, max_cell=SI_CELL, spans=[(walls[1] - 0.5, walls[1] + 1.0)])  # across the far wall
+    assert over[-1] == pytest.approx(walls[1], abs=1e-6)
+    beyond = [(walls[0] - 2.0, walls[0] - 1.0), (walls[1] + 1.0, walls[1] + 2.0)]  # wholly outside, on either side
+    for lines in (over, si_axis(STRAIGHT, extent, max_cell=SI_CELL, spans=beyond)):
+        assert walls[0] - 1e-6 <= lines.min() and lines.max() <= walls[1] + 1e-6  # no line past either wall
+    with pytest.raises(ValueError, match="backwards"):
+        si_axis(STRAIGHT, extent, max_cell=SI_CELL, spans=[(51.0, 49.0)])

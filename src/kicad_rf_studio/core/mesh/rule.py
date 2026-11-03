@@ -111,6 +111,9 @@ def xy_lines(edges: list[Edge], extent: tuple[float, float], walls: tuple[float,
       than its inside line, and the lint's one re-mesh could not move it (verifier).
     - With `max_cell` (an SI project's, Stage 4 design 5.3), d fills only the `spans` (lo, hi) the caller gives on
       this axis: the margins around vias, and any copper its edges cannot pattern. Their ends are lines where clear.
+      A `free` coordinate inside the extent and outside every span gets no line of its own (the `free` bullet below
+      lines only coordinates d or more from the extent), so the caller spans every via rod in the extent, stitching
+      vias included, or the rod can lose every mesh node.
       Elsewhere in the extent the cells grade at RATIO up to `max_cell`, and outside it up to `coarse` as before. The
       rule's own lines are then the walls, the edge lines, the extent's and the spans' ends, and the spans' fill.
       With None, as for v1 and the antenna, d fills the whole extent as before and `spans` is ignored.
@@ -165,7 +168,10 @@ def _axis(edges: list[Edge], extent: tuple[float, float], walls: tuple[float, fl
     `max_cell` and `spans` as xy_lines takes them."""
     pins = _patterns(edges, d, prefer, force, h, slot) | dict.fromkeys(walls, 0.0)
     lo, hi = (round(v, 6) for v in extent)
-    spans = [(round(a, 6), round(b, 6)) for a, b in spans] if max_cell is not None else []  # None ignores them
+    if max_cell is not None and any(a > b for a, b in spans):
+        raise ValueError(f"a span runs backwards: {sorted(spans)}")
+    spans = ([(max(round(a, 6), walls[0]), min(round(b, 6), walls[1])) for a, b in spans
+              if b > walls[0] and a < walls[1]] if max_cell is not None else [])  # None ignores them; never past a wall
     at = np.array(sorted(pins))
     cells = set(np.searchsorted(at, [e for e, _ in edges]).tolist())
 
