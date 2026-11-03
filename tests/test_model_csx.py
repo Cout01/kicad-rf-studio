@@ -1,4 +1,5 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
+import math
 import sys
 import types
 
@@ -63,6 +64,25 @@ def test_the_si_pulse_goes_through_v1s_custom_excitation(monkeypatch):  # Stage 
     build_csx({**TINY, "excitation": exc}, 1, 10e-9)
     assert ("SetCustomExcite", (exc["expr"], 10e9, 10e9), {}) in log and ("SetMaxTime", (10e-9,), {}) in log
     assert log[0] == ("openEMS", (), {"EndCriteria": 1e-15})  # the port residual alone stops it (design 5.4)
+
+
+def test_a_debye_material_is_csxcads_debye_property_and_a_plain_one_is_not(monkeypatch):  # 5.3; SI keys only in SI
+    log = fake_openems(monkeypatch)
+    monkeypatch.setitem(sys.modules, "CSXCAD.CSProperties",
+                        types.SimpleNamespace(CSPropDebyeMaterial=Rec(log, "CSPropDebyeMaterial")))
+    db = {"eps_inf": 4.0, "delta": [0.2, 0.1], "f_relax_hz": [1e9, 1e10]}
+    build_csx({**TINY, "materials": [{**TINY["materials"][0], "kappa": 0.0, "debye": db}]}, 1, 1e-9)
+    assert [kw for n, _, kw in log if n == "CSPropDebyeMaterial"] == [{"order": 2, "name": "substrate_0", "epsilon": 4.0}]
+    assert [(a, kw) for n, a, kw in log if n == "SetDispersiveMaterialProperty"] == [
+        ((0,), {"eps_delta": 0.2, "eps_relax": 1 / (2 * math.pi * 1e9)}),  # relaxation times, in s
+        ((1,), {"eps_delta": 0.1, "eps_relax": 1 / (2 * math.pi * 1e10)})]
+    names = [n for n, _, _ in log]
+    assert "AddProperty" in names and "AddMaterial" not in names  # no κ
+    assert [kw["priority"] for n, _, kw in log if n == "AddLinPoly"] == [10, METAL_PRIORITY]
+    log.clear()
+    build_csx(TINY, 1, 1e-9)  # a v1 spec: the plain material, as before
+    assert ("AddMaterial", ("substrate_0",), {"epsilon": 4.5, "kappa": 0.0046}) in log
+    assert "CSPropDebyeMaterial" not in [n for n, _, _ in log]
 
 
 def test_the_boundary_is_mur_without_the_key_and_pml_8_on_all_six_faces_with_it(monkeypatch):  # design 5.2; S1 5.1

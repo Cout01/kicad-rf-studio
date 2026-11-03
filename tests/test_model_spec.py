@@ -4,6 +4,7 @@ import math
 from dataclasses import replace
 from functools import cache
 
+import numpy as np
 import pytest
 from shapely.geometry import MultiPolygon, Point, Polygon, box
 
@@ -18,8 +19,9 @@ from kicad_rf_studio.core.messages import KrsError
 from kicad_rf_studio.core.model.csx import PML_CELLS
 from kicad_rf_studio.core.model.ports import ends, nominal_boxes, place
 from kicad_rf_studio.core.model.readers import c_box
-from kicad_rf_studio.core.model.spec import (K_MAX, PML_CLEAR, dc_pulse, excitation, grid_entry, kappa, metal_in_pml,
-                                             model_spec, pulse, round_trip, si_t_max, spec_hash, verify_spec, with_pml)
+from kicad_rf_studio.core.model.spec import (DEBYE_F_REF, K_MAX, PML_CLEAR, dc_pulse, debye, excitation, grid_entry,
+                                             kappa, metal_in_pml, model_spec, pulse, round_trip, si_t_max, spec_hash,
+                                             verify_spec, with_pml)
 from kicad_rf_studio.stoprule import stop_window
 from test_cli_cost import SEG
 from test_gates import mini, project_of
@@ -116,6 +118,30 @@ def test_metal_dielectric_or_a_port_within_the_pml_and_2_cells_is_refused():  # 
 
 def test_kappa_is_set_at_f0():  # spec 5.3
     assert kappa(4.5, 0.02, 915e6) == pytest.approx(4.58134e-3, rel=1e-5) and kappa(3.3, None, 915e6) == 0.0
+
+
+def debye_eps(d, f):
+    """ε(f) of a debye() entry: ε∞ + Σ Δε/(1 + j·f/f_relax)."""
+    return d["eps_inf"] + sum(de / (1 + 1j * f / fr) for de, fr in zip(d["delta"], d["f_relax_hz"]))
+
+
+@pytest.mark.parametrize(("eps_r", "tan_d", "tol"), [(4.3, 0.02, 0.07), (3.66, 0.004, 0.06)])  # FR-4; a low-loss one
+def test_a_debye_fit_holds_the_loss_tangent_across_the_band_and_none_at_dc(eps_r, tan_d, tol):  # design 5.3
+    d = debye(eps_r, tan_d, 10e9)
+    assert d["f_relax_hz"] == [1e8, 1e9, 1e10]  # one pole a decade, f_max/100 to f_max
+    assert all(v > 0 for v in d["delta"]) and 1 <= d["eps_inf"] < eps_r  # no negative pole, nothing below vacuum
+    e = debye_eps(d, np.geomspace(1e8, 1e10, 401))
+    assert np.abs(-e.imag / e.real / tan_d - 1).max() <= tol  # measured 6.0 % and 4.9 %
+    assert debye_eps(d, np.array([DEBYE_F_REF]))[0].real == pytest.approx(eps_r, rel=0.005)
+    assert debye_eps(d, np.array([0.0]))[0].imag == 0.0  # no κ: no DC loss
+    low = debye_eps(d, np.array([1e5]))[0]
+    assert -low.imag / low.real <= 0.01 * tan_d
+
+
+@pytest.mark.parametrize(("eps_r", "tan_d"), [(1.5, 0.3), (4.3, 0.0)])  # ε∞ would fall under 1; no loss to fit
+def test_a_debye_fit_below_vacuum_or_without_loss_is_refused(eps_r, tan_d):  # design 5.3
+    with pytest.raises(ValueError, match="Debye"):
+        debye(eps_r, tan_d, 10e9)
 
 
 @cache

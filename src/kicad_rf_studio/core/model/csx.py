@@ -4,6 +4,8 @@ carry their role (C-16): `port_*` are openEMS's own port properties, `lumped_*` 
 `substrate_*` and `mask_*` the rest; a P0 harness's probes keep the names it gives them (D-13)."""
 from __future__ import annotations
 
+import math
+
 METAL_PRIORITY = 1000  # above every material's 10 + i
 PML_CELLS = 8  # PML_8's 8 outermost cells on each face (design 5.2)
 BOUNDARY = {None: "MUR", "pml_8": f"PML_{PML_CELLS}"}  # the spec's "boundary"; absent in every v1 spec
@@ -34,7 +36,12 @@ def build_csx(spec: dict, excite: int, t_max: float) -> tuple[object, object, ob
     NF2FF_MAX, each from f1 to f2), over-sampled 4 times, on all six faces with no mirror, at openEMS's own placement
     (one line inside the PML) or at "box". Points go to CSXCAD as [xs, ys]: it misreads an (N, 2) array silently.
     CSXCAD and openEMS are imported here only, so that only a worker loads them. Under the antenna-only key "copper":
-    "sheet", a material's or the metal's solid of no thickness is a polygon in its plane (_prism)."""
+    "sheet", a material's or the metal's solid of no thickness is a polygon in its plane (_prism). A material with the
+    SI-only key "debye" ({"eps_inf", "delta", "f_relax_hz"}, Stage 4 design 5.3) is CSXCAD's CSPropDebyeMaterial, each
+    pole's relaxation time 1/(2π·f_relax); its κ is ignored. openEMS 0.37 puts each pole on an edge at the edge's own
+    point, over its whole area (operator_ext_debyematerial.cpp), where the static ε is averaged over the quarter cells,
+    so the edges on a Debye substrate's top face carry its full Δε over dual cells half in air: a stated limit gate
+    P4-D isolates."""
     from CSXCAD import ContinuousStructure
     from openEMS import openEMS
 
@@ -52,7 +59,16 @@ def build_csx(spec: dict, excite: int, t_max: float) -> tuple[object, object, ob
 
     sheet = spec.get("copper") == "sheet"
     for m in spec["materials"]:
-        material = csx.AddMaterial(m["name"], epsilon=m["eps"], kappa=m["kappa"])
+        if (db := m.get("debye")) is not None:
+            from CSXCAD.CSProperties import CSPropDebyeMaterial
+
+            material = CSPropDebyeMaterial(csx.GetParameterSet(), order=len(db["delta"]), name=m["name"],
+                                           epsilon=db["eps_inf"])
+            for k, (delta, f_relax) in enumerate(zip(db["delta"], db["f_relax_hz"])):
+                material.SetDispersiveMaterialProperty(k, eps_delta=delta, eps_relax=1 / (2 * math.pi * f_relax))
+            csx.AddProperty(material)
+        else:
+            material = csx.AddMaterial(m["name"], epsilon=m["eps"], kappa=m["kappa"])
         for solid in m["solids"]:
             _prism(material, solid, m["priority"], sheet)
 

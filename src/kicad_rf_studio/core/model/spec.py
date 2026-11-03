@@ -14,6 +14,7 @@ from typing import TYPE_CHECKING
 import numpy as np
 import scipy.constants
 import shapely
+from scipy.optimize import nnls
 from shapely.geometry import GeometryCollection, MultiPolygon
 
 from kicad_rf_studio.core.geometry.copper import clean, split_holes
@@ -162,6 +163,35 @@ def kappa(eps_r: float, tan_d: float | None, f0: float) -> float:
     """The conductivity that gives a dielectric of εr `eps_r` the loss tangent `tan_d` at `f0` (spec 5.3: a constant
     κ, set at f0); 0 when the stackup gives no loss tangent."""
     return 0.0 if tan_d is None else 2 * math.pi * f0 * EPS0 * eps_r * tan_d
+
+
+DEBYE_F_REF = 1e9  # Hz: where a stackup's εr and tan δ are taken to hold
+DEBYE_DECADES = 2  # the fit's band, f_max/100 to f_max: gate P4-D's 0.1 GHz to f_max at 10 GHz (Stage 4 design 5.11)
+
+
+def debye(eps_r: float, tan_d: float, f_max: float) -> dict:
+    """An SI dielectric's Debye model (Stage 4 design 5.3), a model spec material's "debye": ε(f) = ε∞ + Σ Δε/(1 +
+    j·f/f_relax), one pole a decade at f_max/10^k, k = DEBYE_DECADES down to 0. It is fitted in the Djordjevic–Sarkar
+    manner to `eps_r` and `tan_d` at DEBYE_F_REF, ε″ = εr·tan δ flat and ε′ = εr − (2/π)·ε″·ln(f/DEBYE_F_REF), on 61
+    log-spaced points from the first pole to f_max, its ε″ rows weighted 1/tan δ, by non-negative least squares: every
+    Δε ≥ 0, a pole that takes 0 dropped, and no κ, so no DC loss. ValueError ("Debye") for a tan δ of 0 or less, and for
+    an ε∞ under 1, a fit below vacuum."""
+    # ponytail: one pole a decade ripples tan δ by about 6 % on FR-4 (−4.7 to +4.8 % against Djordjevic–Sarkar's
+    # ε″/√ε′); gate P4-D may ask for poles past the band's edges (4 from f_max/10^2.2 to f_max·10^0.2 read 3.9 %),
+    # at a higher cell weight
+    if tan_d <= 0:
+        raise ValueError(f"a Debye fit needs a loss tangent above 0, not {tan_d}")
+    poles = [f_max / 10 ** k for k in range(DEBYE_DECADES, -1, -1)]
+    f = np.geomspace(poles[0], f_max, 61)
+    cols = [1 / (1 + 1j * f / p) for p in poles]
+    a = np.vstack([np.r_[np.ones_like(f), np.zeros_like(f)], *(np.r_[c.real, -c.imag / tan_d] for c in cols)]).T
+    b = np.r_[eps_r - 2 / math.pi * eps_r * tan_d * np.log(f / DEBYE_F_REF), np.full(f.size, eps_r)]
+    x, _ = nnls(a, b)
+    if x[0] < 1:
+        raise ValueError(f"a Debye fit below vacuum: ε∞ {x[0]:.3f} under 1 (εr {eps_r}, tan δ {tan_d})")
+    keep = x[1:] > 0
+    return {"eps_inf": float(x[0]), "delta": x[1:][keep].tolist(),
+            "f_relax_hz": [p for p, k in zip(poles, keep) if k]}
 
 
 def grid_entry(placed: dict, part: dict) -> dict:
