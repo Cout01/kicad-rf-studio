@@ -162,6 +162,12 @@ def test_the_levels_between_the_launches_and_the_short_features():  # design 5.6
                3.0).levels[1]  # the neck on a route 6 Ω high, inside the band
     pad = read(line_s([(47.0, 4.0, 30.0), (40.0, 4.0, 3.0), (47.0, 4.0, 30.0)], F), F, SE, 4.0).levels[0]
     assert (round(off[1], 2), off[2], round(pad[1], 2), pad[2]) == (102.02, True, 44.64, True)  # each against its base
+    dip = read(line_s([(98.0, 3.0, 30.0), (80.0, 3.0, 3.0), (98.0, 3.0, 30.0)], F), F, {**SE, "target_ohm": 90.0},
+               3.0).levels[0]  # 3 mm of 80 Ω on a route 8 Ω high: a dip that stays above the target
+    bump = read(line_s([(82.0, 3.0, 30.0), (100.0, 3.0, 3.0), (82.0, 3.0, 30.0)], F), F, {**SE, "target_ohm": 90.0},
+                3.0).levels[1]  # its mirror, 3 mm of 100 Ω on a route 8 Ω low: a bump that stays below it
+    assert (dip[1], dip[2], bump[1], bump[2]) == (pytest.approx(92.62, abs=0.01), True, pytest.approx(86.66, abs=0.01),
+                                                  True)  # each in its extreme's own sense: a dip below, a bump above
     flat = read(line_s([(95.0, 3.2777, 30.405)], F), F, {**SE, "target_ohm": 90.0}, 3.2777)  # usb2_hs's route, 95 Ω
     assert flat.t_far == pytest.approx(361.08e-12, abs=0.01e-12) and [x[2] for x in flat.levels] == [False, False]
     assert levels(t, z, TR, None, 50.0, SE_OHM) is None

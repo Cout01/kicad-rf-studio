@@ -139,8 +139,9 @@ def levels(t: np.ndarray, z: np.ndarray, t_r: float, t_far: float | None, target
     no longer than its two launches). A level is short, on a feature under two resolution lengths and so not its
     impedance, when it lies more than `ohm` off `target` and either of two widths is under 2·t_r: its run past half
     its height from `target`, within 0 ≤ t ≤ t_far (the route between the ports, so a short route clips no level), or,
-    when it stands more than `ohm` above its own base in the span (scipy.signal.peak_prominences), its width at half
-    that prominence (peak_widths): a short feature on a route that is itself off the target."""
+    when it stands more than `ohm` out from its own base in the span (a lowest level below it, a highest above)
+    (scipy.signal.peak_prominences), its width at half that prominence (peak_widths): a short feature on a route that
+    is itself off the target."""
     from scipy.signal import peak_prominences, peak_widths  # here only (C-5)
 
     # ponytail: half-height widths from the target and from the level's own base, tuned on synthetic lines (the neck
@@ -153,14 +154,14 @@ def levels(t: np.ndarray, z: np.ndarray, t_r: float, t_far: float | None, target
         return None
     route = np.flatnonzero((t >= 0) & (t <= t_far))
     out = []
-    for k in (span[np.argmin(z[span])], span[np.argmax(z[span])]):
+    for k, sense in ((span[np.argmin(z[span])], -1.0), (span[np.argmax(z[span])], 1.0)):
         half, side = (z[k] + target) / 2, np.sign(z[k] - target) or 1.0
         i = j = k
         while i > route[0] and (z[i - 1] - half) * side > 0:
             i -= 1
         while j < route[-1] and (z[j + 1] - half) * side > 0:
             j += 1
-        x, at = side * z[span], [k - span[0]]
+        x, at = sense * z[span], [k - span[0]]
         with warnings.catch_warnings():
             warnings.simplefilter("ignore", RuntimeWarning)  # scipy's PeakPropertyWarning: an extreme at an edge
             prominence = peak_prominences(x, at)
