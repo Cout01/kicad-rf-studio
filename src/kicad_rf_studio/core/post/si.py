@@ -422,3 +422,80 @@ def compare_verify(own: Reading, retuned: Reading) -> dict:
     levels = (None if own.levels is None or retuned.levels is None
               else [[a[1], b[1], a[2] or b[2]] for a, b in zip(own.levels, retuned.levels)])
     return {"ds_max": float(ds[k]), "f_hz": float(own.f[k + 1]), "levels": levels}
+
+
+# design 5.8: the significance thresholds registered before any gate runs; gate P4-E keeps or widens each (plan 4)
+IL_DB, DB, LEVEL_FLOOR_DB, SKEW_PS = 0.05, 0.5, -50.0, 1.0
+
+
+def si_deltas(project: dict, base: Reading, variant: Reading) -> list[dict]:
+    """The deltas of `variant` against `base` (Stage 4 design 5.8), rows of antenna.DELTA_COLUMNS (imported inside) in
+    plain floats (None for no value), delta = variant − base: tdr_lowest and tdr_highest (Ω, DIFF_OHM for a pair,
+    SE_OHM for a net; None when either has no levels; `marker` "short" when either level is short, so compare.csv
+    keeps the mark); sdd21 (a net's s21) at "marker" and at "f_max", with its f_hz (dB, IL_DB); sdd11_worst
+    (s11_worst), and for a pair scd21_worst (dB, DB); for a pair skew (ps, N − P, SKEW_PS; None without both
+    arrivals); and for each victim next and fext, the victim's first net in `marker` (dB, DB). Resolved when |delta| >
+    threshold, and for the DB rows only when the higher of the two levels stands above LEVEL_FLOOR_DB; None when the
+    delta is None. Short features compare too (design 5.6: the same settings filter alike)."""
+    from kicad_rf_studio.core.post.antenna import DELTA_COLUMNS  # here only (C-5)
+
+    # ponytail: antenna.deltas' row, with the floor; one shared helper if a third kind compares
+    def row(quantity, marker, f_hz, b, v, unit, threshold, floor=False):  # numbers as Python floats
+        f_hz, b, v = (None if x is None else float(x) for x in (f_hz, b, v))
+        delta = None if b is None or v is None else v - b
+        resolved = None if delta is None else abs(delta) > threshold and (not floor or max(b, v) > LEVEL_FLOOR_DB)
+        return dict(zip(DELTA_COLUMNS, (quantity, marker, f_hz, b, v, unit, delta, unit, threshold, resolved)))
+
+    paired = project["pair"] is not None
+    s, rows = "sdd" if paired else "s", []
+    for k, quantity in enumerate(("tdr_lowest", "tdr_highest")):
+        b, v = (r.levels[k] if r.levels else (None, None, False) for r in (base, variant))  # (t, Z, short)
+        rows.append(row(quantity, "short" if b[2] or v[2] else "", None, b[1], v[1], "Ω",
+                        DIFF_OHM if paired else SE_OHM))
+    for marker, k in (("marker", base.marker), ("f_max", -1)):  # the variant's grid is the base's, by the fingerprint
+        rows.append(row(f"{s}21", marker, base.f[k], db(base.m[k, 1, 0]), db(variant.m[k, 1, 0]), "dB", IL_DB))
+    for quantity, i, j in ((f"{s}11_worst", 0, 0), *((("scd21_worst", 3, 0),) if paired else ())):
+        rows.append(row(quantity, "", None, db(base.m[:, i, j]).max(), db(variant.m[:, i, j]).max(), "dB", DB, True))
+    if paired:
+        b, v = (None if r.skew is None else (r.skew[1] - r.skew[0]) * 1e12 for r in (base, variant))
+        rows.append(row("skew", "", None, b, v, "ps", SKEW_PS))
+    victims = [line["chain"]["nets"][0] for line in project["lines"] if line["role"] == "victim"]
+    for net, xb, xv in zip(victims, base.xt, variant.xt):  # xt: (NEXT dB, Hz, FEXT dB, Hz)
+        rows += [row("next", net, None, xb[0], xv[0], "dB", DB, True),
+                 row("fext", net, None, xb[2], xv[2], "dB", DB, True)]
+    return rows
+
+
+def si_delta_lines(project: dict, rows: list[dict]) -> list[tuple[str, dict]]:
+    """compare's lines of si_deltas' rows (design 5.8), each with its verdict, T_RESOLVED or T_NOT_RESOLVED:
+    I_SI_COMPARE_LEVEL per TDR row (level T_LOWEST, T_HIGHEST), I_SI_COMPARE_LEVEL_SHORT when its marker is "short",
+    or one I_SI_COMPARE_NO_LEVELS for both when they hold none; I_SI_COMPARE_INSERTION per sdd21 row (mode Sdd21 or
+    S21, f_mhz); I_SI_COMPARE_WORST (mode Sdd11, S11, Scd21); I_SI_COMPARE_SKEW, or I_SI_COMPARE_NO_SKEW;
+    I_SI_COMPARE_XT (kind NEXT or FEXT, net); then I_SI_COMPARE_THRESHOLDS {ohm, il_db, db, floor_db, ps} (:g, ohm by
+    the project's kind). Ω and dB to 2 decimals, an insertion's dB to 3, the skew's ps signed to 2, each delta
+    signed."""
+    def shown(r: dict, digits: int, sign: str = "") -> dict:  # the row's numbers and its verdict
+        return {"base": f"{r['base']:{sign}.{digits}f}", "variant": f"{r['variant']:{sign}.{digits}f}",
+                "delta": f"{r['delta']:+.{digits}f}", "verdict": "T_RESOLVED" if r["resolved"] else "T_NOT_RESOLVED"}
+
+    lines = []
+    for r in rows:
+        q = r["quantity"]  # a symbol in lower case: sdd21, s11_worst, next
+        if q.startswith("tdr_") and r["delta"] is None:
+            lines += [("I_SI_COMPARE_NO_LEVELS", {})] if q == "tdr_lowest" else []  # both rows hold none
+        elif q.startswith("tdr_"):
+            lines.append(("I_SI_COMPARE_LEVEL_SHORT" if r["marker"] == "short" else "I_SI_COMPARE_LEVEL",
+                          {"level": "T_LOWEST" if q == "tdr_lowest" else "T_HIGHEST", **shown(r, 2)}))
+        elif q in ("sdd21", "s21"):
+            lines.append(("I_SI_COMPARE_INSERTION", {"mode": q.capitalize(), "f_mhz": f"{r['f_hz'] / 1e6:g}",
+                                                     **shown(r, 3)}))
+        elif q.endswith("_worst"):
+            lines.append(("I_SI_COMPARE_WORST", {"mode": q.removesuffix("_worst").capitalize(), **shown(r, 2)}))
+        elif q == "skew":
+            lines.append(("I_SI_COMPARE_NO_SKEW", {}) if r["delta"] is None
+                         else ("I_SI_COMPARE_SKEW", shown(r, 2, "+")))
+        else:  # next or fext, its victim's first net in the marker
+            lines.append(("I_SI_COMPARE_XT", {"kind": q.upper(), "net": r["marker"], **shown(r, 2)}))
+    return lines + [("I_SI_COMPARE_THRESHOLDS", {"ohm": f"{DIFF_OHM if project['pair'] is not None else SE_OHM:g}",
+                                                 "il_db": f"{IL_DB:g}", "db": f"{DB:g}",
+                                                 "floor_db": f"{LEVEL_FLOOR_DB:g}", "ps": f"{SKEW_PS:g}"})]

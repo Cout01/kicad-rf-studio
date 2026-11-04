@@ -3,8 +3,8 @@
 its model built through the mesh gates, the calibration that sizes its jobs, the setup gate on openEMS's setup-only run
 (timestep floor, port connectivity, unused primitives), the cost model (spec 6.4), the job phase and the outputs of a
 run's results (spec 7.3); and `cost` (spec 3.2), `run` (spec 6.1), `retune` (spec 3.2, 7.2, 7.8), `verify` (spec 7.6)
-and `preview` (C-34) themselves. `compare BASE VARIANT` compares two antenna projects' full simulations
-(pipeline.compare_projects, Stage 3)."""
+and `preview` (C-34) themselves. `compare BASE VARIANT` compares two antenna projects' or two signal-integrity
+projects' full simulations (pipeline.compare_projects, Stage 3 and Stage 4)."""
 from __future__ import annotations
 
 import contextlib
@@ -50,8 +50,8 @@ from kicad_rf_studio.core.post.chain import above_dc, ideal_schematic, loads, pa
 from kicad_rf_studio.core.post.checks import compare, indicator_lines, loss_budget, loss_expected
 from kicad_rf_studio.core.post.outputs import (LIMITS, OUTPUTS, VERIFY_OUTPUT, grid_lines, marker_lines, port_map,
                                                summary_csv, summary_png, touchstone, write)
-from kicad_rf_studio.core.post.si import (SI_OUTPUTS, compare_verify, hammerstad, read, si_csv, si_limits, si_lines,
-                                          si_png, tdr_csv)
+from kicad_rf_studio.core.post.si import (SI_OUTPUTS, compare_verify, hammerstad, read, si_csv, si_delta_lines,
+                                          si_deltas, si_limits, si_lines, si_png, tdr_csv)
 from kicad_rf_studio.core.post.waves import layout
 from kicad_rf_studio.core.project import (GATES, GATES_SI, antenna, board_file, board_hash, copper_model, default_gates,
                                           load_project, mesh_n, parts, read_project, relative_path, save_project, si)
@@ -1177,18 +1177,15 @@ def retune(path: Path, assignments: list[str], emit: Callable[[str, dict], None]
     return 0
 
 
-def antenna_result(path: Path) -> dict:
-    """The full simulation `compare` reads of the project at `path` (Stage 3 design 5.8): E_COMPARE_KIND {path} for a
-    project that is not an antenna's (read_project, before any board is read); then its results checked against its
-    current model as retune checks them (load, build_model, results_of: Stage 1 7.8); with no part port on its chain,
-    its run (results); with part ports, its current verify (current_verify) when that verify's values are, as text,
-    the part ports' values project.json holds. Its S11 on the band grid (that record's one-port layout), its far field
-    (far_of, None without one), its fingerprint, its source (T_RUN or T_VERIFY) and its run folder.
-    E_COMPARE_NO_RESULT {path} for no results or stale ones (results_of's E_NO_RESULTS and E_RESULTS_STALE, the model
-    built outside that catch), no such record, one with no fingerprint (made before this version), or a record whose
-    files are gone (layout's or far_of's E_RESULTS_WAVES). It starts no worker."""
-    if not antenna(read_project(path)):
-        raise KrsError("E_COMPARE_KIND", path=str(path))
+def _full_record(path: Path) -> tuple[dict, dict, Layout, str]:
+    """The full simulation `compare` reads of the project at `path` (Stage 3 and Stage 4 design 5.8), whatever its
+    kind: its results checked against its current model as retune checks them (load, build_model, results_of: Stage 1
+    7.8); with no part port on its chain or lines, its run (results); with part ports, its current verify
+    (current_verify) when that verify's values are, as text, the part ports' values project.json holds; and that
+    record's layout. Returns (project, record, layout, source: T_RUN or T_VERIFY). E_COMPARE_NO_RESULT {path} for no
+    results or stale ones (results_of's E_NO_RESULTS and E_RESULTS_STALE, the model built outside that catch), no such
+    record, one with no fingerprint (made before this version), or a record whose files are gone (layout's
+    E_RESULTS_WAVES). It starts no worker."""
     project, board, geom, _ = load(path)
     model = build_model(project, board, geom)
     try:
@@ -1208,7 +1205,29 @@ def antenna_result(path: Path) -> dict:
     if record is None or "fingerprint" not in record:
         raise KrsError("E_COMPARE_NO_RESULT", path=str(path))
     try:  # a run folder moved or deleted since: nothing compare can use, as a deleted verify folder
-        lay, far = layout(project, record), far_of(record, project)
+        lay = layout(project, record)
+    except KrsError as err:
+        if err.code != "E_RESULTS_WAVES":
+            raise
+        raise KrsError("E_COMPARE_NO_RESULT", path=str(path)) from None
+    return project, record, lay, source
+
+
+def antenna_result(path: Path) -> dict:
+    """The full simulation `compare` reads of the project at `path` (Stage 3 design 5.8): E_COMPARE_KIND {path} for a
+    project that is not an antenna's (read_project, before any board is read); then its results checked against its
+    current model as retune checks them (load, build_model, results_of: Stage 1 7.8); with no part port on its chain,
+    its run (results); with part ports, its current verify (current_verify) when that verify's values are, as text,
+    the part ports' values project.json holds. Its S11 on the band grid (that record's one-port layout), its far field
+    (far_of, None without one), its fingerprint, its source (T_RUN or T_VERIFY) and its run folder.
+    E_COMPARE_NO_RESULT {path} for no results or stale ones (results_of's E_NO_RESULTS and E_RESULTS_STALE, the model
+    built outside that catch), no such record, one with no fingerprint (made before this version), or a record whose
+    files are gone (layout's or far_of's E_RESULTS_WAVES). It starts no worker."""
+    if not antenna(read_project(path)):
+        raise KrsError("E_COMPARE_KIND", path=str(path))
+    project, record, lay, source = _full_record(path)
+    try:  # a run folder moved or deleted since, as in _full_record
+        far = far_of(record, project)
     except KrsError as err:
         if err.code != "E_RESULTS_WAVES":
             raise
@@ -1217,30 +1236,60 @@ def antenna_result(path: Path) -> dict:
             "fingerprint": record["fingerprint"], "source": source, "run_dir": record["run_dir"]}
 
 
+def si_result(path: Path) -> dict:
+    """The full simulation `compare` reads of the SI project at `path` (Stage 4 design 5.8): _full_record's run or
+    current verify, read (read, at the run's route's εeff) from that record's layout, which is the chain itself:
+    verify's layout holds its external ports alone, its parts in the grid, and the run's at M = 0 its chain. Its
+    reading, fingerprint, source (T_RUN or T_VERIFY) and run folder. No kind check of its own: compare_projects, its
+    one caller, checks both projects' kinds first. Raises _full_record's E_COMPARE_NO_RESULT. It starts no worker."""
+    project, record, lay, source = _full_record(path)
+    return {"path": path, "project": project,
+            "reading": read(lay.s, lay.f, project, project["results"]["route"]["eeff"]),
+            "fingerprint": record["fingerprint"], "source": source, "run_dir": record["run_dir"]}
+
+
 def compare_projects(base: Path, variant: Path, output: Path | None = None,
                      emit: Callable[[str, dict], None] | None = None) -> int:
-    """`compare BASE VARIANT` (Stage 3 design 5.8), returning its exit code: each project's result (antenna_result, the
-    base's first); E_COMPARE_SETTINGS {fields}, the differing fingerprint keys sorted and joined by ", ", when their
-    fingerprints differ; then compare.csv (deltas_csv) and compare.png (compare_png, each curve named by its project's
-    folder, path.absolute().parent.name) written to `output`, the working folder (Path.cwd()) when None (write,
-    COMPARE_OUTPUTS, E_RESULTS_WRITE advising this command with -o); then `emit(code, params)` for each line, which
-    prints it by default, as retune's: I_ANTENNA_RELATIVE, I_COMPARE_BASIS {role, path, source, run_dir} for the base
-    then the variant, delta_lines, I_OUTPUTS, ANTENNA_LIMITS; and 0. A refused write is an E_ line in I_OUTPUTS'
-    place, the other lines still printed (Stage 1 7.5), and 2. It starts no worker; a refusal before the write writes
-    nothing."""
-    b, v = antenna_result(base), antenna_result(variant)
+    """`compare BASE VARIANT` (Stage 3 design 5.8, Stage 4 design 5.8) on two antenna projects or two SI projects,
+    returning its exit code: first, before any board is read, each project's kind, E_COMPARE_KIND {path} for the
+    first, base then variant, that is not of the base's kind, an antenna or an SI project (a base of neither refused as
+    not an antenna); then each project's result (antenna_result or si_result, the base's first); E_COMPARE_SETTINGS
+    {fields}, the differing fingerprint keys sorted and joined by ", ", when their fingerprints differ; then
+    compare.csv (deltas_csv of deltas, or of si_deltas) and compare.png (compare_png, or si_png of both readings under
+    I_PLOT_SI_COMPARE_TITLE, each curve named by its project's folder, path.absolute().parent.name) written to
+    `output`, the working folder (Path.cwd()) when None (write, COMPARE_OUTPUTS, E_RESULTS_WRITE advising this command
+    with -o); then `emit(code, params)` for each line, which prints it by default, as retune's: I_ANTENNA_RELATIVE
+    (I_SI_RELATIVE), I_COMPARE_BASIS {role, path, source, run_dir} for the base then the variant, delta_lines
+    (si_delta_lines), I_OUTPUTS, ANTENNA_LIMITS (the base's si_limits); and 0. A refused write is an E_ line in
+    I_OUTPUTS' place, the other lines still printed (Stage 1 7.5), and 2. It starts no worker; a refusal before the
+    write writes nothing."""
+    is_si = si(read_project(base))  # a base of neither kind fails the antenna's check, as before
+    for path in (base, variant):
+        data = read_project(path)
+        if not (si(data) if is_si else antenna(data)):
+            raise KrsError("E_COMPARE_KIND", path=str(path))
+    result = si_result if is_si else antenna_result
+    b, v = result(base), result(variant)
     keys = b["fingerprint"].keys() | v["fingerprint"].keys()
     if fields := sorted(key for key in keys if b["fingerprint"].get(key) != v["fingerprint"].get(key)):
         raise KrsError("E_COMPARE_SETTINGS", fields=", ".join(fields))
-    # the base's project: its band, f0 and far field the variant shares by the fingerprint
-    rows = deltas(b["project"], b["f"], (b["s11"], b["far"]), (v["s11"], v["far"]))
     folder = output or Path.cwd()
-    curves =[(r["path"].absolute().parent.name, r["s11"], r["far"]) for r in (b, v)]  # `compare . ../b` too
-    files = {"compare.csv": deltas_csv(rows), "compare.png": compare_png(b["f"], curves, b["project"])}
-    lines = [("I_ANTENNA_RELATIVE", {}),
+    names = [r["path"].absolute().parent.name for r in (b, v)]  # `compare . ../b` too
+    # the base's project: its band, f0 and far field, or its grid and lines, the variant shares by the fingerprint
+    if is_si:
+        rows = si_deltas(b["project"], b["reading"], v["reading"])
+        png = si_png([(names[0], b["reading"]), (names[1], v["reading"])], b["project"],
+                     render("I_PLOT_SI_COMPARE_TITLE", base=names[0], variant=names[1]))
+        label, shown, limits = "I_SI_RELATIVE", si_delta_lines(b["project"], rows), si_limits(b["project"])
+    else:
+        rows = deltas(b["project"], b["f"], (b["s11"], b["far"]), (v["s11"], v["far"]))
+        png = compare_png(b["f"], [(name, r["s11"], r["far"]) for name, r in zip(names, (b, v))], b["project"])
+        label, shown, limits = "I_ANTENNA_RELATIVE", delta_lines(b["project"], rows), ANTENNA_LIMITS
+    files = {"compare.csv": deltas_csv(rows), "compare.png": png}
+    lines = [(label, {}),
              *(("I_COMPARE_BASIS", {"role": role, "path": str(r["path"]), "source": r["source"],
                                     "run_dir": r["run_dir"]}) for role, r in (("T_BASE", b), ("T_VARIANT", v))),
-             *delta_lines(b["project"], rows)]
+             *shown]
     try:
         write(folder, files, COMPARE_OUTPUTS,
               command_line("kicad-rf-studio", "compare", str(base), str(variant), "-o", str(folder)))
@@ -1249,7 +1298,7 @@ def compare_projects(base: Path, variant: Path, output: Path | None = None,
     else:
         lines.append(("I_OUTPUTS", {"files": ", ".join(sorted(files)), "folder": str(folder)}))
     emit = emit or (lambda code, params: print(render(code, **params)))
-    for code, params in [*lines, *((code, {}) for code in ANTENNA_LIMITS)]:
+    for code, params in [*lines, *((code, {}) for code in limits)]:
         emit(code, params)
     return 2 if any(code.startswith("E_") for code, _ in lines) else 0
 

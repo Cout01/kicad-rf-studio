@@ -8,9 +8,10 @@ every job kept S does it replace the results in project.json and write the outpu
 a retune at the same values (pipeline.verify). `preview` has a worker write the model's model.xml and opens it in
 AppCSXCAD (pipeline.preview).
 `new --antenna REF --band F_LO:F_HI` writes an antenna's project instead, schema 2, its chain from the start pad to the
-antenna's feed (new_antenna, Stage 3). `compare BASE VARIANT` compares two antenna projects' full simulations
-(pipeline.compare_projects, Stage 3). `new --interface NAME` writes a signal-integrity project, schema 3: the line from
-the start pad to the end pad, a differential pair's partner and up to two victims (new_si, Stage 4).
+antenna's feed (new_antenna, Stage 3). `compare BASE VARIANT` compares two antenna projects' or two signal-integrity
+projects' full simulations (pipeline.compare_projects, Stage 3 and Stage 4). `new --interface NAME` writes a
+signal-integrity project, schema 3: the line from the start pad to the end pad, a differential pair's partner and up to
+two victims (new_si, Stage 4).
 `setup-openems` installs openEMS from the official Windows package into this Python, and `calibrate` measures this
 machine's simulation speed. `install-kicad-plugin` writes the KiCad toolbar button (button.install) into KiCad's
 plugin folders, or removes it. `cost`, `run` and `verify` take `--run-dir DIR`, the run folder to use instead of a new

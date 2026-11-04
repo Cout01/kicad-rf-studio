@@ -96,7 +96,7 @@ def test_verify_waits_for_the_si_results_and_preview_takes_an_si_project(tmp_pat
     assert (e.value.code, e.value.params) == ("E_NO_RESULTS", {})
     with pytest.raises(KrsError) as e:
         pipeline.compare_projects(pj, pj)
-    assert e.value.code == "E_COMPARE_KIND"  # compare comes with the SI results (plan 3)
+    assert (e.value.code, e.value.params) == ("E_COMPARE_NO_RESULT", {"path": str(pj)})  # no run
     opened = []
     monkeypatch.setattr(pipeline, "appcsxcad", lambda settings: "AppCSXCAD")
     monkeypatch.setattr(pipeline, "open_viewer", lambda exe, job: opened.append(job))

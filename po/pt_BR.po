@@ -1136,8 +1136,8 @@ msgstr "O modelo mudou desde a última execução (uma placa salva de novo no Ki
 
 #. E_COMPARE_KIND
 #, python-brace-format
-msgid "{path} is not an antenna project: `compare` compares two antenna projects, made with `new --antenna`."
-msgstr "{path} não é um projeto de antena: `compare` compara dois projetos de antena, criados com `new --antenna`."
+msgid "{path} is not of the kind `compare` takes here: two antenna projects, made with `new --antenna`, or two signal-integrity projects, made with `new --interface`."
+msgstr "{path} não é do tipo que `compare` recebe aqui: dois projetos de antena, criados com `new --antenna`, ou dois projetos de integridade de sinal, criados com `new --interface`."
 
 #. E_COMPARE_NO_RESULT
 #, python-brace-format
@@ -1380,6 +1380,11 @@ msgstr "Também fora de S, pois o dielétrico é sem perdas: a perda nele ao lon
 msgid "{name}: signal integrity, relative results"
 msgstr "{name}: integridade de sinal, resultados relativos"
 
+#. I_PLOT_SI_COMPARE_TITLE
+#, python-brace-format
+msgid "{base} against {variant}: signal integrity, relative results"
+msgstr "{base} contra {variant}: integridade de sinal, resultados relativos"
+
 #. I_PLOT_DISTANCE
 msgid "Distance along the route (mm)"
 msgstr "Distância ao longo da rota (mm)"
@@ -1433,6 +1438,49 @@ msgstr "As eficiências e o ganho não são comparados: eles precisam de um camp
 #, python-brace-format
 msgid "Resolved means larger than the significance threshold: {shift_pct} % of f0 for a frequency and {db} dB for an efficiency or a gain, set by gate P3-D at three times the model's measured noise floor and never below 0.3 % and 0.2 dB."
 msgstr "Resolvido significa maior que o limiar de significância: {shift_pct} % de f0 para uma frequência e {db} dB para uma eficiência ou um ganho, definidos pela checagem prévia P3-D em três vezes o piso de ruído medido do modelo e nunca abaixo de 0.3 % e 0.2 dB."
+
+#. I_SI_COMPARE_LEVEL
+#, python-brace-format
+msgid "The {level} TDR level between the launches: {base} Ω against {variant} Ω, {delta} Ω: {verdict}."
+msgstr "O nível {level} do TDR entre as entradas: {base} Ω contra {variant} Ω, {delta} Ω: {verdict}."
+
+#. I_SI_COMPARE_LEVEL_SHORT
+#, python-brace-format
+msgid "The {level} TDR level between the launches: {base} Ω against {variant} Ω, {delta} Ω: {verdict}; one of them lies on a feature shorter than two resolution lengths, so it is not that feature's impedance, and the delta compares two levels filtered alike."
+msgstr "O nível {level} do TDR entre as entradas: {base} Ω contra {variant} Ω, {delta} Ω: {verdict}; um deles fica num trecho mais curto que dois comprimentos de resolução, então não é a impedância desse trecho, e a diferença compara dois níveis filtrados do mesmo modo."
+
+#. I_SI_COMPARE_NO_LEVELS
+msgid "The TDR's levels are not compared: one of the projects reads none between the launches."
+msgstr "Os níveis do TDR não são comparados: um dos projetos não lê nenhum entre as entradas."
+
+#. I_SI_COMPARE_INSERTION
+#, python-brace-format
+msgid "{mode} at {f_mhz} MHz: {base} dB against {variant} dB, {delta} dB: {verdict}."
+msgstr "{mode} em {f_mhz} MHz: {base} dB contra {variant} dB, {delta} dB: {verdict}."
+
+#. I_SI_COMPARE_WORST
+#, python-brace-format
+msgid "The worst {mode} up to f_max: {base} dB against {variant} dB, {delta} dB: {verdict}."
+msgstr "O pior {mode} até f_max: {base} dB contra {variant} dB, {delta} dB: {verdict}."
+
+#. I_SI_COMPARE_SKEW
+#, python-brace-format
+msgid "The intra-pair skew: {base} ps against {variant} ps, {delta} ps: {verdict}."
+msgstr "O skew intrapar: {base} ps contra {variant} ps, {delta} ps: {verdict}."
+
+#. I_SI_COMPARE_NO_SKEW
+msgid "The intra-pair skew is not compared: one of the projects has a leg whose TDT does not arrive."
+msgstr "O skew intrapar não é comparado: um dos projetos tem uma perna cujo TDT não chega."
+
+#. I_SI_COMPARE_XT
+#, python-brace-format
+msgid "{kind} into {net}, its peak: {base} dB against {variant} dB, {delta} dB: {verdict}."
+msgstr "{kind} em {net}, o pico: {base} dB contra {variant} dB, {delta} dB: {verdict}."
+
+#. I_SI_COMPARE_THRESHOLDS
+#, python-brace-format
+msgid "Resolved means larger than the significance threshold: {ohm} Ω on a TDR level, {il_db} dB on Sdd21 or S21, {db} dB on Sdd11, S11, Scd21, NEXT and FEXT where the higher of the two levels stands above {floor_db} dB, and {ps} ps on the skew: the design's registered values until gate P4-E measures the model's noise."
+msgstr "Resolvido significa maior que o limiar de significância: {ohm} Ω num nível do TDR, {il_db} dB em Sdd21 ou S21, {db} dB em Sdd11, S11, Scd21, NEXT e FEXT onde o maior dos dois níveis fica acima de {floor_db} dB, e {ps} ps no skew: os valores registrados no design até a checagem prévia P4-E medir o ruído do modelo."
 
 #. E_INTERNAL
 #, python-brace-format
@@ -2605,4 +2653,7 @@ msgstr "uma ilha, um ponto, um plano (o nome da camada de cobre dele) ou null"
 
 #~ msgid "`verify` does not take a signal-integrity project yet; `cost` and `run` do."
 #~ msgstr "`verify` ainda não recebe um projeto de integridade de sinal; `cost` e `run` recebem."
+
+#~ msgid "{path} is not an antenna project: `compare` compares two antenna projects, made with `new --antenna`."
+#~ msgstr "{path} não é um projeto de antena: `compare` compara dois projetos de antena, criados com `new --antenna`."
 
