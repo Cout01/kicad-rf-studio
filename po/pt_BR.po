@@ -1048,6 +1048,30 @@ msgstr "Limite: os corpos dos componentes não estão no modelo; só as ilhas de
 msgid "Limit: the parts off the chain are approximated: capacitors close to a short as copper, the rest open or in the grid, and past the measured region only as fine as its coarse mesh."
 msgstr "Limite: os componentes fora da cadeia são aproximados: capacitores perto de um curto como cobre, os demais em aberto ou na grade, e fora da região medida só tão finos quanto a malha grossa dela."
 
+#. I_LIMIT_SI_CROP
+msgid "Limit: the region is cropped inside walls that absorb most of what reaches them and reflect the rest; the planes' cavity resonances depend on the crop, and an open line's radiation is absent."
+msgstr "Limite: a região é recortada dentro de paredes que absorvem a maior parte do que as atinge e refletem o resto; as ressonâncias de cavidade dos planos dependem do recorte, e a radiação de uma linha aberta não está presente."
+
+#. I_LIMIT_SI_LOSSLESS
+msgid "Limit: the dielectric is lossless, so S holds no dielectric loss; the loss lines estimate it."
+msgstr "Limite: o dielétrico é sem perdas, então S não contém perda no dielétrico; as linhas de perda a estimam."
+
+#. I_LIMIT_SI_DEBYE
+msgid "Limit: the dielectric is a Debye fit of the stackup's εr and tan δ, a model of its loss, not a measurement."
+msgstr "Limite: o dielétrico é um ajuste de Debye do εr e da tan δ do empilhamento, um modelo da perda dele, não uma medição."
+
+#. I_LIMIT_SI_BODIES
+msgid "Limit: packages, dies and connector bodies are absent, and a part of three or more pads is its pads alone."
+msgstr "Limite: encapsulamentos, chips e corpos de conectores não estão presentes, e um componente de três ou mais ilhas é só as ilhas dele."
+
+#. I_LIMIT_SI_PORTS
+msgid "Limit: the ports are lumped 50 Ω ports at the pads, whose own launch fills the first resolution length at each."
+msgstr "Limite: as portas são portas concentradas de 50 Ω nas ilhas, cuja própria entrada ocupa o primeiro comprimento de resolução de cada uma."
+
+#. I_LIMIT_SI_RESOLUTION
+msgid "Limit: the TDR resolves no feature shorter than two resolution lengths: such a feature's level is not its impedance."
+msgstr "Limite: o TDR não resolve trecho mais curto que dois comprimentos de resolução: o nível de um trecho assim não é a impedância dele."
+
 #. I_PLOT_ANTENNA_TITLE
 #, python-brace-format
 msgid "{name}: antenna, relative results"
@@ -1271,6 +1295,70 @@ msgstr "Sem campo distante para esta execução: uma execução com portas de co
 #, python-brace-format
 msgid "{f_mhz} MHz: total efficiency {eta_tot_pct} % what-if: the last verify's radiation efficiency {eta_rad_pct} % times the {delivered_pct} % of the incident power that this retune's network passes to the board (its mismatch efficiency less its parts' own loss); a lossless network that does not radiate leaves the radiation efficiency and the pattern as they are."
 msgstr "{f_mhz} MHz: eficiência total hipotética de {eta_tot_pct} %: a eficiência de radiação da última verificação, {eta_rad_pct} %, vezes os {delivered_pct} % da potência incidente que a rede deste ajuste entrega à placa (a eficiência de descasamento menos a perda dos próprios componentes); uma rede sem perdas que não irradia mantém a eficiência de radiação e o diagrama como estão."
+
+#. I_SI_RELATIVE
+msgid "Relative: these signal-integrity results compare variants of one board under identical settings; they do not predict measured performance."
+msgstr "Relativo: estes resultados de integridade de sinal comparam variantes de uma placa com configurações idênticas; eles não preveem o desempenho medido."
+
+#. I_SI_INSERTION
+#, python-brace-format
+msgid "{mode} {at_marker_db} dB at the marker ({marker_mhz} MHz) and {at_f_max_db} dB at f_max ({f_max_ghz} GHz)."
+msgstr "{mode} de {at_marker_db} dB no marcador ({marker_mhz} MHz) e de {at_f_max_db} dB em f_max ({f_max_ghz} GHz)."
+
+#. I_SI_WORST
+#, python-brace-format
+msgid "The worst {mode} up to f_max: {worst_db} dB at {f_mhz} MHz."
+msgstr "O pior {mode} até f_max: {worst_db} dB em {f_mhz} MHz."
+
+#. I_SI_COMMON
+#, python-brace-format
+msgid "Scc21, the common mode's transmission: {scc21_db} dB at the marker ({marker_mhz} MHz)."
+msgstr "Scc21, a transmissão do modo comum: {scc21_db} dB no marcador ({marker_mhz} MHz)."
+
+#. I_SI_TDR
+#, python-brace-format
+msgid "The {kind} TDR: the localising rise time {rise_ps} ps resolves {res_mm} mm and the link's {link_ps} ps {link_res_mm} mm, at the route's 2D εeff {eeff}; the first resolution length at each port is the port's own launch."
+msgstr "O TDR {kind}: o tempo de subida de localização de {rise_ps} ps resolve {res_mm} mm e o do enlace, de {link_ps} ps, {link_res_mm} mm, com o εeff 2D da rota de {eeff}; o primeiro comprimento de resolução em cada porta é a entrada da própria porta."
+
+#. I_SI_TDR_LEVEL
+#, python-brace-format
+msgid "The {level} TDR level between the launches: {z} Ω at {t_ps} ps ({d_mm} mm), {verdict}."
+msgstr "O nível {level} do TDR entre as entradas: {z} Ω em {t_ps} ps ({d_mm} mm), {verdict}."
+
+#. I_SI_TDR_SHORT
+#, python-brace-format
+msgid "The {level} TDR level between the launches, {z} Ω at {t_ps} ps ({d_mm} mm), lies on a feature shorter than two resolution lengths ({two_res_mm} mm), so it is not that feature's impedance."
+msgstr "O nível {level} do TDR entre as entradas, {z} Ω em {t_ps} ps ({d_mm} mm), fica num trecho mais curto que dois comprimentos de resolução ({two_res_mm} mm), então não é a impedância desse trecho."
+
+#. I_SI_TDR_SHORT_ROUTE
+#, python-brace-format
+msgid "No TDR level is read between the launches: the route's round trip, {t_far_ps} ps, is no longer than its two launches, {two_rise_ps} ps."
+msgstr "Nenhum nível do TDR é lido entre as entradas: a ida e volta da rota, {t_far_ps} ps, não é mais longa que as duas entradas, {two_rise_ps} ps."
+
+#. I_SI_TDR_NO_ARRIVAL
+#, python-brace-format
+msgid "No TDR level is read between the launches: no step reaches the measured line's far end (its TDT stays under {floor}), so the route's end is not found."
+msgstr "Nenhum nível do TDR é lido entre as entradas: nenhum degrau chega à ponta distante da linha medida (o TDT dela fica abaixo de {floor}), então o fim da rota não é encontrado."
+
+#. I_SI_SKEW
+#, python-brace-format
+msgid "Intra-pair skew {skew_ps} ps: the N leg's TDT arrives at {n_ps} ps and the P leg's at {p_ps} ps, each at half its peak."
+msgstr "Skew intrapar de {skew_ps} ps: o TDT da perna N chega em {n_ps} ps e o da perna P em {p_ps} ps, cada um na metade do próprio pico."
+
+#. I_SI_CROSSTALK
+#, python-brace-format
+msgid "Crosstalk into {net} from {source}: NEXT at {start} peaks at {next_db} dB ({next_mhz} MHz) and FEXT at {end} at {fext_db} dB ({fext_mhz} MHz)."
+msgstr "Diafonia em {net} a partir {source}: o NEXT em {start} tem pico de {next_db} dB ({next_mhz} MHz) e o FEXT em {end}, de {fext_db} dB ({fext_mhz} MHz)."
+
+#. I_SI_LOSS_CONDUCTOR
+#, python-brace-format
+msgid "Not in S: the copper's loss over the route's {length_mm} mm, by Hammerstad's formula for smooth copper, about {at_marker_db} dB at the marker ({marker_mhz} MHz) and {at_f_max_db} dB at f_max ({f_max_ghz} GHz)."
+msgstr "Fora de S: a perda no cobre ao longo dos {length_mm} mm da rota, pela fórmula de Hammerstad para cobre liso, cerca de {at_marker_db} dB no marcador ({marker_mhz} MHz) e {at_f_max_db} dB em f_max ({f_max_ghz} GHz)."
+
+#. I_SI_LOSS_DIELECTRIC
+#, python-brace-format
+msgid "Not in S either, the dielectric being lossless: its loss over the same length, about {at_marker_db} dB at the marker and {at_f_max_db} dB at f_max."
+msgstr "Também fora de S, pois o dielétrico é sem perdas: a perda nele ao longo do mesmo comprimento, cerca de {at_marker_db} dB no marcador e {at_f_max_db} dB em f_max."
 
 #. I_COMPARE_BASIS
 #, python-brace-format
@@ -2186,6 +2274,22 @@ msgstr "fora da faixa alvo"
 #. T_VICTIM
 msgid "a victim, no target"
 msgstr "uma vítima, sem alvo"
+
+#. T_LOWEST
+msgid "lowest"
+msgstr "mais baixo"
+
+#. T_HIGHEST
+msgid "highest"
+msgstr "mais alto"
+
+#. T_PAIR_DRIVE
+msgid "the pair driven differentially at its start"
+msgstr "do par excitado em modo diferencial no início"
+
+#. T_LINE_DRIVE
+msgid "the measured line's start"
+msgstr "do início da linha medida"
 
 #. T_HATCHED_ZONE
 msgid "hatched zone"

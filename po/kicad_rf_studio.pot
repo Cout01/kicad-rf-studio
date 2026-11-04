@@ -1046,6 +1046,30 @@ msgstr ""
 msgid "Limit: the parts off the chain are approximated: capacitors close to a short as copper, the rest open or in the grid, and past the measured region only as fine as its coarse mesh."
 msgstr ""
 
+#. I_LIMIT_SI_CROP
+msgid "Limit: the region is cropped inside walls that absorb most of what reaches them and reflect the rest; the planes' cavity resonances depend on the crop, and an open line's radiation is absent."
+msgstr ""
+
+#. I_LIMIT_SI_LOSSLESS
+msgid "Limit: the dielectric is lossless, so S holds no dielectric loss; the loss lines estimate it."
+msgstr ""
+
+#. I_LIMIT_SI_DEBYE
+msgid "Limit: the dielectric is a Debye fit of the stackup's εr and tan δ, a model of its loss, not a measurement."
+msgstr ""
+
+#. I_LIMIT_SI_BODIES
+msgid "Limit: packages, dies and connector bodies are absent, and a part of three or more pads is its pads alone."
+msgstr ""
+
+#. I_LIMIT_SI_PORTS
+msgid "Limit: the ports are lumped 50 Ω ports at the pads, whose own launch fills the first resolution length at each."
+msgstr ""
+
+#. I_LIMIT_SI_RESOLUTION
+msgid "Limit: the TDR resolves no feature shorter than two resolution lengths: such a feature's level is not its impedance."
+msgstr ""
+
 #. I_PLOT_ANTENNA_TITLE
 #, python-brace-format
 msgid "{name}: antenna, relative results"
@@ -1268,6 +1292,70 @@ msgstr ""
 #. I_ANTENNA_ETA_WHAT_IF
 #, python-brace-format
 msgid "{f_mhz} MHz: total efficiency {eta_tot_pct} % what-if: the last verify's radiation efficiency {eta_rad_pct} % times the {delivered_pct} % of the incident power that this retune's network passes to the board (its mismatch efficiency less its parts' own loss); a lossless network that does not radiate leaves the radiation efficiency and the pattern as they are."
+msgstr ""
+
+#. I_SI_RELATIVE
+msgid "Relative: these signal-integrity results compare variants of one board under identical settings; they do not predict measured performance."
+msgstr ""
+
+#. I_SI_INSERTION
+#, python-brace-format
+msgid "{mode} {at_marker_db} dB at the marker ({marker_mhz} MHz) and {at_f_max_db} dB at f_max ({f_max_ghz} GHz)."
+msgstr ""
+
+#. I_SI_WORST
+#, python-brace-format
+msgid "The worst {mode} up to f_max: {worst_db} dB at {f_mhz} MHz."
+msgstr ""
+
+#. I_SI_COMMON
+#, python-brace-format
+msgid "Scc21, the common mode's transmission: {scc21_db} dB at the marker ({marker_mhz} MHz)."
+msgstr ""
+
+#. I_SI_TDR
+#, python-brace-format
+msgid "The {kind} TDR: the localising rise time {rise_ps} ps resolves {res_mm} mm and the link's {link_ps} ps {link_res_mm} mm, at the route's 2D εeff {eeff}; the first resolution length at each port is the port's own launch."
+msgstr ""
+
+#. I_SI_TDR_LEVEL
+#, python-brace-format
+msgid "The {level} TDR level between the launches: {z} Ω at {t_ps} ps ({d_mm} mm), {verdict}."
+msgstr ""
+
+#. I_SI_TDR_SHORT
+#, python-brace-format
+msgid "The {level} TDR level between the launches, {z} Ω at {t_ps} ps ({d_mm} mm), lies on a feature shorter than two resolution lengths ({two_res_mm} mm), so it is not that feature's impedance."
+msgstr ""
+
+#. I_SI_TDR_SHORT_ROUTE
+#, python-brace-format
+msgid "No TDR level is read between the launches: the route's round trip, {t_far_ps} ps, is no longer than its two launches, {two_rise_ps} ps."
+msgstr ""
+
+#. I_SI_TDR_NO_ARRIVAL
+#, python-brace-format
+msgid "No TDR level is read between the launches: no step reaches the measured line's far end (its TDT stays under {floor}), so the route's end is not found."
+msgstr ""
+
+#. I_SI_SKEW
+#, python-brace-format
+msgid "Intra-pair skew {skew_ps} ps: the N leg's TDT arrives at {n_ps} ps and the P leg's at {p_ps} ps, each at half its peak."
+msgstr ""
+
+#. I_SI_CROSSTALK
+#, python-brace-format
+msgid "Crosstalk into {net} from {source}: NEXT at {start} peaks at {next_db} dB ({next_mhz} MHz) and FEXT at {end} at {fext_db} dB ({fext_mhz} MHz)."
+msgstr ""
+
+#. I_SI_LOSS_CONDUCTOR
+#, python-brace-format
+msgid "Not in S: the copper's loss over the route's {length_mm} mm, by Hammerstad's formula for smooth copper, about {at_marker_db} dB at the marker ({marker_mhz} MHz) and {at_f_max_db} dB at f_max ({f_max_ghz} GHz)."
+msgstr ""
+
+#. I_SI_LOSS_DIELECTRIC
+#, python-brace-format
+msgid "Not in S either, the dielectric being lossless: its loss over the same length, about {at_marker_db} dB at the marker and {at_f_max_db} dB at f_max."
 msgstr ""
 
 #. I_COMPARE_BASIS
@@ -2175,6 +2263,22 @@ msgstr ""
 
 #. T_VICTIM
 msgid "a victim, no target"
+msgstr ""
+
+#. T_LOWEST
+msgid "lowest"
+msgstr ""
+
+#. T_HIGHEST
+msgid "highest"
+msgstr ""
+
+#. T_PAIR_DRIVE
+msgid "the pair driven differentially at its start"
+msgstr ""
+
+#. T_LINE_DRIVE
+msgid "the measured line's start"
 msgstr ""
 
 #. T_HATCHED_ZONE

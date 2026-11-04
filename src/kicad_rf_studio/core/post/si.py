@@ -217,3 +217,79 @@ def read(s: np.ndarray, f: np.ndarray, project: dict, eeff: float) -> Reading:
                    levels=levels(t, z, rise[0], t_far, target, DIFF_OHM if paired else SE_OHM), skew=skew,
                    xt=[(*peak(m[:, v, 0]), *peak(m[:, v + 1, 0])) for v in range(4 if paired else 2, m.shape[1], 2)],
                    eeff=eeff)
+
+
+def si_limits(project: dict) -> tuple[str, ...]:
+    """The stated limits of an SI result (design 5.6), in this order: I_LIMIT_SI_CROP, I_LIMIT_PEC (v1's),
+    I_LIMIT_SI_DEBYE or I_LIMIT_SI_LOSSLESS by project["dielectric"], I_LIMIT_SI_BODIES, I_LIMIT_SI_PORTS,
+    I_LIMIT_SI_RESOLUTION."""
+    return ("I_LIMIT_SI_CROP", "I_LIMIT_PEC",
+            "I_LIMIT_SI_LOSSLESS" if project["dielectric"] == "lossless" else "I_LIMIT_SI_DEBYE",
+            "I_LIMIT_SI_BODIES", "I_LIMIT_SI_PORTS", "I_LIMIT_SI_RESOLUTION")
+
+
+def si_lines(project: dict, r: Reading, route: dict) -> list[tuple[str, dict]]:
+    """An SI result's lines (Stage 4 design 5.6) of the reading `r` and the run's `route`, which follow chain_results'
+    (I_BASIS up to the indicators): I_SI_RELATIVE; I_SI_INSERTION (Sdd21, a net's S21, at the marker and at f_max);
+    I_SI_WORST of Sdd11 (S11), then for a pair of Scd21, and I_SI_COMMON (Scc21 at the marker); I_SI_TDR; the lowest
+    then the highest level as I_SI_TDR_LEVEL, or I_SI_TDR_SHORT on a short feature, else I_SI_TDR_SHORT_ROUTE with
+    t_far, else I_SI_TDR_NO_ARRIVAL {floor: ARRIVAL_FLOOR}; I_SI_SKEW for a pair with both arrivals; I_SI_CROSSTALK per
+    victim (project's victim lines in order, its first net, start and end; source T_PAIR_DRIVE or T_LINE_DRIVE);
+    I_SI_LOSS_CONDUCTOR at the project's marker_hz (the formula's own frequency, not the grid point's), then
+    I_SI_LOSS_DIELECTRIC with a lossless dielectric; W_NO_SECTIONS in their place when the route has no loss
+    estimate."""
+    paired, target = project["pair"] is not None, project["target_ohm"]
+    marker_mhz, f_max_ghz = f"{r.f[r.marker] / 1e6:g}", f"{r.f[-1] / 1e9:g}"
+    res = distance_mm(r.rise[0], r.eeff)  # the localising resolution length
+
+    def worst(mode: str, x: np.ndarray) -> tuple[str, dict]:  # x's largest dB over f, at its grid point
+        d = db(x)
+        k = int(np.argmax(d))
+        return "I_SI_WORST", {"mode": mode, "worst_db": f"{d[k]:.2f}", "f_mhz": f"{r.f[k] / 1e6:g}"}
+
+    lines = [("I_SI_RELATIVE", {}),
+             ("I_SI_INSERTION", {"mode": "Sdd21" if paired else "S21", "marker_mhz": marker_mhz,
+                                 "at_marker_db": f"{db(r.m[r.marker, 1, 0]):.3f}", "f_max_ghz": f_max_ghz,
+                                 "at_f_max_db": f"{db(r.m[-1, 1, 0]):.3f}"}),
+             worst("Sdd11" if paired else "S11", r.m[:, 0, 0])]
+    if paired:
+        lines += [worst("Scd21", r.m[:, 3, 0]),
+                  ("I_SI_COMMON", {"scc21_db": f"{db(r.m[r.marker, 3, 2]):.2f}", "marker_mhz": marker_mhz})]
+    lines.append(("I_SI_TDR", {"kind": "T_DIFFERENTIAL" if paired else "T_SINGLE_ENDED",
+                               "rise_ps": f"{r.rise[0] * 1e12:g}", "res_mm": f"{res:.1f}",
+                               "link_ps": f"{r.rise[1] * 1e12:g}",
+                               "link_res_mm": f"{distance_mm(r.rise[1], r.eeff):.1f}", "eeff": f"{r.eeff:.2f}"}))
+    if r.levels is not None:
+        for level, (t, z, short) in zip(("T_LOWEST", "T_HIGHEST"), r.levels):
+            shown = {"level": level, "z": f"{z:.2f}", "t_ps": f"{t * 1e12:.1f}",
+                     "d_mm": f"{distance_mm(t, r.eeff):.1f}"}
+            if short:
+                lines.append(("I_SI_TDR_SHORT", {**shown, "two_res_mm": f"{2 * res:.1f}"}))
+            else:
+                band = abs(z - target) <= project["tolerance"] * target
+                lines.append(("I_SI_TDR_LEVEL", {**shown, "verdict": "T_IN_BAND" if band else "T_OUT_OF_BAND"}))
+    elif r.t_far is not None:  # the route's round trip within its two launches
+        lines.append(("I_SI_TDR_SHORT_ROUTE", {"t_far_ps": f"{r.t_far * 1e12:.1f}",
+                                               "two_rise_ps": f"{2 * r.rise[0] * 1e12:g}"}))
+    else:  # no step passes the measured line
+        lines.append(("I_SI_TDR_NO_ARRIVAL", {"floor": f"{ARRIVAL_FLOOR:g}"}))
+    if r.skew is not None:
+        p, n = r.skew
+        lines.append(("I_SI_SKEW", {"skew_ps": f"{(n - p) * 1e12:+.2f}", "n_ps": f"{n * 1e12:.1f}",
+                                    "p_ps": f"{p * 1e12:.1f}"}))
+    victims = [line["chain"] for line in project["lines"] if line["role"] == "victim"]
+    lines += [("I_SI_CROSSTALK", {"net": v["nets"][0], "source": "T_PAIR_DRIVE" if paired else "T_LINE_DRIVE",
+                                  "start": v["start"], "next_db": f"{next_db:.2f}", "next_mhz": f"{next_hz / 1e6:g}",
+                                  "end": v["end"], "fext_db": f"{fext_db:.2f}", "fext_mhz": f"{fext_hz / 1e6:g}"})
+              for v, (next_db, next_hz, fext_db, fext_hz) in zip(victims, r.xt)]
+    if route["loss_db"] is None:  # no section solved: no loss estimate
+        return lines + [("W_NO_SECTIONS", {})]
+    conductor, dielectric = route["loss_db"]["conductor"], route["loss_db"]["dielectric"]
+    lines.append(("I_SI_LOSS_CONDUCTOR", {"length_mm": f"{route['length_mm']:.1f}",
+                                          "marker_mhz": f"{project['marker_hz'] / 1e6:g}",
+                                          "at_marker_db": f"{conductor[0]:.3f}", "f_max_ghz": f_max_ghz,
+                                          "at_f_max_db": f"{conductor[1]:.3f}"}))
+    if project["dielectric"] == "lossless":
+        lines.append(("I_SI_LOSS_DIELECTRIC", {"at_marker_db": f"{dielectric[0]:.3f}",
+                                               "at_f_max_db": f"{dielectric[1]:.3f}"}))
+    return lines

@@ -7,9 +7,10 @@ import numpy as np
 import pytest
 from scipy.constants import c as C0
 
+from kicad_rf_studio.core.messages import render
 from kicad_rf_studio.core.post.si import (ARRIVAL_FLOOR, COPPER_RHO, FLOOR_DB, LEAD, LOCAL_RISE, N_TDR, SE_OHM,
-                                          Reading, arrival, distance_mm, hammerstad, levels, mixed_mode, read,
-                                          rise_filter, step_response, tdr, uniform_grid)
+                                          Reading, arrival, db, distance_mm, hammerstad, levels, mixed_mode, read,
+                                          rise_filter, si_limits, si_lines, step_response, tdr, uniform_grid)
 from p4a import cohn, even_odd_s
 from test_project import si_dict
 
@@ -191,3 +192,57 @@ def test_the_project_and_the_cli_import_neither_scipy_nor_scikit_rf():  # C-5: c
                           "print(sorted(m for m in ('scipy', 'skrf') if m in sys.modules))"],
                          capture_output=True, text=True)
     assert out.stdout.strip() == "[]"
+
+
+ROUTE = {"eeff": 4.0, "length_mm": 63.0, "loss_db": {"conductor": [0.0497, 0.321], "dielectric": [0.0218, 0.9072]}}
+
+
+def test_the_lines_of_a_net_with_a_short_feature():  # design 5.6; anti-goals 1, 2; Review Focus 3, 5
+    r = read(line_s(ROUTE1, F), F, SE, 4.0)
+    lines = si_lines(SE, r, ROUTE)
+    assert [code for code, _ in lines] == ["I_SI_RELATIVE", "I_SI_INSERTION", "I_SI_WORST", "I_SI_TDR",
+                                           "I_SI_TDR_SHORT", "I_SI_TDR_LEVEL", "I_SI_LOSS_CONDUCTOR",
+                                           "I_SI_LOSS_DIELECTRIC"]
+    assert lines[1][1] == {"mode": "S21", "marker_mhz": "135", "at_marker_db": f"{db(r.m[27, 1, 0]):.3f}",
+                           "f_max_ghz": "10", "at_f_max_db": f"{db(r.m[-1, 1, 0]):.3f}"}
+    assert lines[2][1] == {"mode": "S11", "worst_db": "-9.88", "f_mhz": "9290"}
+    assert lines[3][1] == {"kind": "T_SINGLE_ENDED", "rise_ps": "125", "res_mm": "9.4", "link_ps": "1000",
+                           "link_res_mm": "74.9", "eeff": "4.00"}
+    assert lines[4][1] == {"level": "T_LOWEST", "z": "46.68", "t_ps": "818.8", "d_mm": "61.4", "two_res_mm": "18.7"}
+    assert lines[5][1] == {"level": "T_HIGHEST", "z": "60.00", "t_ps": "431.3", "d_mm": "32.3",
+                           "verdict": "T_OUT_OF_BAND"}
+    assert lines[6][1] == {"length_mm": "63.0", "marker_mhz": "133", "at_marker_db": "0.050", "f_max_ghz": "10",
+                           "at_f_max_db": "0.321"}  # the formula at the marker itself, not its grid point
+    assert lines[7][1] == {"at_marker_db": "0.022", "at_f_max_db": "0.907"}
+    assert all(render(code, **params) for code, params in lines)
+
+
+def test_the_lines_of_a_pair_with_a_victim():  # design 5.6
+    r = read(pair6(10 ** (-60 / 20) * math.sqrt(2), 10 ** (-70 / 20) * math.sqrt(2)), F, P100, 3.0)
+    lines = si_lines(P100, r, ROUTE)
+    assert [code for code, _ in lines] == [
+        "I_SI_RELATIVE", "I_SI_INSERTION", "I_SI_WORST", "I_SI_WORST", "I_SI_COMMON", "I_SI_TDR", "I_SI_TDR_LEVEL",
+        "I_SI_TDR_LEVEL", "I_SI_SKEW", "I_SI_CROSSTALK", "I_SI_LOSS_CONDUCTOR", "I_SI_LOSS_DIELECTRIC"]
+    assert [p["mode"] for code, p in lines if "mode" in p] == ["Sdd21", "Sdd11", "Scd21"]
+    assert lines[5][1]["kind"] == "T_DIFFERENTIAL" and lines[6][1]["verdict"] == "T_IN_BAND"  # 100 Ω flat
+    assert lines[8][1] == {"skew_ps": "+0.00", "p_ps": "196.9", "n_ps": "196.9"}
+    assert {k: lines[9][1][k] for k in ("net", "source", "start", "end", "next_db", "fext_db")} == {
+        "net": "AUX", "source": "T_PAIR_DRIVE", "start": "TP1.1", "end": "TP2.1", "next_db": "-60.00",
+        "fext_db": "-70.00"}
+
+
+def test_a_route_with_no_level_says_why():  # design 5.6; Review Focus 2, 5
+    short = read(line_s([(50.0, 4.0, 5.0)], F), F, SE, 4.0)
+    assert ("I_SI_TDR_SHORT_ROUTE", {"t_far_ps": "60.5", "two_rise_ps": "250"}) in si_lines(SE, short, ROUTE)
+    cut = read(np.zeros((len(F), 2, 2), complex), F, SE, 4.0)  # nothing passes the line
+    assert ("I_SI_TDR_NO_ARRIVAL", {"floor": "0.001"}) in si_lines(SE, cut, ROUTE)
+    none = si_lines(SE, short, {**ROUTE, "loss_db": None})  # no section solved: no loss estimate
+    assert none[-1] == ("W_NO_SECTIONS", {}) and "I_SI_LOSS_CONDUCTOR" not in dict(none)
+
+
+def test_the_limits_follow_the_dielectric():  # design 5.6
+    assert si_limits(SE) == ("I_LIMIT_SI_CROP", "I_LIMIT_PEC", "I_LIMIT_SI_LOSSLESS", "I_LIMIT_SI_BODIES",
+                             "I_LIMIT_SI_PORTS", "I_LIMIT_SI_RESOLUTION")
+    debye = {**SE, "dielectric": "debye"}
+    assert si_limits(debye)[2] == "I_LIMIT_SI_DEBYE"
+    assert "I_SI_LOSS_DIELECTRIC" not in dict(si_lines(debye, read(line_s(ROUTE1, F), F, debye, 4.0), ROUTE))
