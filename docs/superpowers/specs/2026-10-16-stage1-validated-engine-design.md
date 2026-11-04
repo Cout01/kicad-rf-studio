@@ -699,7 +699,7 @@ These are not in Stage 1 or v1:
 - Linux/GCC or GPU engine backends;
 - a bundled openEMS or PyInstaller build;
 - macOS;
-- the Stage 3 design's non-goals (its §3): chip and module antennas; the enclosure, a hand or body, the battery, cables, screws and the parts' bodies; automatic placement; an instant far-field retune; two bands, two antennas or external wire antennas in one run; a 3D pattern view; absolute performance claims (A-30, Stage 3 plan 2: controller recommendation, owner unavailable.)
+- the Stage 3 design's non-goals (its §3): chip and module antennas; the enclosure, a hand or body, the battery, cables, screws and the parts' bodies; automatic placement; an instant far-field retune; two bands, two antennas or external wire antennas in one run; a 3D pattern view; absolute performance claims (A-30, Stage 3 plan 2: controller recommendation, owner unavailable);
 - the Stage 4 design's non-goals (its §3): eye diagrams, masks, jitter and BER; IBIS or IBIS-AMI drivers and an ideal-driver waveform; power integrity and the PDN; radiated emission; a whole-board or whole-plane model; parts of three or more pads on the route as models; back-drilled, blind and buried vias' details; `.kicad_pro` net classes and KiCad 10's tuning profiles; absolute insertion-loss verdicts and standards' masks; segmenting a long net, and more than two ends on one line (A-49, Stage 4 plan 2: controller recommendation, owner unavailable.)
 
 ---

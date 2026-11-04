@@ -67,7 +67,7 @@ Stage 4's plan 2 ends with its first real SI run. It is not a gate: gates P4-B t
 - **Out of band:**
   - two 0.675 mm jogs per leg, with the pair not alongside: Z0 52.51 and 52.59 Ω, so Zdiff 105.01 and 105.18 Ω uncoupled;
   - the 5.000 mm runs through U2, 0.600 mm wide with the legs 1.300 mm apart: Zdiff 65.30 Ω, which the 2D box reads low (§8).
-- **The victim AUX,** 0.200 mm wide, 0.625 mm off and 12.000 mm long, has no target.
+- **The victim AUX,** 0.200 mm wide, 0.625 mm from USB_D+'s edge (the gap column: the nearest copper of another net) and 12.000 mm long, has no target.
 - **The 2D work's time on this model:** `si_readout` (the 2D table) took 2.81 s, and `fit2d` on the mesh 3.86 s. Both are a few seconds, so plan 1's open issue 8, cs2d's (1, −1) path, is not needed.
 - **The long cut's two legs alone,** as fit2d's per-leg reference reads them: USB_D+ 51.009 Ω and USB_D- 51.101 Ω. They are 0.09 Ω (0.18 %) apart. This is the asymmetry that the 2D table's mean-c11 modes accept.
 
@@ -156,7 +156,7 @@ The stop ran under the DC pulse and `window_s`, at the normal preset: −60 dB w
 
 - **No SI result yet:** this run makes no claim on the channel. Its results (the TDR, mixed-mode S and the views) are plan 3's.
 - **The model:** copper is PEC, the dielectric is lossless (Debye only on request), the region is closed by MUR walls, and the ports sit at the pads.
-- **The 2D table is a screening.** It leaves out bends, vias, pads and parts. Its 65.30 Ω on the 0.6 mm runs through U2 reads about 7 % low: the partner leg sits 0.1 mm inside the box's PEC side, because the box runs only 10 substrate heights past the line's own edges. At 20 heights both legs read 35.6 Ω and Zdiff 70.37 Ω (Task 8's measurement). Either way the verdict is out of band.
+- **The 2D table is a screening.** It leaves out bends, vias, pads and parts. Its 65.30 Ω on the 0.6 mm runs through U2 read 7.2 % low. The coupled cut's box ran 10 substrate heights past the signal leg alone, so the partner leg sat 0.1 mm inside its PEC side. The branch's final review found it after this run, and its fix wave runs a pair's box 10 heights past both legs. Those runs now read Zdiff 70.25 Ω (Zodd 35.12 Ω, Zeven 35.73 Ω), within 0.2 % of a 40-height box, and the 0.3 mm runs move by at most 0.01 Ω. Either way the verdict is out of band.
 - **Shared mesh lines** (the plan's open issue 1): every line shares one set of mesh lines per axis, so the edges of two features 15–25 µm apart, such as a 0.3 mm track into a 0.25 mm QFN pin or a micro-B's 0.65 mm pitch beside a 0.5 mm pair, fail the edge lint after its re-mesh or read fit2d 5–7 % off. The fixtures were laid out clear of it, as Task 1's gate test checks, so this run does not show it. Real boards will meet it before plan 4, and P4-C rules on it.
 - **One run** of one synthetic fixture on one PC (16 CPUs), at the defaults: mesh n 2, the SI mesh rule, a lossless dielectric and the normal preset. Gates P4-B to P4-D set the first three (Stage 4 design §5.11).
 
