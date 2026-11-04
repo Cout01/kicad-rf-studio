@@ -103,16 +103,16 @@ def project_parts(board: Board, chain: Chain, classes: Classes, roi: Polygon | M
     part is a port, a curve port off a multiple of 90°, whatever its value (no 0R, DNP or choke rule), and a DNP one's
     value is OPEN_VALUE. With `si` (Stage 4 design 5.1), every chain part, a part of an SI project's lines, is a port as
     with `antenna`, but a pull-up, a shunt R of SHUNT_OPEN_OHM or more whose other net (its nets[1]) is a GND or power
-    net, which is open; the others keep v1's roles, placed "other", with role's `bridge`. W_VALUE_UNREADABLE names the
-    C, L and R parts whose value does not read, DNP ones too, except an antenna's or an SI line's chain part whose
-    value values.bypass reads (0 Ω or open); W_PART_OPEN (W_BOARD_PARTS_OPEN with `antenna`) the other parts left open
-    that are not DNP; with `si`, I_SI_SHUNT_OPEN the pull-ups left open."""
+    net, which is open, a DNP one's value OPEN_VALUE; the others keep v1's roles, placed "other", with role's `bridge`.
+    W_VALUE_UNREADABLE names the C, L and R parts whose value does not read, DNP ones too, except an antenna's or an SI
+    line's chain part whose value values.bypass reads (0 Ω or open); W_PART_OPEN (W_BOARD_PARTS_OPEN with `antenna`)
+    the other parts left open that are not DNP; with `si`, I_SI_SHUNT_OPEN the pull-ups left open that are not DNP."""
     def part(ref: str, pads, nets, place: str) -> dict:
         fp, kind = board.footprints[ref], part_kind(ref)
         model = model_of(fp.lib_id) if kind else None  # spec 5.7: the ideal value plus the preset; a diode has none
         if (si and place == "shunt" and kind == "R" and nets[1] in classes.gnd | classes.power
                 and (part_value(ref, fp.value) or 0) >= SHUNT_OPEN_OHM):
-            value, part_role = fp.value, OPEN  # a pull-up (Stage 4 design 5.1)
+            value, part_role = OPEN_VALUE if fp.dnp else fp.value, OPEN  # a pull-up (Stage 4 design 5.1)
         elif (antenna or si) and place in ("series", "shunt"):
             # every part on an antenna's chain or an SI line is a port, whatever its value: a 0R, a DNP placeholder, a
             # choke (Stage 3 design 5.1, Stage 4 design 5.1)
@@ -145,6 +145,6 @@ def project_parts(board: Board, chain: Chain, classes: Classes, roi: Polygon | M
         notes.append(("W_VALUE_UNREADABLE", {"refs": ", ".join(refs)}))
     if refs := sorted(q["ref"] for q in others if q["role"] == OPEN and not q["dnp"]):
         notes.append(("W_BOARD_PARTS_OPEN" if antenna else "W_PART_OPEN", {"refs": ", ".join(refs)}))
-    if si and (refs := sorted(q["ref"] for q in shunt if q["role"] == OPEN)):
+    if si and (refs := sorted(q["ref"] for q in shunt if q["role"] == OPEN and not q["dnp"])):
         notes.append(("I_SI_SHUNT_OPEN", {"refs": ", ".join(refs)}))
     return series, shunt, others, notes

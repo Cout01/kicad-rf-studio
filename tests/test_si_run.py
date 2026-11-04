@@ -8,15 +8,16 @@ import pytest
 import skrf
 
 from kicad_rf_studio import __version__, cli, pipeline
-from kicad_rf_studio.core.messages import KrsError
-from kicad_rf_studio.core.post.chain import above_dc, with_box
+from kicad_rf_studio.core.messages import KrsError, render
+from kicad_rf_studio.core.post.chain import above_dc, s2p_impedance, with_box, z_part
 from kicad_rf_studio.core.post.si import read, si_limits, si_lines, uniform_grid
 from kicad_rf_studio.core.post.waves import layout
-from kicad_rf_studio.core.project import load_project, save_project
+from kicad_rf_studio.core.project import load_project, parts, save_project
 from kicad_rf_studio.stoprule import KEPT
-from networks import read_s, star, terminate_np
+from networks import C_BOX, read_s, star, terminate_np, write_s2p
 from test_cli_si import FIX, QSPI, USB, si_project
 from test_match_antenna import result_lines
+from test_project import si_dict
 from test_run import result_codes
 from test_tracer import part, smd, track
 
@@ -40,9 +41,6 @@ def test_an_si_run_writes_its_layout_on_the_grid_from_dc(tmp_path, calibrated, m
     lay = layout(p, results)
     assert lay.f.tolist() == uniform_grid(10e9).tolist() and lay.markers == [48]  # 240 MHz on the 5 MHz grid
     assert pipeline.retune(pj, []) == 0 and sorted(f.name for f in out.iterdir()) == files
-    with pytest.raises(KrsError) as e:  # a part value would be stored and change nothing until plan 3
-        pipeline.retune(pj, ["R1=33"])
-    assert (e.value.code, e.value.params) == ("E_RETUNE_SI", {}) and load_project(pj) == p
 
 
 def test_a_marker_off_the_grid_takes_its_nearest_point(tmp_path, calibrated, monkeypatch):  # se50's 133 MHz
@@ -153,3 +151,61 @@ def test_an_si_fingerprint_leaves_out_what_the_lines_set(tmp_path, fake):  # des
     a, b = (load_project(si_project(tmp_path / n, FIX / f"{n}.kicad_pcb")) for n in ("usb2_hs", "usb2_hs_45"))
     assert a["mesh"]["max_cell_mm"] != b["mesh"]["max_cell_mm"]  # λ/40 at each board's largest 2D εeff
     assert pipeline.fingerprint(a) == pipeline.fingerprint(b)  # a 45° bend is a variant compare takes
+
+
+def test_an_si_retune_closes_the_part_ports_at_their_new_values(tmp_path, calibrated, monkeypatch):  # design 5.7
+    monkeypatch.setenv("KRS_FAKE", "network")
+    pj = si_project(tmp_path / "p")
+    assert pipeline.run(pj) == 0
+    lines, seen = [], []
+    monkeypatch.setattr(pipeline, "si_png", lambda curves, project, title, label=None: seen.append(label) or b"")
+    assert pipeline.retune(pj, ["R1=33", "R2=33"], lambda code, params: lines.append((code, params))) == 0
+    p = load_project(pj)
+    assert [(ref, q["value"]) for ref, q in parts(p).items() if ref[0] == "R"] == [("R1", "33"), ("R2", "33")]
+    f, model = uniform_grid(10e9), parts(p)["R1"]["model"]
+    z = with_box(z_part("R", 33.0, model, f[1:]), f[1:], C_BOX)
+    oracle = terminate_np(star(f, 8), list(range(6)), np.stack([np.r_[z[:1], z]] * 2, -1))
+    assert np.abs(read_s(pj.parent / "results" / "chain.s6p") - oracle).max() <= 1e-5
+    verify = {"command": pipeline.command_line("kicad-rf-studio", "verify", str(pj))}
+    assert ("I_WHAT_IF", verify) in lines and seen == [render("I_WHAT_IF", **verify)]  # the PNG's label too
+    assert [code for code, _ in lines][-6:] == list(si_limits(p))
+
+
+def test_an_si_retune_takes_an_s2p_file_from_the_first_point_above_dc(tmp_path, calibrated, monkeypatch):  # 5.7; RF 1
+    monkeypatch.setenv("KRS_FAKE", "network")
+    pj = si_project(tmp_path / "p")
+    assert pipeline.run(pj) == 0
+    fs, late = np.linspace(1e6, 20e9, 2000), np.linspace(10e6, 20e9, 2000)
+    c = write_s2p(tmp_path / "c.s2p", 1 / (2j * np.pi * fs * 100e-9), "series", fs)  # an AC-coupling capacitor's data
+    write_s2p(tmp_path / "late.s2p", 1 / (2j * np.pi * late * 100e-9), "series", late)
+    assert pipeline.retune(pj, [f"R1={c}:series"]) == 0
+    f = uniform_grid(10e9)
+    zk = np.stack([with_box(z, f[1:], C_BOX) for z in (s2p_impedance(c, "series", "R1", f[1:])[0],
+                                                        z_part("R", 22.0, parts(load_project(pj))["R2"]["model"],
+                                                               f[1:]))], -1)
+    oracle = terminate_np(star(f, 8), list(range(6)), np.vstack([zk[:1], zk]))  # the file's 5 MHz point held to DC
+    assert np.abs(read_s(pj.parent / "results" / "chain.s6p") - oracle).max() <= 1e-5
+    with pytest.raises(KrsError) as e:  # a file must reach the grid's first point above DC
+        pipeline.retune(pj, [f"R1={tmp_path / 'late.s2p'}:series"])
+    assert (e.value.code, e.value.params["f1"], e.value.params["f_lo"]) == ("E_S2P_BAND", "5.0", "10.0")
+
+
+def test_an_si_retune_takes_the_bypasses_and_their_refusals(tmp_path):  # design 5.7, A-33's rules; Review Focus 5
+    def port(ref, nets, **kw):
+        return {"ref": ref, "pads": [f"{ref}.1", f"{ref}.2"], "nets": nets, "value": "22", "dnp": False,
+                "role": "port", "model": None, "s2p": None, **kw}
+
+    d = si_dict()
+    d["lines"][0]["chain"]["series"] = [port("R1", ["USB_D+", "MCU_D+"])]
+    d["lines"][0]["chain"]["shunt"] = [port("R7", ["USB_D+", "GND"]),
+                                       port("R5", ["USB_D+", "+3V3"], value="1.5k", role="open")]  # a pull-up
+    d["lines"][1]["chain"]["shunt"] = [port("R9", ["USB_D-", "USB_D+"])]  # across the pair: both nets measured
+    new = pipeline.assign(d, ["R1=0R", "R7=open", "R9=0R"], tmp_path)
+    assert {ref: q["value"] for ref, q in parts(new).items()} == {"R1": "0R", "R7": "open", "R5": "1.5k", "R9": "0R"}
+    for arg, code, params in [("R1=open", "E_RETUNE_OPEN_SERIES", {"ref": "R1"}),
+                              ("R7=0R", "E_RETUNE_SHORT_SHUNT", {"ref": "R7", "net": "GND"}),
+                              ("R1=abc", "E_RETUNE_ANTENNA_VALUE", {"ref": "R1", "value": "abc"}),
+                              ("R5=2.2k", "E_RETUNE_ROLE", {"ref": "R5", "role": "open"})]:
+        with pytest.raises(KrsError) as e:
+            pipeline.assign(d, [arg], tmp_path)
+        assert (e.value.code, e.value.params) == (code, params)

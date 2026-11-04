@@ -84,9 +84,11 @@ def test_a_part_on_both_legs_is_stored_once(mini_board_file, tmp_path):  # the l
     board = mini_board_file(ends("J1", "0 0") + ends("U1", "20 0") + part("R9", smd(1, "D+"), smd(2, "D-", y=2),
                                                                          at="10 0") +
                             track("F.Cu", "D+", 0, 0, 20, 0) + track("F.Cu", "D-", 0, 2, 20, 2))
-    d = read_project(cli.new_si(board, "J1.1", "U1.1", "custom", pair=True, f_max=5e9, target=100.0,
-                                stackup="kicad-default", output=tmp_path / "r")[0])
+    pj, notes = cli.new_si(board, "J1.1", "U1.1", "custom", pair=True, f_max=5e9, target=100.0,
+                           stackup="kicad-default", output=tmp_path / "r")
+    d = read_project(pj)
     assert [[q["ref"] for q in x["chain"]["shunt"]] for x in d["lines"]] == [["R9"], []] and list(parts(d)) == ["R9"]
+    assert [p["shunt"] for code, p in notes if code == "I_CHAIN"] == ["R9", "R9"]
 
 
 def test_a_long_port_is_warned(tmp_path):  # plan 1's open issue 2; Review Focus 2

@@ -78,3 +78,15 @@ def test_an_si_lines_parts_are_ports_but_its_pull_ups(mini_board):  # design 5.1
                                                                   ("R7", "port", "10k"), ("R8", "port", "open")]
     assert [(q["ref"], q["role"]) for q in others] == [("C9", "copper")]  # A-27's rule at f_max/2
     assert ("I_SI_SHUNT_OPEN", {"refs": "R5"}) in notes and "W_VALUE_UNREADABLE" not in dict(notes)
+
+
+def test_a_dnp_pull_up_is_open_at_open_and_not_listed(mini_board):  # Stage 4 plan 2's minor; Review Focus 5
+    r = "Resistor_SMD:R_0402_1005Metric"
+    b = mini_board(part("J1", smd(1, "A")) + part("U1", smd(1, "B"), at="20 0") + two("R1", "A", "B") +
+                   fp("R5", r, smd(1, "A"), smd(2, "+3V3", x=2), value="1.5k") +
+                   fp("R8", r, "(attr smd dnp) ", smd(1, "A"), smd(2, "+3V3", x=2), value="10k"))
+    c = classify(b)
+    _, shunt, _, notes = project_parts(b, trace_line(b, c, "J1.1", "U1.1"), c, box(-50, -50, 50, 50), 0.0, 10e9,
+                                       si=True)
+    assert [(q["ref"], q["role"], q["value"]) for q in shunt] == [("R5", "open", "1.5k"), ("R8", "open", "open")]
+    assert ("I_SI_SHUNT_OPEN", {"refs": "R5"}) in notes  # a DNP part is open as any DNP part is, not as a pull-up

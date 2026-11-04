@@ -381,8 +381,8 @@ def new_si(board: str | Path, start: str, end: str, interface: str, *, pair: boo
     if paired:
         terms = {"rule": "T_PAIR_RULE", "alias": "T_PAIR_ALIAS", "given": "T_PAIR_WITH"}
         notes.append(("I_SI_PAIR", {"p": pair_of["p"], "n": pair_of["n"], "how": terms[how]}))
-    notes += [*(("I_CHAIN", {"start": c["start"], "end": c["end"], "series": _list(q["ref"] for q in c["series"]),
-                             "shunt": _list(q["ref"] for q in c["shunt"])}) for c in chains[:m]),
+    notes += [*(("I_CHAIN", {"start": x.start, "end": x.end, "series": _list(q.ref for q in x.series),
+                             "shunt": _list(q.ref for q in x.shunt)}) for x in lines[:m]),  # a line's own, as traced
               *(("I_SI_VICTIM", {"start": c["start"], "end": c["end"], "net": c["nets"][0]}) for c in chains[m:]),
               *map(_part_note, series + shunt + others),
               *map(_port_note, ports),
