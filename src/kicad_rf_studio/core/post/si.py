@@ -1,9 +1,10 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """Signal integrity's readings (Stage 4 design 5.1, 5.5, 5.6): the uniform grid from DC, the Gaussian rise filter and
 the TDR's step response from S; mixed mode at the target; the TDT's arrival, the levels between the launches and the
-skew; and, from later tasks, the lines, files, verify's comparison and compare's deltas. At module level it imports only
-the stdlib, numpy and core.messages: core.project imports it for LOCAL_RISE, so scipy, scikit-rf, matplotlib,
-core.model.parts and core.post.antenna are imported inside the functions that use them (C-5)."""
+skew; Hammerstad's conductor loss, for the route's loss estimate; and, from later tasks, the lines, files, verify's
+comparison and compare's deltas. At module level it imports only the stdlib, numpy and core.messages: core.project
+imports it for LOCAL_RISE, so scipy, scikit-rf, matplotlib, core.model.parts and core.post.antenna are imported inside
+the functions that use them (C-5)."""
 import math
 import warnings
 from dataclasses import dataclass
@@ -77,6 +78,22 @@ def distance_mm(t, eeff: float):
     # another εeff, or a pair's odd mode a few % faster, sits a few % off along this axis; a per-section axis if a gate
     # needs it
     return t * c / (2 * math.sqrt(eeff)) * 1e3
+
+
+COPPER_RHO = 1.72e-8  # Ω·m, KiCad's calculator's 5.8e7 S/m
+
+
+def hammerstad(f: float, w_mm: float, z0: float) -> float:
+    """Hammerstad and Jensen's conductor attenuation in Np/m of a microstrip `w_mm` wide of impedance `z0` (Ω) at `f`
+    (Hz), smooth copper (roughness factor 1), as scikit-rf's MLine.analyse_loss: R_s/(z0·w)·K_i,
+    R_s = √(π·f·μ0·COPPER_RHO), K_i = exp(−1.2·(z0/η0)^0.7), μ0 and η0 = √(μ0/ε0) from scipy.constants, imported
+    inside (C-5)."""
+    from scipy.constants import epsilon_0, mu_0  # here only (C-5)
+
+    # ponytail: a microstrip formula, valid where the copper is 3 skin depths thick or more (25 µm at 62.5 MHz); an
+    # inner-layer section's conductor loss is a microstrip estimate, and a thinner copper or a lower marker reads it low
+    r_s = math.sqrt(math.pi * f * mu_0 * COPPER_RHO)
+    return r_s / (z0 * w_mm * 1e-3) * math.exp(-1.2 * (z0 / math.sqrt(mu_0 / epsilon_0)) ** 0.7)
 
 
 def mixed_mode(s: np.ndarray, f: np.ndarray, target: float, paired: bool) -> np.ndarray:

@@ -7,9 +7,9 @@ import numpy as np
 import pytest
 from scipy.constants import c as C0
 
-from kicad_rf_studio.core.post.si import (ARRIVAL_FLOOR, FLOOR_DB, LEAD, LOCAL_RISE, N_TDR, SE_OHM, Reading, arrival,
-                                          distance_mm, levels, mixed_mode, read, rise_filter, step_response, tdr,
-                                          uniform_grid)
+from kicad_rf_studio.core.post.si import (ARRIVAL_FLOOR, COPPER_RHO, FLOOR_DB, LEAD, LOCAL_RISE, N_TDR, SE_OHM,
+                                          Reading, arrival, distance_mm, hammerstad, levels, mixed_mode, read,
+                                          rise_filter, step_response, tdr, uniform_grid)
 from p4a import cohn, even_odd_s
 from test_project import si_dict
 
@@ -176,6 +176,14 @@ def test_read_holds_what_the_lines_and_the_deltas_need():  # design 5.6; Review 
     long = read(line_s([(50.0, 4.0, 15.0), (60.0, 4.0, 200.0)], F), F, SE, 4.0)  # the link's on the localising t
     assert abs(long.t[np.argmax(long.z_link > 55)] - long.t[np.argmax(long.z > 55)]) < long.rise[1]  # 25 ps, not 3.5 ns
     assert abs(long.t[np.argmax(long.tdt_link > 0.5)] - long.t[np.argmax(long.tdt > 0.5)]) < long.rise[1]
+
+
+def test_hammerstads_conductor_loss_is_scikit_rfs():  # design 5.6: Hammerstad, smooth copper
+    from skrf.media import MLine
+    f = np.array([240e6, 10e9])
+    for w, z0 in ((0.3, 51.0), (0.6, 35.0)):  # analyse_loss reads nothing of its instance
+        mline = MLine.analyse_loss(None, 4.3, 3.2, 0.0, COPPER_RHO, 1.0, z0, z0, f, w * 1e-3, 35e-6, 0.0)[0]
+        assert [hammerstad(x, w, z0) for x in f] == pytest.approx(mline, rel=1e-12)
 
 
 def test_the_project_and_the_cli_import_neither_scipy_nor_scikit_rf():  # C-5: core.project imports this module

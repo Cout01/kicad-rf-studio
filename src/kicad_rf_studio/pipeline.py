@@ -50,6 +50,7 @@ from kicad_rf_studio.core.post.chain import ideal_schematic, loads, part_impedan
 from kicad_rf_studio.core.post.checks import compare, indicator_lines, loss_budget, loss_expected
 from kicad_rf_studio.core.post.outputs import (LIMITS, OUTPUTS, VERIFY_OUTPUT, grid_lines, marker_lines, port_map,
                                                summary_csv, summary_png, touchstone, write)
+from kicad_rf_studio.core.post.si import hammerstad
 from kicad_rf_studio.core.post.waves import layout
 from kicad_rf_studio.core.project import (GATES, GATES_SI, antenna, board_file, board_hash, copper_model, default_gates,
                                           load_project, mesh_n, parts, read_project, relative_path, save_project, si)
@@ -423,6 +424,46 @@ def expected_loss(geom: Geometry, f0: float) -> float:
         d = geom.zs[i - 1] if i and geom.zs[i - 1].kind == "dielectric" else geom.zs[i + 1]
         terms.append((d.eps_r, eeff, d.tan_d or 0.0, s.length))
     return loss_expected(terms, f0)
+
+
+def si_route(board: Board, geom: Geometry, project: dict) -> dict:
+    """An SI run's route (Stage 4 design 5.6), from its geometry, as expected_loss is v1's, recorded with its results:
+    the measured line whose route_length is the longest (a pair's P leg on a tie); each section of that line cut as
+    si_readout cuts a line alone, `cross_section(s, geom.pieces, geom.zs, geom.masks.get(s.layer), "exact",
+    h=substrate_h(geom.zs, (s.layer,)))` (a cut that other copper touches adds nothing), on the slab expected_loss
+    takes (the one below the copper, else above); "eeff", their εeff weighted by length, the distance axis's 2D εeff;
+    "length_mm", that route_length; "loss_db", at marker_hz and at f_max_hz, the copper's
+    20·log10(e)·Σ hammerstad(f, s.width, z0)·ℓ and the dielectric's −10·log10(1 − loss_expected(terms, f)), each over
+    the sections' Σℓ and times length_mm, in dB. With no section solved (a route of 45° tracks or arcs alone, or every
+    cut touched), "eeff" is the stack's largest εr, as new's, and "loss_db" None."""
+    # ponytail: one line's loss for a pair, the P leg's (the odd mode's runs a little higher); the straight sections'
+    # mean per mm stands for the bends and pads
+    # ponytail: si_readout's cut and expected_loss's slab written once more, not hoisted, as expected_loss is v1's; a
+    # shared helper if a third copy comes
+    nets = max((line["chain"]["nets"] for line in project["lines"] if line["role"] == "measured"),
+               key=lambda nets: route_length(board, nets))
+    length = route_length(board, nets)
+    solved = []  # each section of the route solved: (the section, its 2D line, its slab)
+    for s in geom.sections:
+        if s.net not in nets:
+            continue
+        try:
+            line = solve(cross_section(s, geom.pieces, geom.zs, geom.masks.get(s.layer), "exact",
+                                       h=substrate_h(geom.zs, (s.layer,))))
+        except ShortError:
+            continue
+        i = next(k for k, slab in enumerate(geom.zs) if slab.copper == s.layer)
+        solved.append((s, line, geom.zs[i - 1] if i and geom.zs[i - 1].kind == "dielectric" else geom.zs[i + 1]))
+    if not solved:
+        return {"eeff": max(s.eps_r for s in geom.zs if s.kind == "dielectric"), "length_mm": length, "loss_db": None}
+    total = sum(s.length for s, _, _ in solved)
+    terms = [(d.eps_r, line.eps_eff, d.tan_d or 0.0, s.length) for s, line, d in solved]
+    freqs = (project["marker_hz"], project["f_max_hz"])
+    conductor = [20 * math.log10(math.e) * sum(hammerstad(f, s.width, line.z0) * s.length * 1e-3
+                                               for s, line, _ in solved) / total * length for f in freqs]
+    dielectric = [-10 * math.log10(1 - loss_expected(terms, f)) / total * length for f in freqs]
+    return {"eeff": sum(line.eps_eff * s.length for s, line, _ in solved) / total, "length_mm": length,
+            "loss_db": {"conductor": conductor, "dielectric": dielectric}}
 
 
 def gate_lines(gates: dict, defaults: dict = GATES) -> list[tuple[str, dict]]:
@@ -806,8 +847,9 @@ def run(path: Path, run_dir: Path | None = None) -> int:
     (exit 130, results untouched); once they run, it stops them, and their verdicts say so. An antenna's run (Stage 3)
     saves its results with far_field null and its settings fingerprint, taken before the jobs; with no part port it
     then transforms its far field and saves again, a transform that fails being an E_ line (_run); its outputs are
-    antenna_outputs'. An SI run (Stage 4 design 5.6, 5.12 item 2) saves no expected loss (null) and its outputs are
-    si_outputs'. A given `run_dir` stands in for the fresh run folder."""
+    antenna_outputs'. An SI run (Stage 4 design 5.6, 5.8, 5.12 item 2) saves no expected loss (null) but its route
+    (si_route) and its settings fingerprint, both taken before the jobs, and its outputs are si_outputs'. A given
+    `run_dir` stands in for the fresh run folder."""
     if not read_project(path)["ports"]:
         raise KrsError("E_NO_PORTS")
     return _locked(path, _run, run_dir)
@@ -831,15 +873,18 @@ def _run(path: Path, run_dir: Path) -> int:
     """run() under the lock, with `run_dir` made: an antenna run saves its S as v1 does, its results with far_field
     null and its settings fingerprint (fingerprint, Stage 3 design 5.8), taken before the jobs so that a failed
     openEMS probe costs no job, then, with no part port, transforms its far field after its job and saves again; a
-    transform that fails is an E_ line, and one stopped leaves S kept (Stage 3 design 5.5)."""
+    transform that fails is an E_ line, and one stopped leaves S kept (Stage 3 design 5.5). An SI run's results gain
+    its route (si_route, Stage 4 design 5.6) and its settings fingerprint (Stage 4 design 5.8), both taken before the
+    jobs; v1's and an antenna's gain no route."""
     emit = partial(runs.emit, run_dir)  # (kind, code, params, job=None)
     if isinstance(built := _model_phase(path, emit), int):
         return built
-    project, _, geom, model = built
+    project, board, geom, model = built
     gates, preset = project["gates"], project["preset"]
     # before prepare: an error here costs no job; design 5.6: v1's loss budget does not apply to SI
     loss = None if si(project) else expected_loss(geom, project["f0_hz"])
-    fp = fingerprint(project) if antenna(project) else None  # likewise a failed openEMS probe
+    route = si_route(board, geom, project) if si(project) else None
+    fp = fingerprint(project) if antenna(project) or si(project) else None  # likewise a failed openEMS probe
     if (out := simulate(model, project, run_dir)) is None:
         return 3
     done, setup, wall_s = out
@@ -855,6 +900,8 @@ def _run(path: Path, run_dir: Path) -> int:
     if antenna(project):
         data["results"]["far_field"] = None
         data["results"]["fingerprint"] = fp
+    if si(project):
+        data["results"] |= {"route": route, "fingerprint": fp}
     rerun = command_line("kicad-rf-studio", "run", str(path))
     rewrite = command_line("kicad-rf-studio", "retune", str(path))
     _save(path, data, rerun)
@@ -1023,12 +1070,13 @@ def far_of(record: dict, project: dict | None = None) -> dict | None:
 def results_of(project: dict, model: Model) -> dict:
     """The results in `project` when they are the last run's of `model` (spec 7.8, C-22, C-23): E_NO_RESULTS without
     any; E_RESULTS_STALE when the model has no spec (E_EDGE_LINT), its spec_hash is not the one the run recorded, or
-    the run recorded no loss_expected (a run before this version)."""
+    the run recorded no loss_expected or, in an SI project, no route (Stage 4 design 5.6): a run before this version."""
     # ponytail: rebuilds the model (1.2–3.2 s on lpf915) to compare hashes; Stage 2 may cache it
     if "results" not in project:
         raise KrsError("E_NO_RESULTS")
     results = project["results"]
-    if model.spec is None or spec_hash(model.spec) != results.get("model_hash") or "loss_expected" not in results:
+    if (model.spec is None or spec_hash(model.spec) != results.get("model_hash") or "loss_expected" not in results
+            or si(project) and "route" not in results):
         raise KrsError("E_RESULTS_STALE")
     return results
 
@@ -1038,7 +1086,19 @@ def fingerprint(project: dict) -> dict:
     project.json's fields that set the model or the far field but no part value, the lid height and the start pad among
     them (typed per project, not in the board); the copper model (copper_model); the flat window "flat_s" only when
     project.json sets it, so that the records made before it still compare; and the versions of this app and of
-    openEMS as a worker sees it (runs.openems_versions: metadata in an isolated subprocess, nothing imported)."""
+    openEMS as a worker sees it (runs.openems_versions: metadata in an isolated subprocess, nothing imported). An SI
+    project's (Stage 4 design 5.8): its preset, region, interface, f_max_hz, rise_s, marker_hz, target_ohm, stackup,
+    dielectric, lid and lid_height_mm, its mesh without max_cell_mm, "ends" (its external ports' signal pads, in order,
+    so two projects of other lines or victims never compare) and the versions; max_cell_mm, t_max_s and window_s, the
+    stop window, stay out, as they follow the lines' 2D εeff and length, which a variant may change."""
+    if si(project):
+        # ponytail: max_cell_mm out, so a hand-edited coarser cell compares too; a recorded factor if users edit it
+        keys = ("preset", "region", "interface", "f_max_hz", "rise_s", "marker_hz", "target_ohm", "stackup",
+                "dielectric", "lid", "lid_height_mm")
+        return {**{key: project[key] for key in keys},
+                "mesh": {key: v for key, v in project["mesh"].items() if key != "max_cell_mm"},
+                "ends": [q["signal"] for q in project["ports"]], "app": __version__,
+                "openems": runs.openems_versions()[0]}
     keys = ("preset", "mesh", "region", "band", "f0_hz", "t_max_s", "air_gap_mm", "boundary", "far_field", "stackup",
             "lid_height_mm")
     flat = {"flat_s": project["flat_s"]} if "flat_s" in project else {}

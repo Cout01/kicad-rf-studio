@@ -94,6 +94,7 @@ def test_an_antenna_run_records_its_settings_fingerprint(tmp_path, calibrated): 
             "lid_height_mm")
     assert d["results"]["fingerprint"] == {**{key: d[key] for key in keys}, "start": "U1.1", "copper": "solid",
                                            "app": __version__, "openems": "0.37.0"}  # fake_cli's openems_versions
+    assert "route" not in d["results"]  # an antenna's results gain no route
 
 
 def test_the_fingerprint_reads_the_copper_model_and_a_flat_window(tmp_path, calibrated):  # design 5.3, 5.4, 5.8

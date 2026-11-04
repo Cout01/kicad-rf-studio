@@ -291,7 +291,7 @@ def test_run_writes_the_outputs_of_a_known_network(tmp_path, calibrated, monkeyp
     assert result_codes(load_project(pj)["results"]["run_dir"]) == [
         "I_RESULTS", "I_BASIS", "I_MARKER", "I_MARKER", "I_HR", "I_MARKER", "I_HR", "I_PASSIVITY", "I_RECIPROCITY",
         "W_LOSS_BUDGET", "I_WHAT_IF", "I_OUTPUTS", *LIMITS]  # the star's lines lose 19 % or more
-    assert not {"far_field", "fingerprint"} & set(load_project(pj)["results"])  # a v1 run's results gain no key
+    assert not {"far_field", "fingerprint", "route"} & set(load_project(pj)["results"])  # a v1 run's results gain no key
 
 
 def test_a_single_trace_writes_its_two_port_and_summary(tmp_path, calibrated, monkeypatch):  # spec 7.3, C-31, C-24
