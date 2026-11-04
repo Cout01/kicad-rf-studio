@@ -1,10 +1,14 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 import json
 from dataclasses import replace
+from functools import partial
 
 import pytest
 
 from kicad_rf_studio import pipeline
+from kicad_rf_studio.core.cs2d import pair
+from kicad_rf_studio.core.geometry.sections import BOX_H, cross_section
+from kicad_rf_studio.core.geometry.zstack import substrate_h
 from kicad_rf_studio.core.mesh.gates import check_fit2d, fit2d
 from kicad_rf_studio.core.messages import KrsError
 from kicad_rf_studio.core.project import GATES, GATES_SI
@@ -64,6 +68,18 @@ def test_fit2d_checks_a_pairs_coupled_sections(tmp_path):  # design 5.3, 5.9
     with pytest.raises(KrsError) as e:
         check_fit2d(fits, 0.03, 2)
     assert e.value.code == "E_FIT2D"
+
+
+def test_a_widely_spaced_pairs_box_runs_past_both_legs(tmp_path):  # final review F1
+    _, _, geom, _ = pipeline.load(si_project(tmp_path))
+    sec = next(s for s in geom.sections if s.net == "USB_D+" and s.width == 0.6 and s.length == 5)  # through U2
+    h = substrate_h(geom.zs, (sec.layer,))
+    cut = partial(cross_section, sec, geom.pieces, geom.zs, geom.masks.get(sec.layer), "exact", h=h,
+                  partners=geom.partners(sec.net))  # as si_readout cuts it
+    cs = cut()
+    assert pair(cs).z_diff == pytest.approx(pair(cut(box_h=40)).z_diff, rel=0.005)  # the legs 1.3 mm apart
+    p, n = (r for r in cs.conductors if r.role == "signal")
+    assert min(min(p.x0, n.x0) - cs.box[0], cs.box[1] - max(p.x1, n.x1)) >= BOX_H * h - 1e-6  # on the 1e-6 mm grid
 
 
 def test_an_si_cost_past_two_hours_is_warned_and_its_gates_are_its_own(tmp_path):  # design 5.9; A-43
