@@ -1,5 +1,5 @@
 {
- "code": "77f74bc9f1ccf6a845d41c86079f92c6220bf3ad",
+ "code": "49471b21196ad80882aa6eae0369df011c684c59",
  "env": [
   "win32",
   "AMD64 Family 25 Model 97 Stepping 2, AuthenticAMD",
@@ -51,16 +51,16 @@
    "readout": "3f54aa1bf1d0c7dc2e8d3e7638a86a3e5c10204063e06a92eb4708237a34363e"
   },
   "usb2_hs": {
-   "readout": "46e0be6fd382c99a824fd1dc943295f8771702b6fff8983c553b63fd6665a4e5"
+   "readout": "c0300ff84d31b5a568aa6ce074fc696e6814afc77ec8375ae5c20eb5e6e66027"
   },
   "usb2_hs_45": {
-   "readout": "56d5959b7de633b76b94b38336a6b428e13ed3715a4ffca5ea70b25984946d9e"
+   "readout": "71bcd76e0548e58797fed529e3a096b669d337241484717103216ed0b6cf01b4"
   },
   "usb2_hs_gap": {
-   "readout": "46e0be6fd382c99a824fd1dc943295f8771702b6fff8983c553b63fd6665a4e5"
+   "readout": "c0300ff84d31b5a568aa6ce074fc696e6814afc77ec8375ae5c20eb5e6e66027"
   },
   "usb2_hs_neck": {
-   "readout": "307ac3af5aa6500e719d7d5a1e5642244ddc750652509d0bc07fa8a39d09fec9"
+   "readout": "ab0f05f9f0249cd600633a71856ef72cfac75dda1f89ebde217aa8d73ae587cc"
   }
  }
 }
