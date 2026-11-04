@@ -353,7 +353,8 @@ def _cell(lines: list[float], lo: float, hi: float) -> tuple[float, float]:
     return lines[i], lines[i + 1]
 
 
-def verify_spec(spec: dict, parts: dict[str, dict], dump: Path, dt: float, *, far_field: dict | None = None) -> dict:
+def verify_spec(spec: dict, parts: dict[str, dict], dump: Path, dt: float, *, far_field: dict | None = None,
+                bypasses: bool = False) -> dict:
     """verify's model (spec 7.6, C-36, C-37, D-45): a copy of the run's `spec` whose part ports, all lumped, leave
     `ports` for `grid`, after the run's own grid parts, each at its value in `parts` (project.json's parts by ref), on
     the same lines: in one cell of its box along the box's axis, at its middle and in its copper slab, a C or an R
@@ -363,9 +364,9 @@ def verify_spec(spec: dict, parts: dict[str, dict], dump: Path, dt: float, *, fa
     part by part in port order, E_VERIFY_VALUE for a part that is not a C, L or R whose value reads, E_VERIFY_DUMP
     when `dump` is missing, then for an L E_VERIFY_K when k = dt/(2·√(L·C)) is above K_MAX.
     For an antenna (Stage 3 design 5.5, 5.7), `far_field` is its far-field box (far_field_box), which the copy records
-    as "nf2ff", and a part whose value is a bypass (values.bypass) and that has no S2P file leaves the grid: at 0 Ω it
-    is copper over its whole port box, open it is left out. A placeholder given an S2P file is a fitted part, refused
-    as any value verify cannot place."""
+    as "nf2ff"; in its model and an SI project's (`bypasses`, Stage 4 design 5.7), a part whose value is a bypass
+    (values.bypass) and that has no S2P file leaves the grid: at 0 Ω it is copper over its whole port box, open it is
+    left out. A placeholder given an S2P file is a fitted part, refused as any value verify cannot place."""
     out = copy.deepcopy(spec)
     lines, copper = [out["mesh"][a] for a in "xyz"], out["metal"]["copper"]
     moved, out["ports"] = [q for q in out["ports"] if q["part"]], [q for q in out["ports"] if not q["part"]]
@@ -374,7 +375,7 @@ def verify_spec(spec: dict, parts: dict[str, dict], dump: Path, dt: float, *, fa
         kind, text = part_kind(ref), parts[ref]["value"]
         # per axis, the smaller and the larger end: a box can start at its higher end
         lo, hi = ([f(a, b) for a, b in zip(port["start"], port["stop"])] for f in (min, max))
-        if far_field is not None and parts[ref]["s2p"] is None and (z := bypass(ref, text)) is not None:
+        if (bypasses or far_field is not None) and parts[ref]["s2p"] is None and (z := bypass(ref, text)) is not None:
             if z == 0:  # shorted: copper over the whole port box
                 copper.append({"x": [lo[0], hi[0], hi[0], lo[0]], "y": [lo[1], lo[1], hi[1], hi[1]],
                                "z": [lo[2], hi[2]]})

@@ -9,6 +9,8 @@ import skrf
 
 from kicad_rf_studio import __version__, cli, pipeline
 from kicad_rf_studio.core.messages import KrsError, render
+from kicad_rf_studio.core.model import spec as spec_module
+from kicad_rf_studio.core.model.spec import verify_spec
 from kicad_rf_studio.core.post.chain import above_dc, s2p_impedance, with_box, z_part
 from kicad_rf_studio.core.post.si import read, si_limits, si_lines, uniform_grid
 from kicad_rf_studio.core.post.waves import layout
@@ -91,7 +93,7 @@ def test_verify_waits_for_the_si_results_and_preview_takes_an_si_project(tmp_pat
     pj = si_project(tmp_path / "p")
     with pytest.raises(KrsError) as e:
         pipeline.verify(pj)
-    assert (e.value.code, e.value.params) == ("E_VERIFY_SI", {})
+    assert (e.value.code, e.value.params) == ("E_NO_RESULTS", {})
     with pytest.raises(KrsError) as e:
         pipeline.compare_projects(pj, pj)
     assert e.value.code == "E_COMPARE_KIND"  # compare comes with the SI results (plan 3)
@@ -209,3 +211,65 @@ def test_an_si_retune_takes_the_bypasses_and_their_refusals(tmp_path):  # design
         with pytest.raises(KrsError) as e:
             pipeline.assign(d, [arg], tmp_path)
         assert (e.value.code, e.value.params) == (code, params)
+
+
+def verified_si(tmp_path, monkeypatch, board=USB):
+    """An SI fixture run on the network fake, its run's operator dump stood in for and the cell C read as 6e-16 F
+    (test_verify.verified's), so that verify runs: the project file."""
+    monkeypatch.setenv("KRS_FAKE", "network")
+    pj = si_project(tmp_path / board.stem, board)
+    assert pipeline.run(pj) == 0
+    (Path(load_project(pj)["results"]["run_dir"]) / "job-0-setup" / "operator_dump.vtr").write_bytes(b"")
+    monkeypatch.setattr(spec_module, "c_box", lambda *a: 6e-16)
+    return pj
+
+
+def test_verify_puts_an_si_lines_parts_in_the_grid_and_compares(tmp_path, calibrated, monkeypatch):  # 5.7; RF 1, 2
+    pj = verified_si(tmp_path, monkeypatch)
+    before = load_project(pj)["results"]
+    with warnings.catch_warnings():
+        warnings.simplefilter("error", RuntimeWarning)  # no division by zero at DC
+        assert pipeline.verify(pj) == 0
+    d = load_project(pj)
+    v = d["verify"]
+    assert d["results"] == before and set(v) == {"model_hash", "base_hash", "values", "run_dir", "jobs", "compare",
+                                                 "fingerprint"}
+    assert v["values"] == {"R1": "22", "R2": "22"} and v["fingerprint"] == before["fingerprint"]
+    assert [j["port"] for j in v["jobs"]] == ["P1", "P2", "P3", "P4", "P5", "P6"]
+    # star(f, 6) against star(f, 8) closed by 22 Ω ∥ C_BOX; the star's pair passes no differential step
+    assert v["compare"] == {"ds_max": pytest.approx(0.12326, abs=1e-4), "f_hz": 10e9, "levels": None}
+    model = json.loads((Path(v["run_dir"]) / "model.json").read_text(encoding="utf-8"))
+    assert [g["name"] for g in model["grid"]] == ["R1", "R2"]
+    assert "verify.s6p" in {f.name for f in (pj.parent / "results").iterdir()}
+    codes = result_codes(v["run_dir"])
+    k = codes.index("I_VERIFY_COMPARE_SI")
+    assert codes[:2] == ["I_VERIFY_RESULTS", "I_SI_RELATIVE"] and codes[k + 1] == "I_VERIFY_NO_LEVELS"
+    assert codes[-7:] == ["I_VERIFY_SCOPE_SI", *si_limits(d)]
+
+
+def test_verify_of_a_net_compares_its_tdr_levels(tmp_path, calibrated, monkeypatch):  # design 5.7
+    pj = verified_si(tmp_path, monkeypatch, QSPI)
+    assert pipeline.verify(pj) == 0
+    d = load_project(pj)
+    (low_v, low_r, low_s), (high_v, high_r, high_s) = d["verify"]["compare"]["levels"]
+    # verify's own S is star(f, 2) back from the fake's waves, within 2e-6: matched, its levels 50 Ω to 1.6e-6
+    assert (low_v, high_v) == (pytest.approx(50.0, abs=1e-4), pytest.approx(50.0, abs=1e-4))
+    assert not (low_s or high_s)
+    assert [p for c, p in result_lines(d["verify"]["run_dir"]) if c == "I_VERIFY_LEVEL"] == [
+        {"level": "T_LOWEST", "verify": f"{low_v:.2f}", "retune": f"{low_r:.2f}"},
+        {"level": "T_HIGHEST", "verify": f"{high_v:.2f}", "retune": f"{high_r:.2f}"}]
+
+
+def test_verify_spec_puts_an_si_bypass_as_copper_or_leaves_it_out(tmp_path, monkeypatch):  # 5.7, A-33's rule
+    project, board, geom, _ = pipeline.load(si_project(tmp_path))
+    spec = pipeline.build_model(project, board, geom).spec
+    by_ref = parts(project)
+    by_ref["R1"]["value"], by_ref["R2"]["value"] = "0R", "open"
+    dump = tmp_path / "operator_dump.vtr"
+    dump.write_bytes(b"")
+    monkeypatch.setattr(spec_module, "c_box", lambda *a: 6e-16)
+    out = verify_spec(spec, by_ref, dump, 1e-13, bypasses=True)
+    assert out["grid"] == [] and len(out["metal"]["copper"]) == len(spec["metal"]["copper"]) + 1
+    with pytest.raises(KrsError) as e:  # without it, v1's: R1 an R of 0 Ω, then R2's open refused
+        verify_spec(spec, by_ref, dump, 1e-13)
+    assert (e.value.code, e.value.params) == ("E_VERIFY_VALUE", {"ref": "R2", "value": "open"})

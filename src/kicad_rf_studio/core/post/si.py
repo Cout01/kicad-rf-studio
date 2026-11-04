@@ -410,3 +410,15 @@ def si_png(curves: list[tuple[str, Reading]], project: dict, title: str, label: 
     out = io.BytesIO()
     fig.savefig(out, format="png", dpi=100)
     return out.getvalue()
+
+
+def compare_verify(own: Reading, retuned: Reading) -> dict:
+    """verify's comparison of an SI project (Stage 4 design 5.7), in plain floats: the largest |ΔS| of own.s against
+    retuned.s over every entry and over f from the first point above DC (the retune's DC point is its 5 MHz load held
+    there, verify's the FDTD's own), and the f where it lies; and the TDR's levels, [[own lowest Z, retuned's, short],
+    [own highest Z, retuned's, short]], short when either marks that level short, None when either reads none."""
+    ds = np.abs(own.s[1:] - retuned.s[1:]).max(axis=(1, 2))  # per point above DC
+    k = int(ds.argmax())
+    levels = (None if own.levels is None or retuned.levels is None
+              else [[a[1], b[1], a[2] or b[2]] for a, b in zip(own.levels, retuned.levels)])
+    return {"ds_max": float(ds[k]), "f_hz": float(own.f[k + 1]), "levels": levels}

@@ -50,8 +50,8 @@ from kicad_rf_studio.core.post.chain import above_dc, ideal_schematic, loads, pa
 from kicad_rf_studio.core.post.checks import compare, indicator_lines, loss_budget, loss_expected
 from kicad_rf_studio.core.post.outputs import (LIMITS, OUTPUTS, VERIFY_OUTPUT, grid_lines, marker_lines, port_map,
                                                summary_csv, summary_png, touchstone, write)
-from kicad_rf_studio.core.post.si import (SI_OUTPUTS, hammerstad, read, si_csv, si_limits, si_lines, si_png,
-                                          tdr_csv)
+from kicad_rf_studio.core.post.si import (SI_OUTPUTS, compare_verify, hammerstad, read, si_csv, si_limits, si_lines,
+                                          si_png, tdr_csv)
 from kicad_rf_studio.core.post.waves import layout
 from kicad_rf_studio.core.project import (GATES, GATES_SI, antenna, board_file, board_hash, copper_model, default_gates,
                                           load_project, mesh_n, parts, read_project, relative_path, save_project, si)
@@ -1270,11 +1270,9 @@ def verify(path: Path, run_dir: Path | None = None) -> int:
     comparison was stored, I_VERIFY_COMPARE, I_VERIFY_NULL or W_VERIFY_NULL_UNMATCHED for each null (I_VERIFY_NO_NULLS
     for none), the indicator lines with a 2-port's loss budget in its verify form (the parts in the grid, no part loss
     removed), the E_ lines as message events, I_OUTPUTS when verify.s{P}p was written, I_VERIFY_SCOPE and LIMITS; then
-    0, or 2 after an E_ line. A given `run_dir` stands in for the fresh run folder. An SI project is refused as soon as
-    it is read, E_VERIFY_SI: Stage 4 plan 3 verifies it."""
+    0, or 2 after an E_ line. A given `run_dir` stands in for the fresh run folder. An SI project's verify is v1's with
+    SI's comparison (Stage 4 design 5.7)."""
     project = read_project(path)  # before the lock, as in run
-    if si(project):  # ponytail: plan 3 verifies an SI project
-        raise KrsError("E_VERIFY_SI")
     by_ref = parts(project)
     if not any(q["role"] in (PORT, CURVE_PORT) for q in by_ref.values()):
         raise KrsError("E_VERIFY_NO_PARTS")
@@ -1290,7 +1288,14 @@ def verify(path: Path, run_dir: Path | None = None) -> int:
 
 def _verify(path: Path, run_dir: Path) -> int:
     """verify() under the lock, with `run_dir` made; an antenna's verify model records its far field (far_field_box),
-    its loads read its bypasses, and _verify_antenna ends it (Stage 3 design 5.5–5.7)."""
+    its loads read its bypasses, and _verify_antenna ends it (Stage 3 design 5.5–5.7). An SI project's (Stage 4 design
+    5.7) is v1's with the antenna's bypasses (verify_spec's and the loads'), each load evaluated on above_dc(lay.f) as
+    chain_results' are, its settings fingerprint taken before the jobs and stored in its verify block, and SI's
+    comparison, compare_verify of verify's own reading and the retune's (read at the run's route's εeff), in place of
+    compare. Its lines after I_VERIFY_RESULTS: verify's own si_lines, I_VERIFY_COMPARE_SI, then I_VERIFY_LEVEL or
+    I_VERIFY_LEVEL_SHORT per level or one I_VERIFY_NO_LEVELS, in place of I_VERIFY_COMPARE and the nulls; the indicator
+    lines with no loss budget; the E_ lines; I_OUTPUTS; I_VERIFY_SCOPE_SI and si_limits in place of I_VERIFY_SCOPE and
+    LIMITS. v1's lines and files are unchanged."""
     emit = partial(runs.emit, run_dir)  # (kind, code, params, job=None)
     if isinstance(built := _model_phase(path, emit), int):
         return built
@@ -1302,10 +1307,11 @@ def _verify(path: Path, run_dir: Path) -> int:
     values = {ref: by_ref[ref]["value"] for ref in refs}
     dump = runs.job_dir(Path(results["run_dir"]), 0, "setup") / "operator_dump.vtr"
     vspec = verify_spec(model.spec, by_ref, dump, results["dt"],
-                        far_field=far_field_box(project, board, geom) if ant else None)
-    zk = loads({ref: z_value(ref, values[ref], None, lay.f, bypasses=ant) for ref in refs}, refs,
-               results["c_box"], lay.f)  # the ideal values, the part models and S2P files ignored (C-38)
-    fp = fingerprint(project) if ant else None  # as every refusal, before any job
+                        far_field=far_field_box(project, board, geom) if ant else None, bypasses=si(project))
+    fz = above_dc(lay.f)  # the loads' grid, as chain_results': lay.f itself off DC (v1's, an antenna's)
+    zk = loads({ref: z_value(ref, values[ref], None, fz, bypasses=ant or si(project)) for ref in refs}, refs,
+               results["c_box"], fz)  # the ideal values, the part models and S2P files ignored (C-38)
+    fp = fingerprint(project) if ant or si(project) else None  # as every refusal, before any job
     if (out := simulate(replace(model, spec=vspec), project, run_dir)) is None:
         return 3
     done, _, wall_s = out
@@ -1315,13 +1321,17 @@ def _verify(path: Path, run_dir: Path) -> int:
                                              "folder": str(run_dir)})
         return 4
     own = layout(project, {"run_dir": str(run_dir), "jobs": done})
+    retuned = terminate(lay.s, ext, zk, lay.f)  # the retune at the same ideal values
     if ant:
-        return _verify_antenna(path, run_dir, project, vspec, values, own, terminate(lay.s, ext, zk, lay.f)[:, 0, 0],
-                               done, wall_s, fp)
+        return _verify_antenna(path, run_dir, project, vspec, values, own, retuned[:, 0, 0], done, wall_s, fp)
     k0, p = lay.markers[0], len(own.ports)
-    # 10 × the S tolerance of the noisier preset, the run's or verify's own
-    floor = 10 * max(PRESETS[results["preset"]][1], PRESETS[project["preset"]][1])
-    cmp = compare(own.s, terminate(lay.s, ext, zk, lay.f), lay.f, k0, floor)
+    if si(project):
+        mine = read(own.s, own.f, project, results["route"]["eeff"])
+        cmp = compare_verify(mine, read(retuned, lay.f, project, results["route"]["eeff"]))
+    else:
+        # 10 × the S tolerance of the noisier preset, the run's or verify's own
+        floor = 10 * max(PRESETS[results["preset"]][1], PRESETS[project["preset"]][1])
+        cmp = compare(own.s, retuned, lay.f, k0, floor)
     command = command_line("kicad-rf-studio", "verify", str(path))
     # the comparison is stored first, then verify.s{P}p written; a refusal of either is a line, so the comparison is
     # still printed and a held file costs only that file
@@ -1329,7 +1339,8 @@ def _verify(path: Path, run_dir: Path) -> int:
     try:
         data = load_project(path)  # as it is now: only verify is replaced
         data["verify"] = {"model_hash": spec_hash(vspec), "base_hash": results["model_hash"], "values": values,
-                          "run_dir": str(run_dir), "jobs": done, "compare": cmp}
+                          "run_dir": str(run_dir), "jobs": done, "compare": cmp,
+                          **({"fingerprint": fp} if si(project) else {})}  # v1's keeps its six keys
         _save(path, data, command)
     except KrsError as err:  # E_RESULTS_WRITE for project.json, or E_PROJECT_UNREADABLE after a hand edit meanwhile
         errors.append((err.code, err.params))
@@ -1345,21 +1356,35 @@ def _verify(path: Path, run_dir: Path) -> int:
         errors.append((err.code, err.params))
     else:
         outputs.append(("I_OUTPUTS", {"files": name, "folder": str(folder)}))
-    lines.append(("I_VERIFY_COMPARE", {"f0_mhz": f"{own.f[k0] / 1e6:g}", "a_db": f"{own.a_db[k0]:.1f}",
-                                       "ds21_db": f"{cmp['ds21_db_f0']:.3f}", "ds11": f"{cmp['ds11_f0']:.4f}",
-                                       "ds_max": f"{cmp['ds_max']:.4f}"}))
-    for null in cmp["nulls"]:
-        k = np.abs(own.f - null["f_hz"]).argmin()  # the grid point nearest the null
-        at = {"f_mhz": f"{null['f_hz'] / 1e6:.1f}", "a_db": f"{own.a_db[k]:.1f}"}
-        if null["shift"] is None:
-            lines.append(("W_VERIFY_NULL_UNMATCHED", at))
-        else:
-            lines.append(("I_VERIFY_NULL", {**at, "shift_pct": f"{100 * null['shift']:+.2f}"}))
-    if not cmp["nulls"]:
-        lines.append(("I_VERIFY_NO_NULLS", {}))
-    p_layout = loss_budget(own.s, list(range(p)), np.zeros((len(own.f), 0))) if p == 2 else None  # P_parts = 0
-    lines += [*indicator_lines(own.f, own.a_db, own.s, p_layout, results["loss_expected"], in_grid=True), *errors,
-              *outputs, ("I_VERIFY_SCOPE", {}), *((code, {}) for code in LIMITS)]
+    if si(project):
+        k = np.abs(own.f - cmp["f_hz"]).argmin()  # the grid point of the largest |ΔS|
+        lines += [*si_lines(project, mine, results["route"]),
+                  ("I_VERIFY_COMPARE_SI", {"ds_max": f"{cmp['ds_max']:.4f}", "f_mhz": f"{cmp['f_hz'] / 1e6:g}",
+                                           "a_db": f"{own.a_db[k]:.1f}"})]
+        for level, (z, z_retune, short) in zip(("T_LOWEST", "T_HIGHEST"), cmp["levels"] or ()):
+            lines.append(("I_VERIFY_LEVEL_SHORT" if short else "I_VERIFY_LEVEL",
+                          {"level": level, "verify": f"{z:.2f}", "retune": f"{z_retune:.2f}"}))
+        if cmp["levels"] is None:
+            lines.append(("I_VERIFY_NO_LEVELS", {}))
+        lines += indicator_lines(own.f, own.a_db, own.s, None, None)
+        scope, limits = "I_VERIFY_SCOPE_SI", si_limits(project)
+    else:
+        lines.append(("I_VERIFY_COMPARE", {"f0_mhz": f"{own.f[k0] / 1e6:g}", "a_db": f"{own.a_db[k0]:.1f}",
+                                           "ds21_db": f"{cmp['ds21_db_f0']:.3f}", "ds11": f"{cmp['ds11_f0']:.4f}",
+                                           "ds_max": f"{cmp['ds_max']:.4f}"}))
+        for null in cmp["nulls"]:
+            k = np.abs(own.f - null["f_hz"]).argmin()  # the grid point nearest the null
+            at = {"f_mhz": f"{null['f_hz'] / 1e6:.1f}", "a_db": f"{own.a_db[k]:.1f}"}
+            if null["shift"] is None:
+                lines.append(("W_VERIFY_NULL_UNMATCHED", at))
+            else:
+                lines.append(("I_VERIFY_NULL", {**at, "shift_pct": f"{100 * null['shift']:+.2f}"}))
+        if not cmp["nulls"]:
+            lines.append(("I_VERIFY_NO_NULLS", {}))
+        p_layout = loss_budget(own.s, list(range(p)), np.zeros((len(own.f), 0))) if p == 2 else None  # P_parts = 0
+        lines += indicator_lines(own.f, own.a_db, own.s, p_layout, results["loss_expected"], in_grid=True)
+        scope, limits = "I_VERIFY_SCOPE", LIMITS
+    lines += [*errors, *outputs, (scope, {}), *((code, {}) for code in limits)]
     for code, params in lines:
         emit("message" if code.startswith("E_") else "result", code, params)
     return 2 if errors else 0

@@ -12,9 +12,9 @@ from scipy.constants import c as C0
 
 from kicad_rf_studio.core.messages import render
 from kicad_rf_studio.core.post.si import (ARRIVAL_FLOOR, COPPER_RHO, FLOOR_DB, LEAD, LOCAL_RISE, N_TDR, SE_OHM,
-                                          SI_OUTPUTS, TDR_COLUMNS, Reading, arrival, db, distance_mm, draw_si,
-                                          hammerstad, levels, mixed_mode, read, rise_filter, si_csv, si_limits,
-                                          si_lines, si_png, step_response, tdr, tdr_csv, uniform_grid)
+                                          SI_OUTPUTS, TDR_COLUMNS, Reading, arrival, compare_verify, db, distance_mm,
+                                          draw_si, hammerstad, levels, mixed_mode, read, rise_filter, si_csv,
+                                          si_limits, si_lines, si_png, step_response, tdr, tdr_csv, uniform_grid)
 from p4a import cohn, even_odd_s
 from test_project import si_dict
 
@@ -285,3 +285,14 @@ def test_the_summary_png_holds_the_label_the_limits_and_marks_a_short_feature():
     two = draw_si(Figure(), [("a", pair), ("b", pair)], P100, "T")
     assert len(two) == 3 and [line.get_marker() for line in two[0].lines].count("o") == 4  # every curve's levels
     assert si_png([("proj", n)], SE, "Title")[:8] == b"\x89PNG\r\n\x1a\n"
+
+
+def test_verifys_comparison_keeps_the_short_mark():  # design 5.7; anti-goal 2; Review Focus 3
+    n = read(line_s(ROUTE1, F), F, SE, 4.0)
+    m = read(line_s([(50.0, 4.0, 15.0), (61.0, 4.0, 30.0), (50.0, 4.0, 15.0), (40.0, 4.0, 3.0), (50.0, 4.0, 15.0)], F),
+             F, SE, 4.0)  # the 60 Ω section at 61 Ω
+    cmp = compare_verify(n, m)
+    assert (round(cmp["ds_max"], 4), cmp["f_hz"]) == (0.0169, 8.705e9)  # from the first point above DC
+    assert [(round(a, 2), round(b, 2), short) for a, b, short in cmp["levels"]] == [(46.68, 46.71, True),
+                                                                                  (60.0, 61.0, False)]
+    assert compare_verify(n, read(np.zeros((len(F), 2, 2), complex), F, SE, 4.0))["levels"] is None

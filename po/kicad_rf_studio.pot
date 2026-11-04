@@ -1176,10 +1176,6 @@ msgstr ""
 msgid "verify compares S21 and S11, so it needs at least 2 external ports; this project has {ports}. Keep two ports in project.json."
 msgstr ""
 
-#. E_VERIFY_SI
-msgid "`verify` does not take a signal-integrity project yet; `cost` and `run` do."
-msgstr ""
-
 #. W_VERIFY_NOT_KEPT
 #, python-brace-format
 msgid "{kept} of {runs} verify jobs kept S, in {wall}, so nothing was compared or stored. The verdicts above, also in {folder}, say why; fix that and run `verify` again."
@@ -1239,6 +1235,29 @@ msgstr ""
 
 #. I_VERIFY_SCOPE_ANTENNA
 msgid "verify checks the layout reduction, not the vendor part data: each part sat in the grid at its value as an ideal part, without the package ESL, ESR and Cp or the S2P data the retune applies, a 0 Ω part as copper and an open part left out, against a retune at the same ideal values; its far field holds that ideal network."
+msgstr ""
+
+#. I_VERIFY_COMPARE_SI
+#, python-brace-format
+msgid "verify against the retune at the same ideal values: max |ΔS| {ds_max} from the first point above DC to f_max, at {f_mhz} MHz (|a| {a_db} dB)."
+msgstr ""
+
+#. I_VERIFY_LEVEL
+#, python-brace-format
+msgid "The {level} TDR level between the launches, verify against the retune: {verify} Ω against {retune} Ω."
+msgstr ""
+
+#. I_VERIFY_LEVEL_SHORT
+#, python-brace-format
+msgid "The {level} TDR level between the launches, verify against the retune: {verify} Ω against {retune} Ω; one of them lies on a feature shorter than two resolution lengths, so it is not that feature's impedance."
+msgstr ""
+
+#. I_VERIFY_NO_LEVELS
+msgid "The TDR's levels are not compared: verify or the retune reads none between the launches."
+msgstr ""
+
+#. I_VERIFY_SCOPE_SI
+msgid "verify checks the layout reduction, not the vendor part data: each part sat in the grid at its value as an ideal part, without the package ESL, ESR and Cp or the S2P data the retune applies, a 0 Ω part as copper and an open part left out, against a retune at the same ideal values, whose loads hold at DC their value at the grid's first point above DC."
 msgstr ""
 
 #. I_ANTENNA_RELATIVE

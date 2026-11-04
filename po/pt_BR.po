@@ -1178,10 +1178,6 @@ msgstr "O componente {ref} está girado (uma CurvePort), e a verificação não 
 msgid "verify compares S21 and S11, so it needs at least 2 external ports; this project has {ports}. Keep two ports in project.json."
 msgstr "A verificação compara S21 e S11, então precisa de pelo menos 2 portas externas; portas deste projeto: {ports}. Mantenha duas portas no project.json."
 
-#. E_VERIFY_SI
-msgid "`verify` does not take a signal-integrity project yet; `cost` and `run` do."
-msgstr "`verify` ainda não recebe um projeto de integridade de sinal; `cost` e `run` recebem."
-
 #. W_VERIFY_NOT_KEPT
 #, python-brace-format
 msgid "{kept} of {runs} verify jobs kept S, in {wall}, so nothing was compared or stored. The verdicts above, also in {folder}, say why; fix that and run `verify` again."
@@ -1242,6 +1238,29 @@ msgstr "Ressonância: não comparada, pois o |S11| mínimo de uma das duas fica 
 #. I_VERIFY_SCOPE_ANTENNA
 msgid "verify checks the layout reduction, not the vendor part data: each part sat in the grid at its value as an ideal part, without the package ESL, ESR and Cp or the S2P data the retune applies, a 0 Ω part as copper and an open part left out, against a retune at the same ideal values; its far field holds that ideal network."
 msgstr "A verificação confere a redução do layout, não os dados de componente do fabricante: cada componente ficou na grade com o valor dele como componente ideal, sem o ESL, o ESR e o Cp do encapsulamento nem os dados S2P que o ajuste aplica, um componente de 0 Ω como cobre e um em aberto deixado de fora, contra um ajuste com os mesmos valores ideais; o campo distante dela contém essa rede ideal."
+
+#. I_VERIFY_COMPARE_SI
+#, python-brace-format
+msgid "verify against the retune at the same ideal values: max |ΔS| {ds_max} from the first point above DC to f_max, at {f_mhz} MHz (|a| {a_db} dB)."
+msgstr "Verificação contra o ajuste com os mesmos valores ideais: |ΔS| máximo de {ds_max} do primeiro ponto acima de DC até f_max, em {f_mhz} MHz (|a| {a_db} dB)."
+
+#. I_VERIFY_LEVEL
+#, python-brace-format
+msgid "The {level} TDR level between the launches, verify against the retune: {verify} Ω against {retune} Ω."
+msgstr "O nível {level} do TDR entre as entradas, verificação contra o ajuste: {verify} Ω contra {retune} Ω."
+
+#. I_VERIFY_LEVEL_SHORT
+#, python-brace-format
+msgid "The {level} TDR level between the launches, verify against the retune: {verify} Ω against {retune} Ω; one of them lies on a feature shorter than two resolution lengths, so it is not that feature's impedance."
+msgstr "O nível {level} do TDR entre as entradas, verificação contra o ajuste: {verify} Ω contra {retune} Ω; um deles fica num trecho mais curto que dois comprimentos de resolução, então não é a impedância desse trecho."
+
+#. I_VERIFY_NO_LEVELS
+msgid "The TDR's levels are not compared: verify or the retune reads none between the launches."
+msgstr "Os níveis do TDR não são comparados: a verificação ou o ajuste não lê nenhum entre as entradas."
+
+#. I_VERIFY_SCOPE_SI
+msgid "verify checks the layout reduction, not the vendor part data: each part sat in the grid at its value as an ideal part, without the package ESL, ESR and Cp or the S2P data the retune applies, a 0 Ω part as copper and an open part left out, against a retune at the same ideal values, whose loads hold at DC their value at the grid's first point above DC."
+msgstr "A verificação confere a redução do layout, não os dados de componente do fabricante: cada componente ficou na grade com o valor dele como componente ideal, sem o ESL, o ESR e o Cp do encapsulamento nem os dados S2P que o ajuste aplica, um componente de 0 Ω como cobre e um em aberto deixado de fora, contra um ajuste com os mesmos valores ideais, cujas cargas mantêm em DC o valor do primeiro ponto da grade acima de DC."
 
 #. I_ANTENNA_RELATIVE
 msgid "Relative: these antenna results compare variants of one board under identical settings; they do not predict measured performance."
@@ -2583,4 +2602,7 @@ msgstr "uma ilha, um ponto, um plano (o nome da camada de cobre dele) ou null"
 
 #~ msgid "`retune` takes no part values for a signal-integrity project yet, since its retune comes with the SI results; without values it rewrites the layout Touchstone file."
 #~ msgstr "`retune` ainda não recebe valores de componentes para um projeto de integridade de sinal, pois o retune dele vem com os resultados de SI; sem valores, ele reescreve o arquivo Touchstone do layout."
+
+#~ msgid "`verify` does not take a signal-integrity project yet; `cost` and `run` do."
+#~ msgstr "`verify` ainda não recebe um projeto de integridade de sinal; `cost` e `run` recebem."
 
