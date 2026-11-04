@@ -181,8 +181,8 @@ def _axis(edges: list[Edge], extent: tuple[float, float], walls: tuple[float, fl
         i = int(np.searchsorted(at, v))
         return i not in cells or at[i] == v
 
-    # ponytail: d fills only where the caller says; staircased (45°) copper has no axis edge, so plan 2 passes its
-    # spans too or keeps the d fill
+    # ponytail: d fills only where the caller says; build_mesh spans an SI project's solid rods and staircased copper,
+    # so a pad off the lines and its antipad grade to max_cell
     def fill(m: np.ndarray) -> np.ndarray:  # where d fills: the extent, or with max_cell only the spans
         if max_cell is None:
             return (m >= lo) & (m <= hi)

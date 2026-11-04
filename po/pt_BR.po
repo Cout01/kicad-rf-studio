@@ -1360,6 +1360,27 @@ msgstr "Fora de S: a perda no cobre ao longo dos {length_mm} mm da rota, pela f�
 msgid "Not in S either, the dielectric being lossless: its loss over the same length, about {at_marker_db} dB at the marker and {at_f_max_db} dB at f_max."
 msgstr "Também fora de S, pois o dielétrico é sem perdas: a perda nele ao longo do mesmo comprimento, cerca de {at_marker_db} dB no marcador e {at_f_max_db} dB em f_max."
 
+#. I_PLOT_SI_TITLE
+#, python-brace-format
+msgid "{name}: signal integrity, relative results"
+msgstr "{name}: integridade de sinal, resultados relativos"
+
+#. I_PLOT_DISTANCE
+msgid "Distance along the route (mm)"
+msgstr "Distância ao longo da rota (mm)"
+
+#. I_PLOT_TIME
+msgid "Round-trip time (ps)"
+msgstr "Tempo de ida e volta (ps)"
+
+#. I_PLOT_IMPEDANCE
+msgid "Impedance (Ω)"
+msgstr "Impedância (Ω)"
+
+#. I_PLOT_TARGET
+msgid "target band"
+msgstr "faixa alvo"
+
 #. I_COMPARE_BASIS
 #, python-brace-format
 msgid "{role}: {path}, compared by its {source} in {run_dir}."

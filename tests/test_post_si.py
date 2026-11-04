@@ -1,16 +1,20 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
+import csv
+import io
 import math
 import subprocess
 import sys
 
 import numpy as np
 import pytest
+from matplotlib.figure import Figure
 from scipy.constants import c as C0
 
 from kicad_rf_studio.core.messages import render
 from kicad_rf_studio.core.post.si import (ARRIVAL_FLOOR, COPPER_RHO, FLOOR_DB, LEAD, LOCAL_RISE, N_TDR, SE_OHM,
-                                          Reading, arrival, db, distance_mm, hammerstad, levels, mixed_mode, read,
-                                          rise_filter, si_limits, si_lines, step_response, tdr, uniform_grid)
+                                          SI_OUTPUTS, TDR_COLUMNS, Reading, arrival, db, distance_mm, draw_si,
+                                          hammerstad, levels, mixed_mode, read, rise_filter, si_csv, si_limits,
+                                          si_lines, si_png, step_response, tdr, tdr_csv, uniform_grid)
 from p4a import cohn, even_odd_s
 from test_project import si_dict
 
@@ -246,3 +250,38 @@ def test_the_limits_follow_the_dielectric():  # design 5.6
     debye = {**SE, "dielectric": "debye"}
     assert si_limits(debye)[2] == "I_LIMIT_SI_DEBYE"
     assert "I_SI_LOSS_DIELECTRIC" not in dict(si_lines(debye, read(line_s(ROUTE1, F), F, debye, 4.0), ROUTE))
+
+
+def test_the_si_csvs():  # design 5.6; Review Focus 5
+    r = read(pair6(0.05, 0.02), F, P100, 3.0)
+    rows = list(csv.reader(io.StringIO(si_csv(P100, r).decode())))
+    assert rows[0] == ["f_hz", "marker", "sdd11_db", "sdd11_deg", "sdd21_db", "sdd21_deg", "scc11_db", "scc21_db",
+                       "scd11_db", "scd21_db", "next1_db", "fext1_db"]
+    assert len(rows) == 2002 and rows[49][:2] == ["240000000.0", "marker"] and rows[50][1] == ""
+    assert next(csv.reader(io.StringIO(si_csv(P2V, read(pair8(), F, P2V, 3.0)).decode())))[-4:] == [
+        "next1_db", "fext1_db", "next2_db", "fext2_db"]  # each victim its columns
+    n = read(line_s(ROUTE1, F), F, SE, 4.0)
+    assert next(csv.reader(io.StringIO(si_csv(SE, n).decode()))) == ["f_hz", "marker", "s11_db", "s11_deg", "s21_db",
+                                                                     "s21_deg"]
+    rows = list(csv.reader(io.StringIO(tdr_csv(n).decode())))
+    t = np.array([float(row[0]) for row in rows[1:]])
+    assert rows[0] == list(TDR_COLUMNS) and t[0] >= -2 * TR and t[-1] <= n.t_far + 2e-9  # the plot's span
+    assert [float(x) for x in rows[1][1:3]] == [pytest.approx(distance_mm(t[0], 4.0)), pytest.approx(50.0, abs=1e-3)]
+    assert SI_OUTPUTS.fullmatch("si_tdr.csv") and not SI_OUTPUTS.fullmatch("verify.s6p")
+
+
+def test_the_summary_png_holds_the_label_the_limits_and_marks_a_short_feature():  # 5.6; anti-goals 1, 2; RF 3, 5
+    n = read(line_s(ROUTE1, F), F, SE, 4.0)
+    fig = Figure()
+    axes = draw_si(fig, [("proj", n)], SE, "Title", "label")
+    assert fig.get_suptitle() == "Title\n" + render("I_SI_RELATIVE") + "\nlabel"
+    assert all(render(code) in fig.texts[-1].get_text() for code in si_limits(SE))
+    assert len(axes) == 2  # a net with no victim: the TDR and |S|, no crosstalk
+    assert [line.get_label() for line in axes[0].lines if not line.get_label().startswith("_")] == [
+        "125 ps, 9.4 mm", "1000 ps, 74.9 mm"]  # each rise time and its resolution length (design 5.6)
+    assert sorted(line.get_marker() for line in axes[0].lines if line.get_marker() in ("o", "x")) == ["o", "x"]
+    assert len(axes[0].patches) == 3 and axes[0].get_ylim() == (0.0, 150.0)  # the band, both launches; an open clipped
+    pair = read(pair6(0.05, 0.02), F, P100, 3.0)
+    two = draw_si(Figure(), [("a", pair), ("b", pair)], P100, "T")
+    assert len(two) == 3 and [line.get_marker() for line in two[0].lines].count("o") == 4  # every curve's levels
+    assert si_png([("proj", n)], SE, "Title")[:8] == b"\x89PNG\r\n\x1a\n"

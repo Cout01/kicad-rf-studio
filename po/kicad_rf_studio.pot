@@ -1358,6 +1358,27 @@ msgstr ""
 msgid "Not in S either, the dielectric being lossless: its loss over the same length, about {at_marker_db} dB at the marker and {at_f_max_db} dB at f_max."
 msgstr ""
 
+#. I_PLOT_SI_TITLE
+#, python-brace-format
+msgid "{name}: signal integrity, relative results"
+msgstr ""
+
+#. I_PLOT_DISTANCE
+msgid "Distance along the route (mm)"
+msgstr ""
+
+#. I_PLOT_TIME
+msgid "Round-trip time (ps)"
+msgstr ""
+
+#. I_PLOT_IMPEDANCE
+msgid "Impedance (Ω)"
+msgstr ""
+
+#. I_PLOT_TARGET
+msgid "target band"
+msgstr ""
+
 #. I_COMPARE_BASIS
 #, python-brace-format
 msgid "{role}: {path}, compared by its {source} in {run_dir}."

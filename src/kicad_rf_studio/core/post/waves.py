@@ -93,11 +93,11 @@ def layout(project: dict, results: dict, f: np.ndarray | None = None) -> Layout:
     own), at the frequencies `f` (Hz), by default the grid of `project` (spec 7.1, C-10), an antenna's band_grid; a
     point of f is n·f0 within 1e-9 relative, n up to the harmonics (1 for an antenna), and a_db is relative to its
     peak on f. An SI project's default grid is the TDR's, uniform_grid of its f_max_hz from DC, and its one marker the
-    grid index nearest its marker_hz, round(marker_hz/Δf), never dropped (Stage 4 design 5.6: 240 MHz is index 48,
-    133 MHz reads at 135). Each job's waves are cut at its t_cut, both u and i, or taken whole when t_cut is None
-    (t_max); S is then normalised to V_signal − V_reference at every flipped port. Raises E_RESULTS_JOB for a job whose
-    S was not kept, then E_RESULTS_WAVES for a missing model.json, then for a job's missing waves file (run_dir itself
-    when the job has none)."""
+    point of f nearest its marker_hz on any grid (argmin), never dropped (Stage 4 design 5.6: on the uniform grid
+    240 MHz is index 48, 133 MHz index 27, read at 135, and 62.5 MHz index 12). Each job's waves are cut at its t_cut,
+    both u and i, or taken whole when t_cut is None (t_max); S is then normalised to V_signal − V_reference at every
+    flipped port. Raises E_RESULTS_JOB for a job whose S was not kept, then E_RESULTS_WAVES for a missing model.json,
+    then for a job's missing waves file (run_dir itself when the job has none)."""
     jobs, run_dir = results["jobs"], Path(results["run_dir"])
     for job in jobs:
         if job["verdict"] not in KEPT:
@@ -121,8 +121,8 @@ def layout(project: dict, results: dict, f: np.ndarray | None = None) -> Layout:
     ports = json.loads(paths[0].read_text(encoding="utf-8"))["ports"]
     flips = [flipped(port) for port in ports]
     d = np.where(flips, -1.0, 1.0)  # D·S·D, D = −1 at each flipped port (C-10)
-    if si(project):  # the uniform grid from DC: the point nearest the marker
-        markers = [round(f0 / (f[1] - f[0]))]
+    if si(project):  # the point nearest the marker, on any grid
+        markers = [int(np.abs(f - f0).argmin())]
     else:
         markers = [int(k) for n in range(1, project.get("harmonics", 1) + 1)  # n·f0 to 1e-9; the grid's is n·q − q//2
                    for k in np.flatnonzero(np.isclose(f, n * f0, rtol=1e-9, atol=0))]

@@ -46,11 +46,12 @@ from kicad_rf_studio.core.post.antenna import (ANTENNA_LIMITS, ANTENNA_OUTPUTS, 
                                                antenna_csv, antenna_png, compare_png, compare_s11, delta_lines, deltas,
                                                deltas_csv, eta_what_if_lines, far_field_lines, far_field_of,
                                                farfield_csv, s11_lines)
-from kicad_rf_studio.core.post.chain import ideal_schematic, loads, part_impedances, terminate, z_value
+from kicad_rf_studio.core.post.chain import above_dc, ideal_schematic, loads, part_impedances, terminate, z_value
 from kicad_rf_studio.core.post.checks import compare, indicator_lines, loss_budget, loss_expected
 from kicad_rf_studio.core.post.outputs import (LIMITS, OUTPUTS, VERIFY_OUTPUT, grid_lines, marker_lines, port_map,
                                                summary_csv, summary_png, touchstone, write)
-from kicad_rf_studio.core.post.si import hammerstad
+from kicad_rf_studio.core.post.si import (SI_OUTPUTS, hammerstad, read, si_csv, si_limits, si_lines, si_png,
+                                          tdr_csv)
 from kicad_rf_studio.core.post.waves import layout
 from kicad_rf_studio.core.project import (GATES, GATES_SI, antenna, board_file, board_hash, copper_model, default_gates,
                                           load_project, mesh_n, parts, read_project, relative_path, save_project, si)
@@ -601,8 +602,9 @@ class ChainResults:
     """A run's results as chain_results reads them: the layout N-port, its external ports by index and its part ports
     by name; the chain S (F, P, P), None after a part's refusal; with a chain and P = 2, the ideal schematic (None
     without part ports) and the loss budget, else both None, except an antenna chain's loss budget: its P_layout, for
-    the what-if η_tot, which no line reports (Stage 3 design 5.6, 5.7); whether the chain is a what-if (closed part
-    ports while RETUNE_VALIDATED is False, D-15); and the lines to report, I_BASIS up to W_NOT_TWO_PORT."""
+    the what-if η_tot, which no line reports (Stage 3 design 5.6, 5.7); an SI chain has neither at any P (Stage 4
+    design 5.6); whether the chain is a what-if (closed part ports while RETUNE_VALIDATED is False, D-15); and the
+    lines to report, I_BASIS up to W_NOT_TWO_PORT."""
     lay: Layout
     ext: list[int]
     refs: list[str]
@@ -617,29 +619,35 @@ def chain_results(path: Path, project: dict, *, errors_as_lines: bool = False,
                   lay: Layout | None = None) -> ChainResults:
     """The numbers and lines that write_outputs writes and reports for the run in `project`'s results, with no file
     written (Stage 2 design 5.2 item 7): the layout N-port (layout), basis_lines (I_BASIS with each flagged job,
-    gate_lines), the part notes (part_impedances, S2P files beside `path`), the chain with every part port closed; with
-    P = 2 the ideal schematic, the loss budget, the marker and indicator lines, else the indicator lines and
-    W_NOT_TWO_PORT (C-31). A part's refusal (E_PART_NO_VALUE, E_S2P_*, E_CBOX) is raised, or, with `errors_as_lines`,
-    becomes the last line, with no chain. A given `lay` stands in for the layout N-port, which depends only on the run,
-    never on the part values (the GUI's retune session holds it, Stage 2 design 5.3). Raises layout's refusals and
-    E_S_SINGULAR. An antenna, one port by design, gets no W_NOT_TWO_PORT but its loss budget, which no line reports
-    (Stage 3 design 5.6, 5.7)."""
+    gate_lines against default_gates), the part notes (part_impedances, S2P files beside `path`), the chain with every
+    part port closed, each load evaluated on above_dc(lay.f) (lay.f itself on v1's and an antenna's grids); with P = 2
+    the ideal schematic, the loss budget, the marker and indicator lines, else the indicator lines and W_NOT_TWO_PORT
+    (C-31). A part's refusal (E_PART_NO_VALUE, E_S2P_*, E_CBOX) is raised, or, with `errors_as_lines`, becomes the last
+    line, with no chain. A given `lay` stands in for the layout N-port, which depends only on the run, never on the
+    part values (the GUI's retune session holds it, Stage 2 design 5.3). Raises layout's refusals and E_S_SINGULAR. An
+    antenna, one port by design, gets no W_NOT_TWO_PORT but its loss budget, which no line reports (Stage 3 design 5.6,
+    5.7). An SI project (Stage 4 design 5.6) gets its verdicts against GATES_SI, each part port's load held at DC at
+    its value at the first point above it, and the indicator lines alone: no ideal schematic, loss budget or
+    W_NOT_TWO_PORT."""
     results = project["results"]
     lay = layout(project, results) if lay is None else lay
     ext, refs = _split(lay)
-    lines = basis_lines(results)
+    lines = basis_lines(results, default_gates(project))
     chain = ideal = p_layout = None
+    fz = above_dc(lay.f)  # the loads' grid: lay.f itself off DC
     try:
-        zparts, notes = part_impedances(project, path.parent, refs, lay.f)
+        zparts, notes = part_impedances(project, path.parent, refs, fz)
         lines += notes
-        zk = loads(zparts, refs, results["c_box"], lay.f)
+        zk = loads(zparts, refs, results["c_box"], fz)
     except KrsError as err:
         if not errors_as_lines:
             raise
         lines.append((err.code, err.params))
     else:
         chain = terminate(lay.s, ext, zk, lay.f)
-        if len(ext) == 2:
+        if si(project):  # design 5.6: v1's loss budget does not apply to SI
+            lines += indicator_lines(lay.f, lay.a_db, lay.s, None, None)
+        elif len(ext) == 2:
             ideal = ideal_schematic(project, zparts, lay.f) if refs else None
             p_layout = loss_budget(lay.s, ext, zk)
             lines += [*marker_lines(lay, chain, ideal),
@@ -667,10 +675,11 @@ def write_outputs(path: Path, project: dict, command: str, *,
     E_RESULTS_WRITE are raised, or, with `errors_as_lines`, each becomes a line: a part's refusal in the place of the
     chain's lines and files, so that the layout N-port is still written (C-26); E_RESULTS_WRITE in the place of
     I_OUTPUTS, so that the lines already computed and LIMITS are still reported (spec 7.5). Raises layout's refusals
-    and E_S_SINGULAR. An antenna's outputs are antenna_outputs' instead (Stage 3 design 5.6), and an SI project's
-    si_outputs' (Stage 4 design 5.12 item 2)."""
-    if si(project):
-        return si_outputs(path, project, command, errors_as_lines=errors_as_lines)
+    and E_S_SINGULAR. An antenna's outputs are antenna_outputs' instead (Stage 3 design 5.6). An SI project's (Stage 4
+    design 5.6) are v1's with its own reading of the chain (read, at the run's route's εeff): its lines (si_lines)
+    after chain_results', and si_summary.csv, si_tdr.csv and si_summary.png (si_csv, tdr_csv, si_png, the label as
+    summary.png's) in place of summary.csv and summary.png at any P, with SI_OUTPUTS as the files it owns and si_limits
+    in LIMITS' place."""
     if antenna(project):
         return antenna_outputs(path, project, command, errors_as_lines=errors_as_lines)
     res = chain_results(path, project, errors_as_lines=errors_as_lines)
@@ -684,19 +693,26 @@ def write_outputs(path: Path, project: dict, command: str, *,
         files[f"chain.s{p}p"] = touchstone(res.chain, lay.f, [lay.ports[k]["name"] for k in ext],
                                            port_map(project, results, lay, ext)
                                            + ([english("I_WHAT_IF", **what_if)] if label else []))
-    if res.chain is not None and p == 2:
+    lines = [*res.lines]
+    name = path.absolute().parent.name  # `run .` too
+    if si(project) and res.chain is not None:
+        reading = read(res.chain, lay.f, project, results["route"]["eeff"])
+        lines += si_lines(project, reading, results["route"])
+        files["si_summary.csv"], files["si_tdr.csv"] = si_csv(project, reading), tdr_csv(reading)
+        files["si_summary.png"] = si_png([(name, reading)], project, render("I_PLOT_SI_TITLE", name=name), label)
+    if not si(project) and res.chain is not None and p == 2:
         files["summary.csv"] = summary_csv(lay, res.chain, res.ideal, res.p_layout, results["loss_expected"])
-        files["summary.png"] = summary_png(lay, res.chain, res.ideal, path.absolute().parent.name, label)  # `run .` too
-    lines = [*res.lines, *([("I_WHAT_IF", what_if)] if label else [])]
+        files["summary.png"] = summary_png(lay, res.chain, res.ideal, name, label)
+    lines += [("I_WHAT_IF", what_if)] if label else []
     try:
-        write(folder, files, OUTPUTS, command)
+        write(folder, files, SI_OUTPUTS if si(project) else OUTPUTS, command)
     except KrsError as err:  # E_RESULTS_WRITE: a file held open, say
         if not errors_as_lines:
             raise
         lines.append((err.code, err.params))
     else:
         lines.append(("I_OUTPUTS", {"files": ", ".join(sorted(files)), "folder": str(folder)}))
-    return [*lines, *((code, {}) for code in LIMITS)]
+    return [*lines, *((code, {}) for code in (si_limits(project) if si(project) else LIMITS))]
 
 
 def s11_at(path: Path, project: dict, f: np.ndarray, lay: Layout | None = None) -> tuple[np.ndarray, np.ndarray]:
@@ -807,30 +823,6 @@ def antenna_outputs(path: Path, project: dict, command: str, *,
     return [*lines, *((code, {}) for code in ANTENNA_LIMITS)]
 
 
-def si_outputs(path: Path, project: dict, command: str, *,
-               errors_as_lines: bool = False) -> list[tuple[str, dict]]:
-    """An SI run's outputs (Stage 4 design 5.12 item 2), which write_outputs writes for it, in run and retune alike:
-    layout.s{N}p on layout()'s grid, with its port map, to results/ (write, OUTPUTS, `command` as E_RESULTS_WRITE's
-    advice). Returns basis_lines at GATES_SI, then I_OUTPUTS; E_RESULTS_WRITE as write_outputs takes it. The SI
-    results, the label and the limits are Stage 4 plan 3's."""
-    # ponytail: write_outputs' layout and write tail, copied; plan 3 rewrites this with the TDRs and the chain file
-    results = project["results"]
-    lay = layout(project, results)
-    folder, n = path.parent / "results", len(lay.ports)
-    files = {f"layout.s{n}p": touchstone(lay.s, lay.f, [q["name"] for q in lay.ports],
-                                         port_map(project, results, lay, range(n)))}
-    lines = basis_lines(results, GATES_SI)
-    try:
-        write(folder, files, OUTPUTS, command)
-    except KrsError as err:  # E_RESULTS_WRITE: a file held open, say
-        if not errors_as_lines:
-            raise
-        lines.append((err.code, err.params))
-    else:
-        lines.append(("I_OUTPUTS", {"files": ", ".join(sorted(files)), "folder": str(folder)}))
-    return lines
-
-
 def run(path: Path, run_dir: Path | None = None) -> int:
     """`run` on the project at `path` (spec 6.1, C-42), returning its exit code (C-22). Raises E_NO_PORTS for a project
     without ports, and E_LOCKED while another run holds the project lock. Then, under the lock, in a fresh run folder
@@ -848,8 +840,9 @@ def run(path: Path, run_dir: Path | None = None) -> int:
     saves its results with far_field null and its settings fingerprint, taken before the jobs; with no part port it
     then transforms its far field and saves again, a transform that fails being an E_ line (_run); its outputs are
     antenna_outputs'. An SI run (Stage 4 design 5.6, 5.8, 5.12 item 2) saves no expected loss (null) but its route
-    (si_route) and its settings fingerprint, both taken before the jobs, and its outputs are si_outputs'. A given
-    `run_dir` stands in for the fresh run folder."""
+    (si_route) and its settings fingerprint, both taken before the jobs, and its outputs are write_outputs' SI branch
+    (Stage 4 design 5.6: its SI lines and files, and si_limits in LIMITS' place). A given `run_dir` stands in for the
+    fresh run folder."""
     if not read_project(path)["ports"]:
         raise KrsError("E_NO_PORTS")
     return _locked(path, _run, run_dir)

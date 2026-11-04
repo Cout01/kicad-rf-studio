@@ -5,11 +5,16 @@ skew; Hammerstad's conductor loss, for the route's loss estimate; and, from late
 comparison and compare's deltas. At module level it imports only the stdlib, numpy and core.messages: core.project
 imports it for LOCAL_RISE, so scipy, scikit-rf, matplotlib, core.model.parts and core.post.antenna are imported inside
 the functions that use them (C-5)."""
+import csv
+import io
 import math
+import re
 import warnings
 from dataclasses import dataclass
 
 import numpy as np
+
+from kicad_rf_studio.core.messages import render
 
 # ponytail: a response longer than the 200 ns record wraps (an SI load holds its first point above DC at DC, so a
 # series C's time constant never enters it), and Z = z_ref(1 + ρ)/(1 − ρ) has no bound as ρ → 1 (an open; draw_si
@@ -293,3 +298,115 @@ def si_lines(project: dict, r: Reading, route: dict) -> list[tuple[str, dict]]:
         lines.append(("I_SI_LOSS_DIELECTRIC", {"at_marker_db": f"{dielectric[0]:.3f}",
                                                "at_f_max_db": f"{dielectric[1]:.3f}"}))
     return lines
+
+
+SI_OUTPUTS = re.compile(r"(layout|chain)\.s\d+p|si_summary\.(png|csv)|si_tdr\.csv")  # an SI run's files, matched whole
+TDR_COLUMNS = ("t_s", "distance_mm", "z_ohm", "z_link_ohm", "tdt", "tdt_link")  # si_tdr.csv's
+
+
+def si_csv(project: dict, r: Reading) -> bytes:
+    """si_summary.csv (design 5.6): one row per grid point, f_hz, marker ("marker" at r.marker, else ""), then a pair's
+    sdd11_db, sdd11_deg, sdd21_db, sdd21_deg, scc11_db, scc21_db, scd11_db, scd21_db, or a net's s11_db, s11_deg,
+    s21_db, s21_deg, then next{k}_db and fext{k}_db for victim k from 1; dB by db, degrees by np.angle;
+    comma-separated, "\\n" line ends, numbers as Python's repr (csv.writer, as summary_csv)."""
+    m, paired = r.m, project["pair"] is not None
+    columns = {"f_hz": r.f.tolist(), "marker": ["marker" if k == r.marker else "" for k in range(len(r.f))]}
+    s = "sdd" if paired else "s"
+    for name, x in ((f"{s}11", m[:, 0, 0]), (f"{s}21", m[:, 1, 0])):
+        columns[f"{name}_db"], columns[f"{name}_deg"] = db(x).tolist(), np.angle(x, deg=True).tolist()
+    if paired:
+        for name, i, j in (("scc11", 2, 2), ("scc21", 3, 2), ("scd11", 2, 0), ("scd21", 3, 0)):
+            columns[f"{name}_db"] = db(m[:, i, j]).tolist()
+    for k, v in enumerate(range(4 if paired else 2, m.shape[1], 2), 1):  # a victim's start, then its end
+        columns[f"next{k}_db"], columns[f"fext{k}_db"] = db(m[:, v, 0]).tolist(), db(m[:, v + 1, 0]).tolist()
+    out = io.StringIO()
+    writer = csv.writer(out, lineterminator="\n")
+    writer.writerow(columns)
+    writer.writerows(zip(*columns.values()))
+    return out.getvalue().encode("utf-8")
+
+
+def _span(r: Reading) -> np.ndarray:
+    """The plot's span, a mask on r.t: from −2·r.rise[0] to (r.t_far or 0) + 2·r.rise[1] (tdr_csv, draw_si)."""
+    # ponytail: with no arrival the plot ends 2 link rise times past t = 0 (1 to 6 ns at the presets), so a long line's
+    # open beyond that is cut; results.route's round trip if that matters
+    return (r.t >= -2 * r.rise[0]) & (r.t <= (r.t_far or 0) + 2 * r.rise[1])
+
+
+def tdr_csv(r: Reading) -> bytes:
+    """si_tdr.csv (design 5.6): antenna._csv (imported inside) of TDR_COLUMNS, one row per sample of r.t from
+    −2·r.rise[0] to (r.t_far or 0) + 2·r.rise[1], the plot's span: t_s, distance_mm (distance_mm at r.eeff), z_ohm (the
+    localising TDR), z_link_ohm, tdt and tdt_link."""
+    from kicad_rf_studio.core.post.antenna import _csv  # here only (C-5)
+
+    k = _span(r)
+    return _csv(TDR_COLUMNS, np.column_stack([r.t[k], distance_mm(r.t[k], r.eeff), r.z[k], r.z_link[k], r.tdt[k],
+                                              r.tdt_link[k]]))
+
+
+def draw_si(fig, curves: list[tuple[str, Reading]], project: dict, title: str, label: str | None = None) -> list:
+    """si_summary.png's and compare.png's plots (design 5.6, 5.8) on the matplotlib Figure `fig`, each curve
+    (name, Reading) on every panel: the TDR, the localising rise solid and the link's dashed, against the distance
+    along the route on _span, with the round-trip time on a secondary axis on top (distance_mm at the first curve's
+    εeff), the target band shaded (target ± tolerance), the first curve's launches shaded (its first resolution length
+    at 0 and before t_far), every curve's levels a dot ("o") or, on a short feature, a cross ("x"), and the Ω axis
+    from 0 to 3·target (an open's Z, unbounded as ρ → 1, clipped); |S| in dB against GHz (a pair's Sdd21, Sdd11, Scc21
+    and Scd21, a net's S21 and S11) with a line at the marker; and, when the first curve holds crosstalk (its xt), each
+    victim's NEXT and FEXT, named by the project's victim lines. A TDR curve is labelled by its rise time and its
+    resolution length ("125 ps, 9.4 mm"), an |S| curve by its symbol, after the curve's name when there are two
+    curves. Under `title`, then I_SI_RELATIVE, then `label` when given; the rendered si_limits, one a line, at the foot
+    (fig.supxlabel, as draw_antenna). Returns the axes, the TDR's first."""
+    first, two = curves[0][1], len(curves) > 1
+    paired, target, tolerance = project["pair"] is not None, project["target_ohm"], project["tolerance"]
+    axes = list(fig.subplots(1, 3 if first.xt else 2))
+    ax_tdr, ax_s = axes[:2]
+    symbols = ((("Sdd21", 1, 0), ("Sdd11", 0, 0), ("Scc21", 3, 2), ("Scd21", 3, 0)) if paired
+               else (("S21", 1, 0), ("S11", 0, 0)))
+    victims = [line["chain"]["nets"][0] for line in project["lines"] if line["role"] == "victim"]
+    for name, r in curves:
+        prefix, k, ghz = f"{name} " if two else "", _span(r), r.f / 1e9
+        color = None
+        for z, style, t_r in ((r.z, "-", r.rise[0]), (r.z_link, "--", r.rise[1])):
+            trace, = ax_tdr.plot(distance_mm(r.t[k], r.eeff), z[k], style, color=color,
+                                 label=f"{prefix}{t_r * 1e12:g} ps, {distance_mm(t_r, r.eeff):.1f} mm")
+            color = trace.get_color()  # the link's in the localising curve's colour
+        for t, z, short in r.levels or ():
+            ax_tdr.plot(distance_mm(t, r.eeff), z, "x" if short else "o", color=color)
+        for symbol, i, j in symbols:
+            ax_s.plot(ghz, db(r.m[:, i, j]), label=prefix + symbol)
+        if first.xt:
+            for net, v in zip(victims, range(4 if paired else 2, r.m.shape[1], 2)):
+                axes[2].plot(ghz, db(r.m[:, v, 0]), label=f"{prefix}NEXT {net}")
+                axes[2].plot(ghz, db(r.m[:, v + 1, 0]), label=f"{prefix}FEXT {net}")
+    ax_tdr.axhspan(target * (1 - tolerance), target * (1 + tolerance), color="grey", alpha=0.2,
+                   label=render("I_PLOT_TARGET"))
+    res = distance_mm(first.rise[0], first.eeff)
+    ax_tdr.axvspan(0, res, color="grey", alpha=0.1)  # the launches: each port's first resolution length
+    if first.t_far is not None:
+        far = distance_mm(first.t_far, first.eeff)
+        ax_tdr.axvspan(far - res, far, color="grey", alpha=0.1)
+    ax_tdr.set(xlabel=render("I_PLOT_DISTANCE"), ylabel=render("I_PLOT_IMPEDANCE"), ylim=(0, 3 * target))
+    per_ps = distance_mm(1e-12, first.eeff)  # mm of route per ps of round trip
+    ax_tdr.secondary_xaxis("top", functions=(lambda d: d / per_ps, lambda ps: ps * per_ps)).set_xlabel(
+        render("I_PLOT_TIME"))
+    ax_s.axvline(first.f[first.marker] / 1e9, color="grey", linewidth=0.5)
+    for ax in axes:
+        if ax is not ax_tdr:
+            ax.set(xlabel=render("I_PLOT_FREQUENCY"), ylabel="|S| (dB)")
+        ax.legend()
+    fig.suptitle(title + "\n" + render("I_SI_RELATIVE") + ("\n" + label if label else ""), wrap=True)
+    fig.supxlabel("\n".join(render(code) for code in si_limits(project)), x=0.01, ha="left", fontsize="small",
+                  wrap=True)
+    return axes
+
+
+def si_png(curves: list[tuple[str, Reading]], project: dict, title: str, label: str | None = None) -> bytes:
+    """si_summary.png (design 5.6): draw_si on a Figure drawn by Agg, never a pyplot figure, as PNG at 100 dpi, as
+    summary_png builds v1's."""
+    from matplotlib.figure import Figure  # here only: no other code of the core loads matplotlib (C-5)
+
+    fig = Figure(figsize=(15, 4.5), layout="constrained")
+    draw_si(fig, curves, project, title, label)
+    out = io.BytesIO()
+    fig.savefig(out, format="png", dpi=100)
+    return out.getvalue()

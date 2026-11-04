@@ -12,7 +12,7 @@ from kicad_rf_studio.core.kicad.tracer import is_gnd, is_power
 from kicad_rf_studio.core.kicad.values import bypass, part_kind, port_value
 from kicad_rf_studio.core.messages import KrsError
 from kicad_rf_studio.core.model.parts import COPPER, CURVE_PORT, PORT, Z0, c_box_of
-from kicad_rf_studio.core.project import antenna, parts
+from kicad_rf_studio.core.project import antenna, parts, si
 
 
 def z_part(kind: str, value: float, model: dict | None, f: np.ndarray) -> np.ndarray:
@@ -34,6 +34,17 @@ def z_value(ref: str, text: str, model: dict | None, f: np.ndarray, *, bypasses:
         return np.full(len(f), z, complex)
     value = port_value(ref, text)
     return None if value is None else z_part(part_kind(ref), value, model, f)
+
+
+def above_dc(f: np.ndarray) -> np.ndarray:
+    """The grid `f` (Hz) a part port's load is evaluated on (Stage 4 design 5.6): an SI run's uniform grid with its DC
+    point replaced by its first point above DC, so that each load holds that value at DC; `f` itself on a grid that
+    does not start at DC, v1's and an antenna's."""
+    # ponytail: a load holds at DC its value at the first point above DC: a series capacitor's time constant lies
+    # beyond the TDR's 200 ns record and an open part has no impedance at DC; a DC error δ moves a TDR level only by a
+    # ramp of δ·(t + 4·t_r)/200 ns, and verify's |ΔS| starts above DC; an S2P file must reach that point (5 MHz),
+    # E_S2P_BAND naming it
+    return np.r_[f[1], f[1:]] if f[0] == 0 else f
 
 
 def s2p_impedance(file: Path, connection: str, ref: str, f: np.ndarray) -> tuple[np.ndarray, str | None]:
@@ -73,9 +84,10 @@ def s2p_impedance(file: Path, connection: str, ref: str, f: np.ndarray) -> tuple
 def part_impedances(project: dict, folder: Path, refs: list[str], f: np.ndarray
                     ) -> tuple[dict[str, np.ndarray], list[tuple[str, dict]]]:
     """Z_part (F,) on f of each part in `refs` (C-13..C-15, spec 7.2): from its s2p file, read at folder / file
-    (folder: project.json's), when it names one, else z_part of its kind, port_value and model, or an antenna's
-    bypasses (z_value); and W_S2P_FIXTURE for each file that fits the other fixture. Raises E_PART_NO_VALUE for a part
-    with neither a file nor a value that z_value reads, and s2p_impedance's refusals."""
+    (folder: project.json's), when it names one, else z_part of its kind, port_value and model, or the bypasses of an
+    antenna's or an SI project's part (z_value: an SI part's open and 0R, Stage 4 design 5.1); and W_S2P_FIXTURE for
+    each file that fits the other fixture. Raises E_PART_NO_VALUE for a part with neither a file nor a value that
+    z_value reads, and s2p_impedance's refusals."""
     by_ref, z, notes = parts(project), {}, []
     for ref in refs:
         part = by_ref[ref]
@@ -86,7 +98,7 @@ def part_impedances(project: dict, folder: Path, refs: list[str], f: np.ndarray
                 notes.append(("W_S2P_FIXTURE", {"ref": ref, "path": str(file), "named": s2p["connection"],
                                                 "fits": fits}))
         else:
-            z[ref] = z_value(ref, part["value"], part["model"], f, bypasses=antenna(project))
+            z[ref] = z_value(ref, part["value"], part["model"], f, bypasses=antenna(project) or si(project))
             if z[ref] is None:
                 raise KrsError("E_PART_NO_VALUE", ref=ref, value=part["value"])
     return z, notes

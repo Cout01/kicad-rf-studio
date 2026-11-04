@@ -132,7 +132,8 @@ def test_retrace_moves_the_curves_draw_summary_drew_in_place():  # Stage 2 desig
 
 def test_only_the_png_writer_imports_matplotlib():  # C-5
     out = subprocess.run([sys.executable, "-I", "-c", "import sys, kicad_rf_studio.core.post.outputs, kicad_rf_studio."
-                          "core.post.antenna; print(sorted(m for m in ('matplotlib', 'pandas') if m in sys.modules))"],
+                          "core.post.antenna, kicad_rf_studio.core.post.si; "
+                          "print(sorted(m for m in ('matplotlib', 'pandas') if m in sys.modules))"],
                          capture_output=True, text=True)
     assert out.stdout.strip() == "[]"
 
