@@ -1102,6 +1102,10 @@ msgstr "{ref} é um componente em série da cadeia da antena: em aberto ali, ele
 msgid "Cannot read \"{value}\" as the value of {ref}: on an antenna's chain a C, L or R takes a value in its own unit (4.7pF, 4p7, 15nH, 50R), `{ref}=0R` replaces a series part with a short and `{ref}=open` removes a shunt part (a C of 0 F could mean either, so it is refused), and any part takes an S2P file as {ref}=file.s2p:series (or :shunt)."
 msgstr "Não foi possível ler \"{value}\" como o valor de {ref}: na cadeia de uma antena, um C, L ou R recebe um valor na própria unidade (4.7pF, 4p7, 15nH, 50R), `{ref}=0R` troca um componente em série por um curto e `{ref}=open` retira um componente shunt (um C de 0 F poderia ser qualquer um dos dois, então é recusado), e qualquer componente recebe um arquivo S2P como {ref}=file.s2p:series (ou :shunt)."
 
+#. E_RETUNE_SI
+msgid "`retune` takes no part values for a signal-integrity project yet, since its retune comes with the SI results; without values it rewrites the layout Touchstone file."
+msgstr "`retune` ainda não recebe valores de componentes para um projeto de integridade de sinal, pois o retune dele vem com os resultados de SI; sem valores, ele reescreve o arquivo Touchstone do layout."
+
 #. E_NO_RESULTS
 msgid "project.json has no results yet. Run `run` first."
 msgstr "O project.json ainda não tem resultados. Execute `run` primeiro."
@@ -1153,6 +1157,10 @@ msgstr "O componente {ref} está girado (uma CurvePort), e a verificação não 
 #, python-brace-format
 msgid "verify compares S21 and S11, so it needs at least 2 external ports; this project has {ports}. Keep two ports in project.json."
 msgstr "A verificação compara S21 e S11, então precisa de pelo menos 2 portas externas; portas deste projeto: {ports}. Mantenha duas portas no project.json."
+
+#. E_VERIFY_SI
+msgid "`verify` does not take a signal-integrity project yet; `cost` and `run` do."
+msgstr "`verify` ainda não recebe um projeto de integridade de sinal; `cost` e `run` recebem."
 
 #. W_VERIFY_NOT_KEPT
 #, python-brace-format

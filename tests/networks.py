@@ -19,11 +19,16 @@ def star(f, n, a=0.95, tau=0.2e-9):
 def synth_records(s_of, n, f1, f2, dt, t_rec, smooth=False):
     """[(t_u, u, t_i, i)] of n jobs on the n-port s_of(f) (reference Z0), every port closed by Z0 ∥ C_BOX as an
     openEMS lumped port is, job j driving port j through it with spec 5.8's pulse (smooth: one with no exp(−9)
-    steps): u at openEMS's probe instants k·Δ, Δ = (floor(1/(2·f2·dt)) // 4)·dt, i at k·Δ + dt/2, k·Δ < t_rec.
-    Band-limited exact samples, synthesised on an FFT grid 8 times longer than the record (r6 §2)."""
+    steps), or with f1 0 the SI pulse, dc_pulse's Gaussian from DC, exp(−(2π·f2·t/3 − 3)²)·(t < 2·t0),
+    t0 = 9/(2π·f2) (Stage 4 design 5.4): u at openEMS's probe instants k·Δ, Δ = (floor(1/(2·f2·dt)) // 4)·dt, i at
+    k·Δ + dt/2, k·Δ < t_rec. Band-limited exact samples, synthesised on an FFT grid 8 times longer than the record
+    (r6 §2)."""
     fm, fw = (f1 + f2) / 2, (f2 - f1) / 2
     t0 = 9 / (2 * np.pi * fw)
-    if smooth:
+    if f1 == 0:
+        t0 = 9 / (2 * np.pi * f2)
+        e = lambda t: np.exp(-(2 * np.pi * f2 * t / 3 - 3) ** 2) * (t < 2 * t0)
+    elif smooth:
         e = lambda t: np.sin(2 * np.pi * fm * (t - 2 * t0)) * np.exp(-(2 * np.pi * fw * (t - t0) / 3 - 3) ** 2)
     else:
         e = lambda t: np.sin(2 * np.pi * fm * (t - t0)) * np.exp(-(2 * np.pi * fw * t / 3 - 3) ** 2) * (t < 2 * t0)

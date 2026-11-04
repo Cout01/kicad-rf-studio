@@ -1100,6 +1100,10 @@ msgstr ""
 msgid "Cannot read \"{value}\" as the value of {ref}: on an antenna's chain a C, L or R takes a value in its own unit (4.7pF, 4p7, 15nH, 50R), `{ref}=0R` replaces a series part with a short and `{ref}=open` removes a shunt part (a C of 0 F could mean either, so it is refused), and any part takes an S2P file as {ref}=file.s2p:series (or :shunt)."
 msgstr ""
 
+#. E_RETUNE_SI
+msgid "`retune` takes no part values for a signal-integrity project yet, since its retune comes with the SI results; without values it rewrites the layout Touchstone file."
+msgstr ""
+
 #. E_NO_RESULTS
 msgid "project.json has no results yet. Run `run` first."
 msgstr ""
@@ -1150,6 +1154,10 @@ msgstr ""
 #. E_VERIFY_PORTS
 #, python-brace-format
 msgid "verify compares S21 and S11, so it needs at least 2 external ports; this project has {ports}. Keep two ports in project.json."
+msgstr ""
+
+#. E_VERIFY_SI
+msgid "`verify` does not take a signal-integrity project yet; `cost` and `run` do."
 msgstr ""
 
 #. W_VERIFY_NOT_KEPT

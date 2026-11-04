@@ -542,6 +542,19 @@ def _save(path: Path, data: dict, command: str) -> None:
                        command=command) from None
 
 
+def basis_lines(results: dict, defaults: dict = GATES) -> list[tuple[str, dict]]:
+    """The first lines of a run's outputs, from the run `results` holds: I_BASIS, each flagged job (flat at its cut,
+    t_max at its last sample), then gate_lines against `defaults` (C-10)."""
+    count = Counter(job["verdict"] for job in results["jobs"])
+    end = {"flat": "t_cut", "t_max": "t_stop"}  # where a flagged job's S ends: its cut, or its last sample
+    lines = [("I_BASIS", {"run_dir": results["run_dir"], "preset": results["preset"], "converged": count["converged"],
+                          "flat": count["flat"], "t_max": count["t_max"]})]
+    lines += [(VERDICTS[job["verdict"]], {"port": job["port"], "t_ns": f"{job[end[job['verdict']]] * 1e9:.2f}",
+                                          "residual_db": f"{job['residual_db']:.1f}"})
+              for job in results["jobs"] if job["verdict"] in end]
+    return lines + gate_lines(results["gates"], defaults)
+
+
 @dataclass
 class ChainResults:
     """A run's results as chain_results reads them: the layout N-port, its external ports by index and its part ports
@@ -562,24 +575,18 @@ class ChainResults:
 def chain_results(path: Path, project: dict, *, errors_as_lines: bool = False,
                   lay: Layout | None = None) -> ChainResults:
     """The numbers and lines that write_outputs writes and reports for the run in `project`'s results, with no file
-    written (Stage 2 design 5.2 item 7): the layout N-port (layout), I_BASIS with each flagged job, gate_lines, the part
-    notes (part_impedances, S2P files beside `path`), the chain with every part port closed; with P = 2 the ideal
-    schematic, the loss budget, the marker and indicator lines, else the indicator lines and W_NOT_TWO_PORT (C-31). A
-    part's refusal (E_PART_NO_VALUE, E_S2P_*, E_CBOX) is raised, or, with `errors_as_lines`, becomes the last line, with
-    no chain. A given `lay` stands in for the layout N-port, which depends only on the run, never on the part values
-    (the GUI's retune session holds it, Stage 2 design 5.3). Raises layout's refusals and E_S_SINGULAR. An antenna,
-    one port by design, gets no W_NOT_TWO_PORT but its loss budget, which no line reports (Stage 3 design 5.6, 5.7)."""
+    written (Stage 2 design 5.2 item 7): the layout N-port (layout), basis_lines (I_BASIS with each flagged job,
+    gate_lines), the part notes (part_impedances, S2P files beside `path`), the chain with every part port closed; with
+    P = 2 the ideal schematic, the loss budget, the marker and indicator lines, else the indicator lines and
+    W_NOT_TWO_PORT (C-31). A part's refusal (E_PART_NO_VALUE, E_S2P_*, E_CBOX) is raised, or, with `errors_as_lines`,
+    becomes the last line, with no chain. A given `lay` stands in for the layout N-port, which depends only on the run,
+    never on the part values (the GUI's retune session holds it, Stage 2 design 5.3). Raises layout's refusals and
+    E_S_SINGULAR. An antenna, one port by design, gets no W_NOT_TWO_PORT but its loss budget, which no line reports
+    (Stage 3 design 5.6, 5.7)."""
     results = project["results"]
     lay = layout(project, results) if lay is None else lay
     ext, refs = _split(lay)
-    count = Counter(job["verdict"] for job in results["jobs"])
-    end = {"flat": "t_cut", "t_max": "t_stop"}  # where a flagged job's S ends: its cut, or its last sample
-    lines = [("I_BASIS", {"run_dir": results["run_dir"], "preset": results["preset"], "converged": count["converged"],
-                          "flat": count["flat"], "t_max": count["t_max"]})]
-    lines += [(VERDICTS[job["verdict"]], {"port": job["port"], "t_ns": f"{job[end[job['verdict']]] * 1e9:.2f}",
-                                          "residual_db": f"{job['residual_db']:.1f}"})
-              for job in results["jobs"] if job["verdict"] in end]
-    lines += gate_lines(results["gates"])
+    lines = basis_lines(results)
     chain = ideal = p_layout = None
     try:
         zparts, notes = part_impedances(project, path.parent, refs, lay.f)
@@ -619,7 +626,10 @@ def write_outputs(path: Path, project: dict, command: str, *,
     E_RESULTS_WRITE are raised, or, with `errors_as_lines`, each becomes a line: a part's refusal in the place of the
     chain's lines and files, so that the layout N-port is still written (C-26); E_RESULTS_WRITE in the place of
     I_OUTPUTS, so that the lines already computed and LIMITS are still reported (spec 7.5). Raises layout's refusals
-    and E_S_SINGULAR. An antenna's outputs are antenna_outputs' instead (Stage 3 design 5.6)."""
+    and E_S_SINGULAR. An antenna's outputs are antenna_outputs' instead (Stage 3 design 5.6), and an SI project's
+    si_outputs' (Stage 4 design 5.12 item 2)."""
+    if si(project):
+        return si_outputs(path, project, command, errors_as_lines=errors_as_lines)
     if antenna(project):
         return antenna_outputs(path, project, command, errors_as_lines=errors_as_lines)
     res = chain_results(path, project, errors_as_lines=errors_as_lines)
@@ -756,6 +766,30 @@ def antenna_outputs(path: Path, project: dict, command: str, *,
     return [*lines, *((code, {}) for code in ANTENNA_LIMITS)]
 
 
+def si_outputs(path: Path, project: dict, command: str, *,
+               errors_as_lines: bool = False) -> list[tuple[str, dict]]:
+    """An SI run's outputs (Stage 4 design 5.12 item 2), which write_outputs writes for it, in run and retune alike:
+    layout.s{N}p on layout()'s grid, with its port map, to results/ (write, OUTPUTS, `command` as E_RESULTS_WRITE's
+    advice). Returns basis_lines at GATES_SI, then I_OUTPUTS; E_RESULTS_WRITE as write_outputs takes it. The SI
+    results, the label and the limits are Stage 4 plan 3's."""
+    # ponytail: write_outputs' layout and write tail, copied; plan 3 rewrites this with the TDRs and the chain file
+    results = project["results"]
+    lay = layout(project, results)
+    folder, n = path.parent / "results", len(lay.ports)
+    files = {f"layout.s{n}p": touchstone(lay.s, lay.f, [q["name"] for q in lay.ports],
+                                         port_map(project, results, lay, range(n)))}
+    lines = basis_lines(results, GATES_SI)
+    try:
+        write(folder, files, OUTPUTS, command)
+    except KrsError as err:  # E_RESULTS_WRITE: a file held open, say
+        if not errors_as_lines:
+            raise
+        lines.append((err.code, err.params))
+    else:
+        lines.append(("I_OUTPUTS", {"files": ", ".join(sorted(files)), "folder": str(folder)}))
+    return lines
+
+
 def run(path: Path, run_dir: Path | None = None) -> int:
     """`run` on the project at `path` (spec 6.1, C-42), returning its exit code (C-22). Raises E_NO_PORTS for a project
     without ports, and E_LOCKED while another run holds the project lock. Then, under the lock, in a fresh run folder
@@ -772,7 +806,8 @@ def run(path: Path, run_dir: Path | None = None) -> int:
     (exit 130, results untouched); once they run, it stops them, and their verdicts say so. An antenna's run (Stage 3)
     saves its results with far_field null and its settings fingerprint, taken before the jobs; with no part port it
     then transforms its far field and saves again, a transform that fails being an E_ line (_run); its outputs are
-    antenna_outputs'. A given `run_dir` stands in for the fresh run folder."""
+    antenna_outputs'. An SI run (Stage 4 design 5.6, 5.12 item 2) saves no expected loss (null) and its outputs are
+    si_outputs'. A given `run_dir` stands in for the fresh run folder."""
     if not read_project(path)["ports"]:
         raise KrsError("E_NO_PORTS")
     return _locked(path, _run, run_dir)
@@ -802,7 +837,8 @@ def _run(path: Path, run_dir: Path) -> int:
         return built
     project, _, geom, model = built
     gates, preset = project["gates"], project["preset"]
-    loss = expected_loss(geom, project["f0_hz"])  # before prepare: an error here costs no job
+    # before prepare: an error here costs no job; design 5.6: v1's loss budget does not apply to SI
+    loss = None if si(project) else expected_loss(geom, project["f0_hz"])
     fp = fingerprint(project) if antenna(project) else None  # likewise a failed openEMS probe
     if (out := simulate(model, project, run_dir)) is None:
         return 3
@@ -1058,7 +1094,8 @@ def assign(project: dict, assignments: list[str], folder: Path) -> dict:
 def retune(path: Path, assignments: list[str], emit: Callable[[str, dict], None] | None = None) -> int:
     """`retune` on the project at `path` (spec 3.2, 7.2, C-17..C-23), returning its exit code. A project that cannot
     be read refuses first, as in run. Then, under the project lock: the project read; E_RETUNE_NO_PARTS for
-    assignments to a project without part ports (a single trace, C-21); the `assignments` stored in a copy (assign);
+    assignments to a project without part ports (a single trace, C-21); E_RETUNE_SI for assignments to an SI project,
+    whose retune comes with the SI results (Stage 4 plan 3); the `assignments` stored in a copy (assign);
     its model built and results_of; write_outputs, whose E_RESULTS_WRITE advises this command with its assignments;
     then project.json saved, only when there were assignments (none: the outputs alone, C-19), with the same
     E_RESULTS_WRITE when it cannot be replaced. Then `emit(code, params)` for each line, which prints it by default
@@ -1070,6 +1107,9 @@ def retune(path: Path, assignments: list[str], emit: Callable[[str, dict], None]
         project = read_project(path)  # again under the lock: a run may have saved new results since
         if assignments and not any(q["role"] in (PORT, CURVE_PORT) for q in parts(project).values()):
             raise KrsError("E_RETUNE_NO_PARTS")
+        if si(project) and assignments:
+            # ponytail: plan 3's SI retune closes the part ports; until then a value changes no output
+            raise KrsError("E_RETUNE_SI")
         new = assign(project, assignments, path.parent)
         # ponytail: load()'s notes (W_BOARD_CHANGED too) go unreported: results_of's hash check is retune's one gate
         _, board, geom, _ = load(path)
@@ -1177,8 +1217,11 @@ def verify(path: Path, run_dir: Path | None = None) -> int:
     comparison was stored, I_VERIFY_COMPARE, I_VERIFY_NULL or W_VERIFY_NULL_UNMATCHED for each null (I_VERIFY_NO_NULLS
     for none), the indicator lines with a 2-port's loss budget in its verify form (the parts in the grid, no part loss
     removed), the E_ lines as message events, I_OUTPUTS when verify.s{P}p was written, I_VERIFY_SCOPE and LIMITS; then
-    0, or 2 after an E_ line. A given `run_dir` stands in for the fresh run folder."""
+    0, or 2 after an E_ line. A given `run_dir` stands in for the fresh run folder. An SI project is refused as soon as
+    it is read, E_VERIFY_SI: Stage 4 plan 3 verifies it."""
     project = read_project(path)  # before the lock, as in run
+    if si(project):  # ponytail: plan 3 verifies an SI project
+        raise KrsError("E_VERIFY_SI")
     by_ref = parts(project)
     if not any(q["role"] in (PORT, CURVE_PORT) for q in by_ref.values()):
         raise KrsError("E_VERIFY_NO_PARTS")

@@ -124,11 +124,13 @@ def parts(data: dict) -> dict[str, dict]:
 
 def shown_reference(ref: dict | None) -> str:
     """A port's stored reference as the port map shows it: the pad's name, the point on its layer (KiCad's frame, as
-    stored), or "none"."""
+    stored), "plane LAYER" for an SI port's vertical reference (Stage 4 design 5.5), or "none"."""
     if ref is None:
         return "none"
     if "pad" in ref:
         return ref["pad"]
+    if "plane" in ref:
+        return f"plane {ref['plane']}"
     x, y = ref["point"]
     return f"({x:.3f}, {y:.3f}) on {ref['layer']}"
 

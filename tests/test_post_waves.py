@@ -8,6 +8,7 @@ import numpy as np
 import pytest
 
 from kicad_rf_studio.core.messages import CATALOG, KrsError
+from kicad_rf_studio.core.post.si import uniform_grid
 from kicad_rf_studio.core.post.waves import flipped, grid, kappa_eq, layout, level_db, s_matrix
 from kicad_rf_studio.pipeline import VERDICTS
 from kicad_rf_studio.stoprule import KEPT
@@ -47,6 +48,12 @@ def test_job_scale_and_order_cancel_and_the_half_step_counts():  # C-8
 def test_the_excitation_level_is_the_pulse_spectrum():  # spec 5.8, C-12
     _, A = s_matrix(synth_records(lambda f: star(f, 3), 3, F1, F2, DT, 10e-9), F)
     assert level_db(A)[[0, 71, 213, 355]] == pytest.approx([-19.65, -8.08, -0.10, -12.06], abs=0.05)
+
+
+def test_the_si_pulse_from_dc_gives_back_the_network_and_its_dc_point():  # Stage 4 design 5.4
+    f = uniform_grid(10e9)
+    S, A = s_matrix(synth_records(lambda f: star(f, 4), 4, 0.0, 10e9, 1e-13, 9e-9), f)
+    assert np.abs(S - star(f, 4)).max() <= 1e-5 and level_db(A)[0] == pytest.approx(0.0, abs=1e-9)
 
 
 @pytest.mark.parametrize("bad", ["dead", "duplicated"])
