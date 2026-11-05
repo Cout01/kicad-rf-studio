@@ -1,0 +1,69 @@
+{
+  "source": "tools/p4e.py --references, before any P4-E run: the even part (X(s + d) + X(s - d))/2 - X(s) of p4b_ms90's 60 mm coupled section with its gap moved by d, one fine cell, at n 2 and 3, of Zdiff and of Sdd21 at the marker (the even/odd 4-port of its modes at 90 ohm), on each n's and rule's own mesh lines (fit2d's coupled cut and its modes) and on the exact cut",
+  "model_even": {
+    "2-l40": {
+      "tdr_lowest": -2.5005250786160644,
+      "tdr_highest": -2.5005250786160644,
+      "sdd21@marker": -0.007358395838618107,
+      "skew": 0.0,
+      "scd21_worst": 0.0
+    },
+    "2-l80": {
+      "tdr_lowest": -2.500528086928739,
+      "tdr_highest": -2.500528086928739,
+      "sdd21@marker": -0.007358433639914526,
+      "skew": 0.0,
+      "scd21_worst": 0.0
+    },
+    "2-dfill": {
+      "tdr_lowest": -2.4055823325878265,
+      "tdr_highest": -2.4055823325878265,
+      "sdd21@marker": -0.00728662163954781,
+      "skew": 0.0,
+      "scd21_worst": 0.0
+    },
+    "3-l40": {
+      "tdr_lowest": -0.21439643669090458,
+      "tdr_highest": -0.21439643669090458,
+      "sdd21@marker": -0.003772235557348986,
+      "skew": 0.0,
+      "scd21_worst": 0.0
+    },
+    "3-l80": {
+      "tdr_lowest": -0.21438377337938164,
+      "tdr_highest": -0.21438377337938164,
+      "sdd21@marker": -0.0037722411691783774,
+      "skew": 0.0,
+      "scd21_worst": 0.0
+    },
+    "3-dfill": {
+      "tdr_lowest": -0.3521409671812279,
+      "tdr_highest": -0.3521409671812279,
+      "sdd21@marker": -0.0038153325110687917,
+      "skew": 0.0,
+      "scd21_worst": 0.0
+    }
+  },
+  "exact": {
+    "2": {
+      "tdr_lowest": -2.1485775092497335,
+      "tdr_highest": -2.1485775092497335,
+      "sdd21@marker": -0.0077579359384431406
+    },
+    "3": {
+      "tdr_lowest": -0.9128584371433845,
+      "tdr_highest": -0.9128584371433845,
+      "sdd21@marker": -0.0028546730635424238
+    }
+  },
+  "code": "693592c3cd14433aee691dc80b4fa3dbb7bb26e5",
+  "versions": {
+    "commit": "64a6298",
+    "code": "693592c3cd14433aee691dc80b4fa3dbb7bb26e5",
+    "python": "3.14.2",
+    "openems": "0.37.0",
+    "csxcad": "0.7.0",
+    "os": "Windows-11-10.0.26200-SP0",
+    "cpus": 16
+  }
+}
