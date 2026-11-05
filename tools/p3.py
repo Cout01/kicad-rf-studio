@@ -60,14 +60,15 @@ def base(out: Path, board: str) -> Path:
     return pj
 
 
-def variant(out: Path, name: str, board: str, edits: dict) -> Path:
-    """The project `name` (p0c's variant): made when missing as a copy of base(out, board) without results and verify,
-    then `edits` (p0.edit) on every call, saved only when they change it, so that it keeps its own results until an
-    edit changes it. Returns the project file."""
+def variant(out: Path, name: str, board: str, edits: dict, make: Callable[[Path, str], Path] = base) -> Path:
+    """The project `name` (p0c's variant): made when missing as a copy of make(out, board), the board's base project
+    (base by default, p4.base for the SI gates), without results and verify, then `edits` (p0.edit) on every call,
+    saved only when they change it, so that it keeps its own results until an edit changes it. Returns the project
+    file."""
     pj = project_path(out, name)
     if not pj.is_file():
         pj.parent.mkdir(parents=True, exist_ok=True)
-        save_project(pj, {k: v for k, v in load_project(base(out, board)).items() if k not in ("results", "verify")})
+        save_project(pj, {k: v for k, v in load_project(make(out, board)).items() if k not in ("results", "verify")})
     data = load_project(pj)
     edited = p0.edit(copy.deepcopy(data), edits)
     if edited != data:
@@ -75,24 +76,26 @@ def variant(out: Path, name: str, board: str, edits: dict) -> Path:
     return pj
 
 
-def step_id(name: str, command: str) -> str:
-    """The id of the step of `command` ("run", "verify" or "free") on the project `name`."""
-    return f"p3-{name}-{command}"
+def step_id(name: str, command: str, prefix: str = "p3") -> str:
+    """The id of the step of `command` ("run", "verify" or "free") on the project `name`, after the gates' `prefix`
+    (p3's by default, "p4" for the SI gates)."""
+    return f"{prefix}-{name}-{command}"
 
 
-def run_step(out: Path, name: str, command: str = "run") -> dict:
+def run_step(out: Path, name: str, command: str = "run", prefix: str = "p3") -> dict:
     """`command`, "run" or "verify", on the project `name` through the product's CLI (p0.cli_run), a p0.step keyed by
     its model's hash and its preset, which the spec does not hold, and for verify by the values of its part ports too,
-    so that an edit that changes any of them runs it again. A stored record of exit 2 or 3 is first moved to
-    out/steps-superseded, replacing any there, so that the step runs again. No `cost` runs: the run's own events carry
-    the cost lines, and measure predicts from the formula. Returns the record."""
+    so that an edit that changes any of them runs it again; its id is step_id's with `prefix` (p3's by default, "p4"
+    for the SI gates). A stored record of exit 2 or 3 is first moved to out/steps-superseded, replacing any there, so
+    that the step runs again. No `cost` runs: the run's own events carry the cost lines, and measure predicts from the
+    formula. Returns the record."""
     pj = project_path(out, name)
     project = load_project(pj)
     key = f"{p0.model_key(pj)}|{project['preset']}"
     if command == "verify":
         values = {ref: q["value"] for ref, q in parts(project).items() if q["role"] in (PORT, CURVE_PORT)}
         key += "|" + ",".join(f"{ref}={value}" for ref, value in sorted(values.items()))
-    sid = step_id(name, command)
+    sid = step_id(name, command, prefix)
     path = out / "steps" / f"{sid}.json"
     # a refused or blocked run costs seconds and its cause (gates.* among them) may since have been edited
     if path.is_file() and json.loads(path.read_text(encoding="utf-8"))["result"]["exit"] in (2, 3):
