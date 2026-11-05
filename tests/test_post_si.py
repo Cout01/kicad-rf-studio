@@ -145,6 +145,7 @@ def test_the_tdt_arrives_at_half_its_peak_and_the_skew_is_the_legs_difference():
     t, step = step_response(even_odd_s(60.0, 4.0, 60.0, 4.0, 50.0, F, 60.0)[:, 2, 0], F, TR)  # a matched line
     assert arrival(t, step) == pytest.approx(TAU - (t[1] - t[0]) / 2, abs=0.05e-12)  # the sum's half sample
     assert arrival(t, 0.9 * ARRIVAL_FLOOR * step) is None  # nothing passes
+    assert arrival(t, np.ones_like(t)) is None  # at half its peak from its first sample: no rise to read
     p, n = read(pair6(tau_n=0.2137e-9)[:, :4, :4], F, P100, 3.0).skew
     assert n - p == pytest.approx(13.7e-12, abs=0.01e-12)
 

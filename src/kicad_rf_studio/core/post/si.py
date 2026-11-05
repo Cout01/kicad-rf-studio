@@ -122,13 +122,18 @@ def mixed_mode(s: np.ndarray, f: np.ndarray, target: float, paired: bool) -> np.
 
 def arrival(t: np.ndarray, step: np.ndarray) -> float | None:
     """The time (s) `step`, a TDT on step_response's `t`, first reaches half its peak, interpolated linearly between
-    that sample and the one before (design 5.6); None when its peak is under ARRIVAL_FLOOR: nothing passes."""
+    that sample and the one before (design 5.6); None when its peak is under ARRIVAL_FLOOR (nothing passes) or when it
+    already stands at half its peak at its first sample (no rise to read)."""
     # ponytail: step_response's sample at t sums the impulse up to t + dt/2, so an arrival reads half a sample (3.1 ps
     # at 10 GHz) early; a skew, a difference, does not
     peak = step.max()
     if peak < ARRIVAL_FLOOR:
         return None
     k = int(np.argmax(step >= peak / 2))
+    # ponytail: a TDT at half its peak from its first sample (wrapped, or noise over the floor) reads as no arrival,
+    # whose line names the floor; a reason of its own if a real board meets it
+    if k == 0:
+        return None
     return float(np.interp(peak / 2, step[k - 1:k + 1], t[k - 1:k + 1]))
 
 
