@@ -1,12 +1,15 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
+import json
 import math
 from dataclasses import replace
+from pathlib import Path
 
 import numpy as np
 import pytest
 
 from kicad_rf_studio.core.model.spec import dc_pulse
-from kicad_rf_studio.stoprule import GROWTH_DB, Z0, Records, flat_window, growth_rise, stop_rule, stop_window
+from kicad_rf_studio.stoprule import (GROWTH_DB, RING_CEILING, Z0, Records, ceiling, flat_window, growth_rise, ring,
+                                      stop_rule, stop_window)
 from traces import trace
 
 EXC = {"f1": 457.5e6, "f2": 3.0195e9, "t0": 9 / (2 * math.pi * 1.281e9)}
@@ -87,3 +90,48 @@ def test_a_pulse_still_travelling_on_a_long_line_never_reads_as_converged():  # 
 def test_a_port_level_the_dc_pulse_leaves_behind_ends_flat_not_converged():  # design 5.4; Review Focus 5
     v = stop_rule(far_end(1e-9, offset=1e-2), 0, "normal", SI)  # a floating charge holding 1 % on port 1
     assert (v.kind, round(v.residual_db)) == ("flat", -43) and v.t < 10e-9  # 8.248 ns: S kept, flagged
+
+
+RING = json.loads((Path(__file__).parent / "fixtures" / "ring" / "plane_gap.json").read_text(encoding="utf-8"))
+SI9 = dc_pulse(F_MAX, 9e-9, 2e-9)  # T_max 9 ns: its ceiling 36 ns
+
+
+def decay(slope_db_ns, dt=0.04e-9):  # a residual from 6 to 40 ns, -45 dB at 9 ns
+    t = np.arange(6e-9, 40e-9, dt)
+    return t, -45.0 + slope_db_ns * 1e9 * (t - 9e-9)
+
+
+def test_the_ring_rule_runs_on_while_the_residual_falls_fast_enough():  # ruling T-2; Review Focus 4
+    t, r = decay(-1.0)  # -60 dB at 24 ns, under the ceiling
+    assert ring(t, r, -60.0, 9e-9) == math.inf
+    for slope in (-0.5, -0.2, 0.0, 0.3):  # -60 dB at 39 ns, past the ceiling; slower than 0.3 dB/ns; flat; rising
+        t, r = decay(slope)
+        assert ring(t, r, -60.0, 9e-9) == t[np.argmax(t >= 9e-9)]  # T_max, as today
+    assert ring(t[t < 9e-9], r[t < 9e-9], -60.0, 9e-9) == math.inf  # nothing past T_max yet
+    assert RING_CEILING == 4 and ceiling(SI9) == pytest.approx(36e-9) and ceiling({**EXC, "t_max": 5e-9}) == 5e-9
+
+
+def test_the_ring_rule_lets_every_plane_gap_job_run_to_its_convergence():  # ruling T-2: plan 3's 14 jobs past T_max
+    assert len(RING["jobs"]) == 14
+    for job in RING["jobs"]:  # slopes -0.68 to -2.09 dB/ns, the latest projection 23.9 ns
+        t, r = np.array(job["t_ns"]) * 1e-9, np.array(job["residual_db"])
+        assert (t >= RING["t_max_s"]).sum() >= 300, (job["run"], job["port"])
+        assert ring(t, r, RING["level_db"], RING["t_max_s"]) == math.inf, (job["run"], job["port"])
+
+
+def tail(slope_db_ns, dt=2e-12, t_end=12e-9):
+    """SI9's pulse on port 1, then a level on it falling `slope_db_ns` dB/ns from -40 dB at 2 ns: a ringing plane."""
+    t_u = np.arange(0, t_end, dt)
+    pulse = np.exp(-(2 * math.pi * F_MAX * t_u / 3 - 3) ** 2) * (t_u < 2 * SI9["t0"])
+    level = 10 ** ((-40 + slope_db_ns * 1e9 * (t_u - 2e-9)) / 20) * (t_u > 2 * SI9["t0"])
+    zero = np.zeros_like(t_u)
+    return Records(t_u, np.array([pulse + level, zero]), t_u + dt / 2, np.array([pulse, zero]) / Z0, t_u,
+                   np.ones_like(t_u))
+
+
+def test_an_si_job_whose_planes_ring_slowly_ends_at_t_max_and_a_v1_one_never_by_the_ring():  # T-2; Review Focus 4
+    v = stop_rule(tail(-0.25), 0, "normal", SI9)  # 0.25 dB/ns: slower than 0.3, and 1.25 dB over 5 ns, not flat
+    assert v.kind == "t_max" and v.t == pytest.approx(9e-9, abs=2e-12)
+    assert stop_rule(tail(-1.0), 0, "normal", SI9) is None  # fast enough: it runs on toward 36 ns
+    v1 = {key: SI9[key] for key in ("f1", "f2", "t0", "t_max", "expr")}  # no window_s: no SI pulse
+    assert stop_rule(tail(-0.25), 0, "normal", v1) is None

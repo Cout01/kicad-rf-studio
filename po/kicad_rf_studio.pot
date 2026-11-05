@@ -714,6 +714,11 @@ msgstr ""
 msgid "This signal-integrity model's speed is taken as {ratio} × the calibration's per-job speed, the measured ratio of SI models to the calibration's uniform one, until a run with this many jobs at once measures it."
 msgstr ""
 
+#. I_SI_COST_RING
+#, python-brace-format
+msgid "A job whose port residual still falls by 0.3 dB/ns or more at T_max, fast enough over its last 3 ns to reach the preset's level by {ceiling_ns} ns, runs on while it keeps doing so, until it converges: up to {time}."
+msgstr ""
+
 #. W_SI_LONG_RUN
 #, python-brace-format
 msgid "The worst case is {time}, over two hours: the draft preset, or a shorter route between nearer pads, cuts it."

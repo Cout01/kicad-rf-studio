@@ -156,6 +156,7 @@ CATALOG: dict[str, str] = {
     "I_SI_COST_JOBS": "Runs: {lines} for the measured lines' ends, {victims} for the victims' ends, {parts} for the part ports.",
     "I_SI_COST_DEBYE": "Cells: {mcells} M in the Debye dielectric, {poles} poles each; the time counts each such cell as {weight} cells.",
     "I_SI_COST_SPEED": "This signal-integrity model's speed is taken as {ratio} × the calibration's per-job speed, the measured ratio of SI models to the calibration's uniform one, until a run with this many jobs at once measures it.",
+    "I_SI_COST_RING": "A job whose port residual still falls by 0.3 dB/ns or more at T_max, fast enough over its last 3 ns to reach the preset's level by {ceiling_ns} ns, runs on while it keeps doing so, until it converges: up to {time}.",
     "W_SI_LONG_RUN": "The worst case is {time}, over two hours: the draft preset, or a shorter route between nearer pads, cuts it.",
     "I_COST_PREDICTED": "Predicted from the last run's stop times: {time}.",
     "I_COST_RAM": "RAM: about {gb} GB ({pool} jobs at once).",

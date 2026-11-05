@@ -1,9 +1,10 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
-"""The stop rule (spec 6.3): whether, and when, a job's records show its run diverged, grew, converged or went flat.
-It reads the records in simulated time only, so its verdict depends on neither the machine's speed nor how often the
-orchestrator polls. Times are in s and levels in dB."""
+"""The stop rule (spec 6.3): whether, and when, a job's records show its run diverged, grew, converged or went flat, or
+an SI job's residual fell too slowly past T_max. It reads the records in simulated time only, so its verdict depends on
+neither the machine's speed nor how often the orchestrator polls. Times are in s and levels in dB."""
 from __future__ import annotations
 
+import math
 from collections.abc import Iterator
 from dataclasses import dataclass
 
@@ -16,6 +17,10 @@ FLAT_DB, FLAT_S = 1.0, 5e-9  # a residual that spans no more than FLAT_DB over F
 FLAT_PERIODS = 20  # an antenna's flat window, in periods of f0 (Stage 3 design 5.4)
 WINDOW_S = 2e-9  # the window of the residual and of the energy envelope
 LAG_S = 1e-9  # the monitor compares S with S this much earlier
+# an SI job past T_max (Stage 4 plan 4 ruling T-2)
+RING_FIT_S = 3e-9  # the residual's last 3 ns, fitted by a line
+RING_SLOPE = -0.3e9  # dB/s: a fit falling slower than 0.3 dB/ns ends the job
+RING_CEILING = 4  # × T_max: the fit must reach the preset's level by then, and the job may run to it
 N_FREQ = 101  # the monitor's frequencies across the band
 Z0 = 50.0  # Ω, the reference of the port waves
 KEPT = frozenset({"converged", "flat", "t_max"})  # the verdicts whose S is kept
@@ -35,8 +40,8 @@ class Records:
 
 @dataclass(frozen=True)
 class Verdict:
-    """What the stop rule found: `kind` ("diverged", "growth", "converged" or "flat"), at the cut time `t`, with the
-    port residual at the last t_u up to `t` (nan for "diverged")."""
+    """What the stop rule found: `kind` ("diverged", "growth", "converged", "flat" or "t_max", an SI pulse's verdict at
+    or past T_max: ring), at the cut time `t`, with the port residual at the last t_u up to `t` (nan for "diverged")."""
     kind: str
     t: float
     residual_db: float
@@ -63,12 +68,41 @@ def stop_window(round_trip_s: float) -> float:
     return max(WINDOW_S, 1.5 * round_trip_s)
 
 
+def ceiling(exc: dict) -> float:
+    """The simulated time a job of the excitation `exc` may run to: RING_CEILING × T_max for an SI pulse (one with
+    "window_s"), else its T_max."""
+    return RING_CEILING * exc["t_max"] if "window_s" in exc else exc["t_max"]
+
+
+def ring(t: np.ndarray, r_db: np.ndarray, level: float, t_max: float) -> float:
+    """The first t at or past `t_max` where the residual `r_db` (dB, on `t`, s) over its last RING_FIT_S, fitted by a
+    least-squares line, does not project `level` by RING_CEILING·t_max: its slope above RING_SLOPE (falling slower
+    than 0.3 dB/ns, flat or rising) or its crossing later than that; inf while it does, or before t_max (Stage 4 plan 4
+    ruling T-2, read as a fit renewed at every sample: an SI job whose planes ring runs on, the stop rule's converged
+    verdict ending it)."""
+    # ponytail: a polyfit per sample past T_max; cumulative sums if polls lag on long records
+    # ponytail: T-2's 3 ns fit; a route whose window_s passes 3 ns can read its held peak as flat and end at T_max, as
+    # before; fit over window_s + 1 ns if such a route rings
+    lo = np.searchsorted(t, t - RING_FIT_S, "right")
+    for n in np.flatnonzero(t >= t_max):
+        tt, rr = t[lo[n]:n + 1], r_db[lo[n]:n + 1]
+        ok = np.isfinite(rr)
+        if ok.sum() < 2:
+            return float(t[n])
+        b, a = np.polyfit(tt[ok], rr[ok], 1)
+        if b > RING_SLOPE or t[n] + (level - (a + b * t[n])) / b > RING_CEILING * t_max:
+            return float(t[n])
+    return math.inf
+
+
 def stop_rule(rec: Records, k: int, preset: str, exc: dict) -> Verdict | None:
-    """The earliest verdict on `rec`, a tie going to the first of diverged, growth, converged and flat, or None when
-    there is none yet or `rec` has fewer than 2 samples. `k` is the 0-based row of the excited port, `preset` a key of
-    PRESETS and `exc` the spec's excitation (f1, f2, t0, an antenna's or an SI pulse's flat window "flat_s", else
-    FLAT_S, and an SI pulse's "window_s", the residual's window, else WINDOW_S). Causal: a verdict at t uses no sample
-    after t, so the verdict on a prefix of a record is the earliest verdict of the whole record."""
+    """The earliest verdict on `rec`, a tie going to the first of diverged, growth, converged, flat and t_max, or None
+    when there is none yet or `rec` has fewer than 2 samples. `k` is the 0-based row of the excited port, `preset` a
+    key of PRESETS and `exc` the spec's excitation (f1, f2, t0, an antenna's or an SI pulse's flat window "flat_s",
+    else FLAT_S, and an SI pulse's "window_s", the residual's window, else WINDOW_S, with its "t_max"). "t_max" is an
+    SI pulse's verdict at or past T_max, where ring finds the residual too slow to converge by the ceiling; any other
+    job runs to its T_max with no verdict. Causal: a verdict at t uses no sample after t, so the verdict on a prefix of
+    a record is the earliest verdict of the whole record."""
     # ponytail: each poll recomputes the rule on the whole record; fine below about 1e4 samples, make it incremental
     # if polls lag
     if len(rec.t_u) < 2:
@@ -83,7 +117,8 @@ def stop_rule(rec: Records, k: int, preset: str, exc: dict) -> Verdict | None:
     # P4-D sees false growth
     found = {"diverged": t_bad, "growth": _growth(rec, exc["t0"]),
              "converged": _converged(rec, r_db, k, level, tol, exc),
-             "flat": _flat(rec, r_db, level, exc["t0"], exc.get("flat_s", FLAT_S))}
+             "flat": _flat(rec, r_db, level, exc["t0"], exc.get("flat_s", FLAT_S)),
+             "t_max": ring(rec.t_u, r_db, level, exc["t_max"]) if "window_s" in exc else np.inf}
     kind = min(found, key=found.get)  # the first of the earliest
     if found[kind] == np.inf:
         return None

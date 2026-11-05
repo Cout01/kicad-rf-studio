@@ -56,7 +56,8 @@ from kicad_rf_studio.core.post.si import (SI_OUTPUTS, compare_verify, hammerstad
 from kicad_rf_studio.core.post.waves import layout
 from kicad_rf_studio.core.project import (GATES, GATES_SI, antenna, board_file, board_hash, copper_model, default_gates,
                                           load_project, mesh_n, parts, read_project, relative_path, save_project, si)
-from kicad_rf_studio.stoprule import KEPT, PRESETS, WINDOW_S, Records, Verdict, residual_db, stop_rule
+from kicad_rf_studio.stoprule import (KEPT, PRESETS, RING_CEILING, WINDOW_S, Records, Verdict, ceiling, residual_db,
+                                      stop_rule)
 from kicad_rf_studio.worker import GRIDS, LOG
 
 if TYPE_CHECKING:
@@ -232,8 +233,9 @@ def cost_notes(model: Model, project: dict, setup: dict, threads: int, pool: int
     counts the cells. An SI project's two times count each cell in its Debye dielectric (debye_cells) as
     runs.DEBYE_WEIGHT cells (Stage 4 design 5.9, plan 4 ruling D-4). Its worst case is followed by its runs broken down
     into the measured lines' ends, the victims' ends and the part ports (I_SI_COST_JOBS), then, with a Debye dielectric,
-    its cells there, their weight and DEBYE_POLES' count (I_SI_COST_DEBYE), then W_SI_LONG_RUN when it exceeds
-    LONG_RUN_S."""
+    its cells there, their weight and DEBYE_POLES' count (I_SI_COST_DEBYE), then the ring rule's ceiling, RING_CEILING
+    × T_max, and its runs' time to it (I_SI_COST_RING), then W_SI_LONG_RUN when the worst case exceeds LONG_RUN_S: it
+    stays on T_max, since only a job whose planes ring runs past it (Stage 4 plan 4 ruling T-2)."""
     mesh, ports, dt = model.mesh, model.spec["ports"], setup["dt"]
     nx, ny, nz = len(mesh.x), len(mesh.y), len(mesh.z)
     cells, n_runs, n_parts = nx * ny * nz, len(ports), sum(q["part"] for q in ports)
@@ -269,6 +271,8 @@ def cost_notes(model: Model, project: dict, setup: dict, threads: int, pool: int
             # ponytail: the registered pole count; the fit drops a pole that fits 0, so a material may hold fewer
             notes.append(("I_SI_COST_DEBYE", {"mcells": f"{n_debye / 1e6:.2f}", "weight": f"{runs.DEBYE_WEIGHT:g}",
                                               "poles": len(DEBYE_POLES)}))
+        notes.append(("I_SI_COST_RING", {"ceiling_ns": f"{RING_CEILING * t_max * 1e9:g}",
+                                         "time": duration(seconds(RING_CEILING * t_max))}))
         if seconds(t_max) > LONG_RUN_S:
             notes.append(("W_SI_LONG_RUN", {"time": duration(seconds(t_max))}))
     results = project.get("results", {})  # a job with no samples has no stop time, and a stopped one a wrong one
@@ -571,7 +575,7 @@ def classify_job(job: Path, result: dict, live: Verdict | None, rec: Records, k:
     sample in its final records `rec`, diverged; a non-zero exit or no waves.npz, stopped when the run was stopped, else
     unclassified; the `live` verdict; the stop rule on `rec`; stopped; t_max when the log's iterations are its NrTS;
     else unclassified, never silently done. `result` is the job's entry in what run_jobs returns. Returns the verdict
-    and the Verdict that gives its time and residual, None for t_max, stopped and unclassified."""
+    and the Verdict that gives its time and residual, None for t_max at its NrTS, stopped and unclassified."""
     bad = ((rec.t_u, ~np.isfinite(rec.u).all(0)), (rec.t_i, ~np.isfinite(rec.i).all(0)), (rec.te, ~np.isfinite(rec.e)))
     t_bad = min(np.min(t, initial=np.inf, where=b) for t, b in bad)  # as stop_rule finds it
     if t_bad < np.inf:
@@ -607,15 +611,15 @@ def _save(path: Path, data: dict, command: str) -> None:
 
 
 def basis_lines(results: dict, defaults: dict = GATES) -> list[tuple[str, dict]]:
-    """The first lines of a run's outputs, from the run `results` holds: I_BASIS, each flagged job (flat at its cut,
-    t_max at its last sample), then gate_lines against `defaults` (C-10)."""
+    """The first lines of a run's outputs, from the run `results` holds: I_BASIS, each flagged job (flat or t_max) where
+    its S ends, at its cut when it has one (the stop rule's verdict; an SI job's at or past T_max, ruling T-2), else at
+    its last sample, then gate_lines against `defaults` (C-10)."""
     count = Counter(job["verdict"] for job in results["jobs"])
-    end = {"flat": "t_cut", "t_max": "t_stop"}  # where a flagged job's S ends: its cut, or its last sample
     lines = [("I_BASIS", {"run_dir": results["run_dir"], "preset": results["preset"], "converged": count["converged"],
                           "flat": count["flat"], "t_max": count["t_max"]})]
-    lines += [(VERDICTS[job["verdict"]], {"port": job["port"], "t_ns": f"{job[end[job['verdict']]] * 1e9:.2f}",
+    lines += [(VERDICTS[job["verdict"]], {"port": job["port"], "t_ns": f"{(job['t_cut'] or job['t_stop']) * 1e9:.2f}",
                                           "residual_db": f"{job['residual_db']:.1f}"})
-              for job in results["jobs"] if job["verdict"] in end]
+              for job in results["jobs"] if job["verdict"] in ("flat", "t_max")]
     return lines + gate_lines(results["gates"], defaults)
 
 
@@ -1005,17 +1009,18 @@ def run_ports(model: Model, run_dir: Path, setup: dict, threads: int, pool: int,
               defaults: dict = GATES) -> tuple[list[dict], list[float], float]:
     """The jobs of a built `model` in `run_dir` once its setup gate passed (`setup`: setup.json), which simulate and
     the P0 harnesses share (spec 6.1): I_RUN_START; one job job-{k}-{name} per port number k in `ports` (1-based,
-    default every port) to `t_max` (default the spec's), `pool` at once with `threads` threads each under the stop rule
-    at `preset`, with I_PROGRESS as its energy log grows; each job's verdict (classify_job) followed by
-    gate_lines(`gates`, `defaults`), then its excitation arrays et and ht removed (D-17), the run folder itself kept
-    (C-23). The residuals I_PROGRESS and a verdict without a cut report are last_sample's over the stop rule's window,
-    an SI pulse's window_s.
+    default every port) to `t_max` (default the spec's ceiling: an SI job's openEMS runs to RING_CEILING × T_max, and
+    the stop rule ends it at T_max unless its residual falls fast enough, Stage 4 plan 4 ruling T-2), `pool` at once
+    with `threads` threads each under the stop rule at `preset`, with I_PROGRESS as its energy log grows; each job's
+    verdict (classify_job) followed by gate_lines(`gates`, `defaults`), then its excitation arrays et and ht removed
+    (D-17), the run folder itself kept (C-23). The residuals I_PROGRESS and a verdict without a cut report are
+    last_sample's over the stop rule's window, an SI pulse's window_s.
     Returns (the jobs as project.json's results record them, openEMS's speed in cells/s of each job that wrote its
     stats, the job phase's wall time in s). STOP or Ctrl+C stops the jobs, and their verdicts say so."""
     emit = partial(runs.emit, run_dir)  # (kind, code, params, job=None)
     names, exc, dt = [q["name"] for q in model.spec["ports"]], model.spec["excitation"], setup["dt"]
     ports = range(1, len(names) + 1) if ports is None else ports
-    t_max = exc["t_max"] if t_max is None else t_max
+    t_max = ceiling(exc) if t_max is None else t_max
     jobs = {runs.write_job(runs.job_dir(run_dir, k, names[k - 1]), k, "run", threads, t_max): k for k in ports}
     live, rows = {}, {}  # each job's live verdict, and the energy rows its last I_PROGRESS saw
 

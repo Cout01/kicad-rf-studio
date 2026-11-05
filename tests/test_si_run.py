@@ -14,7 +14,7 @@ from kicad_rf_studio.core.model.spec import verify_spec
 from kicad_rf_studio.core.post.chain import above_dc, s2p_impedance, with_box, z_part
 from kicad_rf_studio.core.post.si import read, si_limits, si_lines, uniform_grid
 from kicad_rf_studio.core.post.waves import layout
-from kicad_rf_studio.core.project import load_project, parts, save_project
+from kicad_rf_studio.core.project import GATES_SI, load_project, parts, save_project
 from kicad_rf_studio.stoprule import KEPT
 from networks import C_BOX, read_s, star, terminate_np, write_s2p
 from test_cli_si import FIX, QSPI, USB, si_project
@@ -62,6 +62,24 @@ def test_a_debye_run_leaves_the_calibrations_levels(tmp_path, calibrated, monkey
     save_project(pj, {**load_project(pj), "dielectric": "lossless"})
     assert pipeline.run(pj) == 0
     assert runs.load_settings()["machines"][runs.machine_key()]["levels"] == {"2": 100.0}  # the fake's 5e7 a thread
+
+
+def test_an_si_runs_jobs_may_run_to_four_times_t_max(tmp_path, calibrated, monkeypatch):  # ruling T-2
+    monkeypatch.setenv("KRS_FAKE", "network")
+    pj = si_project(tmp_path / "q", QSPI)
+    assert pipeline.run(pj) == 0
+    d = load_project(pj)
+    job = json.loads((Path(d["results"]["run_dir"]) / "job-1-P1" / "job.json").read_text(encoding="utf-8"))
+    assert job["t_max"] == pytest.approx(4 * d["t_max_s"])
+
+
+def test_a_job_the_ring_rule_ends_reads_where_its_s_ends():  # ruling T-2: its S is cut at T_max, its last sample later
+    jobs = [{"port": p, "verdict": v, "t_cut": cut, "t_stop": stop, "residual_db": -48.0}
+            for p, v, cut, stop in (("P1", "t_max", 9e-9, 9.31e-9), ("P2", "t_max", None, 9e-9),
+                                    ("P3", "flat", 7e-9, 7.4e-9))]
+    lines = pipeline.basis_lines({"jobs": jobs, "run_dir": "R", "preset": "normal", "gates": GATES_SI}, GATES_SI)
+    assert [(c, p["t_ns"]) for c, p in lines[1:4]] == [("W_JOB_T_MAX", "9.00"), ("W_JOB_T_MAX", "9.00"),
+                                                       ("W_JOB_FLAT", "7.00")]
 
 
 def test_an_si_run_writes_its_results(tmp_path, calibrated, monkeypatch):  # design 5.6, 5.12 item 3; Review Focus 2

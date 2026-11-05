@@ -39,6 +39,7 @@ def test_the_si_cost_lists_the_2d_table_and_the_runs(tmp_path, calibrated):  # d
     assert len(legs) == 4 and all(float(p["z_diff"]) == pytest.approx(2 * float(p["z0"]), abs=0.011) for p in legs)
     assert dict(ev)["I_SI_COST_JOBS"] == {"lines": 4, "victims": 2, "parts": 2}
     assert dict(ev)["I_SI_COST_SPEED"] == {"ratio": f"{runs.SI_SPEED:g}"}
+    assert dict(ev)["I_SI_COST_RING"]["ceiling_ns"] == "36"
     assert [p["verdict"] for c, p in ev if c == "I_SI_2D_LINE"] == ["T_VICTIM"]  # AUX, the victim's one section
 
 
