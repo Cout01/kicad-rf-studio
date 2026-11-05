@@ -283,7 +283,7 @@ The sweep ran on the solid board's copy, both series resistors at each value. Ea
   - The design's last limit, that the results compare variants under identical settings and do not predict measured performance, is I_SI_RELATIVE itself, which opens each result's own lines (§3).
 - **The window:**
   - At 125 ps and the route's 2D εeff 3.28, the resolution length is 10.35 mm; the line prints 10.3 mm.
-  - So the 30.4 mm route keeps about 0.9 resolution lengths, about 110 ps, between the launches.
+  - The plan pre-registered about 0.9 resolution lengths between the launches, from the 2D εeff: a 367 ps round trip over the 30.4 mm route, so about 117 ps. Read from the files, the TDT's arrival puts the far port's launch at t_far 385.7 ps on the solid board's chain (386.7 ps on the gap's, and 376.7 and 377.8 ps in the two verifies), so the levels are searched from 125 to 260.7 ps: 135.7 ps, about 1.1 resolution lengths.
   - U2's run and the resistors read inside the launches. The plane gap's x 116–117 mm, about 17.5 mm along the route, lies between them.
   - As the plan expected, not judged: each board's two levels read the route's middle, blurred by both launches. They sit near the window's edges (131.2 ps or 10.9 mm, and 256.2 ps or 21.2 mm), and each is marked I_SI_TDR_SHORT. The one level not marked is the 0R sweep's highest, 89.82 Ω at 206.2 ps (17.1 mm): within 1 Ω of the target, it reads I_SI_TDR_LEVEL, in the target band.
 - **The gap on the TDR:**
