@@ -447,8 +447,150 @@ def qspi_clk(b):
     decoupled(b, (107, 102))
 
 
+# Stage 4's gate coupons (design 5.11; plan 4 rulings B-1, C-1, C-3, D-1, E-1): a pair's legs D+ and D- (D+ at y
+# 100 + p, KiCad's y down), each from a 1 mm test pad at y 100 ± 1 through a 2 mm lead and a jog to the coupled run
+STACKUP_SL = """(stackup
+ (layer "F.SilkS" (type "Top Silk Screen")) (layer "F.Paste" (type "Top Solder Paste"))
+ (layer "F.Mask" (type "Top Solder Mask") (thickness 0.01)) (layer "F.Cu" (type "copper") (thickness 0.035))
+ (layer "dielectric 1" (type "prepreg") (thickness 0.25) (material "FR4") (epsilon_r 4.3) (loss_tangent 0.02))
+ (layer "In1.Cu" (type "copper") (thickness 0.035))
+ (layer "dielectric 2" (type "prepreg") (thickness 0.25) (material "FR4") (epsilon_r 4.3) (loss_tangent 0.02))
+ (layer "In2.Cu" (type "copper") (thickness 0.035))
+ (layer "dielectric 3" (type "core") (thickness 0.94) (material "FR4") (epsilon_r 4.5) (loss_tangent 0.02))
+ (layer "B.Cu" (type "copper") (thickness 0.035)) (layer "B.Mask" (type "Bottom Solder Mask") (thickness 0.01))
+ (layer "B.Paste" (type "Bottom Solder Paste")) (layer "B.SilkS" (type "Bottom Silk Screen"))
+ (copper_finish "None") (dielectric_constraints no))
+"""  # GND, the pair between 0.25 mm of εr 4.3 on each side (b 0.535, homogeneous), GND, then the core: 1.6 mm (B-1)
+STACKUP_2L16 = STACKUP.replace("(thickness 0.71)", "(thickness 1.51)")  # KiCad's two layers at 1.6 mm
+W100, S100, W75, W35 = 0.25, 0.28, 0.125, 0.61  # 99.81 Ω, 75.07 Ω and 34.94 Ω in the product's 2D table, mask on
+D_SI, D_SI3 = 0.1, 0.066667  # one fine cell of p4b_ms90 at mesh n 2 and n 3: min(w, s, h)/n
+TP1MM = "TestPoint:TestPoint_Pad_1.0x1.0mm"
+
+
+def pair_coupon(b, w=W_PAIR, s=GAP, diag=0.0, aux=None, shift=0.0, split=False):
+    """P4-B's coupled microstrip pair (ruling B-1): TP1 (98, 101) to TP2 on D+, TP3 (98, 99) to TP4 on D-, coupled
+    60 mm from x 100 to 160 at `w` and `s`; with `diag` a 45° up-diagonal that long between 15 mm straight runs at
+    constant pitch; `aux` "vic" a 0.2 mm AUX 0.625 mm off D+ from TP5 (110, 101.15) to TP6 (150, 101.15), "cut" the
+    same AUX run on through jogs at x 110 and 150 to y 104 and out to the outline, unported; `shift` adds (shift,
+    shift) to every coordinate, the outline's and the planes' included; `split` makes each coupled run two collinear
+    tracks meeting at x 130."""
+    p = (w + s) / 2
+    t, d = p * math.tan(math.pi / 8), round(diag / math.sqrt(2), 4)
+    xe, ye = (130 + d, 100 - d) if diag else (160, 100)  # the coupled run's far end, on the centre line
+    box = (80, 82, 180, 118) if aux else (94, 70, 160, 106) if diag else (94, 94, 166, 106)
+
+    def at(*xy):
+        return tuple(v + shift for v in xy)
+
+    for name, k, near, far in (("D+", 1, "TP1", "TP2"), ("D-", -1, "TP3", "TP4")):
+        y = 100 + k * p
+        mid = [(115 + k * t, y), (115 + k * t + d, y - d)] if diag else [(130, y)] if split else []
+        path = [(98, 100 + k), (100, 100 + k), (100, y), *mid, (xe, ye + k * p), (xe, ye + k), (xe + 2, ye + k)]
+        track(b, name, w, *(at(*q) for q in path))
+        place(b, TP1MM, near, "TP", at(98, 100 + k), 0, {"1": name})
+        place(b, TP1MM, far, "TP", at(xe + 2, ye + k), 0, {"1": name})
+    if aux == "vic":
+        for ref, x in (("TP5", 110), ("TP6", 150)):
+            place(b, TP1MM, ref, "TP", at(x, 101.15), 0, {"1": "AUX"})
+        track(b, "AUX", 0.2, at(110, 101.15), at(150, 101.15))
+    elif aux == "cut":
+        track(b, "AUX", 0.2, *(at(*q) for q in ((box[0] + 0.5, 104), (110, 104), (110, 101.15), (150, 101.15),
+                                                 (150, 104), (box[2] - 0.5, 104))))
+    box = (*at(box[0], box[1]), *at(box[2], box[3]))
+    rect(b, pcbnew.Edge_Cuts, *box)
+    planes(b, box)
+
+
+def stripline(b):
+    """P4-B's coupled stripline (ruling B-1): D+ and D- on In1.Cu at 0.18 mm and 0.25 mm, pair_coupon's straight path,
+    each lead's pad end a through via under a 1 mm test pad on F.Cu: TP1 (98, 101) to TP2 (162, 101) on D+, TP3 (98,
+    99) to TP4 (162, 99) on D-. Eight GND vias stitch the GND zones on F.Cu and In2.Cu, 0.5 mm clear of other nets: the
+    pads' port gap, and the vias' antipads."""
+    w, s = 0.18, 0.25
+    p = (w + s) / 2
+    for name, k, near, far in (("D+", 1, "TP1", "TP2"), ("D-", -1, "TP3", "TP4")):
+        y = 100 + k * p
+        track(b, name, w, (98, 100 + k), (100, 100 + k), (100, y), (160, y), (160, 100 + k), (162, 100 + k),
+              layer=pcbnew.In1_Cu)
+        for ref, x in ((near, 98), (far, 162)):
+            via(b, (x, 100 + k), name)
+            place(b, TP1MM, ref, "TP", (x, 100 + k), 0, {"1": name})
+    for at in ((96.5, 99), (96.5, 101), (163.5, 99), (163.5, 101), (98, 96.8), (98, 103.2), (162, 96.8), (162, 103.2)):
+        via(b, at)
+    rect(b, pcbnew.Edge_Cuts, 94, 94, 166, 106)
+    for layer in (pcbnew.F_Cu, pcbnew.In2_Cu):
+        zone(b, layer, [(94.5, 94.5), (165.5, 94.5), (165.5, 105.5), (94.5, 105.5)], clearance=0.5)
+
+
+def l_pair(b):
+    """P4-C's L-shaped pair (ruling C-1): pair_coupon's 90 Ω legs from x 100 along +x, then up to y 80 through an
+    axis-aligned 90° corner at constant pitch, D+ outside it: TP1 (98, 101) to TP2 (121, 78) on D+, TP3 (98, 99) to TP4
+    (119, 78) on D-."""
+    p = (W_PAIR + GAP) / 2
+    for name, k, near, far in (("D+", 1, "TP1", "TP2"), ("D-", -1, "TP3", "TP4")):
+        track(b, name, W_PAIR, (98, 100 + k), (100, 100 + k), (100, 100 + k * p), (120 + k * p, 100 + k * p),
+              (120 + k * p, 80), (120 + k, 80), (120 + k, 78))
+        place(b, TP1MM, near, "TP", (98, 100 + k), 0, {"1": name})
+        place(b, TP1MM, far, "TP", (120 + k, 78), 0, {"1": name})
+    rect(b, pcbnew.Edge_Cuts, 94, 74, 126, 106)
+    planes(b, (94, 74, 126, 106))
+
+
+def step_line(b, w_mid):
+    """P4-C's impedance step (ruling C-3): LINE from TP1 (98, 100) at W_SE to x 136, then `w_mid` to x 172, then W_SE
+    to TP2 (210, 100): 38 mm leads with the pads' 2 mm, and a 36 mm middle."""
+    for w, x0, x1 in ((W_SE, 98, 136), (w_mid, 136, 172), (W_SE, 172, 210)):
+        track(b, "LINE", w, (x0, 100), (x1, 100))
+    for ref, x in (("TP1", 98), ("TP2", 210)):
+        place(b, TP1MM, ref, "TP", (x, 100), 0, {"1": "LINE"})
+    rect(b, pcbnew.Edge_Cuts, 94, 94, 214, 106)
+    planes(b, (94, 94, 214, 106))
+
+
+def pad_coupon(b):
+    """P4-D's pad coupon (ruling D-1): QFN-16 "MCU"s U1 at (100, 100) on pin 11 and U2 at (152.925, 99.5) on pin 3,
+    each with +3V3 on pin 16, GND on its exposed pad 17 and four GND vias at ±0.45 mm around its centre; LINE at W_SE
+    from U1.11 to U2.3, its top edge on the pins' (qspi_clk's)."""
+    for ref, (x, y), pin in (("U1", (100, 100), "11"), ("U2", (152.925, 99.5), "3")):
+        place(b, QFN, ref, "MCU", (x, y), 0, {pin: "LINE", "16": "+3V3", "17": "GND"})
+        for dx in (-0.45, 0.45):
+            for dy in (-0.45, 0.45):
+                via(b, (x + dx, y + dy))
+    track(b, "LINE", W_SE, (101.4625, 99.79), (151.4625, 99.79))
+    rect(b, pcbnew.Edge_Cuts, 94, 94, 159, 106)
+    planes(b, (94, 94, 159, 106))
+
+
+def tall_coupon(b):
+    """P4-D's tall pad coupon (ruling D-1), on two layers at 1.6 mm: a 2.9 mm LINE between 3 mm test pads TP1 (100, 100)
+    and TP2 (140, 100); 1.5 mm test pads TP3 (97.25, 100) and TP4 (142.75, 100) on GND, each with a GND via at its
+    centre; a B.Cu GND zone 0.5 mm inside the outline."""
+    for ref, x in (("TP1", 100), ("TP2", 140)):
+        place(b, "TestPoint:TestPoint_Pad_3.0x3.0mm", ref, "TP", (x, 100), 0, {"1": "LINE"})
+    track(b, "LINE", 2.9, (100, 100), (140, 100))
+    for ref, x in (("TP3", 97.25), ("TP4", 142.75)):
+        place(b, "TestPoint:TestPoint_Pad_1.5x1.5mm", ref, "TP", (x, 100), 0, {"1": "GND"})
+        via(b, (x, 100))
+    rect(b, pcbnew.Edge_Cuts, 94, 94, 146, 106)
+    square(b, pcbnew.B_Cu, "GND", 94.5, 94.5, 145.5, 105.5)
+
+
+def line100(b):
+    """P4-D's 100 mm line (ruling D-1): LINE at W_SE from TP1 (98, 100) to TP2 (198, 100), the mask open over the whole
+    board, as scikit-rf's MLine has none."""
+    track(b, "LINE", W_SE, (98, 100), (198, 100))
+    for ref, x in (("TP1", 98), ("TP2", 198)):
+        place(b, TP1MM, ref, "TP", (x, 100), 0, {"1": "LINE"})
+    box = 94, 94, 202, 106
+    rect(b, pcbnew.Edge_Cuts, *box)
+    rect(b, pcbnew.F_Mask, *box, filled=True)
+    planes(b, box)
+
+
 # an antenna board's 50 Ω microstrip keeps its top ground 1 mm off: the fill's clearance, and the gap fit2d reads
 ANTENNA_RULES = '(version 1)\n(rule "microstrip gap" (constraint clearance (min 1mm)))\n'
+# the stripline coupon keeps its fills 0.5 mm off its pads and vias (ruling B-1): its ports' gap and the antipads
+SL_RULES = '(version 1)\n(rule "stripline gap" (constraint clearance (min 0.5mm)))\n'
 
 
 def radio(b, at, rf="RF"):
@@ -548,7 +690,31 @@ BOARDS = {
     "usb2_hs_gap": lambda b: usb2_hs(b, gap=True),
     "usb2_hs_45": lambda b: usb2_hs(b, bend=True),
     "qspi_clk": qspi_clk,
+    "p4b_ms90": pair_coupon,
+    "p4b_ms100": lambda b: pair_coupon(b, W100, S100),
+    "p4b_sl90": stripline,
+    "p4b_ms90_45": lambda b: pair_coupon(b, diag=33.0),
+    "p4b_ms100_45": lambda b: pair_coupon(b, W100, S100, diag=33.0),
+    "p4b_ms90_vic": lambda b: pair_coupon(b, aux="vic"),
+    "p4b_ms90_cut": lambda b: pair_coupon(b, aux="cut"),
+    "p4c_l90": l_pair,
+    "p4c_step75": lambda b: step_line(b, W75),
+    "p4c_step35": lambda b: step_line(b, W35),
+    "si_pad_coupon": pad_coupon,
+    "si_pad_coupon_tall": tall_coupon,
+    "si_line100": line100,
+    "p4e_shift": lambda b: pair_coupon(b, shift=D_SI),
+    "p4e_gapp": lambda b: pair_coupon(b, s=GAP + D_SI),
+    "p4e_gapm": lambda b: pair_coupon(b, s=GAP - D_SI),
+    "p4e_null": lambda b: pair_coupon(b, split=True),
+    "p4e_vshift": lambda b: pair_coupon(b, aux="vic", shift=D_SI),
+    "p4e_shift3": lambda b: pair_coupon(b, shift=D_SI3),
+    "p4e_gapp3": lambda b: pair_coupon(b, s=GAP + D_SI3),
+    "p4e_gapm3": lambda b: pair_coupon(b, s=GAP - D_SI3),
+    "p4e_vshift3": lambda b: pair_coupon(b, aux="vic", shift=D_SI3),
 }
+# the boards whose copper layers, thickness and stackup are their own (new_board's arguments)
+STACKS = {"p4b_sl90": (4, 1.6, STACKUP_SL), "si_pad_coupon_tall": (2, 1.6, STACKUP_2L16)}
 
 
 def new_board(path, seed, rules=RULES, copper=2, thickness=0.8, stackup=STACKUP):
@@ -604,17 +770,19 @@ def save(b, path):
 
 def main(out, names=()):
     """Build the boards `names` (every one in BOARDS when empty) into the folder `out`: the antenna boards under
-    ANTENNA_RULES, the rest under RULES; Stage 4's (usb2_hs*, qspi_clk) with four copper layers, 1.6 mm and STACKUP_4L,
-    the rest on KiCad's default two-layer 0.8 mm stackup. An unknown name exits first, before any board is written."""
+    ANTENNA_RULES, p4b_sl90 under SL_RULES, the rest under RULES; a board in STACKS on its own (p4b_sl90 on STACKUP_SL,
+    si_pad_coupon_tall on KiCad's two layers at 1.6 mm), the rest of Stage 4's (usb2_hs*, qspi_clk, p4*, si_*) with four
+    copper layers, 1.6 mm and STACKUP_4L, and the others on KiCad's default two-layer 0.8 mm stackup. An unknown name
+    exits first, before any board is written."""
     if unknown := [n for n in names if n not in BOARDS]:
         sys.exit(f"unknown boards: {' '.join(unknown)}; known: {' '.join(BOARDS)}")
     out = Path(out)
     out.mkdir(parents=True, exist_ok=True)
     for name in names or BOARDS:
         path = out / f"{name}.kicad_pcb"
-        rules = ANTENNA_RULES if name.startswith(("ifa2g4", "meander915")) else RULES
-        layers = dict(copper=4, thickness=1.6, stackup=STACKUP_4L) if name.startswith(("usb2_hs", "qspi_clk")) else {}
-        b = new_board(path, zlib.crc32(name.encode()), rules, **layers)
+        rules = ANTENNA_RULES if name.startswith(("ifa2g4", "meander915")) else SL_RULES if name == "p4b_sl90" else RULES
+        stage4 = name.startswith(("usb2_hs", "qspi_clk", "p4", "si_"))
+        b = new_board(path, zlib.crc32(name.encode()), rules, *STACKS.get(name, (4, 1.6, STACKUP_4L) if stage4 else ()))
         BOARDS[name](b)
         save(b, path)
         print(name)
