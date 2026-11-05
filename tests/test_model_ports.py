@@ -9,7 +9,7 @@ import shapely
 from shapely.geometry import Point, box
 
 from kicad_rf_studio import runs
-from kicad_rf_studio.cli import main
+from kicad_rf_studio.cli import _port, main
 from kicad_rf_studio.core.geometry import build_geometry
 from kicad_rf_studio.core.geometry.copper import Piece, copper_pieces, split_holes
 from kicad_rf_studio.core.geometry.zstack import Slab, zstack
@@ -340,6 +340,16 @@ def test_an_si_ends_reference_is_v1s_or_the_plane_under_its_pad():  # Stage 4 de
     with pytest.raises(KrsError) as e:
         si_reference(b, c, [pc for pc in pieces if pc.layer == "F.Cu"], zs, "P5", "TP1.1", far, 1.2)  # no plane
     assert (e.value.code, e.value.params) == ("E_SI_NO_REFERENCE", {"pad": "TP1.1", "layer": "F.Cu", "reach_mm": "1.2"})
+
+
+def test_an_si_ends_point_reference_within_reach_is_kept():  # plan 2's carried item; Stage 4 design 5.5
+    b = load_board(FIX / "coupon_gcpw_pads.kicad_pcb")
+    c, zs = classify(b), zstack(b.stackup, b.copper_layers)
+    pieces, _ = copper_pieces(b, b.outline, {s.copper: round(s.z1 - s.z0, 6) for s in zs if s.copper})
+    p = _port(b, c, "P1", "TP1.1")
+    assert p["rule"] == "copper" and p["reference"] == {"point": [100.0, 100.6505], "layer": "F.Cu"}
+    assert si_reference(b, c, pieces, zs, "P1", "TP1.1", p["reference"], 4.26) == p["reference"]  # 6 h of 0.71 mm
+    assert si_reference(b, c, pieces, zs, "P1", "TP1.1", p["reference"], 0.1) == {"plane": "B.Cu"}
 
 
 @pytest.mark.openems

@@ -33,6 +33,7 @@ from kicad_rf_studio.core.geometry.region import air_cell, band
 from kicad_rf_studio.core.geometry.sections import cross_section, route_length
 from kicad_rf_studio.core.geometry.zstack import substrate_h
 from kicad_rf_studio.core.kicad import load_board
+from kicad_rf_studio.core.kicad.stackup import Stackup
 from kicad_rf_studio.core.kicad.tracer import adopt, check_antenna
 from kicad_rf_studio.core.kicad.values import bypass, port_value
 from kicad_rf_studio.core.mesh.gates import check_fit2d, dt_floor_reference, fit2d, mesh_with_lint
@@ -40,8 +41,8 @@ from kicad_rf_studio.core.messages import KrsError, english, reason, render
 from kicad_rf_studio.core.model.parts import CURVE_PORT, GRID, PORT
 from kicad_rf_studio.core.model.ports import ends, nominal_boxes, place
 from kicad_rf_studio.core.model.readers import read_log, read_probe, read_run_stats, read_stats
-from kicad_rf_studio.core.model.spec import (air_box, cell_split, far_field_box, grid_entry, metal_in_pml, model_spec,
-                                             round_trip, spec_hash, verify_spec)
+from kicad_rf_studio.core.model.spec import (DEBYE_POLES, air_box, cell_split, debye_cells, far_field_box, grid_entry,
+                                             metal_in_pml, model_spec, round_trip, spec_hash, verify_spec)
 from kicad_rf_studio.core.post.antenna import (ANTENNA_LIMITS, ANTENNA_OUTPUTS, ANTENNA_VERIFY_OUTPUTS, COMPARE_OUTPUTS,
                                                antenna_csv, antenna_png, compare_png, compare_s11, delta_lines, deltas,
                                                deltas_csv, eta_what_if_lines, far_field_lines, far_field_of,
@@ -92,10 +93,13 @@ def load(path: Path) -> tuple[dict, Board, Geometry, list[tuple[str, dict]]]:
     """The project at `path` (read_project), its board and its geometry, and the notes to report, in this order:
     W_BOARD_CHANGED when the board's sha256 is not the one `new` stored (C-30), the board's warnings, the geometry's
     notes (its E_ gate entries too, which stops() reads), then W_OFF_TOP_LAYER for each measured section off the top
-    copper (C-9), but in an SI project, whose geometry takes its lines' layers (Stage 4 design 5.3). An antenna
-    project's antenna is checked again as `new` checks it (tracer.check_antenna: an edited ref or a re-annotated board
-    raises E_ANTENNA_UNKNOWN, E_ANTENNA_MODULE, E_ANTENNA_CHIP or E_NOT_AN_ANTENNA); then its netless copper takes the
-    feed net, the chain's last (tracer.adopt, Stage 3 design 5.3), before the geometry is built."""
+    copper (C-9), but in an SI project, whose geometry takes its lines' layers (Stage 4 design 5.3). An SI project whose
+    "dielectric" is "debye" then names in W_SI_DEBYE_NO_LOSS the stackup's dielectric layers whose loss tangent reads 0,
+    which model_spec leaves lossless (Stage 4 plan 4 ruling D-4): a loss tangent the board leaves out reads KiCad's
+    0.02 (Layer.__post_init__), so only 0 runs lossless. An antenna project's antenna is checked again as `new` checks
+    it (tracer.check_antenna: an edited ref or a re-annotated board raises E_ANTENNA_UNKNOWN, E_ANTENNA_MODULE,
+    E_ANTENNA_CHIP or E_NOT_AN_ANTENNA); then its netless copper takes the feed net, the chain's last (tracer.adopt,
+    Stage 3 design 5.3), before the geometry is built."""
     project = read_project(path)
     file = board_file(path, project)
     board = load_board(file)
@@ -108,6 +112,10 @@ def load(path: Path) -> tuple[dict, Board, Geometry, list[tuple[str, dict]]]:
     notes += [*board.warnings, *geom.notes,
               *(("W_OFF_TOP_LAYER", {"net": s.net, "layer": s.layer}) for s in geom.sections
                 if s.layer != top and not si(project))]
+    if si(project) and project["dielectric"] == "debye":
+        layers = Stackup.from_json(project["stackup"]).layers
+        if names := [x.name for x in layers if x.kind == "dielectric" and x.loss_tangent == 0]:
+            notes.append(("W_SI_DEBYE_NO_LOSS", {"layers": ", ".join(names)}))
     return project, board, geom, notes
 
 
@@ -221,19 +229,24 @@ def cost_notes(model: Model, project: dict, setup: dict, threads: int, pool: int
     ceil(runs / pool) rounds; the time predicted from the longest stop time of the last run's jobs that kept S, when
     that run was of this model; the RAM; the main cost (driver). An antenna's two times take the cost refit's
     corrections: each PML cell counts as runs.PML_WEIGHT cells, at runs.small_speed(`pool`) × `per_job_mcs`; its RAM
-    counts the cells. An SI project's worst case (Stage 4 design 5.9) is followed by its runs broken down into the
-    measured lines' ends, the victims' ends and the part ports (I_SI_COST_JOBS), then W_SI_LONG_RUN when it exceeds
+    counts the cells. An SI project's two times count each cell in its Debye dielectric (debye_cells) as
+    runs.DEBYE_WEIGHT cells (Stage 4 design 5.9, plan 4 ruling D-4). Its worst case is followed by its runs broken down
+    into the measured lines' ends, the victims' ends and the part ports (I_SI_COST_JOBS), then, with a Debye dielectric,
+    its cells there, their weight and DEBYE_POLES' count (I_SI_COST_DEBYE), then W_SI_LONG_RUN when it exceeds
     LONG_RUN_S."""
     mesh, ports, dt = model.mesh, model.spec["ports"], setup["dt"]
     nx, ny, nz = len(mesh.x), len(mesh.y), len(mesh.z)
     cells, n_runs, n_parts = nx * ny * nz, len(ports), sum(q["part"] for q in ports)
     weighted, mcs, split = cells, per_job_mcs, []  # the cells a timestep costs, at mcs MC/s a job
+    n_debye = debye_cells(model.spec) if si(project) else 0
     if antenna(project):
         board, air, pml = cell_split(model.spec)
         ratio = runs.small_speed(pool)
         weighted, mcs = cells + (runs.PML_WEIGHT - 1) * pml, per_job_mcs * ratio
         split = [("I_COST_SPLIT", {"board": f"{board / 1e6:.2f}", "air": f"{air / 1e6:.2f}", "pml": f"{pml / 1e6:.2f}",
                                    "weight": f"{runs.PML_WEIGHT:g}", "ratio": f"{ratio:g}"})]
+    elif n_debye:
+        weighted = cells + (runs.DEBYE_WEIGHT - 1) * n_debye
 
     def seconds(t_stop: float) -> float:
         return math.ceil(n_runs / pool) * weighted * (t_stop / dt) / (mcs * 1e6)
@@ -249,10 +262,13 @@ def cost_notes(model: Model, project: dict, setup: dict, threads: int, pool: int
         ("I_COST_TIME", {"time": duration(seconds(t_max)), "runs": n_runs, "t_max_ns": f"{t_max * 1e9:g}",
                          "pool": pool, "threads": threads})]
     if si(project):
-        # ponytail: a Debye cell counts as a plain one until gate P4-D measures its weight (design 5.9)
         roles = [line["role"] for line in project["lines"]]
         notes.append(("I_SI_COST_JOBS", {"lines": 2 * roles.count("measured"), "victims": 2 * roles.count("victim"),
                                          "parts": n_parts}))
+        if n_debye:
+            # ponytail: the registered pole count; the fit drops a pole that fits 0, so a material may hold fewer
+            notes.append(("I_SI_COST_DEBYE", {"mcells": f"{n_debye / 1e6:.2f}", "weight": f"{runs.DEBYE_WEIGHT:g}",
+                                              "poles": len(DEBYE_POLES)}))
         if seconds(t_max) > LONG_RUN_S:
             notes.append(("W_SI_LONG_RUN", {"time": duration(seconds(t_max))}))
     results = project.get("results", {})  # a job with no samples has no stop time, and a stopped one a wrong one
@@ -265,16 +281,18 @@ def cost_notes(model: Model, project: dict, setup: dict, threads: int, pool: int
 
 
 def prepare(model: Model, emit: Callable[[str, dict], None], run_dir: Path | None = None, *,
-            small: bool = False) -> tuple[int, int, float]:
+            small: bool = False, si: bool = False) -> tuple[int, int, float]:
     """What the jobs of a built `model` (one with a mesh) run with: (threads, pool, per-job MC/s), from this machine's
     calibration, measured first on a machine that has none (spec 6.4), inside the command's `run_dir` when it has one
     (runs.calibrate), the pool no larger than the number of runs, so that the cost lines count only jobs that run at
     once, and the per-job MC/s at that level (runs.per_job_mcs, D-16). With `small` (an antenna's model, Stage 3
     design 5.9) and a pool of 1, the per-job MC/s is the calibration's own one-job speed at its threads ("single"),
     when it holds one, else per_job_mcs at 1: the cost refit measured runs.SMALL_SPEED[1] against that speed, which no
-    run refreshes, while a v1 run at pool 1 refreshes levels["1"]. Calls `emit(code, params)` with check_openems()'s
-    warnings, before any worker (C-31), and with W_RAM when one job needs more RAM than is free. Raises
-    check_openems()'s refusals and what calibrate raises."""
+    run refreshes, while a v1 run at pool 1 refreshes levels["1"]. With `si` (an SI project's model, Stage 4 plan 4
+    ruling K-1), a per-job MC/s that is still the calibration's own at that level (runs.calibrated_mcs) is taken at
+    runs.SI_SPEED of it, with I_SI_COST_SPEED, until a run at that level measures it. Calls `emit(code, params)` with
+    check_openems()'s warnings, before any worker (C-31), and with W_RAM when one job needs more RAM than is free.
+    Raises check_openems()'s refusals and what calibrate raises."""
     for code, params in runs.check_openems():
         emit(code, params)
     entry = runs.ensure_calibrated(runs.load_settings(), run_dir)
@@ -288,6 +306,9 @@ def prepare(model: Model, emit: Callable[[str, dict], None], run_dir: Path | Non
     mcs = runs.per_job_mcs(entry, pool)
     if small and pool == 1:
         mcs = entry.get("single", {}).get(str(threads), mcs)
+    if si and mcs == runs.calibrated_mcs(entry, pool):
+        mcs *= runs.SI_SPEED
+        emit("I_SI_COST_SPEED", {"ratio": f"{runs.SI_SPEED:g}"})
     return threads, pool, mcs
 
 
@@ -506,7 +527,8 @@ def cost(path: Path, run_dir: Path | None = None) -> int:
         say("verdict", code, params)
     if model.spec is None:  # E_EDGE_LINT left no mesh to set up
         return 3
-    threads, pool, per_job_mcs = prepare(model, partial(say, "message"), run_dir, small=antenna(project))
+    threads, pool, per_job_mcs = prepare(model, partial(say, "message"), run_dir, small=antenna(project),
+                                         si=si(project))
     settings = runs.load_settings()
     setup, blocked, warnings = setup_gate(model, project, run_dir, settings, threads)
     for code, params in blocked:
@@ -938,16 +960,18 @@ def _model_phase(path: Path, emit: Callable[..., None]) -> tuple[dict, Board, Ge
 
 def simulate(model: Model, project: dict, run_dir: Path) -> tuple[list[dict], dict, float] | None:
     """The job phase of a built `model` (one with a spec) in `run_dir`, which run and verify share (spec 6.1): prepare
-    (small for an antenna) and the setup gate, its blocking gates as verdict events and its warnings as message
-    events, then gate_lines and None when it blocks; else I_GATES_PASSED (I_GATES_PASSED_PML for a spec with a
-    boundary, whose gates include the absorber), gate_lines and the cost lines, then run_ports on every port of the
-    model at the project's preset, and the per-job speed of the level it ran at refreshed in the calibration (D-16),
-    except by an antenna's run (Stage 3 design 5.9). Returns (the jobs as project.json's results records them,
-    setup.json, the job phase's wall time in s). STOP or Ctrl+C before the jobs start propagates as KeyboardInterrupt;
-    once they run, it stops them, and their verdicts say so."""
+    (small for an antenna, si for an SI project) and the setup gate, its blocking gates as verdict events and its
+    warnings as message events, then gate_lines and None when it blocks; else I_GATES_PASSED (I_GATES_PASSED_PML for a
+    spec with a boundary, whose gates include the absorber), gate_lines and the cost lines, then run_ports on every
+    port of the model at the project's preset, and the per-job speed of the level it ran at refreshed in the
+    calibration (D-16), except by an antenna's run (Stage 3 design 5.9) and by a run whose spec holds a Debye material
+    (debye_cells, Stage 4 plan 4 ruling D-4). Returns (the jobs as project.json's results records them, setup.json, the
+    job phase's wall time in s). STOP or Ctrl+C before the jobs start propagates as KeyboardInterrupt; once they run,
+    it stops them, and their verdicts say so."""
     emit = partial(runs.emit, run_dir)  # (kind, code, params, job=None)
     gates, defaults = project["gates"], default_gates(project)
-    threads, pool, per_job_mcs = prepare(model, partial(emit, "message"), run_dir, small=antenna(project))
+    threads, pool, per_job_mcs = prepare(model, partial(emit, "message"), run_dir, small=antenna(project),
+                                         si=si(project))
     setup, blocked, warnings = setup_gate(model, project, run_dir, runs.load_settings(), threads)
     for code, params in blocked:
         emit("verdict", code, params, 0)
@@ -966,8 +990,9 @@ def simulate(model: Model, project: dict, run_dir: Path) -> tuple[list[dict], di
     done, speeds, wall_s = run_ports(model, run_dir, setup, threads, pool, project["preset"], gates,
                                      defaults=defaults)
     # spec 6.4: refreshed from the run's Speed lines; a run whose every job died measured nothing; and an antenna's
-    # speed holds the PML and the small model, which cost applies to the calibration's own (Stage 3 design 5.9)
-    if speeds and not antenna(project):
+    # speed holds the PML and the small model, which cost applies to the calibration's own (Stage 3 design 5.9); a
+    # Debye cell's speed is no plain one's: a run with Debye refreshes no level (Stage 4 plan 4 ruling D-4)
+    if speeds and not antenna(project) and not debye_cells(model.spec):
         settings = runs.load_settings()
         # D-16: only the level this run used; aggregate_mcs stays the calibration's
         settings["machines"][runs.machine_key()].setdefault("levels", {})[str(pool)] = sum(speeds) / len(speeds) / 1e6

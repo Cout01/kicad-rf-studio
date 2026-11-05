@@ -5,13 +5,13 @@ from functools import partial
 
 import pytest
 
-from kicad_rf_studio import pipeline
+from kicad_rf_studio import pipeline, runs
 from kicad_rf_studio.core.cs2d import pair
 from kicad_rf_studio.core.geometry.sections import BOX_H, cross_section
 from kicad_rf_studio.core.geometry.zstack import substrate_h
 from kicad_rf_studio.core.mesh.gates import check_fit2d, fit2d
 from kicad_rf_studio.core.messages import KrsError
-from kicad_rf_studio.core.project import GATES, GATES_SI
+from kicad_rf_studio.core.project import GATES, GATES_SI, load_project, save_project
 from test_cli_si import FIX, QSPI, si_project
 
 
@@ -38,6 +38,7 @@ def test_the_si_cost_lists_the_2d_table_and_the_runs(tmp_path, calibrated):  # d
     legs = [p for c, p in ev if c == "I_SI_2D_LEG"]  # the four jogs to and from U2's rows, each partner elsewhere
     assert len(legs) == 4 and all(float(p["z_diff"]) == pytest.approx(2 * float(p["z0"]), abs=0.011) for p in legs)
     assert dict(ev)["I_SI_COST_JOBS"] == {"lines": 4, "victims": 2, "parts": 2}
+    assert dict(ev)["I_SI_COST_SPEED"] == {"ratio": f"{runs.SI_SPEED:g}"}
     assert [p["verdict"] for c, p in ev if c == "I_SI_2D_LINE"] == ["T_VICTIM"]  # AUX, the victim's one section
 
 
@@ -89,3 +90,17 @@ def test_an_si_cost_past_two_hours_is_warned_and_its_gates_are_its_own(tmp_path)
     assert "W_SI_LONG_RUN" not in dict(pipeline.cost_notes(model, project, setup, 4, 8, 1e9))
     assert pipeline.gate_lines(GATES_SI, GATES_SI) == [] and pipeline.gate_lines(GATES) == []
     assert pipeline.gate_lines(GATES, GATES_SI) == [("W_GATE_LIMITS_SI", {"fit2d_limit": "0.03", "dt_floor": "0.8"})]
+
+
+def test_a_debye_models_cost_counts_its_cells_at_their_weight(tmp_path):  # design 5.9; ruling D-4
+    setup = {"dt": 1e-13, "node": [0, 1, 2, 3]}
+    pj = si_project(tmp_path / "d")
+    save_project(pj, {**load_project(pj), "dielectric": "debye"})
+    project, board, geom, _ = pipeline.load(pj)
+    notes = dict(pipeline.cost_notes(pipeline.build_model(project, board, geom), project, setup, 8, 2, 100.0))
+    assert runs.DEBYE_WEIGHT == 6.8  # r1's five-pole probe, until the refit (Task 15)
+    assert notes["I_SI_COST_DEBYE"] == {"mcells": "0.58", "weight": f"{runs.DEBYE_WEIGHT:g}", "poles": 4}
+    weighted = 2072070 + (runs.DEBYE_WEIGHT - 1) * 582291
+    assert notes["I_COST_TIME"]["time"] == pipeline.duration(4 * weighted * (9e-9 / 1e-13) / 100e6)  # 8 runs, 2 at once
+    p, b, g, _ = pipeline.load(si_project(tmp_path / "l"))
+    assert "I_SI_COST_DEBYE" not in dict(pipeline.cost_notes(pipeline.build_model(p, b, g), p, setup, 8, 2, 100.0))

@@ -607,6 +607,11 @@ msgstr "O componente {ref} não pode ficar na grade: só um C ou um R pode. Defi
 msgid "A Debye fit of a dielectric with εr {eps_r} and tan δ {tan_d} has no valid poles: it falls below vacuum or keeps none. Set \"dielectric\": \"lossless\" in project.json, or check that layer's εr and loss tangent in KiCad."
 msgstr "Um ajuste de Debye de um dielétrico com εr {eps_r} e tan δ {tan_d} não tem polos válidos: fica abaixo do vácuo ou não mantém nenhum. Defina \"dielectric\": \"lossless\" em project.json, ou confira o εr e a tangente de perdas dessa camada no KiCad."
 
+#. W_SI_DEBYE_NO_LOSS
+#, python-brace-format
+msgid "The Debye dielectric needs a loss tangent above 0, and the stackup gives {layers} a loss tangent of 0, so they run lossless. Set their loss tangent in KiCad's board setup, or set \"dielectric\": \"lossless\" in project.json."
+msgstr "O dielétrico de Debye precisa de uma tangente de perdas acima de 0, e o empilhamento dá a {layers} uma tangente de perdas de 0, então elas são simuladas sem perdas. Defina a tangente de perdas delas na configuração da placa do KiCad, ou defina \"dielectric\": \"lossless\" no project.json."
+
 #. E_LOCKED
 #, python-brace-format
 msgid "Another run of this project has been running since {started} in {run}. Wait for it, or create a file named STOP in that folder to stop it; if no run is going on, delete {lock}."
@@ -700,6 +705,16 @@ msgstr "Pior caso: {time} (execuções até T_max {t_max_ns} ns: {runs}; simult�
 #, python-brace-format
 msgid "Runs: {lines} for the measured lines' ends, {victims} for the victims' ends, {parts} for the part ports."
 msgstr "Execuções: {lines} para as pontas das linhas medidas, {victims} para as pontas das vítimas, {parts} para as portas de componentes."
+
+#. I_SI_COST_DEBYE
+#, python-brace-format
+msgid "Cells: {mcells} M in the Debye dielectric, {poles} poles each; the time counts each such cell as {weight} cells."
+msgstr "Células: {mcells} M no dielétrico de Debye, {poles} polos em cada uma; o tempo conta cada uma dessas células como {weight} células."
+
+#. I_SI_COST_SPEED
+#, python-brace-format
+msgid "This signal-integrity model's speed is taken as {ratio} × the calibration's per-job speed, the measured ratio of SI models to the calibration's uniform one, until a run with this many jobs at once measures it."
+msgstr "A velocidade deste modelo de integridade de sinal é tomada como {ratio} × a velocidade por tarefa da calibração, a razão medida entre modelos de SI e o modelo uniforme da calibração, até que uma execução com esse número de tarefas simultâneas a meça."
 
 #. W_SI_LONG_RUN
 #, python-brace-format

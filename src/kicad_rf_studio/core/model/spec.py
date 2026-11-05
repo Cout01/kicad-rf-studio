@@ -175,22 +175,23 @@ def kappa(eps_r: float, tan_d: float | None, f0: float) -> float:
 
 DEBYE_F_REF = 1e9  # Hz: where a stackup's εr and tan δ are taken to hold
 DEBYE_DECADES = 2  # the fit's band, f_max/100 to f_max: gate P4-D's 0.1 GHz to f_max at 10 GHz (Stage 4 design 5.11)
+# the poles at f_max·10^e: four, 0.8 decade apart and 0.2 past each edge of the fit's band (Stage 4 plan 4 ruling D-3:
+# three spent 86 % of P4-D's 5 % budget against MLine, four 33 %)
+DEBYE_POLES = (-2.2, -1.4, -0.6, 0.2)
 
 
 def debye(eps_r: float, tan_d: float, f_max: float) -> dict:
     """An SI dielectric's Debye model (Stage 4 design 5.3), a model spec material's "debye": ε(f) = ε∞ + Σ Δε/(1 +
-    j·f/f_relax), one pole a decade at f_max/10^k, k = DEBYE_DECADES down to 0. It is fitted in the Djordjevic–Sarkar
+    j·f/f_relax), four poles, f_max·10^−2.2 to f_max·10^0.2 (DEBYE_POLES). It is fitted in the Djordjevic–Sarkar
     manner to `eps_r` and `tan_d` at DEBYE_F_REF, ε″ = εr·tan δ flat and ε′ = εr − (2/π)·ε″·ln(f/DEBYE_F_REF), on 61
-    log-spaced points from the first pole to f_max, its ε″ rows weighted 1/tan δ, by non-negative least squares: every
+    log-spaced points from f_max/100 to f_max, its ε″ rows weighted 1/tan δ, by non-negative least squares: every
     Δε ≥ 0, a pole that takes 0 dropped, and no κ, so no DC loss. ValueError ("Debye") for a tan δ of 0 or less, for an
     ε∞ under 1, a fit below vacuum, and for a fit that keeps no pole, which would be a Debye material of order 0."""
-    # ponytail: one pole a decade ripples tan δ by about 6 % on FR-4 (−4.7 to +4.8 % against Djordjevic–Sarkar's
-    # ε″/√ε′); gate P4-D may ask for poles past the band's edges (4 from f_max/10^2.2 to f_max·10^0.2 read 3.9 %),
-    # at a higher cell weight
+    # ponytail: four poles ripple tan δ by 3.2 % on FR-4 (three: 6 %); gate P4-D measures their cell weight
     if tan_d <= 0:
         raise ValueError(f"a Debye fit needs a loss tangent above 0, not {tan_d}")
-    poles = [f_max / 10 ** k for k in range(DEBYE_DECADES, -1, -1)]
-    f = np.geomspace(poles[0], f_max, 61)
+    poles = [f_max * 10 ** e for e in DEBYE_POLES]
+    f = np.geomspace(f_max / 10 ** DEBYE_DECADES, f_max, 61)
     cols = [1 / (1 + 1j * f / p) for p in poles]
     a = np.vstack([np.r_[np.ones_like(f), np.zeros_like(f)], *(np.r_[c.real, -c.imag / tan_d] for c in cols)]).T
     b = np.r_[eps_r - 2 / math.pi * eps_r * tan_d * np.log(f / DEBYE_F_REF), np.full(f.size, eps_r)]
@@ -211,6 +212,15 @@ def _debye(eps_r: float, tan_d: float, f_max: float) -> dict:
         return debye(eps_r, tan_d, f_max)
     except ValueError:
         raise KrsError("E_DEBYE_FIT", eps_r=f"{eps_r:g}", tan_d=f"{tan_d:g}") from None
+
+
+def debye_cells(spec: dict) -> int:
+    """The nodes inside the box of the Debye materials' solids, as cost counts cells (cell_split's board); 0 without a
+    material that holds "debye"."""
+    # ponytail: the box of every Debye solid, which on a board crop is the crop itself; per-solid counts if a stack has
+    # Debye cut-outs
+    fitted = [m for m in spec["materials"] if "debye" in m]
+    return cell_split({**spec, "materials": fitted})[0] if fitted else 0
 
 
 def grid_entry(placed: dict, part: dict) -> dict:

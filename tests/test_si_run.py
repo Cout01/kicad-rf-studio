@@ -7,7 +7,7 @@ import numpy as np
 import pytest
 import skrf
 
-from kicad_rf_studio import __version__, cli, pipeline
+from kicad_rf_studio import __version__, cli, pipeline, runs
 from kicad_rf_studio.core.messages import KrsError, render
 from kicad_rf_studio.core.model import spec as spec_module
 from kicad_rf_studio.core.model.spec import verify_spec
@@ -51,6 +51,17 @@ def test_a_marker_off_the_grid_takes_its_nearest_point(tmp_path, calibrated, mon
     assert pipeline.run(pj) == 0
     p = load_project(pj)
     assert layout(p, p["results"]).markers == [27]  # 135 MHz: round(133/5)
+
+
+def test_a_debye_run_leaves_the_calibrations_levels(tmp_path, calibrated, monkeypatch):  # D-4, D-16; Review Focus 2
+    monkeypatch.setenv("KRS_FAKE", "network")
+    pj = si_project(tmp_path / "d", QSPI)
+    save_project(pj, {**load_project(pj), "dielectric": "debye"})
+    assert pipeline.run(pj) == 0
+    assert "levels" not in runs.load_settings()["machines"][runs.machine_key()]  # a Debye cell's speed is no plain one's
+    save_project(pj, {**load_project(pj), "dielectric": "lossless"})
+    assert pipeline.run(pj) == 0
+    assert runs.load_settings()["machines"][runs.machine_key()]["levels"] == {"2": 100.0}  # the fake's 5e7 a thread
 
 
 def test_an_si_run_writes_its_results(tmp_path, calibrated, monkeypatch):  # design 5.6, 5.12 item 3; Review Focus 2

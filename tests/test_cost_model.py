@@ -78,6 +78,29 @@ def test_a_small_lone_job_takes_the_calibrations_own_one_job_speed(calibrated): 
     assert prepare(m, lambda *_: None, small=True) == (2, 1, 150.0)
 
 
+def test_the_calibrations_own_per_job_speed_is_what_no_run_refreshes():  # ruling K-1
+    entry = {"threads": 2, "pool": 2, "aggregate_mcs": 400.0, "single": {"2": 180.0}}
+    assert [runs.calibrated_mcs(entry, k) for k in (1, 2, 4)] == [180.0, 200.0, 200.0]  # single[threads] at one job
+    assert runs.calibrated_mcs({**entry, "single": {}}, 1) == 200.0
+    fresh = {**entry, "levels": {"2": 200.0, "1": 180.0}}  # the levels runs.calibrate stores with it
+    assert all(runs.per_job_mcs(fresh, k) == runs.calibrated_mcs(fresh, k) for k in (1, 2, 4))
+    assert runs.SI_SPEED == 0.55  # plan 2's and plan 3's runs, until the refit (Task 15)
+
+
+def test_an_si_models_speed_is_si_speed_until_a_run_measures_its_level(calibrated):  # ruling K-1
+    lines = np.linspace(0.0, 9.0, 10)
+    m = Model(Mesh(lines, lines, lines, 1.0, 0.4, {}, {}), {"ports": [{"part": False}]}, [], 1.5e-12)
+    said = []
+    assert prepare(m, lambda c, p: said.append((c, p)), si=True) == (2, 1, pytest.approx(200.0 * runs.SI_SPEED))
+    assert said == [("I_SI_COST_SPEED", {"ratio": f"{runs.SI_SPEED:g}"})]
+    assert prepare(m, lambda *_: None) == (2, 1, 200.0)
+    settings = runs.load_settings()
+    settings["machines"][runs.machine_key()]["levels"] = {"1": 150.0}  # a run at one job measured it
+    runs.save_settings(settings)
+    said.clear()
+    assert prepare(m, lambda c, p: said.append((c, p)), si=True) == (2, 1, 150.0) and said == []
+
+
 @pytest.mark.parametrize(("roots", "notes"), [
     ([[1, 2, 1, 2]], []), ([[1, 1, 1, 1]], [("E_PORT_SHORT", {"name": "P1"})]),
     ([[1, 2, 3, 2]], [("E_PORT_OPEN", {"name": "P1", "end": "T_END_REFERENCE"})]),

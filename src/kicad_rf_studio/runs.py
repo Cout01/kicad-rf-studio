@@ -34,6 +34,9 @@ MB_PER_MCELL, MB_PER_WORKER = 170, 50  # ponytail: provisional (spec 6.4); P0-C 
 # every cell (Stage 3 design 5.9)
 # ponytail: unmeasured levels (2, 3) take the nearest lower measured one, which predicts longer
 PML_WEIGHT, SMALL_SPEED = 8.92, {1: 0.559, 4: 0.718}
+# a Debye cell's cost in plain cells (Stage 4 design 5.9): r1's five-pole probe at 4 threads, provisional until gate
+# P4-D measures it at the calibration's threads (openEMS 0.37 updates Debye materials on one thread)
+DEBYE_WEIGHT = 6.8
 WORKER = ("-I", "-u", "-m", "kicad_rf_studio.worker")  # after sys.executable; -u: log.txt follows the run
 POLL_S = 1.0  # how often the pool looks at its jobs
 ABORT_WAIT_S = 60.0  # how long a stopped job may take to write its data before it is killed
@@ -463,3 +466,15 @@ def small_speed(pool: int) -> float:
     """A small antenna model's speed over the calibration's per-job speed with `pool` jobs at once: SMALL_SPEED at that
     level, else at the nearest lower measured one."""
     return SMALL_SPEED[max(k for k in SMALL_SPEED if k <= pool)]
+
+
+# an SI model's speed over the calibration's own per-job speed (Stage 4 plan 4 ruling K-1): plan 2's and plan 3's runs
+# read 0.517–0.573; provisional until the gates' refit
+SI_SPEED = 0.55
+
+
+def calibrated_mcs(entry: dict, k: int) -> float:
+    """The per-job MC/s that `entry`'s calibration itself gives k jobs at once, which runs.calibrate stores as its
+    levels before any run refreshes one (D-16): single[threads] at one job when it was timed, else aggregate/pool."""
+    per_job = entry["aggregate_mcs"] / entry["pool"]
+    return entry.get("single", {}).get(str(entry["threads"]), per_job) if k == 1 else per_job

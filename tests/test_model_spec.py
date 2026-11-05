@@ -20,9 +20,9 @@ from kicad_rf_studio.core.model import spec as spec_module
 from kicad_rf_studio.core.model.csx import PML_CELLS
 from kicad_rf_studio.core.model.ports import ends, nominal_boxes, place
 from kicad_rf_studio.core.model.readers import c_box
-from kicad_rf_studio.core.model.spec import (DEBYE_F_REF, K_MAX, PML_CLEAR, dc_pulse, debye, excitation, grid_entry,
-                                             kappa, metal_in_pml, model_spec, pulse, round_trip, si_t_max, spec_hash,
-                                             verify_spec, with_pml)
+from kicad_rf_studio.core.model.spec import (DEBYE_F_REF, DEBYE_POLES, K_MAX, PML_CLEAR, dc_pulse, debye, excitation,
+                                             grid_entry, kappa, metal_in_pml, model_spec, pulse, round_trip, si_t_max,
+                                             spec_hash, verify_spec, with_pml)
 from kicad_rf_studio.stoprule import stop_rule, stop_window
 from test_cli_cost import SEG
 from test_gates import mini, project_of
@@ -135,13 +135,14 @@ def debye_eps(d, f):
     return d["eps_inf"] + sum(de / (1 + 1j * f / fr) for de, fr in zip(d["delta"], d["f_relax_hz"]))
 
 
-@pytest.mark.parametrize(("eps_r", "tan_d", "tol"), [(4.3, 0.02, 0.07), (3.66, 0.004, 0.06)])  # FR-4; a low-loss one
-def test_a_debye_fit_holds_the_loss_tangent_across_the_band_and_none_at_dc(eps_r, tan_d, tol):  # design 5.3
+@pytest.mark.parametrize(("eps_r", "tan_d", "tol"), [(4.3, 0.02, 0.035), (3.66, 0.004, 0.03)])  # FR-4; a low-loss one
+def test_a_debye_fit_holds_the_loss_tangent_across_the_band_and_none_at_dc(eps_r, tan_d, tol):  # design 5.3; D-3
     d = debye(eps_r, tan_d, 10e9)
-    assert d["f_relax_hz"] == [1e8, 1e9, 1e10]  # one pole a decade, f_max/100 to f_max
+    assert DEBYE_POLES == (-2.2, -1.4, -0.6, 0.2)  # four poles 0.8 decade apart, 0.2 decade past each band edge
+    assert d["f_relax_hz"] == pytest.approx([10e9 * 10 ** e for e in DEBYE_POLES])
     assert all(v > 0 for v in d["delta"]) and 1 <= d["eps_inf"] < eps_r  # no negative pole, nothing below vacuum
     e = debye_eps(d, np.geomspace(1e8, 1e10, 401))
-    assert np.abs(-e.imag / e.real / tan_d - 1).max() <= tol  # measured 6.0 % and 4.9 %
+    assert np.abs(-e.imag / e.real / tan_d - 1).max() <= tol  # measured 3.2 % and 2.5 % (three poles: 6.0, 4.9 %)
     assert debye_eps(d, np.array([DEBYE_F_REF]))[0].real == pytest.approx(eps_r, rel=0.005)
     assert debye_eps(d, np.array([0.0]))[0].imag == 0.0  # no κ: no DC loss
     low = debye_eps(d, np.array([1e5]))[0]
