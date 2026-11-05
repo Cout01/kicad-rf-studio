@@ -269,19 +269,23 @@ def decide(m: dict) -> dict:
     """P4-D's decisions (design 5.11's fallbacks; D-2, D-3, D-5) on the measures `m` (measure's shape) by CRITERIA,
     each limit inclusive and a None value a miss:
     - "port": "kept" when both coupons' |v/h − 1| ≤ plateau_rel, "graded" when only si_pad_coupon_tall misses,
-      "ruling" when si_pad_coupon misses; None while a coupon is unmeasured;
+      "ruling" when si_pad_coupon misses; None while a coupon is unmeasured. A coupon whose v step is in m["invalid"]
+      misses, whatever its plateau: its vertical port's run is judged as its port (plan 4 ruling R-5);
     - the DC point passes when every value of m["dc"] is at most dc_abs;
     - "debye": "predicted", slowdown(w, f_usb) (None without either); "run_usb", predicted inside run_usb while
       "measured" is None; "accurate", il_ok and dc_loss ≤ the criteria's dc_loss;
     - "dielectric": None while the line's runs are unrecorded (il_ok None); else "lossless" unless accurate; else None
       while run_usb; else "debye" when measured, else predicted, is at most slowdown_max, "lossless" above it (None
       without either);
-    - "verdict": {"value": "fail" on a DC miss, a port "ruling" or an invalid run (each a controller ruling, src being
-      frozen), else "incomplete" while the port or the dielectric is None, else "fallback" when the port is "graded"
-      or Debye is not accurate, else "pass"; "fails": "<project>: dc", "si_pad_coupon: port" and "<step>: valid"}."""
+    - "verdict": {"value": "fail" on a DC miss, a port "ruling" or an invalid run other than a pad coupon's v step
+      (each a controller ruling, src being frozen), else "incomplete" while the port or the dielectric is None, else
+      "fallback" when the port is "graded" or Debye is not accurate, else "pass"; "fails": "<project>: dc",
+      "si_pad_coupon: port" and "<step>: valid", each invalid step but the two v steps (R-5)}."""
     c, d = CRITERIA, m["debye"]
 
     def kept(board: str) -> bool | None:  # its v plateau within plateau_rel of its h one; None while unmeasured
+        if f"{board}-v" in m["invalid"]:  # R-5: an invalid v run misses, whatever its plateau
+            return False
         x = m["ports"].get(board)
         return None if x is None else None not in (x["h"], x["v"]) and abs(x["v"] / x["h"] - 1) <= c["plateau_rel"]
 
@@ -298,7 +302,9 @@ def decide(m: dict) -> dict:
     else:
         dielectric = "lossless"
     fails = [f"{p}: dc" for p, x in m["dc"].items() if x is None or x > c["dc_abs"]]
-    fails += (["si_pad_coupon: port"] if port == "ruling" else []) + [f"{s}: valid" for s in m["invalid"]]
+    fails += ["si_pad_coupon: port"] if port == "ruling" else []
+    v_steps = {f"{board}-v" for board in VERTICAL}  # R-5: judged as their coupon's port, not as "<step>: valid"
+    fails += [f"{s}: valid" for s in m["invalid"] if s not in v_steps]
     if fails:
         value = "fail"
     elif port is None or dielectric is None:
@@ -314,12 +320,13 @@ def decide(m: dict) -> dict:
 
 def tables(result: dict) -> str:
     """The Markdown tables of the gate JSON `result` (write's), by p0.table: P4D-1 the ports (each coupon's h and v
-    plateaus, their ratio and the 2D Z0, with their launches recorded) and the decisions with the verdict; P4D-2 the
-    DC point of each lossless project; P4D-3 Debye and speed; P4D-4 the runs: cells, Debye cells, pool, node MC/s,
-    t_stop, predicted to t_stop and to T_max, wall, valid."""
+    plateaus, its v run's validity (R-5), their ratio and the 2D Z0, with their launches recorded) and the decisions
+    with the verdict; P4D-2 the DC point of each lossless project; P4D-3 Debye and speed; P4D-4 the runs: cells, Debye
+    cells, pool, node MC/s, t_stop, predicted to t_stop and to T_max, wall, valid."""
     c, refs, d = result["criteria"], result["references"], result["debye"]
-    ports = [{"coupon": k, "plane": VERTICAL[k], **x, "v_over_h": None if None in (x["h"], x["v"]) else x["v"] / x["h"],
-              "z0_2d": refs["z0"][k]} for k, x in result["ports"].items()]
+    ports = [{"coupon": k, "plane": VERTICAL[k], **x, "v_valid": result["runs"][f"{k}-v"]["valid"],
+              "v_over_h": None if None in (x["h"], x["v"]) else x["v"] / x["h"], "z0_2d": refs["z0"][k]}
+             for k, x in result["ports"].items()]
     worst = d["il_worst"] or [None, None]
     items = [*({"item": key, "value": result[key]} for key in ("n_now", "rule_now", "port", "dielectric")),
              {"item": "verdict", "value": result["verdict"]["value"]},
@@ -335,10 +342,11 @@ def tables(result: dict) -> str:
         f"coupon, lossless at mesh n {result['n_now']} and the rule {result['rule_now']}: each plateau the median of "
         f"the localising TDR from t_r to t_far − t_r; kept when both coupons' |v/h − 1| ≤ {c['plateau_rel']:g}, graded "
         "when only the 1.51 mm coupon misses (a vertical port longer than λ/20 at f_max in the stack's highest εr is "
-        "refused), a controller ruling when the 0.2 mm one misses. The plateau tests the port's impedance scale, not "
-        "its launch; each launch is recorded: the largest |S11| up to f_max (dB) and the TDR's largest departure from "
-        "the plateau within the first t_r (Ω). z0_2d, the 2D table's Z0.",
-        p0.table(ports, ["coupon", "plane", "h", "v", "v_over_h", "z0_2d", "h_launch_db", "v_launch_db",
+        "refused), a controller ruling when the 0.2 mm one misses; a coupon whose v run is not valid (v_valid) "
+        "misses, whatever its plateau (plan 4 ruling R-5). The plateau tests the port's impedance scale, not its "
+        "launch; each launch is recorded: the largest |S11| up to f_max (dB) and the TDR's largest departure from the "
+        "plateau within the first t_r (Ω). z0_2d, the 2D table's Z0.",
+        p0.table(ports, ["coupon", "plane", "h", "v", "v_valid", "v_over_h", "z0_2d", "h_launch_db", "v_launch_db",
                          "h_launch_ohm", "v_launch_ohm"]),
         p0.table(items, ["item", "value"]),
         "## P4D-2 The DC point",

@@ -53,6 +53,12 @@ def test_the_p4d_decisions():  # design 5.11's fallbacks; D-3, D-5
     assert p4d.decide(m(w=1.5, accurate=False))["dielectric"] == "lossless"
     assert p4d.decide(m(w=1.5, dc_loss=0.0051))["dielectric"] == "lossless"
     assert p4d.decide(m(invalid=["si_line100-debye"]))["verdict"]["fails"] == ["si_line100-debye: valid"]
+    tall = p4d.decide(m(invalid=["si_pad_coupon_tall-v"]))  # R-5: a pad coupon's invalid v run is its port's miss
+    assert (tall["port"], tall["dielectric"], tall["verdict"]) == ("graded", "lossless", {"value": "fallback",
+                                                                                          "fails": []})
+    short = p4d.decide(m(invalid=["si_pad_coupon-v"]))
+    assert (short["port"], short["verdict"]) == ("ruling", {"value": "fail", "fails": ["si_pad_coupon: port"]})
+    assert p4d.decide(m(invalid=["si_line100"]))["verdict"] == {"value": "fail", "fails": ["si_line100: valid"]}
 
 
 def test_the_committed_references_hold_the_curve_and_the_projectors():  # G-1; D-2: judged against them
@@ -80,4 +86,5 @@ def test_p4d_runs_its_steps_and_writes_its_report(gates):  # design 5.11: the to
     assert {"w", "f_usb", "predicted", "measured", "il_ok", "il_worst", "dc_loss"} <= set(debye)
     assert (debye["w"], debye["il_ok"], debye["measured"]) == (1.0, False, None)  # one speed and one S, lossless or not
     assert '"reading"' not in text and '"project"' not in text
-    assert (gates / "p4d" / "p4d.md").read_text(encoding="utf-8").startswith("## P4D-1 The ports")
+    md = (gates / "p4d" / "p4d.md").read_text(encoding="utf-8")
+    assert md.startswith("## P4D-1 The ports") and "| v | v_valid | v_over_h |" in md  # R-5: the v run's validity
