@@ -504,13 +504,14 @@ def pair_coupon(b, w=W_PAIR, s=GAP, diag=0.0, aux=None, shift=0.0, split=False):
 def stripline(b):
     """P4-B's coupled stripline (ruling B-1): D+ and D- on In1.Cu at 0.18 mm and 0.25 mm, pair_coupon's straight path,
     each lead's pad end a through via under a 1 mm test pad on F.Cu: TP1 (98, 101) to TP2 (162, 101) on D+, TP3 (98,
-    99) to TP4 (162, 99) on D-. A 1 mm GND test pad 0.4 mm outward of each along x, TP5 (96.6, 101), TP6 (96.6, 99),
-    TP7 (163.4, 101) and TP8 (163.4, 99), is its signal pad's nearest ground copper, so every port lies along the pair,
-    outward, away from its lead (plan 4 ruling R-9). Eight GND vias at its ends, those at x 96.5 and 163.5 inside the
-    GND pads, and a grid stitch the GND zones on F.Cu and In2.Cu, 0.5 mm clear of other nets: the vias' antipads. Each
-    port's gap is the 0.4 mm to its GND pad, inside SL_RULES' 0.5 mm on purpose: only the zone filler reads that rule,
-    and no DRC runs on fixtures. A GND stitching grid, 3 mm along the pair and 1.5 mm across it, keeps the plane pair
-    from ringing (plan 4 ruling R-8)."""
+    99) to TP4 (162, 99) on D-. A 1 mm GND test pad 0.4 mm outward of each along y, away from the pair, TP5 (98,
+    102.4), TP6 (98, 97.6), TP7 (162, 102.4) and TP8 (162, 97.6), is its signal pad's nearest ground copper, so every
+    port lies across the pair, away from its lead, and each end's two port loops lie side by side in one plane rather
+    than face to face (plan 4 rulings R-9 and R-10). Eight GND vias at its ends, those at y 96.8 and 103.2 abutting the
+    GND pads' outer edges (no via lies inside one), and a grid stitch the GND zones on F.Cu and In2.Cu, 0.5 mm clear
+    of other nets: the vias' antipads. Each port's gap is the 0.4 mm to its GND pad, inside SL_RULES' 0.5 mm on
+    purpose: only the zone filler reads that rule, and no DRC runs on fixtures. A GND stitching grid, 3 mm along the
+    pair and 1.5 mm across it, keeps the plane pair from ringing (plan 4 ruling R-8)."""
     w, s = 0.18, 0.25
     p = (w + s) / 2
     for name, k, near, far in (("D+", 1, "TP1", "TP2"), ("D-", -1, "TP3", "TP4")):
@@ -523,7 +524,7 @@ def stripline(b):
     ends = ((96.5, 99), (96.5, 101), (163.5, 99), (163.5, 101), (98, 96.8), (98, 103.2), (162, 96.8), (162, 103.2))
     for at in ends:
         via(b, at)
-    for ref, at in (("TP5", (96.6, 101)), ("TP6", (96.6, 99)), ("TP7", (163.4, 101)), ("TP8", (163.4, 99))):
+    for ref, at in (("TP5", (98, 102.4)), ("TP6", (98, 97.6)), ("TP7", (162, 102.4)), ("TP8", (162, 97.6))):
         place(b, TP1MM, ref, "TP", at, 0, {"1": "GND"})  # before fence(), which keeps 1.25 mm off every pad (R-9)
     # fence spaces only the vias it places, so the grid keeps 0.8 mm off the end vias here; and 1.25 mm off a pad or a
     # D+/D- track edge, where the stripline's field is about 0.4 % of the edge's (ruling R-8)
