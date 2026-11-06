@@ -504,8 +504,9 @@ def pair_coupon(b, w=W_PAIR, s=GAP, diag=0.0, aux=None, shift=0.0, split=False):
 def stripline(b):
     """P4-B's coupled stripline (ruling B-1): D+ and D- on In1.Cu at 0.18 mm and 0.25 mm, pair_coupon's straight path,
     each lead's pad end a through via under a 1 mm test pad on F.Cu: TP1 (98, 101) to TP2 (162, 101) on D+, TP3 (98,
-    99) to TP4 (162, 99) on D-. Eight GND vias stitch the GND zones on F.Cu and In2.Cu, 0.5 mm clear of other nets: the
-    pads' port gap, and the vias' antipads."""
+    99) to TP4 (162, 99) on D-. Eight GND vias at its ends and a grid stitch the GND zones on F.Cu and In2.Cu, 0.5 mm
+    clear of other nets: the pads' port gap, and the vias' antipads. A GND stitching grid, 3 mm along the pair and
+    1.5 mm across it, keeps the plane pair from ringing (plan 4 ruling R-8)."""
     w, s = 0.18, 0.25
     p = (w + s) / 2
     for name, k, near, far in (("D+", 1, "TP1", "TP2"), ("D-", -1, "TP3", "TP4")):
@@ -515,8 +516,13 @@ def stripline(b):
         for ref, x in ((near, 98), (far, 162)):
             via(b, (x, 100 + k), name)
             place(b, TP1MM, ref, "TP", (x, 100 + k), 0, {"1": name})
-    for at in ((96.5, 99), (96.5, 101), (163.5, 99), (163.5, 101), (98, 96.8), (98, 103.2), (162, 96.8), (162, 103.2)):
+    ends = ((96.5, 99), (96.5, 101), (163.5, 99), (163.5, 101), (98, 96.8), (98, 103.2), (162, 96.8), (162, 103.2))
+    for at in ends:
         via(b, at)
+    # fence spaces only the vias it places, so the grid keeps 0.8 mm off the end vias here; and 1.25 mm off a pad or a
+    # D+/D- track edge, where the stripline's field is about 0.4 % of the edge's (ruling R-8)
+    grid = [(131.5 + 3 * i, 100 + j * (1.6 + 1.5 * k)) for i in range(-12, 12) for j in (-1, 1) for k in (0, 1, 2)]
+    fence(b, [q for q in grid if all(math.dist(q, e) >= 0.8 for e in ends)], (94, 94, 166, 106), keep=1.25)
     rect(b, pcbnew.Edge_Cuts, 94, 94, 166, 106)
     for layer in (pcbnew.F_Cu, pcbnew.In2_Cu):
         zone(b, layer, [(94.5, 94.5), (165.5, 94.5), (165.5, 105.5), (94.5, 105.5)], clearance=0.5)

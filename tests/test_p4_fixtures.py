@@ -21,8 +21,9 @@ P4_NEW = {**{b: PAIR90 for b in ("p4b_ms90", "p4b_ms90_45", "p4b_ms90_cut", "p4b
           **{b: NET for b in ("p4c_step75", "p4c_step35", "si_pad_coupon_tall", "si_line100")},
           "si_pad_coupon": ["--start", "U1.11", "--end", "U2.3", "--interface", "se50"],
           **{b: USB for b in ("usb2_hs", "usb2_hs_neck", "usb2_hs_gap")}}
-# the architect's text replica through the product (cells at n 2 with new's max_cell, dt reference in s): ±10 %, ±5 %
-ESTIMATE = {"p4b_ms90": (1369368, 9.0894e-14), "p4b_ms100": (1339954, 8.9893e-14), "p4b_sl90": (3008907, 7.8319e-14),
+# the architect's text replica through the product (cells at n 2 with new's max_cell, dt reference in s): ±10 %, ±5 %;
+# p4b_sl90's is its own board's, generated again with ruling R-8's stitching grid
+ESTIMATE = {"p4b_ms90": (1369368, 9.0894e-14), "p4b_ms100": (1339954, 8.9893e-14), "p4b_sl90": (5872338, 7.0840e-14),
             "p4b_ms90_45": (10122497, 8.6984e-14), "p4b_ms100_45": (9934463, 8.7257e-14),
             "p4b_ms90_vic": (1571724, 8.8960e-14), "p4b_ms90_cut": (1374758, 9.0894e-14),
             "p4c_l90": (1686608, 8.3873e-14), "p4c_step75": (1955330, 5.9104e-14), "p4c_step35": (1414490, 8.2747e-14),
@@ -35,7 +36,7 @@ ESTIMATE = {"p4b_ms90": (1369368, 9.0894e-14), "p4b_ms100": (1339954, 8.9893e-14
 LINES = {"p4b_ms100": (226, 77, 77, 0.433199), "p4b_ms100_45": (406, 317, 77, 0.433084),
          "p4b_ms90": (228, 78, 77, 0.429232), "p4b_ms90_45": (406, 323, 77, 0.429232),
          "p4b_ms90_cut": (226, 79, 77, 0.429232), "p4b_ms90_vic": (252, 81, 77, 0.429232),
-         "p4b_sl90": (305, 122, 81, 0.361432), "p4c_l90": (148, 148, 77, 0.429232),
+         "p4b_sl90": (562, 129, 81, 0.361432), "p4c_l90": (148, 148, 77, 0.429232),
          "p4c_step35": (334, 55, 77, 0.413575), "p4c_step75": (338, 65, 89, 0.427164),
          "p4e_gapm": (242, 82, 83, 0.429232), "p4e_gapm3": (238, 82, 77, 0.429232),
          "p4e_gapp": (228, 77, 77, 0.429232), "p4e_gapp3": (228, 75, 77, 0.429232),
