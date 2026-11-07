@@ -1,0 +1,2189 @@
+{
+  "gate": "P4-B",
+  "versions": {
+    "commit": "a76c979",
+    "code": "693592c3cd14433aee691dc80b4fa3dbb7bb26e5",
+    "python": "3.14.2",
+    "openems": "0.37.0",
+    "csxcad": "0.7.0",
+    "os": "Windows-11-10.0.26200-SP0",
+    "cpus": 16
+  },
+  "criteria": {
+    "source": "Stage 4 design 5.11, gate P4-B; plan 4 rulings B-1 to B-6: Zdiff is the median of the localising differential TDR from 2 t_r to t_far - 2 t_r, judged against fit2d's coupled Zdiff on the run's own mesh (the 2D solve of the same discretised cut: a miss is a pipeline bug, which blocks) and recorded against cs2d's exact cut and KiCad's calculator; n 2 against n 3 judged on each coupon's plateau over its own mesh's fit2d Zdiff, n 2 the reference, n 3 the SI default when any moves by more than n_rel, with fit2d's own n 2 to n 3 move, each n's error against the exact cut, and the runs' largest |dS| and TDT arrivals recorded; NEXT the peak of the layout's P-near to N-near over 0 < f <= lobe x f_q, against the even/odd model of the coupled run's modes on the run's own mesh lines at 50 ohm, the exact cut's model recorded; FEXT the peak of P-near to N-far over 0 < f <= lobe x f_q after renormalising every port to those modes' sqrt(Ze Zo), at most fext_db for the stripline, its full band, its 50 ohm peak and the launch's worst |S11| recorded; the 45 degree twins at n 2 whatever the decided n, each level at the diagonal's centre in round-trip time, the median over t_r, within bend_rel of its straight twin's plateau at the same n; a twin that misses runs at n 3 only with the owner's go, and one blocked at its setup counts as a miss; each run valid (every job converged, passivity and reciprocity under the product's flags); a None reading fails; the cut victim recorded on the pair's own 4-port block, the refusal kept",
+    "zdiff_rel": 0.015,
+    "n_rel": 0.01,
+    "next_db": 0.5,
+    "lobe": 2.0,
+    "fext_db": -40.0,
+    "bend_rel": 0.05
+  },
+  "references": {
+    "source": "tools/p4b.py --references, before any P4-B run: fit2d's coupled cut on each coupon's own mesh at n 2 and 3, the exact cut, KiCad's calculator or Cohn, the bends' diagonal centres",
+    "coupons": {
+      "p4b_ms90": {
+        "fit2d": {
+          "2": {
+            "z0_mesh": 91.15293241056567,
+            "z0_ref": 90.25368164377112,
+            "err": 0.009963590962902336,
+            "z_even": 59.51769098378183,
+            "eps_even": 3.4928255845459066,
+            "z_odd": 45.576466205282834,
+            "eps_odd": 3.0525346830813103,
+            "f_q_hz": 690490457.6135974,
+            "next_db": -17.5811278067309,
+            "next_hz": 685000000.0,
+            "z_ref": 52.08268456731853
+          },
+          "3": {
+            "z0_mesh": 90.71101086241556,
+            "z0_ref": 90.25368164377112,
+            "err": 0.0050671530547585775,
+            "z_even": 59.192323358518834,
+            "eps_even": 3.497438017462502,
+            "z_odd": 45.35550543120778,
+            "eps_odd": 3.057594203990232,
+            "f_q_hz": 689980860.0319866,
+            "next_db": -17.598193723942607,
+            "next_hz": 685000000.0,
+            "z_ref": 51.81406897333106
+          }
+        },
+        "exact": {
+          "z_even": 58.98639146633635,
+          "eps_even": 3.50150955516424,
+          "z_odd": 45.12684082188556,
+          "eps_odd": 3.062941307305124,
+          "f_q_hz": 689485691.8215718,
+          "next_db": -17.545523814515477,
+          "next_hz": 685000000.0,
+          "z_ref": 51.59330865876688,
+          "z_diff": 90.25368164377112,
+          "fext50_db": -3.2803743472489644
+        },
+        "kicad": {
+          "z_diff": 101.38339787328967
+        }
+      },
+      "p4b_ms100": {
+        "fit2d": {
+          "2": {
+            "z0_mesh": 100.27085903859391,
+            "z0_ref": 99.81454239467693,
+            "err": 0.004571644902329419,
+            "z_even": 64.12897511031028,
+            "eps_even": 3.458773561987767,
+            "z_odd": 50.135429519296956,
+            "eps_odd": 3.036743906558167,
+            "f_q_hz": 693134604.7039163,
+            "next_db": -18.37377089640322,
+            "next_hz": 670000000.0,
+            "z_ref": 56.70214909320201
+          },
+          "3": {
+            "z0_mesh": 101.31961568503914,
+            "z0_ref": 99.81454239467693,
+            "err": 0.015078697494909976,
+            "z_even": 64.20585747642663,
+            "eps_even": 3.458997732282069,
+            "z_odd": 50.65980784251957,
+            "eps_odd": 3.0431978597909284,
+            "f_q_hz": 692778568.9944271,
+            "next_db": -18.710577700954477,
+            "next_hz": 670000000.0,
+            "z_ref": 57.0320646840001
+          }
+        },
+        "exact": {
+          "z_even": 63.954658111096336,
+          "eps_even": 3.4670100883205075,
+          "z_odd": 49.90727119733847,
+          "eps_odd": 3.047509699300341,
+          "f_q_hz": 692122958.0910054,
+          "next_db": -18.303641267145245,
+          "next_hz": 670000000.0,
+          "z_ref": 56.49603938935496,
+          "z_diff": 99.81454239467693,
+          "fext50_db": -3.6131418860978997
+        },
+        "kicad": {
+          "z_diff": 112.8059963299406
+        }
+      },
+      "p4b_sl90": {
+        "fit2d": {
+          "2": {
+            "z0_mesh": 91.70428117213461,
+            "z0_ref": 90.26736609490224,
+            "err": 0.015918433642138963,
+            "z_even": 56.77861142938219,
+            "eps_even": 4.3,
+            "z_odd": 45.85214058606731,
+            "eps_odd": 4.300000000000001,
+            "f_q_hz": 602386504.213853,
+            "next_db": -19.45964542441416,
+            "next_hz": 600000000.0,
+            "z_ref": 51.023728534297845
+          },
+          "3": {
+            "z0_mesh": 92.39373320216633,
+            "z0_ref": 90.26736609490224,
+            "err": 0.02355632161714505,
+            "z_even": 56.56491995623354,
+            "eps_even": 4.3,
+            "z_odd": 46.196866601083165,
+            "eps_odd": 4.3,
+            "f_q_hz": 602386504.2138531,
+            "next_db": -19.92706389860328,
+            "next_hz": 600000000.0,
+            "z_ref": 51.118705593149244
+          }
+        },
+        "exact": {
+          "z_even": 56.01413220337678,
+          "eps_even": 4.3,
+          "z_odd": 45.13368304745112,
+          "eps_odd": 4.299999999999999,
+          "f_q_hz": 602386504.2138531,
+          "next_db": -19.3666284880227,
+          "next_hz": 600000000.0,
+          "z_ref": 50.2804543440613,
+          "z_diff": 90.26736609490224,
+          "fext50_db": -64.46344154123005
+        },
+        "cohn": {
+          "z_even": 64.41271414645365,
+          "z_odd": 53.73178114228163,
+          "z_diff": 107.46356228456327
+        }
+      }
+    },
+    "bends": {
+      "p4b_ms90_45": {
+        "t_mid_s": 3.9959687844819155e-10
+      },
+      "p4b_ms100_45": {
+        "t_mid_s": 3.987054509379342e-10
+      }
+    },
+    "code": "693592c3cd14433aee691dc80b4fa3dbb7bb26e5",
+    "versions": {
+      "commit": "1983391",
+      "code": "693592c3cd14433aee691dc80b4fa3dbb7bb26e5",
+      "python": "3.14.2",
+      "openems": "0.37.0",
+      "csxcad": "0.7.0",
+      "os": "Windows-11-10.0.26200-SP0",
+      "cpus": 16
+    }
+  },
+  "calibration": {
+    "aggregate_mcs": 827.5851921803725,
+    "pool": 4,
+    "threads": 4,
+    "single": {
+      "1": 229.6142480632537,
+      "2": 383.5132895692081,
+      "4": 552.2402669961639,
+      "16": 353.18075294829146
+    },
+    "levels": {
+      "4": 135.3892015926453,
+      "1": 552.2402669961639
+    }
+  },
+  "rows": {
+    "p4b_ms90-n2": {
+      "exit": 0,
+      "cells": 1369368,
+      "dt": 8.96869e-14,
+      "dt_ratio": 0.9867207956520783,
+      "pool": 4,
+      "jobs": [
+        {
+          "t_stop": 4.60012929032e-09,
+          "port": "P1",
+          "verdict": "converged",
+          "t_cut": 4.58766281528e-09,
+          "residual_db": -60.38175408700356,
+          "growth_db": 0.9525625033323593
+        },
+        {
+          "t_stop": 4.61259576536e-09,
+          "port": "P2",
+          "verdict": "converged",
+          "t_cut": 4.58766281528e-09,
+          "residual_db": -60.381250139911124,
+          "growth_db": 0.949090582029271
+        },
+        {
+          "t_stop": 4.60012929032e-09,
+          "port": "P3",
+          "verdict": "converged",
+          "t_cut": 4.58766281528e-09,
+          "residual_db": -60.38682960358198,
+          "growth_db": 0.675256769867417
+        },
+        {
+          "t_stop": 4.61259576536e-09,
+          "port": "P4",
+          "verdict": "converged",
+          "t_cut": 4.58766281528e-09,
+          "residual_db": -60.38647971717381,
+          "growth_db": 0.6716476458284149
+        }
+      ],
+      "wall_s": 514.1384771999437,
+      "predicted_s": 618.9009485597492,
+      "worst_s": 1207.5865348679672,
+      "indicators": {
+        "sigma": 1.0001,
+        "recip": 8.7e-06,
+        "loss_pct": null,
+        "expected_pct": null
+      },
+      "warnings": [],
+      "lid_mm": null,
+      "run_dir": "p4b_ms90-n2-l40-20261105-184913-15f0",
+      "speeds_mcs": [
+        138.6312856283296,
+        139.13386329519642,
+        138.6488003316584,
+        138.9388907756267
+      ],
+      "node_mcs": 138.79384555364254,
+      "cal_mcs": 206.89629804509312,
+      "debye_cells": 0,
+      "converged": true,
+      "valid": true,
+      "blocked": false,
+      "t_stop_s": 4.61259576536e-09,
+      "fingerprint": {
+        "preset": "normal",
+        "region": {
+          "expand_h": 6.0,
+          "margin_scale": 1.0
+        },
+        "interface": "usb2-hs",
+        "f_max_hz": 10000000000.0,
+        "rise_s": 5e-10,
+        "marker_hz": 240000000.0,
+        "target_ohm": 90.0,
+        "stackup": {
+          "source": "board",
+          "layers": [
+            {
+              "name": "F.Mask",
+              "kind": "mask",
+              "thickness_mm": 0.01,
+              "epsilon_r": 3.3,
+              "loss_tangent": 0.0
+            },
+            {
+              "name": "F.Cu",
+              "kind": "copper",
+              "thickness_mm": 0.035,
+              "epsilon_r": null,
+              "loss_tangent": null
+            },
+            {
+              "name": "dielectric 1",
+              "kind": "dielectric",
+              "thickness_mm": 0.2,
+              "epsilon_r": 4.3,
+              "loss_tangent": 0.02
+            },
+            {
+              "name": "In1.Cu",
+              "kind": "copper",
+              "thickness_mm": 0.035,
+              "epsilon_r": null,
+              "loss_tangent": null
+            },
+            {
+              "name": "dielectric 2",
+              "kind": "dielectric",
+              "thickness_mm": 1.04,
+              "epsilon_r": 4.5,
+              "loss_tangent": 0.02
+            },
+            {
+              "name": "In2.Cu",
+              "kind": "copper",
+              "thickness_mm": 0.035,
+              "epsilon_r": null,
+              "loss_tangent": null
+            },
+            {
+              "name": "dielectric 3",
+              "kind": "dielectric",
+              "thickness_mm": 0.2,
+              "epsilon_r": 4.3,
+              "loss_tangent": 0.02
+            },
+            {
+              "name": "B.Cu",
+              "kind": "copper",
+              "thickness_mm": 0.035,
+              "epsilon_r": null,
+              "loss_tangent": null
+            },
+            {
+              "name": "B.Mask",
+              "kind": "mask",
+              "thickness_mm": 0.01,
+              "epsilon_r": 3.3,
+              "loss_tangent": 0.0
+            }
+          ]
+        },
+        "dielectric": "lossless",
+        "lid": true,
+        "lid_height_mm": null,
+        "mesh": {
+          "n": 2,
+          "reach_h": 6.0
+        },
+        "ends": [
+          "TP1.1",
+          "TP3.1",
+          "TP2.1",
+          "TP4.1"
+        ],
+        "app": "0.1.0.dev0",
+        "openems": "0.37.0"
+      },
+      "reading_error": null,
+      "sigma": 1.0001,
+      "recip": 8.7e-06,
+      "plateau_ohm": 91.17514657274957,
+      "level_ohm": null,
+      "next_db": -17.103232452106013,
+      "fext_db": -18.87119598948687,
+      "fext_full_db": -3.046537980739905,
+      "fext50_db": -3.032491502576036,
+      "launch_db": -8.661413829956551
+    },
+    "p4b_ms90-n3": {
+      "exit": 0,
+      "cells": 1990386,
+      "dt": 6.24491e-14,
+      "dt_ratio": 1.0298148117610197,
+      "pool": 4,
+      "jobs": [
+        {
+          "t_stop": 4.60874665174e-09,
+          "port": "P1",
+          "verdict": "converged",
+          "t_cut": 4.59625682342e-09,
+          "residual_db": -60.87213372072697,
+          "growth_db": 0.043823080375574364
+        },
+        {
+          "t_stop": 4.60874665174e-09,
+          "port": "P2",
+          "verdict": "converged",
+          "t_cut": 4.59625682342e-09,
+          "residual_db": -60.85927018442655,
+          "growth_db": 0.05315380506866063
+        },
+        {
+          "t_stop": 4.60874665174e-09,
+          "port": "P3",
+          "verdict": "converged",
+          "t_cut": 4.59625682342e-09,
+          "residual_db": -60.8738722662812,
+          "growth_db": 0.019413581421758863
+        },
+        {
+          "t_stop": 4.60874665174e-09,
+          "port": "P4",
+          "verdict": "converged",
+          "t_cut": 4.59625682342e-09,
+          "residual_db": -60.85500326062225,
+          "growth_db": 0.032504040457240535
+        }
+      ],
+      "wall_s": 1209.0832406999543,
+      "predicted_s": 1057.9982606715778,
+      "worst_s": 2066.0680800167747,
+      "indicators": {
+        "sigma": 1.0001,
+        "recip": 1.84e-05,
+        "loss_pct": null,
+        "expected_pct": null
+      },
+      "warnings": [],
+      "lid_mm": null,
+      "run_dir": "p4b_ms90-n3-l40-20261105-185919-5637",
+      "speeds_mcs": [
+        122.676684712142,
+        122.7874054330402,
+        122.5201809061486,
+        123.22739061945761
+      ],
+      "node_mcs": 122.7320450725911,
+      "cal_mcs": 206.89629804509312,
+      "debye_cells": 0,
+      "converged": true,
+      "valid": true,
+      "blocked": false,
+      "t_stop_s": 4.60874665174e-09,
+      "fingerprint": {
+        "preset": "normal",
+        "region": {
+          "expand_h": 6.0,
+          "margin_scale": 1.0
+        },
+        "interface": "usb2-hs",
+        "f_max_hz": 10000000000.0,
+        "rise_s": 5e-10,
+        "marker_hz": 240000000.0,
+        "target_ohm": 90.0,
+        "stackup": {
+          "source": "board",
+          "layers": [
+            {
+              "name": "F.Mask",
+              "kind": "mask",
+              "thickness_mm": 0.01,
+              "epsilon_r": 3.3,
+              "loss_tangent": 0.0
+            },
+            {
+              "name": "F.Cu",
+              "kind": "copper",
+              "thickness_mm": 0.035,
+              "epsilon_r": null,
+              "loss_tangent": null
+            },
+            {
+              "name": "dielectric 1",
+              "kind": "dielectric",
+              "thickness_mm": 0.2,
+              "epsilon_r": 4.3,
+              "loss_tangent": 0.02
+            },
+            {
+              "name": "In1.Cu",
+              "kind": "copper",
+              "thickness_mm": 0.035,
+              "epsilon_r": null,
+              "loss_tangent": null
+            },
+            {
+              "name": "dielectric 2",
+              "kind": "dielectric",
+              "thickness_mm": 1.04,
+              "epsilon_r": 4.5,
+              "loss_tangent": 0.02
+            },
+            {
+              "name": "In2.Cu",
+              "kind": "copper",
+              "thickness_mm": 0.035,
+              "epsilon_r": null,
+              "loss_tangent": null
+            },
+            {
+              "name": "dielectric 3",
+              "kind": "dielectric",
+              "thickness_mm": 0.2,
+              "epsilon_r": 4.3,
+              "loss_tangent": 0.02
+            },
+            {
+              "name": "B.Cu",
+              "kind": "copper",
+              "thickness_mm": 0.035,
+              "epsilon_r": null,
+              "loss_tangent": null
+            },
+            {
+              "name": "B.Mask",
+              "kind": "mask",
+              "thickness_mm": 0.01,
+              "epsilon_r": 3.3,
+              "loss_tangent": 0.0
+            }
+          ]
+        },
+        "dielectric": "lossless",
+        "lid": true,
+        "lid_height_mm": null,
+        "mesh": {
+          "n": 3,
+          "reach_h": 6.0
+        },
+        "ends": [
+          "TP1.1",
+          "TP3.1",
+          "TP2.1",
+          "TP4.1"
+        ],
+        "app": "0.1.0.dev0",
+        "openems": "0.37.0"
+      },
+      "reading_error": null,
+      "sigma": 1.0001,
+      "recip": 1.84e-05,
+      "plateau_ohm": 90.7312428058645,
+      "level_ohm": null,
+      "next_db": -17.107345935987844,
+      "fext_db": -18.930912790932865,
+      "fext_full_db": -3.084930697540606,
+      "fext50_db": -3.0708071456672608,
+      "launch_db": -8.289845682779779,
+      "n_ds": 0.036282934062979735,
+      "n_delay_rel": 0.001965376179026368
+    },
+    "p4b_ms100-n2": {
+      "exit": 0,
+      "cells": 1339954,
+      "dt": 8.90165e-14,
+      "dt_ratio": 0.9902439567040815,
+      "pool": 4,
+      "jobs": [
+        {
+          "t_stop": 4.6110568478e-09,
+          "port": "P1",
+          "verdict": "converged",
+          "t_cut": 4.59859453199e-09,
+          "residual_db": -61.11186417778731,
+          "growth_db": 1.1433111193666718
+        },
+        {
+          "t_stop": 4.6235191636e-09,
+          "port": "P2",
+          "verdict": "converged",
+          "t_cut": 4.59859453199e-09,
+          "residual_db": -61.044576548102974,
+          "growth_db": 0.9735026271700349
+        },
+        {
+          "t_stop": 4.6110568478e-09,
+          "port": "P3",
+          "verdict": "converged",
+          "t_cut": 4.59859453199e-09,
+          "residual_db": -61.11481717649437,
+          "growth_db": 1.1302827583913881
+        },
+        {
+          "t_stop": 4.6235191636e-09,
+          "port": "P4",
+          "verdict": "converged",
+          "t_cut": 4.59859453199e-09,
+          "residual_db": -61.04665259037762,
+          "growth_db": 0.9644010740950364
+        }
+      ],
+      "wall_s": 531.3106379001401,
+      "predicted_s": 566.7393395436928,
+      "worst_s": 1103.1973428486288,
+      "indicators": {
+        "sigma": 1.0001,
+        "recip": 2.74e-05,
+        "loss_pct": null,
+        "expected_pct": null
+      },
+      "warnings": [],
+      "lid_mm": null,
+      "run_dir": "p4b_ms100-n2-l40-20261105-191944-51ed",
+      "speeds_mcs": [
+        132.488984136839,
+        132.78651225711081,
+        133.3914370496546,
+        132.94955897507631
+      ],
+      "node_mcs": 132.86803561609355,
+      "cal_mcs": 206.89629804509312,
+      "debye_cells": 0,
+      "converged": true,
+      "valid": true,
+      "blocked": false,
+      "t_stop_s": 4.6235191636e-09,
+      "fingerprint": {
+        "preset": "normal",
+        "region": {
+          "expand_h": 6.0,
+          "margin_scale": 1.0
+        },
+        "interface": "100base-tx",
+        "f_max_hz": 10000000000.0,
+        "rise_s": 3e-09,
+        "marker_hz": 62500000.0,
+        "target_ohm": 100.0,
+        "stackup": {
+          "source": "board",
+          "layers": [
+            {
+              "name": "F.Mask",
+              "kind": "mask",
+              "thickness_mm": 0.01,
+              "epsilon_r": 3.3,
+              "loss_tangent": 0.0
+            },
+            {
+              "name": "F.Cu",
+              "kind": "copper",
+              "thickness_mm": 0.035,
+              "epsilon_r": null,
+              "loss_tangent": null
+            },
+            {
+              "name": "dielectric 1",
+              "kind": "dielectric",
+              "thickness_mm": 0.2,
+              "epsilon_r": 4.3,
+              "loss_tangent": 0.02
+            },
+            {
+              "name": "In1.Cu",
+              "kind": "copper",
+              "thickness_mm": 0.035,
+              "epsilon_r": null,
+              "loss_tangent": null
+            },
+            {
+              "name": "dielectric 2",
+              "kind": "dielectric",
+              "thickness_mm": 1.04,
+              "epsilon_r": 4.5,
+              "loss_tangent": 0.02
+            },
+            {
+              "name": "In2.Cu",
+              "kind": "copper",
+              "thickness_mm": 0.035,
+              "epsilon_r": null,
+              "loss_tangent": null
+            },
+            {
+              "name": "dielectric 3",
+              "kind": "dielectric",
+              "thickness_mm": 0.2,
+              "epsilon_r": 4.3,
+              "loss_tangent": 0.02
+            },
+            {
+              "name": "B.Cu",
+              "kind": "copper",
+              "thickness_mm": 0.035,
+              "epsilon_r": null,
+              "loss_tangent": null
+            },
+            {
+              "name": "B.Mask",
+              "kind": "mask",
+              "thickness_mm": 0.01,
+              "epsilon_r": 3.3,
+              "loss_tangent": 0.0
+            }
+          ]
+        },
+        "dielectric": "lossless",
+        "lid": true,
+        "lid_height_mm": null,
+        "mesh": {
+          "n": 2,
+          "reach_h": 6.0
+        },
+        "ends": [
+          "TP1.1",
+          "TP3.1",
+          "TP2.1",
+          "TP4.1"
+        ],
+        "app": "0.1.0.dev0",
+        "openems": "0.37.0"
+      },
+      "reading_error": null,
+      "sigma": 1.0001,
+      "recip": 2.74e-05,
+      "plateau_ohm": 100.29386523707927,
+      "level_ohm": null,
+      "next_db": -17.925648385446674,
+      "fext_db": -19.23583231702822,
+      "fext_full_db": -3.316209451919327,
+      "fext50_db": -3.280494044948,
+      "launch_db": -7.428712758854379
+    },
+    "p4b_ms100-n3": {
+      "exit": 0,
+      "cells": 1860408,
+      "dt": 6.71556e-14,
+      "dt_ratio": 1.0139815793447078,
+      "pool": 4,
+      "jobs": [
+        {
+          "t_stop": 4.60915826425e-09,
+          "port": "P1",
+          "verdict": "converged",
+          "t_cut": 4.59666732044e-09,
+          "residual_db": -60.182216811530154,
+          "growth_db": 0.3202990840776465
+        },
+        {
+          "t_stop": 4.60915826425e-09,
+          "port": "P2",
+          "verdict": "converged",
+          "t_cut": 4.59666732044e-09,
+          "residual_db": -60.20986702612944,
+          "growth_db": 0.3177674442983971
+        },
+        {
+          "t_stop": 4.60915826425e-09,
+          "port": "P3",
+          "verdict": "converged",
+          "t_cut": 4.59666732044e-09,
+          "residual_db": -60.18811471268245,
+          "growth_db": 0.30168910141128435
+        },
+        {
+          "t_stop": 4.60915826425e-09,
+          "port": "P4",
+          "verdict": "converged",
+          "t_cut": 4.59666732044e-09,
+          "residual_db": -60.215498184793375,
+          "growth_db": 0.2990695556127321
+        }
+      ],
+      "wall_s": 1030.8355463999324,
+      "predicted_s": 960.7472081018997,
+      "worst_s": 1875.9878435903718,
+      "indicators": {
+        "sigma": 1.0001,
+        "recip": 1.13e-05,
+        "loss_pct": null,
+        "expected_pct": null
+      },
+      "warnings": [],
+      "lid_mm": null,
+      "run_dir": "p4b_ms100-n3-l40-20261105-192849-3ea3",
+      "speeds_mcs": [
+        125.1720325945718,
+        125.8946011203619,
+        125.8007562941439,
+        125.01138350885799
+      ],
+      "node_mcs": 125.48639444435784,
+      "cal_mcs": 206.89629804509312,
+      "debye_cells": 0,
+      "converged": true,
+      "valid": true,
+      "blocked": false,
+      "t_stop_s": 4.60915826425e-09,
+      "fingerprint": {
+        "preset": "normal",
+        "region": {
+          "expand_h": 6.0,
+          "margin_scale": 1.0
+        },
+        "interface": "100base-tx",
+        "f_max_hz": 10000000000.0,
+        "rise_s": 3e-09,
+        "marker_hz": 62500000.0,
+        "target_ohm": 100.0,
+        "stackup": {
+          "source": "board",
+          "layers": [
+            {
+              "name": "F.Mask",
+              "kind": "mask",
+              "thickness_mm": 0.01,
+              "epsilon_r": 3.3,
+              "loss_tangent": 0.0
+            },
+            {
+              "name": "F.Cu",
+              "kind": "copper",
+              "thickness_mm": 0.035,
+              "epsilon_r": null,
+              "loss_tangent": null
+            },
+            {
+              "name": "dielectric 1",
+              "kind": "dielectric",
+              "thickness_mm": 0.2,
+              "epsilon_r": 4.3,
+              "loss_tangent": 0.02
+            },
+            {
+              "name": "In1.Cu",
+              "kind": "copper",
+              "thickness_mm": 0.035,
+              "epsilon_r": null,
+              "loss_tangent": null
+            },
+            {
+              "name": "dielectric 2",
+              "kind": "dielectric",
+              "thickness_mm": 1.04,
+              "epsilon_r": 4.5,
+              "loss_tangent": 0.02
+            },
+            {
+              "name": "In2.Cu",
+              "kind": "copper",
+              "thickness_mm": 0.035,
+              "epsilon_r": null,
+              "loss_tangent": null
+            },
+            {
+              "name": "dielectric 3",
+              "kind": "dielectric",
+              "thickness_mm": 0.2,
+              "epsilon_r": 4.3,
+              "loss_tangent": 0.02
+            },
+            {
+              "name": "B.Cu",
+              "kind": "copper",
+              "thickness_mm": 0.035,
+              "epsilon_r": null,
+              "loss_tangent": null
+            },
+            {
+              "name": "B.Mask",
+              "kind": "mask",
+              "thickness_mm": 0.01,
+              "epsilon_r": 3.3,
+              "loss_tangent": 0.0
+            }
+          ]
+        },
+        "dielectric": "lossless",
+        "lid": true,
+        "lid_height_mm": null,
+        "mesh": {
+          "n": 3,
+          "reach_h": 6.0
+        },
+        "ends": [
+          "TP1.1",
+          "TP3.1",
+          "TP2.1",
+          "TP4.1"
+        ],
+        "app": "0.1.0.dev0",
+        "openems": "0.37.0"
+      },
+      "reading_error": null,
+      "sigma": 1.0001,
+      "recip": 1.13e-05,
+      "plateau_ohm": 101.34015749386242,
+      "level_ohm": null,
+      "next_db": -18.24363908898093,
+      "fext_db": -19.34943186548576,
+      "fext_full_db": -3.3910870685315473,
+      "fext50_db": -3.348520869382343,
+      "launch_db": -7.243810339274797,
+      "n_ds": 0.022790512963087237,
+      "n_delay_rel": 0.001028351633360014
+    },
+    "p4b_sl90-n2": {
+      "exit": 0,
+      "cells": 5806080,
+      "dt": 6.92483e-14,
+      "dt_ratio": 0.9850775993285632,
+      "pool": 4,
+      "jobs": [
+        {
+          "t_stop": 4.13827618469e-09,
+          "port": "P1",
+          "verdict": "converged",
+          "t_cut": 4.12581149738e-09,
+          "residual_db": -60.55857147798982,
+          "growth_db": 0.22002207725159906
+        },
+        {
+          "t_stop": 4.13827618469e-09,
+          "port": "P2",
+          "verdict": "converged",
+          "t_cut": 4.12581149738e-09,
+          "residual_db": -60.473750783388624,
+          "growth_db": 0.21336844066249228
+        },
+        {
+          "t_stop": 4.13827618469e-09,
+          "port": "P3",
+          "verdict": "converged",
+          "t_cut": 4.12581149738e-09,
+          "residual_db": -60.62741884292757,
+          "growth_db": 0.0
+        },
+        {
+          "t_stop": 4.13827618469e-09,
+          "port": "P4",
+          "verdict": "converged",
+          "t_cut": 4.12581149738e-09,
+          "residual_db": -60.50308521111773,
+          "growth_db": 0.0
+        }
+      ],
+      "wall_s": 3387.0986906001344,
+      "predicted_s": 2606.2431564643684,
+      "worst_s": 5668.106081212756,
+      "indicators": {
+        "sigma": 1.0,
+        "recip": 0.00318,
+        "loss_pct": null,
+        "expected_pct": null
+      },
+      "warnings": [],
+      "lid_mm": null,
+      "run_dir": "p4b_sl90-n2-l40-20261106-105941-da36",
+      "speeds_mcs": [
+        104.6777319029934,
+        104.5821339072558,
+        104.4905953414417,
+        104.9195877336851
+      ],
+      "node_mcs": 104.6299329051246,
+      "cal_mcs": 206.89629804509312,
+      "debye_cells": 0,
+      "converged": true,
+      "valid": true,
+      "blocked": false,
+      "t_stop_s": 4.13827618469e-09,
+      "fingerprint": {
+        "preset": "normal",
+        "region": {
+          "expand_h": 6.0,
+          "margin_scale": 1.0
+        },
+        "interface": "usb2-hs",
+        "f_max_hz": 10000000000.0,
+        "rise_s": 5e-10,
+        "marker_hz": 240000000.0,
+        "target_ohm": 90.0,
+        "stackup": {
+          "source": "board",
+          "layers": [
+            {
+              "name": "F.Mask",
+              "kind": "mask",
+              "thickness_mm": 0.01,
+              "epsilon_r": 3.3,
+              "loss_tangent": 0.0
+            },
+            {
+              "name": "F.Cu",
+              "kind": "copper",
+              "thickness_mm": 0.035,
+              "epsilon_r": null,
+              "loss_tangent": null
+            },
+            {
+              "name": "dielectric 1",
+              "kind": "dielectric",
+              "thickness_mm": 0.25,
+              "epsilon_r": 4.3,
+              "loss_tangent": 0.02
+            },
+            {
+              "name": "In1.Cu",
+              "kind": "copper",
+              "thickness_mm": 0.035,
+              "epsilon_r": null,
+              "loss_tangent": null
+            },
+            {
+              "name": "dielectric 2",
+              "kind": "dielectric",
+              "thickness_mm": 0.25,
+              "epsilon_r": 4.3,
+              "loss_tangent": 0.02
+            },
+            {
+              "name": "In2.Cu",
+              "kind": "copper",
+              "thickness_mm": 0.035,
+              "epsilon_r": null,
+              "loss_tangent": null
+            },
+            {
+              "name": "dielectric 3",
+              "kind": "dielectric",
+              "thickness_mm": 0.94,
+              "epsilon_r": 4.5,
+              "loss_tangent": 0.02
+            },
+            {
+              "name": "B.Cu",
+              "kind": "copper",
+              "thickness_mm": 0.035,
+              "epsilon_r": null,
+              "loss_tangent": null
+            },
+            {
+              "name": "B.Mask",
+              "kind": "mask",
+              "thickness_mm": 0.01,
+              "epsilon_r": 3.3,
+              "loss_tangent": 0.0
+            }
+          ]
+        },
+        "dielectric": "lossless",
+        "lid": true,
+        "lid_height_mm": null,
+        "mesh": {
+          "n": 2,
+          "reach_h": 6.0
+        },
+        "ends": [
+          "TP1.1",
+          "TP3.1",
+          "TP2.1",
+          "TP4.1"
+        ],
+        "app": "0.1.0.dev0",
+        "openems": "0.37.0"
+      },
+      "reading_error": null,
+      "sigma": 1.0,
+      "recip": 0.00318,
+      "plateau_ohm": 91.70578720549786,
+      "level_ohm": null,
+      "next_db": -19.489122447198504,
+      "fext_db": -51.67767588408613,
+      "fext_full_db": -31.65921216154942,
+      "fext50_db": -31.786878830321704,
+      "launch_db": -10.786436882433089
+    },
+    "p4b_sl90-n3": {
+      "exit": 0,
+      "cells": 8774688,
+      "dt": 5.51478e-14,
+      "dt_ratio": 1.0299182011728234,
+      "pool": 4,
+      "jobs": [
+        {
+          "t_stop": 3.86365330387e-09,
+          "port": "P1",
+          "verdict": "converged",
+          "t_cut": 3.85118990612e-09,
+          "residual_db": -60.0149408162074,
+          "growth_db": 0.15641903468090845
+        },
+        {
+          "t_stop": 3.86365330387e-09,
+          "port": "P2",
+          "verdict": "converged",
+          "t_cut": 3.85118990612e-09,
+          "residual_db": -60.021817162515376,
+          "growth_db": 0.14711196044456187
+        },
+        {
+          "t_stop": 3.90104349713e-09,
+          "port": "P3",
+          "verdict": "converged",
+          "t_cut": 3.88858009938e-09,
+          "residual_db": -61.15525451515592,
+          "growth_db": 0.0
+        },
+        {
+          "t_stop": 3.90104349713e-09,
+          "port": "P4",
+          "verdict": "converged",
+          "t_cut": 3.88858009938e-09,
+          "residual_db": -61.12998557678256,
+          "growth_db": 0.0
+        }
+      ],
+      "wall_s": 5669.344734200044,
+      "predicted_s": 5930.241536172623,
+      "worst_s": 13681.512104343245,
+      "indicators": {
+        "sigma": 1.0,
+        "recip": 0.00104,
+        "loss_pct": null,
+        "expected_pct": null
+      },
+      "warnings": [],
+      "lid_mm": null,
+      "run_dir": "p4b_sl90-n3-l40-20261106-172033-2439",
+      "speeds_mcs": [
+        110.60666543195,
+        111.2419561284179,
+        111.43180980122399,
+        111.5532723802874
+      ],
+      "node_mcs": 111.33688296482094,
+      "cal_mcs": 206.89629804509312,
+      "debye_cells": 0,
+      "converged": true,
+      "valid": true,
+      "blocked": false,
+      "t_stop_s": 3.90104349713e-09,
+      "fingerprint": {
+        "preset": "normal",
+        "region": {
+          "expand_h": 6.0,
+          "margin_scale": 1.0
+        },
+        "interface": "usb2-hs",
+        "f_max_hz": 10000000000.0,
+        "rise_s": 5e-10,
+        "marker_hz": 240000000.0,
+        "target_ohm": 90.0,
+        "stackup": {
+          "source": "board",
+          "layers": [
+            {
+              "name": "F.Mask",
+              "kind": "mask",
+              "thickness_mm": 0.01,
+              "epsilon_r": 3.3,
+              "loss_tangent": 0.0
+            },
+            {
+              "name": "F.Cu",
+              "kind": "copper",
+              "thickness_mm": 0.035,
+              "epsilon_r": null,
+              "loss_tangent": null
+            },
+            {
+              "name": "dielectric 1",
+              "kind": "dielectric",
+              "thickness_mm": 0.25,
+              "epsilon_r": 4.3,
+              "loss_tangent": 0.02
+            },
+            {
+              "name": "In1.Cu",
+              "kind": "copper",
+              "thickness_mm": 0.035,
+              "epsilon_r": null,
+              "loss_tangent": null
+            },
+            {
+              "name": "dielectric 2",
+              "kind": "dielectric",
+              "thickness_mm": 0.25,
+              "epsilon_r": 4.3,
+              "loss_tangent": 0.02
+            },
+            {
+              "name": "In2.Cu",
+              "kind": "copper",
+              "thickness_mm": 0.035,
+              "epsilon_r": null,
+              "loss_tangent": null
+            },
+            {
+              "name": "dielectric 3",
+              "kind": "dielectric",
+              "thickness_mm": 0.94,
+              "epsilon_r": 4.5,
+              "loss_tangent": 0.02
+            },
+            {
+              "name": "B.Cu",
+              "kind": "copper",
+              "thickness_mm": 0.035,
+              "epsilon_r": null,
+              "loss_tangent": null
+            },
+            {
+              "name": "B.Mask",
+              "kind": "mask",
+              "thickness_mm": 0.01,
+              "epsilon_r": 3.3,
+              "loss_tangent": 0.0
+            }
+          ]
+        },
+        "dielectric": "lossless",
+        "lid": true,
+        "lid_height_mm": null,
+        "mesh": {
+          "n": 3,
+          "reach_h": 6.0
+        },
+        "ends": [
+          "TP1.1",
+          "TP3.1",
+          "TP2.1",
+          "TP4.1"
+        ],
+        "app": "0.1.0.dev0",
+        "openems": "0.37.0"
+      },
+      "reading_error": null,
+      "sigma": 1.0,
+      "recip": 0.00104,
+      "plateau_ohm": 92.39434393424894,
+      "level_ohm": null,
+      "next_db": -19.956276741733262,
+      "fext_db": -52.58413446496924,
+      "fext_full_db": -32.41400749117146,
+      "fext50_db": -32.54580299810158,
+      "launch_db": -11.735081959634414,
+      "n_ds": 0.09500582462326239,
+      "n_delay_rel": 0.002161214432643721
+    },
+    "p4b_ms90_45-n2": {
+      "exit": 0,
+      "cells": 10097626,
+      "dt": 8.31926e-14,
+      "dt_ratio": 0.9564172721420031,
+      "pool": 4,
+      "jobs": [
+        {
+          "t_stop": 4.77941729895e-09,
+          "port": "P1",
+          "verdict": "converged",
+          "t_cut": 4.76693840261e-09,
+          "residual_db": -61.52043299501882,
+          "growth_db": 0.44124360852879363
+        },
+        {
+          "t_stop": 4.77941729895e-09,
+          "port": "P2",
+          "verdict": "converged",
+          "t_cut": 4.76693840261e-09,
+          "residual_db": -61.107351492059,
+          "growth_db": 0.1522474976389958
+        },
+        {
+          "t_stop": 4.77941729895e-09,
+          "port": "P3",
+          "verdict": "converged",
+          "t_cut": 4.76693840261e-09,
+          "residual_db": -60.97926475194803,
+          "growth_db": 0.14679092579820008
+        },
+        {
+          "t_stop": 4.77941729895e-09,
+          "port": "P4",
+          "verdict": "converged",
+          "t_cut": 4.76693840261e-09,
+          "residual_db": -61.598570964357826,
+          "growth_db": 0.4329026625922836
+        }
+      ],
+      "wall_s": 4305.909595299978,
+      "predicted_s": 5216.411469163746,
+      "worst_s": 9822.89268459311,
+      "indicators": {
+        "sigma": 1.0,
+        "recip": 0.000215,
+        "loss_pct": null,
+        "expected_pct": null
+      },
+      "warnings": [],
+      "lid_mm": null,
+      "run_dir": "p4b_ms90_45-n2-l40-20261106-185851-a32a",
+      "speeds_mcs": [
+        136.5829392585366,
+        136.51114164250188,
+        136.7198839487007,
+        136.16977057923918
+      ],
+      "node_mcs": 136.54704045051926,
+      "cal_mcs": 206.89629804509312,
+      "debye_cells": 0,
+      "converged": true,
+      "valid": true,
+      "blocked": false,
+      "t_stop_s": 4.77941729895e-09,
+      "fingerprint": {
+        "preset": "normal",
+        "region": {
+          "expand_h": 6.0,
+          "margin_scale": 1.0
+        },
+        "interface": "usb2-hs",
+        "f_max_hz": 10000000000.0,
+        "rise_s": 5e-10,
+        "marker_hz": 240000000.0,
+        "target_ohm": 90.0,
+        "stackup": {
+          "source": "board",
+          "layers": [
+            {
+              "name": "F.Mask",
+              "kind": "mask",
+              "thickness_mm": 0.01,
+              "epsilon_r": 3.3,
+              "loss_tangent": 0.0
+            },
+            {
+              "name": "F.Cu",
+              "kind": "copper",
+              "thickness_mm": 0.035,
+              "epsilon_r": null,
+              "loss_tangent": null
+            },
+            {
+              "name": "dielectric 1",
+              "kind": "dielectric",
+              "thickness_mm": 0.2,
+              "epsilon_r": 4.3,
+              "loss_tangent": 0.02
+            },
+            {
+              "name": "In1.Cu",
+              "kind": "copper",
+              "thickness_mm": 0.035,
+              "epsilon_r": null,
+              "loss_tangent": null
+            },
+            {
+              "name": "dielectric 2",
+              "kind": "dielectric",
+              "thickness_mm": 1.04,
+              "epsilon_r": 4.5,
+              "loss_tangent": 0.02
+            },
+            {
+              "name": "In2.Cu",
+              "kind": "copper",
+              "thickness_mm": 0.035,
+              "epsilon_r": null,
+              "loss_tangent": null
+            },
+            {
+              "name": "dielectric 3",
+              "kind": "dielectric",
+              "thickness_mm": 0.2,
+              "epsilon_r": 4.3,
+              "loss_tangent": 0.02
+            },
+            {
+              "name": "B.Cu",
+              "kind": "copper",
+              "thickness_mm": 0.035,
+              "epsilon_r": null,
+              "loss_tangent": null
+            },
+            {
+              "name": "B.Mask",
+              "kind": "mask",
+              "thickness_mm": 0.01,
+              "epsilon_r": 3.3,
+              "loss_tangent": 0.0
+            }
+          ]
+        },
+        "dielectric": "lossless",
+        "lid": true,
+        "lid_height_mm": null,
+        "mesh": {
+          "n": 2,
+          "reach_h": 6.0
+        },
+        "ends": [
+          "TP1.1",
+          "TP3.1",
+          "TP2.1",
+          "TP4.1"
+        ],
+        "app": "0.1.0.dev0",
+        "openems": "0.37.0"
+      },
+      "reading_error": null,
+      "sigma": 1.0,
+      "recip": 0.000215,
+      "plateau_ohm": 88.41258815955118,
+      "level_ohm": 89.10103322401272,
+      "next_db": -16.551996822004757,
+      "fext_db": -20.66112733422015,
+      "fext_full_db": -3.9637299923559195,
+      "fext50_db": -3.9717039499190774,
+      "launch_db": -6.76704530322168
+    },
+    "p4b_ms100_45-n2": {
+      "exit": 0,
+      "cells": 9910054,
+      "dt": 8.90165e-14,
+      "dt_ratio": 1.0201588411244944,
+      "pool": 4,
+      "jobs": [
+        {
+          "t_stop": 4.78552926906e-09,
+          "port": "P1",
+          "verdict": "converged",
+          "t_cut": 4.77306695326e-09,
+          "residual_db": -61.310568162299845,
+          "growth_db": 0.11126033118981127
+        },
+        {
+          "t_stop": 4.78552926906e-09,
+          "port": "P2",
+          "verdict": "converged",
+          "t_cut": 4.77306695326e-09,
+          "residual_db": -60.9929776267537,
+          "growth_db": 0.5296764646448651
+        },
+        {
+          "t_stop": 4.78552926906e-09,
+          "port": "P3",
+          "verdict": "converged",
+          "t_cut": 4.77306695326e-09,
+          "residual_db": -60.94446878918827,
+          "growth_db": 0.5264608519778164
+        },
+        {
+          "t_stop": 4.78552926906e-09,
+          "port": "P4",
+          "verdict": "converged",
+          "t_cut": 4.77306695326e-09,
+          "residual_db": -61.3168552649052,
+          "growth_db": 0.1438744527213771
+        }
+      ],
+      "wall_s": 3988.767607799964,
+      "predicted_s": 3903.154739793321,
+      "worst_s": 7340.54493935631,
+      "indicators": {
+        "sigma": 1.0001,
+        "recip": 5.16e-05,
+        "loss_pct": null,
+        "expected_pct": null
+      },
+      "warnings": [],
+      "lid_mm": null,
+      "run_dir": "p4b_ms100_45-n2-l40-20261106-201127-10c5",
+      "speeds_mcs": [
+        135.5886913018004,
+        135.30749945001,
+        135.5282376083018,
+        135.13237801046898
+      ],
+      "node_mcs": 135.4178685291559,
+      "cal_mcs": 206.89629804509312,
+      "debye_cells": 0,
+      "converged": true,
+      "valid": true,
+      "blocked": false,
+      "t_stop_s": 4.78552926906e-09,
+      "fingerprint": {
+        "preset": "normal",
+        "region": {
+          "expand_h": 6.0,
+          "margin_scale": 1.0
+        },
+        "interface": "100base-tx",
+        "f_max_hz": 10000000000.0,
+        "rise_s": 3e-09,
+        "marker_hz": 62500000.0,
+        "target_ohm": 100.0,
+        "stackup": {
+          "source": "board",
+          "layers": [
+            {
+              "name": "F.Mask",
+              "kind": "mask",
+              "thickness_mm": 0.01,
+              "epsilon_r": 3.3,
+              "loss_tangent": 0.0
+            },
+            {
+              "name": "F.Cu",
+              "kind": "copper",
+              "thickness_mm": 0.035,
+              "epsilon_r": null,
+              "loss_tangent": null
+            },
+            {
+              "name": "dielectric 1",
+              "kind": "dielectric",
+              "thickness_mm": 0.2,
+              "epsilon_r": 4.3,
+              "loss_tangent": 0.02
+            },
+            {
+              "name": "In1.Cu",
+              "kind": "copper",
+              "thickness_mm": 0.035,
+              "epsilon_r": null,
+              "loss_tangent": null
+            },
+            {
+              "name": "dielectric 2",
+              "kind": "dielectric",
+              "thickness_mm": 1.04,
+              "epsilon_r": 4.5,
+              "loss_tangent": 0.02
+            },
+            {
+              "name": "In2.Cu",
+              "kind": "copper",
+              "thickness_mm": 0.035,
+              "epsilon_r": null,
+              "loss_tangent": null
+            },
+            {
+              "name": "dielectric 3",
+              "kind": "dielectric",
+              "thickness_mm": 0.2,
+              "epsilon_r": 4.3,
+              "loss_tangent": 0.02
+            },
+            {
+              "name": "B.Cu",
+              "kind": "copper",
+              "thickness_mm": 0.035,
+              "epsilon_r": null,
+              "loss_tangent": null
+            },
+            {
+              "name": "B.Mask",
+              "kind": "mask",
+              "thickness_mm": 0.01,
+              "epsilon_r": 3.3,
+              "loss_tangent": 0.0
+            }
+          ]
+        },
+        "dielectric": "lossless",
+        "lid": true,
+        "lid_height_mm": null,
+        "mesh": {
+          "n": 2,
+          "reach_h": 6.0
+        },
+        "ends": [
+          "TP1.1",
+          "TP3.1",
+          "TP2.1",
+          "TP4.1"
+        ],
+        "app": "0.1.0.dev0",
+        "openems": "0.37.0"
+      },
+      "reading_error": null,
+      "sigma": 1.0001,
+      "recip": 5.16e-05,
+      "plateau_ohm": 104.09402252059158,
+      "level_ohm": 105.65853218937156,
+      "next_db": -18.55861076457144,
+      "fext_db": -20.261756616519932,
+      "fext_full_db": -3.592310165820955,
+      "fext50_db": -3.62958102173305,
+      "launch_db": -6.398533157230046
+    },
+    "p4b_ms90_vic-n2": {
+      "exit": 0,
+      "cells": 1571724,
+      "dt": 8.30093e-14,
+      "dt_ratio": 0.9331047661870504,
+      "pool": 4,
+      "jobs": [
+        {
+          "t_stop": 4.28327863517e-09,
+          "port": "P1",
+          "verdict": "converged",
+          "t_cut": 4.27082724379e-09,
+          "residual_db": -60.53333486237224,
+          "growth_db": 0.43541793231057113
+        },
+        {
+          "t_stop": 4.29573002656e-09,
+          "port": "P2",
+          "verdict": "converged",
+          "t_cut": 4.27082724379e-09,
+          "residual_db": -60.40348009529496,
+          "growth_db": 0.5380334286967354
+        },
+        {
+          "t_stop": 4.28327863517e-09,
+          "port": "P3",
+          "verdict": "converged",
+          "t_cut": 4.27082724379e-09,
+          "residual_db": -60.528920534756296,
+          "growth_db": 0.2557581042196091
+        },
+        {
+          "t_stop": 4.28327863517e-09,
+          "port": "P4",
+          "verdict": "converged",
+          "t_cut": 4.27082724379e-09,
+          "residual_db": -60.398999619390764,
+          "growth_db": 0.0
+        },
+        {
+          "t_stop": 3.95954245926e-09,
+          "port": "P5",
+          "verdict": "converged",
+          "t_cut": 3.9346396765e-09,
+          "residual_db": -60.52354515034388,
+          "growth_db": 0.5377447702314271
+        },
+        {
+          "t_stop": 3.94709106788e-09,
+          "port": "P6",
+          "verdict": "converged",
+          "t_cut": 3.9346396765e-09,
+          "residual_db": -60.51831398090418,
+          "growth_db": 0.8310776658250347
+        }
+      ],
+      "wall_s": 966.1028928000014,
+      "predicted_s": 1568.9418961660535,
+      "worst_s": 3287.096018182989,
+      "indicators": {
+        "sigma": 1.0001,
+        "recip": 0.00022,
+        "loss_pct": null,
+        "expected_pct": null
+      },
+      "warnings": [],
+      "lid_mm": null,
+      "run_dir": "p4b_ms90_vic-n2-l40-20261106-095837-99c3",
+      "speeds_mcs": [
+        126.49805445795741,
+        126.59791886660311,
+        127.1314725230249,
+        126.4689812992481,
+        244.9829259319998,
+        243.80678662164692
+      ],
+      "node_mcs": 126.864695694814,
+      "cal_mcs": 206.89629804509312,
+      "debye_cells": 0,
+      "converged": true,
+      "valid": true,
+      "blocked": false,
+      "t_stop_s": 4.29573002656e-09,
+      "fingerprint": {
+        "preset": "normal",
+        "region": {
+          "expand_h": 6.0,
+          "margin_scale": 1.0
+        },
+        "interface": "usb2-hs",
+        "f_max_hz": 10000000000.0,
+        "rise_s": 5e-10,
+        "marker_hz": 240000000.0,
+        "target_ohm": 90.0,
+        "stackup": {
+          "source": "board",
+          "layers": [
+            {
+              "name": "F.Mask",
+              "kind": "mask",
+              "thickness_mm": 0.01,
+              "epsilon_r": 3.3,
+              "loss_tangent": 0.0
+            },
+            {
+              "name": "F.Cu",
+              "kind": "copper",
+              "thickness_mm": 0.035,
+              "epsilon_r": null,
+              "loss_tangent": null
+            },
+            {
+              "name": "dielectric 1",
+              "kind": "dielectric",
+              "thickness_mm": 0.2,
+              "epsilon_r": 4.3,
+              "loss_tangent": 0.02
+            },
+            {
+              "name": "In1.Cu",
+              "kind": "copper",
+              "thickness_mm": 0.035,
+              "epsilon_r": null,
+              "loss_tangent": null
+            },
+            {
+              "name": "dielectric 2",
+              "kind": "dielectric",
+              "thickness_mm": 1.04,
+              "epsilon_r": 4.5,
+              "loss_tangent": 0.02
+            },
+            {
+              "name": "In2.Cu",
+              "kind": "copper",
+              "thickness_mm": 0.035,
+              "epsilon_r": null,
+              "loss_tangent": null
+            },
+            {
+              "name": "dielectric 3",
+              "kind": "dielectric",
+              "thickness_mm": 0.2,
+              "epsilon_r": 4.3,
+              "loss_tangent": 0.02
+            },
+            {
+              "name": "B.Cu",
+              "kind": "copper",
+              "thickness_mm": 0.035,
+              "epsilon_r": null,
+              "loss_tangent": null
+            },
+            {
+              "name": "B.Mask",
+              "kind": "mask",
+              "thickness_mm": 0.01,
+              "epsilon_r": 3.3,
+              "loss_tangent": 0.0
+            }
+          ]
+        },
+        "dielectric": "lossless",
+        "lid": true,
+        "lid_height_mm": null,
+        "mesh": {
+          "n": 2,
+          "reach_h": 6.0
+        },
+        "ends": [
+          "TP1.1",
+          "TP3.1",
+          "TP2.1",
+          "TP4.1",
+          "TP5.1",
+          "TP6.1"
+        ],
+        "app": "0.1.0.dev0",
+        "openems": "0.37.0"
+      },
+      "reading_error": null,
+      "sigma": 1.0001,
+      "recip": 0.00022,
+      "plateau_ohm": 91.12348903749107,
+      "level_ohm": null,
+      "next_db": -17.140399662061,
+      "fext_db": -18.956891901317665,
+      "fext_full_db": -3.22311954212348,
+      "fext50_db": -3.2083420844026933,
+      "launch_db": -8.44699677457768
+    },
+    "p4b_ms90_cut-n2": {
+      "exit": 0,
+      "cells": 1374758,
+      "dt": 8.96869e-14,
+      "dt_ratio": 0.9867207956520783,
+      "pool": 4,
+      "jobs": [
+        {
+          "t_stop": 1.11574951622e-08,
+          "port": "P1",
+          "verdict": "t_max",
+          "t_cut": 1.11450286871e-08,
+          "residual_db": -42.847718720883734,
+          "growth_db": 0.9253922402099306
+        },
+        {
+          "t_stop": 1.01352442088e-08,
+          "port": "P2",
+          "verdict": "t_max",
+          "t_cut": 1.01227777337e-08,
+          "residual_db": -46.47795996222718,
+          "growth_db": 0.9505619743059128
+        },
+        {
+          "t_stop": 1.11574951622e-08,
+          "port": "P3",
+          "verdict": "t_max",
+          "t_cut": 1.11325622121e-08,
+          "residual_db": -42.84383310741491,
+          "growth_db": 0.0
+        },
+        {
+          "t_stop": 1.01352442088e-08,
+          "port": "P4",
+          "verdict": "t_max",
+          "t_cut": 1.01227777337e-08,
+          "residual_db": -46.47210575482881,
+          "growth_db": 0.6732292532143447
+        }
+      ],
+      "wall_s": 1265.6834205000196,
+      "predicted_s": 1030.8132267761596,
+      "worst_s": 831.4876149277364,
+      "indicators": {
+        "sigma": 1.1688,
+        "recip": 0.0185,
+        "loss_pct": null,
+        "expected_pct": null
+      },
+      "warnings": [
+        "W_JOB_T_MAX",
+        "W_JOB_T_MAX",
+        "W_JOB_T_MAX",
+        "W_JOB_T_MAX",
+        "W_PASSIVITY"
+      ],
+      "lid_mm": null,
+      "run_dir": "p4b_ms90_cut-n2-l40-20261106-101502-38f3",
+      "speeds_mcs": [
+        136.0155358730066,
+        129.94867379575558,
+        136.31450353820853,
+        130.24436090047809
+      ],
+      "node_mcs": 133.12994838674234,
+      "cal_mcs": 206.89629804509312,
+      "debye_cells": 0,
+      "converged": false,
+      "valid": false,
+      "blocked": false,
+      "t_stop_s": 1.11574951622e-08,
+      "fingerprint": {
+        "preset": "normal",
+        "region": {
+          "expand_h": 6.0,
+          "margin_scale": 1.0
+        },
+        "interface": "usb2-hs",
+        "f_max_hz": 10000000000.0,
+        "rise_s": 5e-10,
+        "marker_hz": 240000000.0,
+        "target_ohm": 90.0,
+        "stackup": {
+          "source": "board",
+          "layers": [
+            {
+              "name": "F.Mask",
+              "kind": "mask",
+              "thickness_mm": 0.01,
+              "epsilon_r": 3.3,
+              "loss_tangent": 0.0
+            },
+            {
+              "name": "F.Cu",
+              "kind": "copper",
+              "thickness_mm": 0.035,
+              "epsilon_r": null,
+              "loss_tangent": null
+            },
+            {
+              "name": "dielectric 1",
+              "kind": "dielectric",
+              "thickness_mm": 0.2,
+              "epsilon_r": 4.3,
+              "loss_tangent": 0.02
+            },
+            {
+              "name": "In1.Cu",
+              "kind": "copper",
+              "thickness_mm": 0.035,
+              "epsilon_r": null,
+              "loss_tangent": null
+            },
+            {
+              "name": "dielectric 2",
+              "kind": "dielectric",
+              "thickness_mm": 1.04,
+              "epsilon_r": 4.5,
+              "loss_tangent": 0.02
+            },
+            {
+              "name": "In2.Cu",
+              "kind": "copper",
+              "thickness_mm": 0.035,
+              "epsilon_r": null,
+              "loss_tangent": null
+            },
+            {
+              "name": "dielectric 3",
+              "kind": "dielectric",
+              "thickness_mm": 0.2,
+              "epsilon_r": 4.3,
+              "loss_tangent": 0.02
+            },
+            {
+              "name": "B.Cu",
+              "kind": "copper",
+              "thickness_mm": 0.035,
+              "epsilon_r": null,
+              "loss_tangent": null
+            },
+            {
+              "name": "B.Mask",
+              "kind": "mask",
+              "thickness_mm": 0.01,
+              "epsilon_r": 3.3,
+              "loss_tangent": 0.0
+            }
+          ]
+        },
+        "dielectric": "lossless",
+        "lid": true,
+        "lid_height_mm": null,
+        "mesh": {
+          "n": 2,
+          "reach_h": 6.0
+        },
+        "ends": [
+          "TP1.1",
+          "TP3.1",
+          "TP2.1",
+          "TP4.1"
+        ],
+        "app": "0.1.0.dev0",
+        "openems": "0.37.0"
+      },
+      "reading_error": null,
+      "sigma": 1.1688,
+      "recip": 0.0185,
+      "plateau_ohm": 91.16772678726534,
+      "level_ohm": null,
+      "next_db": -17.116965492074208,
+      "fext_db": -18.757349319579255,
+      "fext_full_db": -3.0610939533625796,
+      "fext50_db": -3.05369178677303,
+      "launch_db": -4.290854487142413
+    }
+  },
+  "victim": {
+    "rows": [
+      {
+        "quantity": "tdr_lowest",
+        "marker": "",
+        "f_hz": null,
+        "base": 90.9121621325103,
+        "variant": 90.96609761745079,
+        "unit": "Ω",
+        "delta": 0.053935484940481615,
+        "delta_unit": "Ω",
+        "threshold": 1.0,
+        "resolved": false
+      },
+      {
+        "quantity": "tdr_highest",
+        "marker": "",
+        "f_hz": null,
+        "base": 91.13451404495959,
+        "variant": 91.21888795704066,
+        "unit": "Ω",
+        "delta": 0.0843739120810767,
+        "delta_unit": "Ω",
+        "threshold": 1.0,
+        "resolved": false
+      },
+      {
+        "quantity": "sdd21",
+        "marker": "marker",
+        "f_hz": 240000000.0,
+        "base": -0.0001987324109991887,
+        "variant": 0.004605850127053236,
+        "unit": "dB",
+        "delta": 0.004804582538052425,
+        "delta_unit": "dB",
+        "threshold": 0.05,
+        "resolved": false
+      },
+      {
+        "quantity": "sdd21",
+        "marker": "f_max",
+        "f_hz": 10000000000.0,
+        "base": -0.6848962364749358,
+        "variant": -0.583969522828937,
+        "unit": "dB",
+        "delta": 0.10092671364599881,
+        "delta_unit": "dB",
+        "threshold": 0.05,
+        "resolved": true
+      },
+      {
+        "quantity": "sdd11_worst",
+        "marker": "",
+        "f_hz": null,
+        "base": -6.7821335784562065,
+        "variant": -6.024897152855373,
+        "unit": "dB",
+        "delta": 0.7572364256008335,
+        "delta_unit": "dB",
+        "threshold": 0.5,
+        "resolved": true
+      },
+      {
+        "quantity": "scd21_worst",
+        "marker": "",
+        "f_hz": null,
+        "base": -34.47354378129855,
+        "variant": -13.123638318704964,
+        "unit": "dB",
+        "delta": 21.34990546259359,
+        "delta_unit": "dB",
+        "threshold": 0.5,
+        "resolved": true
+      },
+      {
+        "quantity": "skew",
+        "marker": "",
+        "f_hz": null,
+        "base": -0.12455538564537402,
+        "variant": 0.01505997057334227,
+        "unit": "ps",
+        "delta": 0.1396153562187163,
+        "delta_unit": "ps",
+        "threshold": 1.0,
+        "resolved": false
+      }
+    ],
+    "ds_pair": 0.4095706694256263,
+    "next_db": -21.37020153376948,
+    "fext_db": -18.982943213320244
+  },
+  "bends_n3": "pending",
+  "checks": [
+    {
+      "step": "p4b_ms90-n2",
+      "check": "zdiff",
+      "value": 0.0002437021124437333,
+      "limit": 0.015,
+      "pass": true
+    },
+    {
+      "step": "p4b_ms90-n2",
+      "check": "next",
+      "value": 0.47789535462488786,
+      "limit": 0.5,
+      "pass": true
+    },
+    {
+      "step": "p4b_ms90-n2",
+      "check": "valid",
+      "value": true,
+      "limit": null,
+      "pass": true
+    },
+    {
+      "step": "p4b_ms90-n3",
+      "check": "zdiff",
+      "value": 0.0002230373496732163,
+      "limit": 0.015,
+      "pass": true
+    },
+    {
+      "step": "p4b_ms90-n3",
+      "check": "next",
+      "value": 0.49084778795476325,
+      "limit": 0.5,
+      "pass": true
+    },
+    {
+      "step": "p4b_ms90-n3",
+      "check": "valid",
+      "value": true,
+      "limit": null,
+      "pass": true
+    },
+    {
+      "step": "p4b_ms100-n2",
+      "check": "zdiff",
+      "value": 0.0002294405244549491,
+      "limit": 0.015,
+      "pass": true
+    },
+    {
+      "step": "p4b_ms100-n2",
+      "check": "next",
+      "value": 0.4481225109565443,
+      "limit": 0.5,
+      "pass": true
+    },
+    {
+      "step": "p4b_ms100-n2",
+      "check": "valid",
+      "value": true,
+      "limit": null,
+      "pass": true
+    },
+    {
+      "step": "p4b_ms100-n3",
+      "check": "zdiff",
+      "value": 0.0002027426642352559,
+      "limit": 0.015,
+      "pass": true
+    },
+    {
+      "step": "p4b_ms100-n3",
+      "check": "next",
+      "value": 0.46693861197354636,
+      "limit": 0.5,
+      "pass": true
+    },
+    {
+      "step": "p4b_ms100-n3",
+      "check": "valid",
+      "value": true,
+      "limit": null,
+      "pass": true
+    },
+    {
+      "step": "p4b_sl90-n2",
+      "check": "zdiff",
+      "value": 1.6422715973574142e-05,
+      "limit": 0.015,
+      "pass": true
+    },
+    {
+      "step": "p4b_sl90-n2",
+      "check": "next",
+      "value": -0.029477022784345053,
+      "limit": 0.5,
+      "pass": true
+    },
+    {
+      "step": "p4b_sl90-n2",
+      "check": "fext",
+      "value": -51.67767588408613,
+      "limit": -40.0,
+      "pass": true
+    },
+    {
+      "step": "p4b_sl90-n2",
+      "check": "valid",
+      "value": true,
+      "limit": null,
+      "pass": true
+    },
+    {
+      "step": "p4b_sl90-n3",
+      "check": "zdiff",
+      "value": 6.610102887272262e-06,
+      "limit": 0.015,
+      "pass": true
+    },
+    {
+      "step": "p4b_sl90-n3",
+      "check": "next",
+      "value": -0.029212843129982957,
+      "limit": 0.5,
+      "pass": true
+    },
+    {
+      "step": "p4b_sl90-n3",
+      "check": "fext",
+      "value": -52.58413446496924,
+      "limit": -40.0,
+      "pass": true
+    },
+    {
+      "step": "p4b_sl90-n3",
+      "check": "valid",
+      "value": true,
+      "limit": null,
+      "pass": true
+    }
+  ],
+  "decisions": {
+    "mesh_n": 2,
+    "staircase": null,
+    "cut_victim": "refusal kept"
+  },
+  "verdict": {
+    "value": "incomplete",
+    "fails": []
+  },
+  "machine": {
+    "steps": 10,
+    "machine_hours": 6.429503111916711,
+    "loaded": [],
+    "elapsed_days": 15
+  }
+}
