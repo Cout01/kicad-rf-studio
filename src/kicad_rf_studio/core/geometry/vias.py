@@ -1,7 +1,8 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """Vias as rods (spec 5.1), in mm: a via of the protected set is a solid PEC cylinder of its drill, and any other a
-PEC curve, which the mesh snaps to its lines so that it cannot fall between them. A plated hole (a thru_hole pad) has
-a barrel too, and is a via here."""
+PEC curve, which the mesh snaps to its lines so that it cannot fall between them. A solid rod that holds no mesh node
+is snapped as well, a curve then (plan 4 ruling R-11), as cells wider than its drill can fall around it. A plated
+hole (a thru_hole pad) has a barrel too, and is a via here."""
 from __future__ import annotations
 
 from dataclasses import dataclass

@@ -1,10 +1,12 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """The antenna golden pins (Stage 4 design 3, 4, 5.12 item 1): sha256 digests of what the antenna fixtures build and
 write, and of v1's 2D readouts, which golden_v1 does not pin, recorded once at 037bc4b, before Stage 4 changed any
-code, in tests/fixtures/golden_antenna.json, with golden_v1.env(). tests/test_golden_antenna.py compares the models
-everywhere and the outputs where env() matches. Dev-time only: run it once with `python tools/golden_antenna.py`,
-which records in English through golden_v1.record. It refuses to overwrite the JSON; a new recording is a controller
-ruling, which deletes the file first."""
+code, in tests/fixtures/golden_antenna.json, with golden_v1.env(). The six IFA models carry plan 4 ruling R-11's
+snapped barrels since its fix, which recorded them again (AE1.2's plated hole, and one GND via on ifa2g4); every
+other digest is 037bc4b's. tests/test_golden_antenna.py compares the models everywhere and the outputs where env()
+matches. Dev-time only: run it once with `python tools/golden_antenna.py`, which records in English through
+golden_v1.record. It refuses to overwrite the JSON; a new recording is a controller ruling, which deletes the file
+first."""
 import os
 
 if __name__ == "__main__":

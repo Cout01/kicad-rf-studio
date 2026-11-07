@@ -2,6 +2,7 @@
 """The FDTD mesh (spec 5.4), in mm: the x, y and z lines the mesh rule places for a geometry."""
 from __future__ import annotations
 
+import math
 from collections import defaultdict
 from dataclasses import dataclass, field, replace
 from itertools import permutations
@@ -36,8 +37,9 @@ class Mesh:
     the edge lines, the protected extent's ends and its fill in x and y; the walls, the copper faces and the dz0 lines
     in z. The timestep-floor reference reads their smallest steps. `edges` holds the protected in-plane copper edges per
     axis as (position, inside sign), for the edge lint. `snapped_rods` are the geometry's rods with every curve's centre
-    moved to the nearest x and y lines. `exempt` holds, per axis, the edges the lint spares its third test: an
-    antenna's two-layer pairs (_pairs), none for any other geometry."""
+    moved to the nearest x and y lines; a solid rod that holds no mesh node is snapped as well, a curve there (plan 4
+    ruling R-11). `exempt` holds, per axis, the edges the lint spares its third test: an antenna's two-layer pairs
+    (_pairs), none for any other geometry."""
     x: np.ndarray
     y: np.ndarray
     z: np.ndarray
@@ -58,8 +60,11 @@ def build_mesh(geom: Geometry, prot: Protected, n: int, extra_edges: dict[str, l
     of the protected area and port boxes, and the vertices of every copper piece, rod and lid as free coordinates; z
     comes from z_lines, with the top wall raised by as much as the lid rises above the board, so it stays as far from
     the lid as from the board (R-P2-3; spec 5.2: the lid is never the boundary) and snap_lid finds a line near its
-    top. A rod that is not solid moves to the nearest x and y lines in `snapped_rods`; `geom` is not changed. For an
-    antenna's geometry alone (Geometry.antenna), each axis's xy_lines also takes its two-layer pairs (_pairs), which
+    top. A rod that is not solid moves to the nearest x and y lines in `snapped_rods`, and a solid rod that holds no
+    mesh node is snapped as well, a curve there (plan 4 ruling R-11): no (x, y) node lies within its radius of its
+    centre, the boundary included, as openEMS includes a node there. Cells wider than its drill can fall around it (the
+    d fill on a thick board), and openEMS would lose its barrel silently. No line moves, and `geom` is not changed. For
+    an antenna's geometry alone (Geometry.antenna), each axis's xy_lines also takes its two-layer pairs (_pairs), which
     the edge lint spares its third test, and the Mesh holds them in `exempt`; every other geometry exempts none.
     The substrate h, which d, the edge patterns and z take, is that of the geometry's layers (Geometry.layers: an SI
     project's lines'; the top layer's without them). With `max_cell` (an SI project's mesh.max_cell_mm, Stage 4 design
@@ -93,8 +98,11 @@ def build_mesh(geom: Geometry, prot: Protected, n: int, extra_edges: dict[str, l
     cu = [s for s in zs if s.kind == "copper"]
     pinned["z"] = z[np.isin(z, [*z_walls, *(v for s in cu for v in (s.z0, s.z1, round(s.z0 - dz, 6),
                                                                    round(s.z1 + dz, 6)))])]
-    rods = tuple(r if r.solid else replace(r, at=(_nearest(lines["x"], r.at[0]), _nearest(lines["y"], r.at[1])))
-                 for r in geom.rods)
+    # the node nearest a rod's centre lies on its nearest x and y lines; to 1e-9 mm, so that a node on the boundary
+    # (all on the 1e-6 mm grid) compares equal to the radius
+    near = [(_nearest(lines["x"], r.at[0]), _nearest(lines["y"], r.at[1])) for r in geom.rods]
+    rods = tuple(r if r.solid and round(math.dist(at, r.at), 9) <= r.radius else replace(r, at=at, solid=False)
+                 for r, at in zip(geom.rods, near))
     return Mesh(lines["x"], lines["y"], z, d, dz, pinned, edges, rods, exempt)
 
 

@@ -271,9 +271,9 @@ def model_spec(project: dict, board: Board, geom: Geometry, mesh: Mesh, ports: l
     in the list: openEMS breaks ties arbitrarily.
     The metal: every copper piece, solid (C-5) or, under sheet copper, a sheet, and the convex hull of the two pads of
     each part (parts()) whose role is copper (spec 5.7), cut back from other nets' copper on its layer to the pads' own
-    clearance, each over its layer's slab; the solid rods as cylinders, the others as curves on the mesh lines (C-40);
-    the lid's plate on the z line nearest its top, and its walls up to it (C-39, X-5). Every solid is cut by
-    split_holes. Raises E_UNKNOWN_PAD for a copper part's pad that does not exist.
+    clearance, each over its layer's slab; the mesh's solid rods (Mesh.snapped_rods) as cylinders, the others as curves
+    on the mesh lines (C-40; plan 4 ruling R-11); the lid's plate on the z line nearest its top, and its walls up to it
+    (C-39, X-5). Every solid is cut by split_holes. Raises E_UNKNOWN_PAD for a copper part's pad that does not exist.
     An SI project's (Stage 4 design 5.2–5.5) holds no antenna key, so MUR walls and solid copper, and its excitation
     is dc_pulse(). It reads no f0: every material's κ is 0.0, v1's constant κ never entering it (design 3). With
     "dielectric": "debye", each substrate material whose tan δ is above 0 (a copper slab's, its neighbours' mean, a None
@@ -330,7 +330,8 @@ def model_spec(project: dict, board: Board, geom: Geometry, mesh: Mesh, ports: l
             "excitation": excitation(project),
             "materials": materials,
             "metal": {"copper": copper, "lid": lid,
-                      "cylinders": [{"at": list(r.at), "r": r.radius, "z": [r.z0, r.z1]} for r in geom.rods if r.solid],
+                      "cylinders": [{"at": list(r.at), "r": r.radius, "z": [r.z0, r.z1]}
+                                    for r in mesh.snapped_rods if r.solid],
                       "curves": [{"at": list(r.at), "z": [r.z0, r.z1]} for r in mesh.snapped_rods if not r.solid]},
             "ports": ports,
             "grid": grid}

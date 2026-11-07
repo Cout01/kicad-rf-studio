@@ -20,6 +20,8 @@ def now(tmp_path_factory):
 
 
 def test_the_antennas_build_byte_for_byte_what_they_did_at_037bc4b(now):  # Stage 4 design 3, 4, 5.12 item 1
+    # the six IFA models carry plan 4 ruling R-11's snapped barrels since its fix, which recorded them again (AE1.2's
+    # plated hole, and one GND via on ifa2g4); meander915's is 037bc4b's
     assert set(now["models"]) == set(golden_antenna.BANDS) and "verify" in now["models"]["ifa2g4_pi"]
     # an antenna's model spec, its hash, the pi's verify model, project.json, new's lines or a blocking gate moved
     assert now["models"] == GOLDEN["models"]

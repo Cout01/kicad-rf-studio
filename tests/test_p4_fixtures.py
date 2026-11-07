@@ -3,6 +3,7 @@ import functools
 import json
 import math
 
+import numpy as np
 import pytest
 import shapely
 
@@ -110,3 +111,29 @@ def test_p4es_variants_move_one_thing(build):  # E-1: the shift, the gap ± d, t
         assert ta.symmetric_difference(tb).area <= 1e-9, key  # the split adds no copper to the board
     # clean()'s simplification draws D-'s split edge up to 8.6 µm off (under SIMPLIFY), so the null's spec hash
     # differs and P4-E runs its pair
+
+
+TALL_VIAS = [(97.25, -100.0), (142.75, -100.0)]  # si_pad_coupon_tall's GND vias under TP3 and TP4, the h references
+
+
+def test_a_solid_via_that_holds_no_mesh_node_is_snapped(tmp_path):  # ruling R-11: at the d fill, d over the via
+    _, _, geom, _, model = built(tmp_path, "si_pad_coupon_tall", max_cell_mm=None)
+    m, metal = model.mesh, model.spec["metal"]
+    assert m.d == pytest.approx(0.636, abs=1e-3)
+    assert sorted((r.net, r.at, r.radius, r.solid) for r in geom.rods) == [("GND", at, 0.15, True) for at in TALL_VIAS]
+    assert all(np.hypot.outer(m.x - x, m.y - y).min() > 0.15 for x, y in TALL_VIAS)  # no node in either cylinder
+    rods = sorted(m.snapped_rods, key=lambda r: r.at)
+    assert [r.solid for r in rods] == [False, False]
+    assert [r.at for r in rods] == [pytest.approx(at, abs=1e-4) for at in ((97.0985, -100.0), (142.9015, -100.0))]
+    assert all(r.at == (m.x[np.abs(m.x - x).argmin()], m.y[np.abs(m.y - y).argmin()])
+               for r, (x, y) in zip(rods, TALL_VIAS))  # each at its nearest node
+    assert metal["cylinders"] == []
+    assert sorted((tuple(c["at"]), c["z"]) for c in metal["curves"]) == [(r.at, [0.0, 1.58]) for r in rods]
+
+
+def test_a_solid_via_that_holds_a_node_stays_solid(build):  # ruling R-11: at λ/40 the SI rule spans every solid rod
+    *_, model = build("si_pad_coupon_tall")
+    metal = model.spec["metal"]
+    assert sorted((r.at, r.solid) for r in model.mesh.snapped_rods) == [(at, True) for at in TALL_VIAS]
+    assert sorted((tuple(c["at"]), c["r"]) for c in metal["cylinders"]) == [(at, 0.15) for at in TALL_VIAS]
+    assert metal["curves"] == []
