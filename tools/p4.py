@@ -36,7 +36,7 @@ from test_p4_fixtures import P4_NEW  # noqa: E402
 
 N = 2  # mesh n, P4-B's checkpoint (B-6)
 # the SI rule, "l40" (new's λ/40), "l80" (λ/80) or "dfill" (max_cell_mm null), P4-C's checkpoint (C-2, C-3)
-RULE = "l40"
+RULE = "dfill"
 DIELECTRIC = "lossless"  # P4-D's checkpoint (§5.3's rule)
 EDITS: dict[str, dict] = {}  # project edits by board, Task 3's recorded fit2d blocks (Stage 3 ruling 2's limit)
 # the owner's answer on a 45° twin's n 3 run (B-4): "pending", or "declined" when no go comes by P4-F's report
