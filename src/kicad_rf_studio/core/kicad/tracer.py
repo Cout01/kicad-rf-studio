@@ -309,6 +309,30 @@ def partner_ends(board: Board, classes: Classes, start: str, end: str) -> tuple[
     return ends[0], ends[1], "alias" if "alias" in hows else "rule"
 
 
+def p_side(net: str, nets: Collection[str]) -> str:
+    """The P side of the pair `net` belongs to, among the board's `nets` (Stage 4 plan 5's button, A-66): its partner
+    when partner_net pairs it as the N side (a `-` or an upper-case N by KiCad's rule, DM by the alias), else `net`
+    itself, also when it has no partner."""
+    found = partner_net(net, nets)
+    # the stem's last letter, which partner_net swapped, names the side: - or N by the rule, M by the alias (_ALIAS's
+    # tail is the digits and underscores rstrip drops)
+    return found[0] if found and net.rstrip("0123456789_")[-1] in ("-", "N", "M") else net
+
+
+def si_candidates(board: Board, classes: Classes, net: str) -> tuple[list[str], list[Pad]]:
+    """The line through `net` for the KiCad button (Stage 4 design 5.10 as A-66 amends it): the nets a walk through its
+    two-pad parts reaches (_walk over _links, as trace_chain walks), `net` first, and the copper pads on them of
+    connectors and of footprints with three or more copper pads, choose_reference's IC or connector rule. An ESD
+    array's pads count: no flow-through rule drops them."""
+    nets = list(_walk(_links(board, classes), net))
+    # ponytail: choose_reference's rule written again here, not shared: choose_reference needs which rule holds
+    # (connector or IC), this only whether one does; a shared predicate when a third caller comes
+    # ponytail: an ESD array's flow-through pads count as ends, so usb2_hs pre-fills none (G_HANDOFF_SI_ENDS names the
+    # four); a flow-through rule if users meet it, sparing a USB-C connector's A6/B6
+    return nets, [p for ref, fp in board.footprints.items() if ref in classes.connectors or len(_copper(fp)) >= 3
+                  for p in _copper(fp) if p.net in nets]
+
+
 def antenna_kind(board: Board, ref: str) -> str | None:
     """What footprint `ref` is as an antenna (Stage 3 design 5.1), the first that holds: "module" for an RF_Module:
     library id; "printed" when the copper graphics it draws cover more area than its copper pads, a radiator and never

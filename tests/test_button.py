@@ -48,8 +48,8 @@ def test_the_helper_hands_the_selection_to_a_detached_gui_and_prints_nothing(fak
     assert capsys.readouterr() == ("", "")  # KiCad 10 shows any stderr text as an error
     handoff = fake / "handoff.json"
     assert json.loads(handoff.read_text(encoding="utf-8")) == {
-        "board": str(LPF), "pads": [KIID["J1.1"], KIID["U1.1"]], "footprints": ["C1"], "kicad": "10.0.7",
-        "socket": k.url, "token": k.token}
+        "board": str(LPF), "pads": [KIID["J1.1"], KIID["U1.1"]], "footprints": ["C1"], "tracks": [],
+        "kicad": "10.0.7", "socket": k.url, "token": k.token}
     assert k.seen == ["GetVersion", "GetOpenDocuments", "GetSelection", "GetSelection"]  # AS_BUSY: asked again
     assert set(k.tokens) == {k.token} and not (fake / "button.log").exists()
     name = "kicad-rf-studio-gui.exe" if sys.platform == "win32" else "kicad-rf-studio-gui"
@@ -62,6 +62,20 @@ def test_the_helper_hands_the_selection_to_a_detached_gui_and_prints_nothing(fak
         assert call.creationflags == subprocess.DETACHED_PROCESS | subprocess.CREATE_NEW_PROCESS_GROUP  # design 5.5's
     else:
         assert call.start_new_session is True
+
+
+def test_a_press_hands_the_selected_tracks_arcs_and_vias_by_their_kiids(fake, kicad, monkeypatch):  # 5.10; ruling 9
+    def pressed(**selection):
+        k = kicad(**selection)
+        monkeypatch.setenv("KICAD_API_SOCKET", k.url)
+        monkeypatch.setenv("KICAD_API_TOKEN", k.token)
+        assert button.main() == 0
+        return json.loads((fake / "handoff.json").read_text(encoding="utf-8"))
+
+    recorder(monkeypatch)
+    data = pressed(pads=[KIID["U1.1"]], tracks=["t-1"], arcs=["a-1"], vias=["v-1"])
+    assert (data["pads"], data["footprints"], data["tracks"]) == ([KIID["U1.1"]], [], ["t-1", "a-1", "v-1"])
+    assert pressed(arcs=["a-2"])["tracks"] == ["a-2"]  # KOT_PCB_ARC asked for: the fake answers only asked types
 
 
 @pytest.mark.parametrize(("serve", "token", "code", "params"), [

@@ -2,12 +2,12 @@
 import pytest
 from shapely.geometry import box
 
-from kicad_rf_studio.core.kicad import classify
-from kicad_rf_studio.core.kicad.tracer import partner_ends, partner_net, trace_line
+from kicad_rf_studio.core.kicad import classify, load_board
+from kicad_rf_studio.core.kicad.tracer import p_side, partner_ends, partner_net, si_candidates, trace_line
 from kicad_rf_studio.core.messages import KrsError
 from kicad_rf_studio.core.model.parts import project_parts
 from test_antenna_kicad import fp
-from test_tracer import part, smd, two
+from test_tracer import FIX, part, smd, two
 
 NETS = {"USB_D+", "USB_D-", "D_P_1", "D_N_1", "USB_DP", "USB_DM", "CLKP", "CLKN", "/eth/TX+", "/eth/TX-", "+3V3",
         "VBUS", "A_DP", "A_DN", "A_DM", "usb_dp", "usb_dm"}
@@ -21,6 +21,19 @@ def test_kicads_pair_rule_and_the_dp_dm_alias():  # Stage 4 design 5.1; KiCad 10
     assert partner_net("A_DP", NETS) == ("A_DN", "rule")  # KiCad's complement first, when it is a net of the board
     assert [partner_net(n, NETS) for n in ("+3V3", "VBUS", "usb_dp")] == [None] * 3  # KiCad's P and N are upper case
     assert partner_net("USB_D+", {"USB_D+"}) is None  # no complement on the board
+
+
+def test_the_buttons_line_is_the_walk_through_its_parts_on_the_p_side():  # design 5.10 as A-66 amends it; RF 3
+    assert [p_side(n, NETS) for n in ("USB_D-", "USB_D+", "D_N_1", "CLKN", "/eth/TX-", "USB_DM", "A_DN", "A_DM",
+                                      "+3V3")] == [
+        "USB_D+", "USB_D+", "D_P_1", "CLKP", "/eth/TX+", "USB_DP", "A_DP", "A_DP", "+3V3"]
+    for board, net, nets, pads in (
+            ("usb2_hs", "USB_D+", ["USB_D+", "MCU_D+"], ["J1.3", "U1.3", "U2.3", "U2.4"]),  # the ESD array's two
+            ("usb2_hs", "AUX", ["AUX"], []), ("qspi_clk", "FLASH_CLK", ["FLASH_CLK", "QSPI_CLK"], ["U1.11", "U2.6"]),
+            ("lpf915", "RF_A", ["RF_A", "RF_B", "RF_C", "RF_OUT"], ["J1.1", "U1.1"])):
+        b = load_board(FIX / f"{board}.kicad_pcb")
+        walked, found = si_candidates(b, classify(b), net)
+        assert (walked, sorted(p.name for p in found)) == (nets, sorted(pads)), board
 
 
 def board_of(mini_board, *extra):

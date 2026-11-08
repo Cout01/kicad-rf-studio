@@ -70,10 +70,11 @@ def _board_path(board) -> Path:
 
 
 def read(socket: str, token: str) -> dict:
-    """A press (design 5.5 steps 1-2): the board KiCad's PCB editor has open, its selected pads (KIIDs) and footprints
-    (references), and KiCad's version, with `socket` and `token`. Its calls share one BUSY_S on AS_BUSY (_call). Raises
-    E_KICAD_VERSION for a KiCad other than 9 or 10, and the errors of _call and _board_path."""
-    from kipy.board_types import FootprintInstance, Pad
+    """A press (design 5.5 steps 1-2): the board KiCad's PCB editor has open, its selected pads (KIIDs), footprints
+    (references) and tracks, arcs and vias (KIIDs, as "tracks"), and KiCad's version, with `socket` and `token`. Its
+    calls share one BUSY_S on AS_BUSY (_call). Raises E_KICAD_VERSION for a KiCad other than 9 or 10, and the errors of
+    _call and _board_path."""
+    from kipy.board_types import ArcTrack, FootprintInstance, Pad, Track, Via
     from kipy.proto.common.types import KiCadObjectType
     until = time.monotonic() + BUSY_S
     kicad = _kicad(socket, token)
@@ -83,10 +84,12 @@ def read(socket: str, token: str) -> dict:
         raise KrsError("E_KICAD_VERSION", version=version)
     board = _call(kicad.get_board, until)
     path = _board_path(board)
-    types = [KiCadObjectType.KOT_PCB_PAD, KiCadObjectType.KOT_PCB_FOOTPRINT]
+    types = [KiCadObjectType.KOT_PCB_PAD, KiCadObjectType.KOT_PCB_FOOTPRINT, KiCadObjectType.KOT_PCB_TRACE,
+             KiCadObjectType.KOT_PCB_ARC, KiCadObjectType.KOT_PCB_VIA]
     selected = _call(lambda: board.get_selection(types), until)
     return {"board": str(path), "pads": [item.id.value for item in selected if isinstance(item, Pad)],
             "footprints": [item.reference_field.text.value for item in selected if isinstance(item, FootprintInstance)],
+            "tracks": [item.id.value for item in selected if isinstance(item, (Track, ArcTrack, Via))],
             "kicad": version, "socket": socket, "token": token}
 
 
