@@ -1,0 +1,2140 @@
+{
+  "gate": "P4-E",
+  "versions": {
+    "commit": "e5f96ca",
+    "code": "e5469200427c76d82e9d2893363696ead16cf351",
+    "python": "3.14.2",
+    "openems": "0.37.0",
+    "csxcad": "0.7.0",
+    "os": "Windows-11-10.0.26200-SP0",
+    "cpus": 16
+  },
+  "criteria": {
+    "source": "Stage 4 design 5.8 and 5.11, gate P4-E; plan 4 rulings E-1, E-2 and the controller's ruling on the plan's open issue 10: on P4-B's 90 ohm coupon at the decided n, rule and dielectric (its own base step, P4-B's or P4-C's run when the settings are equal), si_deltas of the base against the same run twice, the whole board shifted one fine cell, the gap moved +d and -d, and the null edit when its spec hash is not the base's; on P4-B's terminated-victim coupon at the same settings, si_deltas of its base against the whole board shifted one fine cell (vshift), which gives NEXT's and FEXT's noise; per quantity noise = max(|repeat|, |shift|, |null|, |vshift|, |even - model even|), even = (d+ + d-)/2, the last term only on a row with a model: the TDR rows (fit2d's coupled Zdiff on the run's own mesh lines at that n and rule), sdd21 at the marker (the even/odd model at those mesh modes, 90 ohm), the skew and scd21 (zero by the pair's symmetry); sdd21 at f_max and the worst sdd11, which the launches set, take no gap term, their even and odd parts recorded; next and fext have no gap pair, so their noise is the victim's shift; the exact cut's even part recorded; a dB row of a pair left out when both its levels lie under floor_db; each design value kept when its noise lies under a third of it, else three times the noise rounded up to its step; SE_OHM = DIFF_OHM/2, unmeasured on a pair",
+    "factor": 3,
+    "floor_db": -50.0,
+    "design": {
+      "DIFF_OHM": 1.0,
+      "IL_DB": 0.05,
+      "DB": 0.5,
+      "SKEW_PS": 1.0
+    },
+    "steps": {
+      "DIFF_OHM": 0.1,
+      "IL_DB": 0.01,
+      "DB": 0.05,
+      "SKEW_PS": 0.1
+    },
+    "constants": {
+      "DIFF_OHM": [
+        "tdr_lowest",
+        "tdr_highest"
+      ],
+      "IL_DB": [
+        "sdd21@marker",
+        "sdd21@f_max"
+      ],
+      "DB": [
+        "sdd11_worst",
+        "scd21_worst",
+        "next",
+        "fext"
+      ],
+      "SKEW_PS": [
+        "skew"
+      ]
+    }
+  },
+  "references": {
+    "source": "tools/p4e.py --references, before any P4-E run: the even part (X(s + d) + X(s - d))/2 - X(s) of p4b_ms90's 60 mm coupled section with its gap moved by d, one fine cell, at n 2 and 3, of Zdiff and of Sdd21 at the marker (the even/odd 4-port of its modes at 90 ohm), on each n's and rule's own mesh lines (fit2d's coupled cut and its modes) and on the exact cut",
+    "model_even": {
+      "2-l40": {
+        "tdr_lowest": -2.5005250786160644,
+        "tdr_highest": -2.5005250786160644,
+        "sdd21@marker": -0.007358395838618107,
+        "skew": 0.0,
+        "scd21_worst": 0.0
+      },
+      "2-l80": {
+        "tdr_lowest": -2.500528086928739,
+        "tdr_highest": -2.500528086928739,
+        "sdd21@marker": -0.007358433639914526,
+        "skew": 0.0,
+        "scd21_worst": 0.0
+      },
+      "2-dfill": {
+        "tdr_lowest": -2.4055823325878265,
+        "tdr_highest": -2.4055823325878265,
+        "sdd21@marker": -0.00728662163954781,
+        "skew": 0.0,
+        "scd21_worst": 0.0
+      },
+      "3-l40": {
+        "tdr_lowest": -0.21439643669090458,
+        "tdr_highest": -0.21439643669090458,
+        "sdd21@marker": -0.003772235557348986,
+        "skew": 0.0,
+        "scd21_worst": 0.0
+      },
+      "3-l80": {
+        "tdr_lowest": -0.21438377337938164,
+        "tdr_highest": -0.21438377337938164,
+        "sdd21@marker": -0.0037722411691783774,
+        "skew": 0.0,
+        "scd21_worst": 0.0
+      },
+      "3-dfill": {
+        "tdr_lowest": -0.3521409671812279,
+        "tdr_highest": -0.3521409671812279,
+        "sdd21@marker": -0.0038153325110687917,
+        "skew": 0.0,
+        "scd21_worst": 0.0
+      }
+    },
+    "exact": {
+      "2": {
+        "tdr_lowest": -2.1485775092497335,
+        "tdr_highest": -2.1485775092497335,
+        "sdd21@marker": -0.0077579359384431406
+      },
+      "3": {
+        "tdr_lowest": -0.9128584371433845,
+        "tdr_highest": -0.9128584371433845,
+        "sdd21@marker": -0.0028546730635424238
+      }
+    },
+    "code": "693592c3cd14433aee691dc80b4fa3dbb7bb26e5",
+    "versions": {
+      "commit": "64a6298",
+      "code": "693592c3cd14433aee691dc80b4fa3dbb7bb26e5",
+      "python": "3.14.2",
+      "openems": "0.37.0",
+      "csxcad": "0.7.0",
+      "os": "Windows-11-10.0.26200-SP0",
+      "cpus": 16
+    }
+  },
+  "calibration": {
+    "aggregate_mcs": 827.5851921803725,
+    "pool": 4,
+    "threads": 4,
+    "single": {
+      "1": 229.6142480632537,
+      "2": 383.5132895692081,
+      "4": 552.2402669961639,
+      "16": 353.18075294829146
+    },
+    "levels": {
+      "4": 176.5414138391696,
+      "1": 552.2402669961639,
+      "2": 264.66020534485403
+    }
+  },
+  "n_now": 2,
+  "rule_now": "dfill",
+  "dielectric_now": "lossless",
+  "key": "2-dfill",
+  "null_equal": false,
+  "pairs": {
+    "repeat": [
+      {
+        "quantity": "tdr_lowest",
+        "marker": "",
+        "f_hz": null,
+        "base": 90.95105680660419,
+        "variant": 90.95105680660419,
+        "unit": "Ω",
+        "delta": 0.0,
+        "delta_unit": "Ω",
+        "threshold": 1.0,
+        "resolved": false
+      },
+      {
+        "quantity": "tdr_highest",
+        "marker": "",
+        "f_hz": null,
+        "base": 91.18596230577506,
+        "variant": 91.18596230577506,
+        "unit": "Ω",
+        "delta": 0.0,
+        "delta_unit": "Ω",
+        "threshold": 1.0,
+        "resolved": false
+      },
+      {
+        "quantity": "sdd21",
+        "marker": "marker",
+        "f_hz": 240000000.0,
+        "base": 1.4199403915866737e-05,
+        "variant": 1.4199403915866737e-05,
+        "unit": "dB",
+        "delta": 0.0,
+        "delta_unit": "dB",
+        "threshold": 0.05,
+        "resolved": false
+      },
+      {
+        "quantity": "sdd21",
+        "marker": "f_max",
+        "f_hz": 10000000000.0,
+        "base": -0.6727445998888906,
+        "variant": -0.6727445998888906,
+        "unit": "dB",
+        "delta": 0.0,
+        "delta_unit": "dB",
+        "threshold": 0.05,
+        "resolved": false
+      },
+      {
+        "quantity": "sdd11_worst",
+        "marker": "",
+        "f_hz": null,
+        "base": -6.45284290126051,
+        "variant": -6.45284290126051,
+        "unit": "dB",
+        "delta": 0.0,
+        "delta_unit": "dB",
+        "threshold": 0.5,
+        "resolved": false
+      },
+      {
+        "quantity": "scd21_worst",
+        "marker": "",
+        "f_hz": null,
+        "base": -75.83209495994768,
+        "variant": -75.83209495994768,
+        "unit": "dB",
+        "delta": 0.0,
+        "delta_unit": "dB",
+        "threshold": 0.5,
+        "resolved": false
+      },
+      {
+        "quantity": "skew",
+        "marker": "",
+        "f_hz": null,
+        "base": -0.0026725059915937654,
+        "variant": -0.0026725059915937654,
+        "unit": "ps",
+        "delta": 0.0,
+        "delta_unit": "ps",
+        "threshold": 1.0,
+        "resolved": false
+      }
+    ],
+    "shift": [
+      {
+        "quantity": "tdr_lowest",
+        "marker": "",
+        "f_hz": null,
+        "base": 90.95105680660419,
+        "variant": 90.95111646504428,
+        "unit": "Ω",
+        "delta": 5.9658440093812715e-05,
+        "delta_unit": "Ω",
+        "threshold": 1.0,
+        "resolved": false
+      },
+      {
+        "quantity": "tdr_highest",
+        "marker": "",
+        "f_hz": null,
+        "base": 91.18596230577506,
+        "variant": 91.18602510429682,
+        "unit": "Ω",
+        "delta": 6.279852175339329e-05,
+        "delta_unit": "Ω",
+        "threshold": 1.0,
+        "resolved": false
+      },
+      {
+        "quantity": "sdd21",
+        "marker": "marker",
+        "f_hz": 240000000.0,
+        "base": 1.4199403915866737e-05,
+        "variant": 1.4416064414976519e-05,
+        "unit": "dB",
+        "delta": 2.1666049910978134e-07,
+        "delta_unit": "dB",
+        "threshold": 0.05,
+        "resolved": false
+      },
+      {
+        "quantity": "sdd21",
+        "marker": "f_max",
+        "f_hz": 10000000000.0,
+        "base": -0.6727445998888906,
+        "variant": -0.6727262559395608,
+        "unit": "dB",
+        "delta": 1.834394932975769e-05,
+        "delta_unit": "dB",
+        "threshold": 0.05,
+        "resolved": false
+      },
+      {
+        "quantity": "sdd11_worst",
+        "marker": "",
+        "f_hz": null,
+        "base": -6.45284290126051,
+        "variant": -6.45285580643719,
+        "unit": "dB",
+        "delta": -1.2905176680177988e-05,
+        "delta_unit": "dB",
+        "threshold": 0.5,
+        "resolved": false
+      },
+      {
+        "quantity": "scd21_worst",
+        "marker": "",
+        "f_hz": null,
+        "base": -75.83209495994768,
+        "variant": -74.24180502587828,
+        "unit": "dB",
+        "delta": 1.5902899340694034,
+        "delta_unit": "dB",
+        "threshold": 0.5,
+        "resolved": false
+      },
+      {
+        "quantity": "skew",
+        "marker": "",
+        "f_hz": null,
+        "base": -0.0026725059915937654,
+        "variant": 0.001206014562138116,
+        "unit": "ps",
+        "delta": 0.0038785205537318814,
+        "delta_unit": "ps",
+        "threshold": 1.0,
+        "resolved": false
+      }
+    ],
+    "gapp": [
+      {
+        "quantity": "tdr_lowest",
+        "marker": "",
+        "f_hz": null,
+        "base": 90.95105680660419,
+        "variant": 95.45043282427514,
+        "unit": "Ω",
+        "delta": 4.499376017670954,
+        "delta_unit": "Ω",
+        "threshold": 1.0,
+        "resolved": true
+      },
+      {
+        "quantity": "tdr_highest",
+        "marker": "",
+        "f_hz": null,
+        "base": 91.18596230577506,
+        "variant": 95.93424208591526,
+        "unit": "Ω",
+        "delta": 4.748279780140194,
+        "delta_unit": "Ω",
+        "threshold": 1.0,
+        "resolved": true
+      },
+      {
+        "quantity": "sdd21",
+        "marker": "marker",
+        "f_hz": 240000000.0,
+        "base": 1.4199403915866737e-05,
+        "variant": -0.00196035704036135,
+        "unit": "dB",
+        "delta": -0.0019745564442772167,
+        "delta_unit": "dB",
+        "threshold": 0.05,
+        "resolved": false
+      },
+      {
+        "quantity": "sdd21",
+        "marker": "f_max",
+        "f_hz": 10000000000.0,
+        "base": -0.6727445998888906,
+        "variant": -0.7875713561786324,
+        "unit": "dB",
+        "delta": -0.11482675628974182,
+        "delta_unit": "dB",
+        "threshold": 0.05,
+        "resolved": true
+      },
+      {
+        "quantity": "sdd11_worst",
+        "marker": "",
+        "f_hz": null,
+        "base": -6.45284290126051,
+        "variant": -5.827543970886984,
+        "unit": "dB",
+        "delta": 0.6252989303735266,
+        "delta_unit": "dB",
+        "threshold": 0.5,
+        "resolved": true
+      },
+      {
+        "quantity": "scd21_worst",
+        "marker": "",
+        "f_hz": null,
+        "base": -75.83209495994768,
+        "variant": -94.83888660866413,
+        "unit": "dB",
+        "delta": -19.006791648716444,
+        "delta_unit": "dB",
+        "threshold": 0.5,
+        "resolved": false
+      },
+      {
+        "quantity": "skew",
+        "marker": "",
+        "f_hz": null,
+        "base": -0.0026725059915937654,
+        "variant": -0.0007660506154816956,
+        "unit": "ps",
+        "delta": 0.00190645537611207,
+        "delta_unit": "ps",
+        "threshold": 1.0,
+        "resolved": false
+      }
+    ],
+    "gapm": [
+      {
+        "quantity": "tdr_lowest",
+        "marker": "",
+        "f_hz": null,
+        "base": 90.95105680660419,
+        "variant": 81.61049579924143,
+        "unit": "Ω",
+        "delta": -9.340561007362751,
+        "delta_unit": "Ω",
+        "threshold": 1.0,
+        "resolved": true
+      },
+      {
+        "quantity": "tdr_highest",
+        "marker": "",
+        "f_hz": null,
+        "base": 91.18596230577506,
+        "variant": 81.70626935539204,
+        "unit": "Ω",
+        "delta": -9.479692950383026,
+        "delta_unit": "Ω",
+        "threshold": 1.0,
+        "resolved": true
+      },
+      {
+        "quantity": "sdd21",
+        "marker": "marker",
+        "f_hz": 240000000.0,
+        "base": 1.4199403915866737e-05,
+        "variant": -0.015165793489231593,
+        "unit": "dB",
+        "delta": -0.01517999289314746,
+        "delta_unit": "dB",
+        "threshold": 0.05,
+        "resolved": false
+      },
+      {
+        "quantity": "sdd21",
+        "marker": "f_max",
+        "f_hz": 10000000000.0,
+        "base": -0.6727445998888906,
+        "variant": -0.6799015458219894,
+        "unit": "dB",
+        "delta": -0.007156945933098791,
+        "delta_unit": "dB",
+        "threshold": 0.05,
+        "resolved": false
+      },
+      {
+        "quantity": "sdd11_worst",
+        "marker": "",
+        "f_hz": null,
+        "base": -6.45284290126051,
+        "variant": -7.633021340880328,
+        "unit": "dB",
+        "delta": -1.1801784396198176,
+        "delta_unit": "dB",
+        "threshold": 0.5,
+        "resolved": true
+      },
+      {
+        "quantity": "scd21_worst",
+        "marker": "",
+        "f_hz": null,
+        "base": -75.83209495994768,
+        "variant": -59.019323434081514,
+        "unit": "dB",
+        "delta": 16.812771525866168,
+        "delta_unit": "dB",
+        "threshold": 0.5,
+        "resolved": false
+      },
+      {
+        "quantity": "skew",
+        "marker": "",
+        "f_hz": null,
+        "base": -0.0026725059915937654,
+        "variant": 0.011473699621244443,
+        "unit": "ps",
+        "delta": 0.01414620561283821,
+        "delta_unit": "ps",
+        "threshold": 1.0,
+        "resolved": false
+      }
+    ],
+    "null": [
+      {
+        "quantity": "tdr_lowest",
+        "marker": "",
+        "f_hz": null,
+        "base": 90.95105680660419,
+        "variant": 91.63894818303915,
+        "unit": "Ω",
+        "delta": 0.6878913764349619,
+        "delta_unit": "Ω",
+        "threshold": 1.0,
+        "resolved": false
+      },
+      {
+        "quantity": "tdr_highest",
+        "marker": "",
+        "f_hz": null,
+        "base": 91.18596230577506,
+        "variant": 91.9011467346053,
+        "unit": "Ω",
+        "delta": 0.7151844288302414,
+        "delta_unit": "Ω",
+        "threshold": 1.0,
+        "resolved": false
+      },
+      {
+        "quantity": "sdd21",
+        "marker": "marker",
+        "f_hz": 240000000.0,
+        "base": 1.4199403915866737e-05,
+        "variant": 0.00016737657346243667,
+        "unit": "dB",
+        "delta": 0.00015317716954656993,
+        "delta_unit": "dB",
+        "threshold": 0.05,
+        "resolved": false
+      },
+      {
+        "quantity": "sdd21",
+        "marker": "f_max",
+        "f_hz": 10000000000.0,
+        "base": -0.6727445998888906,
+        "variant": -0.6662658322519766,
+        "unit": "dB",
+        "delta": 0.006478767636914018,
+        "delta_unit": "dB",
+        "threshold": 0.05,
+        "resolved": false
+      },
+      {
+        "quantity": "sdd11_worst",
+        "marker": "",
+        "f_hz": null,
+        "base": -6.45284290126051,
+        "variant": -6.355530377166122,
+        "unit": "dB",
+        "delta": 0.09731252409438795,
+        "delta_unit": "dB",
+        "threshold": 0.5,
+        "resolved": false
+      },
+      {
+        "quantity": "scd21_worst",
+        "marker": "",
+        "f_hz": null,
+        "base": -75.83209495994768,
+        "variant": -47.281800921816554,
+        "unit": "dB",
+        "delta": 28.550294038131128,
+        "delta_unit": "dB",
+        "threshold": 0.5,
+        "resolved": true
+      },
+      {
+        "quantity": "skew",
+        "marker": "",
+        "f_hz": null,
+        "base": -0.0026725059915937654,
+        "variant": -0.09644291494011294,
+        "unit": "ps",
+        "delta": -0.09377040894851917,
+        "delta_unit": "ps",
+        "threshold": 1.0,
+        "resolved": false
+      }
+    ],
+    "vshift": [
+      {
+        "quantity": "tdr_lowest",
+        "marker": "",
+        "f_hz": null,
+        "base": 90.92666255222046,
+        "variant": 90.92718782427477,
+        "unit": "Ω",
+        "delta": 0.0005252720543040823,
+        "delta_unit": "Ω",
+        "threshold": 1.0,
+        "resolved": false
+      },
+      {
+        "quantity": "tdr_highest",
+        "marker": "",
+        "f_hz": null,
+        "base": 91.14554636496047,
+        "variant": 91.14628464378092,
+        "unit": "Ω",
+        "delta": 0.0007382788204495228,
+        "delta_unit": "Ω",
+        "threshold": 1.0,
+        "resolved": false
+      },
+      {
+        "quantity": "sdd21",
+        "marker": "marker",
+        "f_hz": 240000000.0,
+        "base": -0.00025071800551408786,
+        "variant": -0.00023408414669501265,
+        "unit": "dB",
+        "delta": 1.663385881907521e-05,
+        "delta_unit": "dB",
+        "threshold": 0.05,
+        "resolved": false
+      },
+      {
+        "quantity": "sdd21",
+        "marker": "f_max",
+        "f_hz": 10000000000.0,
+        "base": -0.7172687741393677,
+        "variant": -0.7170126512949971,
+        "unit": "dB",
+        "delta": 0.00025612284437059873,
+        "delta_unit": "dB",
+        "threshold": 0.05,
+        "resolved": false
+      },
+      {
+        "quantity": "sdd11_worst",
+        "marker": "",
+        "f_hz": null,
+        "base": -6.65578636671448,
+        "variant": -6.661912598803923,
+        "unit": "dB",
+        "delta": -0.006126232089442851,
+        "delta_unit": "dB",
+        "threshold": 0.5,
+        "resolved": false
+      },
+      {
+        "quantity": "scd21_worst",
+        "marker": "",
+        "f_hz": null,
+        "base": -34.48064823347615,
+        "variant": -34.48939885359559,
+        "unit": "dB",
+        "delta": -0.008750620119435837,
+        "delta_unit": "dB",
+        "threshold": 0.5,
+        "resolved": false
+      },
+      {
+        "quantity": "skew",
+        "marker": "",
+        "f_hz": null,
+        "base": 0.3401991203346561,
+        "variant": 0.3421905152586163,
+        "unit": "ps",
+        "delta": 0.0019913949239602213,
+        "delta_unit": "ps",
+        "threshold": 1.0,
+        "resolved": false
+      },
+      {
+        "quantity": "next",
+        "marker": "AUX",
+        "f_hz": null,
+        "base": -21.351792964758438,
+        "variant": -21.352034513666315,
+        "unit": "dB",
+        "delta": -0.00024154890787642103,
+        "delta_unit": "dB",
+        "threshold": 0.5,
+        "resolved": false
+      },
+      {
+        "quantity": "fext",
+        "marker": "AUX",
+        "f_hz": null,
+        "base": -18.917541213778623,
+        "variant": -18.91663656334948,
+        "unit": "dB",
+        "delta": 0.0009046504291418955,
+        "delta_unit": "dB",
+        "threshold": 0.5,
+        "resolved": false
+      }
+    ]
+  },
+  "invalid": [],
+  "runs": {
+    "base": {
+      "exit": 0,
+      "cells": 5647026,
+      "dt": 9.13362e-14,
+      "dt_ratio": 1.0201378262763452,
+      "pool": 4,
+      "jobs": [
+        {
+          "t_stop": 4.6084602238e-09,
+          "port": "P1",
+          "verdict": "converged",
+          "t_cut": 4.59603849813e-09,
+          "residual_db": -61.16740424216321,
+          "growth_db": 0.15753743009676668
+        },
+        {
+          "t_stop": 4.6084602238e-09,
+          "port": "P2",
+          "verdict": "converged",
+          "t_cut": 4.59603849813e-09,
+          "residual_db": -61.16879308443665,
+          "growth_db": 0.15746953991484247
+        },
+        {
+          "t_stop": 4.6084602238e-09,
+          "port": "P3",
+          "verdict": "converged",
+          "t_cut": 4.59603849813e-09,
+          "residual_db": -61.16601911072917,
+          "growth_db": 0.1573181512443682
+        },
+        {
+          "t_stop": 4.6084602238e-09,
+          "port": "P4",
+          "verdict": "converged",
+          "t_cut": 4.59603849813e-09,
+          "residual_db": -61.167676918835625,
+          "growth_db": 0.1572910425693408
+        }
+      ],
+      "wall_s": 2106.9869285000023,
+      "predicted_s": 2195.1754927682937,
+      "worst_s": 4287.023967980342,
+      "indicators": {
+        "sigma": 1.0001,
+        "recip": 1.26e-05,
+        "loss_pct": null,
+        "expected_pct": null
+      },
+      "warnings": [],
+      "lid_mm": null,
+      "run_dir": "p4b_ms90-n2-dfill-20261107-161129-dbbe",
+      "speeds_mcs": [
+        138.1613423103744,
+        137.7355384095161,
+        136.9908559471259,
+        138.5341429667567
+      ],
+      "node_mcs": 137.94844035994527,
+      "cal_mcs": 206.89629804509312,
+      "debye_cells": 0,
+      "converged": true,
+      "valid": true,
+      "blocked": false,
+      "t_stop_s": 4.6084602238e-09,
+      "fingerprint": {
+        "preset": "normal",
+        "region": {
+          "expand_h": 6.0,
+          "margin_scale": 1.0
+        },
+        "interface": "usb2-hs",
+        "f_max_hz": 10000000000.0,
+        "rise_s": 5e-10,
+        "marker_hz": 240000000.0,
+        "target_ohm": 90.0,
+        "stackup": {
+          "source": "board",
+          "layers": [
+            {
+              "name": "F.Mask",
+              "kind": "mask",
+              "thickness_mm": 0.01,
+              "epsilon_r": 3.3,
+              "loss_tangent": 0.0
+            },
+            {
+              "name": "F.Cu",
+              "kind": "copper",
+              "thickness_mm": 0.035,
+              "epsilon_r": null,
+              "loss_tangent": null
+            },
+            {
+              "name": "dielectric 1",
+              "kind": "dielectric",
+              "thickness_mm": 0.2,
+              "epsilon_r": 4.3,
+              "loss_tangent": 0.02
+            },
+            {
+              "name": "In1.Cu",
+              "kind": "copper",
+              "thickness_mm": 0.035,
+              "epsilon_r": null,
+              "loss_tangent": null
+            },
+            {
+              "name": "dielectric 2",
+              "kind": "dielectric",
+              "thickness_mm": 1.04,
+              "epsilon_r": 4.5,
+              "loss_tangent": 0.02
+            },
+            {
+              "name": "In2.Cu",
+              "kind": "copper",
+              "thickness_mm": 0.035,
+              "epsilon_r": null,
+              "loss_tangent": null
+            },
+            {
+              "name": "dielectric 3",
+              "kind": "dielectric",
+              "thickness_mm": 0.2,
+              "epsilon_r": 4.3,
+              "loss_tangent": 0.02
+            },
+            {
+              "name": "B.Cu",
+              "kind": "copper",
+              "thickness_mm": 0.035,
+              "epsilon_r": null,
+              "loss_tangent": null
+            },
+            {
+              "name": "B.Mask",
+              "kind": "mask",
+              "thickness_mm": 0.01,
+              "epsilon_r": 3.3,
+              "loss_tangent": 0.0
+            }
+          ]
+        },
+        "dielectric": "lossless",
+        "lid": true,
+        "lid_height_mm": null,
+        "mesh": {
+          "n": 2,
+          "reach_h": 6.0
+        },
+        "ends": [
+          "TP1.1",
+          "TP3.1",
+          "TP2.1",
+          "TP4.1"
+        ],
+        "app": "0.1.0.dev0",
+        "openems": "0.37.0"
+      },
+      "reading_error": null
+    },
+    "repeat": {
+      "exit": 0,
+      "cells": 5647026,
+      "dt": 9.13362e-14,
+      "dt_ratio": 1.0201378262763452,
+      "pool": 4,
+      "jobs": [
+        {
+          "t_stop": 4.6084602238e-09,
+          "port": "P1",
+          "verdict": "converged",
+          "t_cut": 4.59603849813e-09,
+          "residual_db": -61.16740424216321,
+          "growth_db": 0.15753743009676668
+        },
+        {
+          "t_stop": 4.6084602238e-09,
+          "port": "P2",
+          "verdict": "converged",
+          "t_cut": 4.59603849813e-09,
+          "residual_db": -61.16879308443665,
+          "growth_db": 0.15746953991484247
+        },
+        {
+          "t_stop": 4.6084602238e-09,
+          "port": "P3",
+          "verdict": "converged",
+          "t_cut": 4.59603849813e-09,
+          "residual_db": -61.16601911072917,
+          "growth_db": 0.1573181512443682
+        },
+        {
+          "t_stop": 4.6084602238e-09,
+          "port": "P4",
+          "verdict": "converged",
+          "t_cut": 4.59603849813e-09,
+          "residual_db": -61.167676918835625,
+          "growth_db": 0.1572910425693408
+        }
+      ],
+      "wall_s": 2077.8585701999255,
+      "predicted_s": 2066.848712754663,
+      "worst_s": 4036.4107557499133,
+      "indicators": {
+        "sigma": 1.0001,
+        "recip": 1.26e-05,
+        "loss_pct": null,
+        "expected_pct": null
+      },
+      "warnings": [],
+      "lid_mm": null,
+      "run_dir": "p4b_ms90-n2-dfill-rep-20261107-164704-957b",
+      "speeds_mcs": [
+        138.9175563546803,
+        139.2538642895818,
+        139.1984267813045,
+        140.7470542844999
+      ],
+      "node_mcs": 139.22614553544315,
+      "cal_mcs": 206.89629804509312,
+      "debye_cells": 0,
+      "converged": true,
+      "valid": true,
+      "blocked": false,
+      "t_stop_s": 4.6084602238e-09,
+      "fingerprint": {
+        "preset": "normal",
+        "region": {
+          "expand_h": 6.0,
+          "margin_scale": 1.0
+        },
+        "interface": "usb2-hs",
+        "f_max_hz": 10000000000.0,
+        "rise_s": 5e-10,
+        "marker_hz": 240000000.0,
+        "target_ohm": 90.0,
+        "stackup": {
+          "source": "board",
+          "layers": [
+            {
+              "name": "F.Mask",
+              "kind": "mask",
+              "thickness_mm": 0.01,
+              "epsilon_r": 3.3,
+              "loss_tangent": 0.0
+            },
+            {
+              "name": "F.Cu",
+              "kind": "copper",
+              "thickness_mm": 0.035,
+              "epsilon_r": null,
+              "loss_tangent": null
+            },
+            {
+              "name": "dielectric 1",
+              "kind": "dielectric",
+              "thickness_mm": 0.2,
+              "epsilon_r": 4.3,
+              "loss_tangent": 0.02
+            },
+            {
+              "name": "In1.Cu",
+              "kind": "copper",
+              "thickness_mm": 0.035,
+              "epsilon_r": null,
+              "loss_tangent": null
+            },
+            {
+              "name": "dielectric 2",
+              "kind": "dielectric",
+              "thickness_mm": 1.04,
+              "epsilon_r": 4.5,
+              "loss_tangent": 0.02
+            },
+            {
+              "name": "In2.Cu",
+              "kind": "copper",
+              "thickness_mm": 0.035,
+              "epsilon_r": null,
+              "loss_tangent": null
+            },
+            {
+              "name": "dielectric 3",
+              "kind": "dielectric",
+              "thickness_mm": 0.2,
+              "epsilon_r": 4.3,
+              "loss_tangent": 0.02
+            },
+            {
+              "name": "B.Cu",
+              "kind": "copper",
+              "thickness_mm": 0.035,
+              "epsilon_r": null,
+              "loss_tangent": null
+            },
+            {
+              "name": "B.Mask",
+              "kind": "mask",
+              "thickness_mm": 0.01,
+              "epsilon_r": 3.3,
+              "loss_tangent": 0.0
+            }
+          ]
+        },
+        "dielectric": "lossless",
+        "lid": true,
+        "lid_height_mm": null,
+        "mesh": {
+          "n": 2,
+          "reach_h": 6.0
+        },
+        "ends": [
+          "TP1.1",
+          "TP3.1",
+          "TP2.1",
+          "TP4.1"
+        ],
+        "app": "0.1.0.dev0",
+        "openems": "0.37.0"
+      },
+      "reading_error": null
+    },
+    "shift": {
+      "exit": 0,
+      "cells": 5647026,
+      "dt": 9.13359e-14,
+      "dt_ratio": 1.0201378262763452,
+      "pool": 4,
+      "jobs": [
+        {
+          "t_stop": 4.60844216177e-09,
+          "port": "P1",
+          "verdict": "converged",
+          "t_cut": 4.59602048478e-09,
+          "residual_db": -61.16956477806335,
+          "growth_db": 0.15739688789341244
+        },
+        {
+          "t_stop": 4.60844216177e-09,
+          "port": "P2",
+          "verdict": "converged",
+          "t_cut": 4.59602048478e-09,
+          "residual_db": -61.168158313097635,
+          "growth_db": 0.15760791883266734
+        },
+        {
+          "t_stop": 4.60844216177e-09,
+          "port": "P3",
+          "verdict": "converged",
+          "t_cut": 4.59602048478e-09,
+          "residual_db": -61.16812565536865,
+          "growth_db": 0.15717745423560814
+        },
+        {
+          "t_stop": 4.60844216177e-09,
+          "port": "P4",
+          "verdict": "converged",
+          "t_cut": 4.59602048478e-09,
+          "residual_db": -61.16609679854605,
+          "growth_db": 0.15740872568454733
+        }
+      ],
+      "wall_s": 2083.3937532999553,
+      "predicted_s": 2042.0540485005351,
+      "worst_s": 3988.004143562051,
+      "indicators": {
+        "sigma": 1.0001,
+        "recip": 1.3e-05,
+        "loss_pct": null,
+        "expected_pct": null
+      },
+      "warnings": [],
+      "lid_mm": null,
+      "run_dir": "p4e_shift-n2-dfill-20261107-172211-e1e0",
+      "speeds_mcs": [
+        139.4304021488943,
+        140.70152155248482,
+        138.5161686617302,
+        139.37047734344088
+      ],
+      "node_mcs": 139.4004397461676,
+      "cal_mcs": 206.89629804509312,
+      "debye_cells": 0,
+      "converged": true,
+      "valid": true,
+      "blocked": false,
+      "t_stop_s": 4.60844216177e-09,
+      "fingerprint": {
+        "preset": "normal",
+        "region": {
+          "expand_h": 6.0,
+          "margin_scale": 1.0
+        },
+        "interface": "usb2-hs",
+        "f_max_hz": 10000000000.0,
+        "rise_s": 5e-10,
+        "marker_hz": 240000000.0,
+        "target_ohm": 90.0,
+        "stackup": {
+          "source": "board",
+          "layers": [
+            {
+              "name": "F.Mask",
+              "kind": "mask",
+              "thickness_mm": 0.01,
+              "epsilon_r": 3.3,
+              "loss_tangent": 0.0
+            },
+            {
+              "name": "F.Cu",
+              "kind": "copper",
+              "thickness_mm": 0.035,
+              "epsilon_r": null,
+              "loss_tangent": null
+            },
+            {
+              "name": "dielectric 1",
+              "kind": "dielectric",
+              "thickness_mm": 0.2,
+              "epsilon_r": 4.3,
+              "loss_tangent": 0.02
+            },
+            {
+              "name": "In1.Cu",
+              "kind": "copper",
+              "thickness_mm": 0.035,
+              "epsilon_r": null,
+              "loss_tangent": null
+            },
+            {
+              "name": "dielectric 2",
+              "kind": "dielectric",
+              "thickness_mm": 1.04,
+              "epsilon_r": 4.5,
+              "loss_tangent": 0.02
+            },
+            {
+              "name": "In2.Cu",
+              "kind": "copper",
+              "thickness_mm": 0.035,
+              "epsilon_r": null,
+              "loss_tangent": null
+            },
+            {
+              "name": "dielectric 3",
+              "kind": "dielectric",
+              "thickness_mm": 0.2,
+              "epsilon_r": 4.3,
+              "loss_tangent": 0.02
+            },
+            {
+              "name": "B.Cu",
+              "kind": "copper",
+              "thickness_mm": 0.035,
+              "epsilon_r": null,
+              "loss_tangent": null
+            },
+            {
+              "name": "B.Mask",
+              "kind": "mask",
+              "thickness_mm": 0.01,
+              "epsilon_r": 3.3,
+              "loss_tangent": 0.0
+            }
+          ]
+        },
+        "dielectric": "lossless",
+        "lid": true,
+        "lid_height_mm": null,
+        "mesh": {
+          "n": 2,
+          "reach_h": 6.0
+        },
+        "ends": [
+          "TP1.1",
+          "TP3.1",
+          "TP2.1",
+          "TP4.1"
+        ],
+        "app": "0.1.0.dev0",
+        "openems": "0.37.0"
+      },
+      "reading_error": null
+    },
+    "gapp": {
+      "exit": 0,
+      "cells": 5591663,
+      "dt": 9.3261e-14,
+      "dt_ratio": 1.0238672917101233,
+      "pool": 4,
+      "jobs": [
+        {
+          "t_stop": 4.27396617359e-09,
+          "port": "P1",
+          "verdict": "converged",
+          "t_cut": 4.26146919648e-09,
+          "residual_db": -60.29058266691816,
+          "growth_db": 0.16642486205230966
+        },
+        {
+          "t_stop": 4.27396617359e-09,
+          "port": "P2",
+          "verdict": "converged",
+          "t_cut": 4.26146919648e-09,
+          "residual_db": -60.290573981232846,
+          "growth_db": 0.16665376335348014
+        },
+        {
+          "t_stop": 4.27396617359e-09,
+          "port": "P3",
+          "verdict": "converged",
+          "t_cut": 4.26146919648e-09,
+          "residual_db": -60.28657483512028,
+          "growth_db": 0.1661744242263694
+        },
+        {
+          "t_stop": 4.27396617359e-09,
+          "port": "P4",
+          "verdict": "converged",
+          "t_cut": 4.26146919648e-09,
+          "residual_db": -60.28692564321002,
+          "growth_db": 0.16642275860590416
+        }
+      ],
+      "wall_s": 1873.3580281999893,
+      "predicted_s": 1836.8908116336665,
+      "worst_s": 3868.0739699950914,
+      "indicators": {
+        "sigma": 1.0,
+        "recip": 2.18e-06,
+        "loss_pct": null,
+        "expected_pct": null
+      },
+      "warnings": [],
+      "lid_mm": null,
+      "run_dir": "p4e_gapp-n2-dfill-20261107-175723-1f18",
+      "speeds_mcs": [
+        138.8860116409542,
+        138.7870923652211,
+        138.78443744825051,
+        138.7251473758976
+      ],
+      "node_mcs": 138.7857649067358,
+      "cal_mcs": 206.89629804509312,
+      "debye_cells": 0,
+      "converged": true,
+      "valid": true,
+      "blocked": false,
+      "t_stop_s": 4.27396617359e-09,
+      "fingerprint": {
+        "preset": "normal",
+        "region": {
+          "expand_h": 6.0,
+          "margin_scale": 1.0
+        },
+        "interface": "usb2-hs",
+        "f_max_hz": 10000000000.0,
+        "rise_s": 5e-10,
+        "marker_hz": 240000000.0,
+        "target_ohm": 90.0,
+        "stackup": {
+          "source": "board",
+          "layers": [
+            {
+              "name": "F.Mask",
+              "kind": "mask",
+              "thickness_mm": 0.01,
+              "epsilon_r": 3.3,
+              "loss_tangent": 0.0
+            },
+            {
+              "name": "F.Cu",
+              "kind": "copper",
+              "thickness_mm": 0.035,
+              "epsilon_r": null,
+              "loss_tangent": null
+            },
+            {
+              "name": "dielectric 1",
+              "kind": "dielectric",
+              "thickness_mm": 0.2,
+              "epsilon_r": 4.3,
+              "loss_tangent": 0.02
+            },
+            {
+              "name": "In1.Cu",
+              "kind": "copper",
+              "thickness_mm": 0.035,
+              "epsilon_r": null,
+              "loss_tangent": null
+            },
+            {
+              "name": "dielectric 2",
+              "kind": "dielectric",
+              "thickness_mm": 1.04,
+              "epsilon_r": 4.5,
+              "loss_tangent": 0.02
+            },
+            {
+              "name": "In2.Cu",
+              "kind": "copper",
+              "thickness_mm": 0.035,
+              "epsilon_r": null,
+              "loss_tangent": null
+            },
+            {
+              "name": "dielectric 3",
+              "kind": "dielectric",
+              "thickness_mm": 0.2,
+              "epsilon_r": 4.3,
+              "loss_tangent": 0.02
+            },
+            {
+              "name": "B.Cu",
+              "kind": "copper",
+              "thickness_mm": 0.035,
+              "epsilon_r": null,
+              "loss_tangent": null
+            },
+            {
+              "name": "B.Mask",
+              "kind": "mask",
+              "thickness_mm": 0.01,
+              "epsilon_r": 3.3,
+              "loss_tangent": 0.0
+            }
+          ]
+        },
+        "dielectric": "lossless",
+        "lid": true,
+        "lid_height_mm": null,
+        "mesh": {
+          "n": 2,
+          "reach_h": 6.0
+        },
+        "ends": [
+          "TP1.1",
+          "TP3.1",
+          "TP2.1",
+          "TP4.1"
+        ],
+        "app": "0.1.0.dev0",
+        "openems": "0.37.0"
+      },
+      "reading_error": null
+    },
+    "gapm": {
+      "exit": 0,
+      "cells": 9088832,
+      "dt": 6.65103e-14,
+      "dt_ratio": 1.0065224958004813,
+      "pool": 4,
+      "jobs": [
+        {
+          "t_stop": 4.60184732272e-09,
+          "port": "P1",
+          "verdict": "converged",
+          "t_cut": 4.58940989753e-09,
+          "residual_db": -60.17834872926396,
+          "growth_db": 0.00034741871107257793
+        },
+        {
+          "t_stop": 4.60184732272e-09,
+          "port": "P2",
+          "verdict": "converged",
+          "t_cut": 4.58940989753e-09,
+          "residual_db": -60.19549044406312,
+          "growth_db": 0.006024442808978847
+        },
+        {
+          "t_stop": 4.60184732272e-09,
+          "port": "P3",
+          "verdict": "converged",
+          "t_cut": 4.58940989753e-09,
+          "residual_db": -60.21138519724371,
+          "growth_db": 0.0
+        },
+        {
+          "t_stop": 4.60184732272e-09,
+          "port": "P4",
+          "verdict": "converged",
+          "t_cut": 4.58940989753e-09,
+          "residual_db": -60.22884740704119,
+          "growth_db": 0.004628423364692935
+        }
+      ],
+      "wall_s": 4482.451918799896,
+      "predicted_s": 4530.805826993847,
+      "worst_s": 8861.061565780617,
+      "indicators": {
+        "sigma": 1.0014,
+        "recip": 0.00522,
+        "loss_pct": null,
+        "expected_pct": null
+      },
+      "warnings": [],
+      "lid_mm": null,
+      "run_dir": "p4e_gapm-n2-dfill-20261107-182904-8caa",
+      "speeds_mcs": [
+        141.96451442609782,
+        142.0686147409425,
+        141.63869441078748,
+        141.6791733430521
+      ],
+      "node_mcs": 141.82184388457495,
+      "cal_mcs": 206.89629804509312,
+      "debye_cells": 0,
+      "converged": true,
+      "valid": true,
+      "blocked": false,
+      "t_stop_s": 4.60184732272e-09,
+      "fingerprint": {
+        "preset": "normal",
+        "region": {
+          "expand_h": 6.0,
+          "margin_scale": 1.0
+        },
+        "interface": "usb2-hs",
+        "f_max_hz": 10000000000.0,
+        "rise_s": 5e-10,
+        "marker_hz": 240000000.0,
+        "target_ohm": 90.0,
+        "stackup": {
+          "source": "board",
+          "layers": [
+            {
+              "name": "F.Mask",
+              "kind": "mask",
+              "thickness_mm": 0.01,
+              "epsilon_r": 3.3,
+              "loss_tangent": 0.0
+            },
+            {
+              "name": "F.Cu",
+              "kind": "copper",
+              "thickness_mm": 0.035,
+              "epsilon_r": null,
+              "loss_tangent": null
+            },
+            {
+              "name": "dielectric 1",
+              "kind": "dielectric",
+              "thickness_mm": 0.2,
+              "epsilon_r": 4.3,
+              "loss_tangent": 0.02
+            },
+            {
+              "name": "In1.Cu",
+              "kind": "copper",
+              "thickness_mm": 0.035,
+              "epsilon_r": null,
+              "loss_tangent": null
+            },
+            {
+              "name": "dielectric 2",
+              "kind": "dielectric",
+              "thickness_mm": 1.04,
+              "epsilon_r": 4.5,
+              "loss_tangent": 0.02
+            },
+            {
+              "name": "In2.Cu",
+              "kind": "copper",
+              "thickness_mm": 0.035,
+              "epsilon_r": null,
+              "loss_tangent": null
+            },
+            {
+              "name": "dielectric 3",
+              "kind": "dielectric",
+              "thickness_mm": 0.2,
+              "epsilon_r": 4.3,
+              "loss_tangent": 0.02
+            },
+            {
+              "name": "B.Cu",
+              "kind": "copper",
+              "thickness_mm": 0.035,
+              "epsilon_r": null,
+              "loss_tangent": null
+            },
+            {
+              "name": "B.Mask",
+              "kind": "mask",
+              "thickness_mm": 0.01,
+              "epsilon_r": 3.3,
+              "loss_tangent": 0.0
+            }
+          ]
+        },
+        "dielectric": "lossless",
+        "lid": true,
+        "lid_height_mm": null,
+        "mesh": {
+          "n": 2,
+          "reach_h": 6.0
+        },
+        "ends": [
+          "TP1.1",
+          "TP3.1",
+          "TP2.1",
+          "TP4.1"
+        ],
+        "app": "0.1.0.dev0",
+        "openems": "0.37.0"
+      },
+      "reading_error": null
+    },
+    "null": {
+      "exit": 0,
+      "cells": 5702389,
+      "dt": 8.65746e-14,
+      "dt_ratio": 0.9785471273721926,
+      "pool": 4,
+      "jobs": [
+        {
+          "t_stop": 4.60023013955e-09,
+          "port": "P1",
+          "verdict": "converged",
+          "t_cut": 4.5877633912e-09,
+          "residual_db": -60.98930174649627,
+          "growth_db": 0.16742093949068249
+        },
+        {
+          "t_stop": 4.60023013955e-09,
+          "port": "P2",
+          "verdict": "converged",
+          "t_cut": 4.5877633912e-09,
+          "residual_db": -61.08484292281708,
+          "growth_db": 0.17749046118677825
+        },
+        {
+          "t_stop": 4.60023013955e-09,
+          "port": "P3",
+          "verdict": "converged",
+          "t_cut": 4.5877633912e-09,
+          "residual_db": -61.050566396114164,
+          "growth_db": 0.16620938349157655
+        },
+        {
+          "t_stop": 4.60023013955e-09,
+          "port": "P4",
+          "verdict": "converged",
+          "t_cut": 4.5877633912e-09,
+          "residual_db": -61.146668743466435,
+          "growth_db": 0.17626544380479459
+        }
+      ],
+      "wall_s": 2209.18418370001,
+      "predicted_s": 2136.2598324976493,
+      "worst_s": 4179.429704436394,
+      "indicators": {
+        "sigma": 1.0001,
+        "recip": 1.75e-05,
+        "loss_pct": null,
+        "expected_pct": null
+      },
+      "warnings": [],
+      "lid_mm": null,
+      "run_dir": "p4e_null-n2-dfill-20261107-194438-d41d",
+      "speeds_mcs": [
+        140.8987018357323,
+        139.9645491814828,
+        139.40235370781852,
+        138.87194331567468
+      ],
+      "node_mcs": 139.68345144465064,
+      "cal_mcs": 206.89629804509312,
+      "debye_cells": 0,
+      "converged": true,
+      "valid": true,
+      "blocked": false,
+      "t_stop_s": 4.60023013955e-09,
+      "fingerprint": {
+        "preset": "normal",
+        "region": {
+          "expand_h": 6.0,
+          "margin_scale": 1.0
+        },
+        "interface": "usb2-hs",
+        "f_max_hz": 10000000000.0,
+        "rise_s": 5e-10,
+        "marker_hz": 240000000.0,
+        "target_ohm": 90.0,
+        "stackup": {
+          "source": "board",
+          "layers": [
+            {
+              "name": "F.Mask",
+              "kind": "mask",
+              "thickness_mm": 0.01,
+              "epsilon_r": 3.3,
+              "loss_tangent": 0.0
+            },
+            {
+              "name": "F.Cu",
+              "kind": "copper",
+              "thickness_mm": 0.035,
+              "epsilon_r": null,
+              "loss_tangent": null
+            },
+            {
+              "name": "dielectric 1",
+              "kind": "dielectric",
+              "thickness_mm": 0.2,
+              "epsilon_r": 4.3,
+              "loss_tangent": 0.02
+            },
+            {
+              "name": "In1.Cu",
+              "kind": "copper",
+              "thickness_mm": 0.035,
+              "epsilon_r": null,
+              "loss_tangent": null
+            },
+            {
+              "name": "dielectric 2",
+              "kind": "dielectric",
+              "thickness_mm": 1.04,
+              "epsilon_r": 4.5,
+              "loss_tangent": 0.02
+            },
+            {
+              "name": "In2.Cu",
+              "kind": "copper",
+              "thickness_mm": 0.035,
+              "epsilon_r": null,
+              "loss_tangent": null
+            },
+            {
+              "name": "dielectric 3",
+              "kind": "dielectric",
+              "thickness_mm": 0.2,
+              "epsilon_r": 4.3,
+              "loss_tangent": 0.02
+            },
+            {
+              "name": "B.Cu",
+              "kind": "copper",
+              "thickness_mm": 0.035,
+              "epsilon_r": null,
+              "loss_tangent": null
+            },
+            {
+              "name": "B.Mask",
+              "kind": "mask",
+              "thickness_mm": 0.01,
+              "epsilon_r": 3.3,
+              "loss_tangent": 0.0
+            }
+          ]
+        },
+        "dielectric": "lossless",
+        "lid": true,
+        "lid_height_mm": null,
+        "mesh": {
+          "n": 2,
+          "reach_h": 6.0
+        },
+        "ends": [
+          "TP1.1",
+          "TP3.1",
+          "TP2.1",
+          "TP4.1"
+        ],
+        "app": "0.1.0.dev0",
+        "openems": "0.37.0"
+      },
+      "reading_error": null
+    },
+    "vbase": {
+      "exit": 0,
+      "cells": 5765760,
+      "dt": 8.43118e-14,
+      "dt_ratio": 0.9615437251950185,
+      "pool": 4,
+      "jobs": [
+        {
+          "t_stop": 4.28000348841e-09,
+          "port": "P1",
+          "verdict": "converged",
+          "t_cut": 4.26752534413e-09,
+          "residual_db": -60.684196677998266,
+          "growth_db": 0.1573240388205761
+        },
+        {
+          "t_stop": 4.28000348841e-09,
+          "port": "P2",
+          "verdict": "converged",
+          "t_cut": 4.26752534413e-09,
+          "residual_db": -60.5860530960756,
+          "growth_db": 0.1603946906316196
+        },
+        {
+          "t_stop": 4.28000348841e-09,
+          "port": "P3",
+          "verdict": "converged",
+          "t_cut": 4.26752534413e-09,
+          "residual_db": -60.673374642797924,
+          "growth_db": 0.15057878843529693
+        },
+        {
+          "t_stop": 4.28000348841e-09,
+          "port": "P4",
+          "verdict": "converged",
+          "t_cut": 4.26752534413e-09,
+          "residual_db": -60.60126270905897,
+          "growth_db": 0.1548608747956166
+        },
+        {
+          "t_stop": 3.9555717371e-09,
+          "port": "P5",
+          "verdict": "converged",
+          "t_cut": 3.94309359282e-09,
+          "residual_db": -61.11955962779846,
+          "growth_db": 0.08516037881591387
+        },
+        {
+          "t_stop": 3.9555717371e-09,
+          "port": "P6",
+          "verdict": "converged",
+          "t_cut": 3.94309359282e-09,
+          "residual_db": -61.113501577534095,
+          "growth_db": 0.08488507911786769
+        }
+      ],
+      "wall_s": 3241.668586600106,
+      "predicted_s": 4187.778008660083,
+      "worst_s": 8806.06807447776,
+      "indicators": {
+        "sigma": 1.0001,
+        "recip": 0.000208,
+        "loss_pct": null,
+        "expected_pct": null
+      },
+      "warnings": [],
+      "lid_mm": null,
+      "run_dir": "p4b_ms90_vic-n2-dfill-20261107-202157-d023",
+      "speeds_mcs": [
+        137.15438617728918,
+        137.290773468083,
+        136.9279864207322,
+        137.0619863870067,
+        258.1518604548442,
+        257.9966878472139
+      ],
+      "node_mcs": 137.2225798226861,
+      "cal_mcs": 206.89629804509312,
+      "debye_cells": 0,
+      "converged": true,
+      "valid": true,
+      "blocked": false,
+      "t_stop_s": 4.28000348841e-09,
+      "fingerprint": {
+        "preset": "normal",
+        "region": {
+          "expand_h": 6.0,
+          "margin_scale": 1.0
+        },
+        "interface": "usb2-hs",
+        "f_max_hz": 10000000000.0,
+        "rise_s": 5e-10,
+        "marker_hz": 240000000.0,
+        "target_ohm": 90.0,
+        "stackup": {
+          "source": "board",
+          "layers": [
+            {
+              "name": "F.Mask",
+              "kind": "mask",
+              "thickness_mm": 0.01,
+              "epsilon_r": 3.3,
+              "loss_tangent": 0.0
+            },
+            {
+              "name": "F.Cu",
+              "kind": "copper",
+              "thickness_mm": 0.035,
+              "epsilon_r": null,
+              "loss_tangent": null
+            },
+            {
+              "name": "dielectric 1",
+              "kind": "dielectric",
+              "thickness_mm": 0.2,
+              "epsilon_r": 4.3,
+              "loss_tangent": 0.02
+            },
+            {
+              "name": "In1.Cu",
+              "kind": "copper",
+              "thickness_mm": 0.035,
+              "epsilon_r": null,
+              "loss_tangent": null
+            },
+            {
+              "name": "dielectric 2",
+              "kind": "dielectric",
+              "thickness_mm": 1.04,
+              "epsilon_r": 4.5,
+              "loss_tangent": 0.02
+            },
+            {
+              "name": "In2.Cu",
+              "kind": "copper",
+              "thickness_mm": 0.035,
+              "epsilon_r": null,
+              "loss_tangent": null
+            },
+            {
+              "name": "dielectric 3",
+              "kind": "dielectric",
+              "thickness_mm": 0.2,
+              "epsilon_r": 4.3,
+              "loss_tangent": 0.02
+            },
+            {
+              "name": "B.Cu",
+              "kind": "copper",
+              "thickness_mm": 0.035,
+              "epsilon_r": null,
+              "loss_tangent": null
+            },
+            {
+              "name": "B.Mask",
+              "kind": "mask",
+              "thickness_mm": 0.01,
+              "epsilon_r": 3.3,
+              "loss_tangent": 0.0
+            }
+          ]
+        },
+        "dielectric": "lossless",
+        "lid": true,
+        "lid_height_mm": null,
+        "mesh": {
+          "n": 2,
+          "reach_h": 6.0
+        },
+        "ends": [
+          "TP1.1",
+          "TP3.1",
+          "TP2.1",
+          "TP4.1",
+          "TP5.1",
+          "TP6.1"
+        ],
+        "app": "0.1.0.dev0",
+        "openems": "0.37.0"
+      },
+      "reading_error": null
+    },
+    "vshift": {
+      "exit": 0,
+      "cells": 5765760,
+      "dt": 8.43118e-14,
+      "dt_ratio": 0.9615437251950185,
+      "pool": 4,
+      "jobs": [
+        {
+          "t_stop": 4.28000348841e-09,
+          "port": "P1",
+          "verdict": "converged",
+          "t_cut": 4.26752534413e-09,
+          "residual_db": -60.679009786675884,
+          "growth_db": 0.15745534160149077
+        },
+        {
+          "t_stop": 4.28000348841e-09,
+          "port": "P2",
+          "verdict": "converged",
+          "t_cut": 4.26752534413e-09,
+          "residual_db": -60.58031151273363,
+          "growth_db": 0.1607179982164837
+        },
+        {
+          "t_stop": 4.28000348841e-09,
+          "port": "P3",
+          "verdict": "converged",
+          "t_cut": 4.26752534413e-09,
+          "residual_db": -60.668355776988946,
+          "growth_db": 0.15074701865853513
+        },
+        {
+          "t_stop": 4.28000348841e-09,
+          "port": "P4",
+          "verdict": "converged",
+          "t_cut": 4.26752534413e-09,
+          "residual_db": -60.59605959238664,
+          "growth_db": 0.15520257069934473
+        },
+        {
+          "t_stop": 3.9555717371e-09,
+          "port": "P5",
+          "verdict": "converged",
+          "t_cut": 3.94309359282e-09,
+          "residual_db": -61.116011261437606,
+          "growth_db": 0.08516037881591387
+        },
+        {
+          "t_stop": 3.9555717371e-09,
+          "port": "P6",
+          "verdict": "converged",
+          "t_cut": 3.94309359282e-09,
+          "residual_db": -61.109819901635696,
+          "growth_db": 0.08488507911786769
+        }
+      ],
+      "wall_s": 3252.7224872000515,
+      "predicted_s": 3299.2388994353314,
+      "worst_s": 6937.6462368138955,
+      "indicators": {
+        "sigma": 1.0001,
+        "recip": 0.00021,
+        "loss_pct": null,
+        "expected_pct": null
+      },
+      "warnings": [],
+      "lid_mm": null,
+      "run_dir": "p4e_vshift-n2-dfill-20261107-211633-2186",
+      "speeds_mcs": [
+        137.0900723733919,
+        136.9477942932375,
+        137.331164439665,
+        136.9792136434368,
+        255.45583549361072,
+        255.4444027916756
+      ],
+      "node_mcs": 137.21061840652845,
+      "cal_mcs": 206.89629804509312,
+      "debye_cells": 0,
+      "converged": true,
+      "valid": true,
+      "blocked": false,
+      "t_stop_s": 4.28000348841e-09,
+      "fingerprint": {
+        "preset": "normal",
+        "region": {
+          "expand_h": 6.0,
+          "margin_scale": 1.0
+        },
+        "interface": "usb2-hs",
+        "f_max_hz": 10000000000.0,
+        "rise_s": 5e-10,
+        "marker_hz": 240000000.0,
+        "target_ohm": 90.0,
+        "stackup": {
+          "source": "board",
+          "layers": [
+            {
+              "name": "F.Mask",
+              "kind": "mask",
+              "thickness_mm": 0.01,
+              "epsilon_r": 3.3,
+              "loss_tangent": 0.0
+            },
+            {
+              "name": "F.Cu",
+              "kind": "copper",
+              "thickness_mm": 0.035,
+              "epsilon_r": null,
+              "loss_tangent": null
+            },
+            {
+              "name": "dielectric 1",
+              "kind": "dielectric",
+              "thickness_mm": 0.2,
+              "epsilon_r": 4.3,
+              "loss_tangent": 0.02
+            },
+            {
+              "name": "In1.Cu",
+              "kind": "copper",
+              "thickness_mm": 0.035,
+              "epsilon_r": null,
+              "loss_tangent": null
+            },
+            {
+              "name": "dielectric 2",
+              "kind": "dielectric",
+              "thickness_mm": 1.04,
+              "epsilon_r": 4.5,
+              "loss_tangent": 0.02
+            },
+            {
+              "name": "In2.Cu",
+              "kind": "copper",
+              "thickness_mm": 0.035,
+              "epsilon_r": null,
+              "loss_tangent": null
+            },
+            {
+              "name": "dielectric 3",
+              "kind": "dielectric",
+              "thickness_mm": 0.2,
+              "epsilon_r": 4.3,
+              "loss_tangent": 0.02
+            },
+            {
+              "name": "B.Cu",
+              "kind": "copper",
+              "thickness_mm": 0.035,
+              "epsilon_r": null,
+              "loss_tangent": null
+            },
+            {
+              "name": "B.Mask",
+              "kind": "mask",
+              "thickness_mm": 0.01,
+              "epsilon_r": 3.3,
+              "loss_tangent": 0.0
+            }
+          ]
+        },
+        "dielectric": "lossless",
+        "lid": true,
+        "lid_height_mm": null,
+        "mesh": {
+          "n": 2,
+          "reach_h": 6.0
+        },
+        "ends": [
+          "TP1.1",
+          "TP3.1",
+          "TP2.1",
+          "TP4.1",
+          "TP5.1",
+          "TP6.1"
+        ],
+        "app": "0.1.0.dev0",
+        "openems": "0.37.0"
+      },
+      "reading_error": null
+    }
+  },
+  "noise": {
+    "DIFF_OHM": 0.7151844288302414,
+    "IL_DB": 0.006478767636914018,
+    "DB": 28.550294038131128,
+    "SKEW_PS": 0.09377040894851917,
+    "parts": {
+      "tdr_lowest": {
+        "repeat": 0.0,
+        "shift": 5.9658440093812715e-05,
+        "null": 0.6878913764349619,
+        "vshift": 0.0005252720543040823,
+        "even": -2.4205924948458986,
+        "model_even": -2.4055823325878265,
+        "odd": 6.919968512516853,
+        "noise": 0.6878913764349619
+      },
+      "tdr_highest": {
+        "repeat": 0.0,
+        "shift": 6.279852175339329e-05,
+        "null": 0.7151844288302414,
+        "vshift": 0.0007382788204495228,
+        "even": -2.3657065851214156,
+        "model_even": -2.4055823325878265,
+        "odd": 7.11398636526161,
+        "noise": 0.7151844288302414
+      },
+      "sdd21@marker": {
+        "repeat": 0.0,
+        "shift": 2.1666049910978134e-07,
+        "null": 0.00015317716954656993,
+        "vshift": 1.663385881907521e-05,
+        "even": -0.008577274668712338,
+        "model_even": -0.00728662163954781,
+        "odd": 0.006602718224435122,
+        "noise": 0.0012906530291645285
+      },
+      "sdd21@f_max": {
+        "repeat": 0.0,
+        "shift": 1.834394932975769e-05,
+        "null": 0.006478767636914018,
+        "vshift": 0.00025612284437059873,
+        "even": -0.0609918511114203,
+        "model_even": null,
+        "odd": -0.05383490517832151,
+        "noise": 0.006478767636914018
+      },
+      "sdd11_worst": {
+        "repeat": 0.0,
+        "shift": -1.2905176680177988e-05,
+        "null": 0.09731252409438795,
+        "vshift": -0.006126232089442851,
+        "even": -0.2774397546231455,
+        "model_even": null,
+        "odd": 0.9027386849966721,
+        "noise": 0.09731252409438795
+      },
+      "skew": {
+        "repeat": 0.0,
+        "shift": 0.0038785205537318814,
+        "null": -0.09377040894851917,
+        "vshift": 0.0019913949239602213,
+        "even": 0.00802633049447514,
+        "model_even": 0.0,
+        "odd": -0.00611987511836307,
+        "noise": 0.09377040894851917
+      },
+      "scd21_worst": {
+        "repeat": null,
+        "shift": null,
+        "null": 28.550294038131128,
+        "vshift": -0.008750620119435837,
+        "even": null,
+        "model_even": 0.0,
+        "odd": null,
+        "noise": 28.550294038131128
+      },
+      "next": {
+        "repeat": null,
+        "shift": null,
+        "null": null,
+        "vshift": -0.00024154890787642103,
+        "even": null,
+        "model_even": null,
+        "odd": null,
+        "noise": 0.00024154890787642103
+      },
+      "fext": {
+        "repeat": null,
+        "shift": null,
+        "null": null,
+        "vshift": 0.0009046504291418955,
+        "even": null,
+        "model_even": null,
+        "odd": null,
+        "noise": 0.0009046504291418955
+      }
+    }
+  },
+  "thresholds": {
+    "DIFF_OHM": 2.2,
+    "IL_DB": 0.05,
+    "DB": 85.7,
+    "SKEW_PS": 1.0,
+    "SE_OHM": 1.1,
+    "kept": {
+      "DIFF_OHM": false,
+      "IL_DB": true,
+      "DB": false,
+      "SKEW_PS": true
+    }
+  },
+  "verdict": {
+    "value": "widened",
+    "fails": []
+  },
+  "machine": {
+    "steps": 8,
+    "machine_hours": 5.988138287055578,
+    "loaded": [],
+    "elapsed_days": 16
+  }
+}
