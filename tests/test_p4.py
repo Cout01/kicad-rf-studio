@@ -13,6 +13,7 @@ from kicad_rf_studio import pipeline
 from kicad_rf_studio.core.post.si import Reading, read
 from kicad_rf_studio.core.project import load_project
 from test_p0 import in_process
+from test_p4_fixtures import LINES
 from test_post_si import F, SE, line_s
 
 
@@ -47,11 +48,14 @@ def test_a_run_step_runs_the_product_once_and_measures_it(gates, monkeypatch):  
 def test_the_settings_follow_the_checkpoint_constants(gates, monkeypatch):  # G-1: decisions in tools constants
     base = load_project(p4.base(gates, "p4b_ms90"))
     cell = base["mesh"]["max_cell_mm"]
+    assert cell == LINES["p4b_ms90"][3]  # the gates' λ/40, recorded once, where new writes the d fill (Task 16)
     assert p4.settings(base) == {"mesh.n": 2, "mesh.max_cell_mm": cell, "dielectric": "lossless"}
     monkeypatch.setattr(p4, "N", 3)
     monkeypatch.setattr(p4, "RULE", "l80")
     assert p4.settings(base) == {"mesh.n": 3, "mesh.max_cell_mm": round(cell / 2, 6), "dielectric": "lossless"}
     assert p4.settings(base, rule="dfill", dielectric="debye")["mesh.max_cell_mm"] is None
+    usb = load_project(p4.base(gates, "usb2_hs"))  # no LINES cell: P4-D's and P4-F's board, run at the d fill only
+    assert p4.settings(usb, rule="dfill")["mesh.max_cell_mm"] is None
     assert p4.name("si_line100", dielectric="debye", tag="v") == "si_line100-n3-l80-debye-v"
     monkeypatch.setattr(p4, "EDITS", {"p4b_sl90": {"gates.fit2d_limit": 0.05}})
     assert load_project(p4.project(gates, "p4b_sl90")[1])["gates"]["fit2d_limit"] == 0.05

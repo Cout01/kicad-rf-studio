@@ -425,8 +425,8 @@ msgstr "Vítima {start} → {end} na rede {net}: as duas pontas dela são portas
 
 #. I_SI_DEFAULTS
 #, python-brace-format
-msgid "Preset {preset} (provisional default), T_max {t_max_ns} ns, stop window {window_ns} ns, mesh n {mesh_n} with cells up to {max_cell_mm} mm between the copper edges (λ/40 at f_max, the 2D εeff {eeff}), dielectric {dielectric}, timestep floor {dt_floor}, region and protected reach {reach_h} substrate heights ({reach_mm} mm)."
-msgstr "Predefinição {preset} (padrão provisório), T_max {t_max_ns} ns, janela de parada de {window_ns} ns, malha n {mesh_n} com células de até {max_cell_mm} mm entre as bordas do cobre (λ/40 em f_max, εeff 2D de {eeff}), dielétrico {dielectric}, piso do passo de tempo {dt_floor}, região e alcance protegido de {reach_h} alturas de substrato ({reach_mm} mm)."
+msgid "Preset {preset} (provisional default), T_max {t_max_ns} ns, stop window {window_ns} ns, mesh n {mesh_n} with the cell d throughout the protected extent (gate P4-C), dielectric {dielectric}, timestep floor {dt_floor}, region and protected reach {reach_h} substrate heights ({reach_mm} mm)."
+msgstr "Predefinição {preset} (padrão provisório), T_max {t_max_ns} ns, janela de parada de {window_ns} ns, malha n {mesh_n} com a célula d em toda a extensão protegida (checagem prévia P4-C), dielétrico {dielectric}, piso do passo de tempo {dt_floor}, região e alcance protegido de {reach_h} alturas de substrato ({reach_mm} mm)."
 
 #. W_SI_LONG_PORT
 #, python-brace-format
@@ -1499,8 +1499,8 @@ msgstr "{kind} em {net}, o pico: {base} dB contra {variant} dB, {delta} dB: {ver
 
 #. I_SI_COMPARE_THRESHOLDS
 #, python-brace-format
-msgid "Resolved means larger than the significance threshold: {ohm} Ω on a TDR level, {il_db} dB on Sdd21 or S21, {db} dB on Sdd11, S11, Scd21, NEXT and FEXT where the higher of the two levels stands above {floor_db} dB, and {ps} ps on the skew: the design's registered values until gate P4-E measures the model's noise."
-msgstr "Resolvido significa maior que o limiar de significância: {ohm} Ω num nível do TDR, {il_db} dB em Sdd21 ou S21, {db} dB em Sdd11, S11, Scd21, NEXT e FEXT onde o maior dos dois níveis fica acima de {floor_db} dB, e {ps} ps no skew: os valores registrados no design até a checagem prévia P4-E medir o ruído do modelo."
+msgid "Resolved means larger than the significance threshold: {ohm} Ω on a TDR level, {il_db} dB on Sdd21 or S21, {db} dB on Sdd11, S11, NEXT and FEXT where the higher of the two levels stands above {floor_db} dB and on Scd21 where it stands above {scd21_floor_db} dB, and {ps} ps on the skew: the values gate P4-E set from the model's measured noise."
+msgstr "Resolvido significa maior que o limiar de significância: {ohm} Ω num nível do TDR, {il_db} dB em Sdd21 ou S21, {db} dB em Sdd11, S11, NEXT e FEXT onde o maior dos dois níveis fica acima de {floor_db} dB e em Scd21 onde ele fica acima de {scd21_floor_db} dB, e {ps} ps no skew: os valores que a checagem prévia P4-E definiu a partir do ruído medido do modelo."
 
 #. E_INTERNAL
 #, python-brace-format
@@ -2676,4 +2676,10 @@ msgstr "uma ilha, um ponto, um plano (o nome da camada de cobre dele) ou null"
 
 #~ msgid "{path} is not an antenna project: `compare` compares two antenna projects, made with `new --antenna`."
 #~ msgstr "{path} não é um projeto de antena: `compare` compara dois projetos de antena, criados com `new --antenna`."
+
+#~ msgid "Preset {preset} (provisional default), T_max {t_max_ns} ns, stop window {window_ns} ns, mesh n {mesh_n} with cells up to {max_cell_mm} mm between the copper edges (λ/40 at f_max, the 2D εeff {eeff}), dielectric {dielectric}, timestep floor {dt_floor}, region and protected reach {reach_h} substrate heights ({reach_mm} mm)."
+#~ msgstr "Predefinição {preset} (padrão provisório), T_max {t_max_ns} ns, janela de parada de {window_ns} ns, malha n {mesh_n} com células de até {max_cell_mm} mm entre as bordas do cobre (λ/40 em f_max, εeff 2D de {eeff}), dielétrico {dielectric}, piso do passo de tempo {dt_floor}, região e alcance protegido de {reach_h} alturas de substrato ({reach_mm} mm)."
+
+#~ msgid "Resolved means larger than the significance threshold: {ohm} Ω on a TDR level, {il_db} dB on Sdd21 or S21, {db} dB on Sdd11, S11, Scd21, NEXT and FEXT where the higher of the two levels stands above {floor_db} dB, and {ps} ps on the skew: the design's registered values until gate P4-E measures the model's noise."
+#~ msgstr "Resolvido significa maior que o limiar de significância: {ohm} Ω num nível do TDR, {il_db} dB em Sdd21 ou S21, {db} dB em Sdd11, S11, Scd21, NEXT e FEXT onde o maior dos dois níveis fica acima de {floor_db} dB, e {ps} ps no skew: os valores registrados no design até a checagem prévia P4-E medir o ruído do modelo."
 

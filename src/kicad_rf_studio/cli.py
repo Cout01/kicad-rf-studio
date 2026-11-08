@@ -301,7 +301,7 @@ def new_si(board: str | Path, start: str, end: str, interface: str, *, pair: boo
     """`new` for signal integrity (Stage 4 design 5.1): every refusal before anything is written; returns as `new`."""
     from kicad_rf_studio.core.geometry.copper import copper_pieces  # here, as in `new`
     from kicad_rf_studio.core.geometry.lid import find_lid
-    from kicad_rf_studio.core.geometry.region import build_region, lambda_min, si_max_cell
+    from kicad_rf_studio.core.geometry.region import build_region, lambda_min
     from kicad_rf_studio.core.geometry.sections import eps_eff_2d, line_layers, route_length
     from kicad_rf_studio.core.geometry.zstack import substrate_h
     from kicad_rf_studio.core.model.parts import project_parts
@@ -358,17 +358,17 @@ def new_si(board: str | Path, start: str, end: str, interface: str, *, pair: boo
     _, gate = find_lid(board, classes, region, zs, {"lid": True, "lid_height_mm": lid_height})
     eps = eps_eff_2d(board, merged.nets, pieces, zs) or max(s.eps_r for s in zs if s.kind == "dielectric")
     rt = round_trip(max(route_length(board, x.nets) for x in lines), eps)
-    window_s, t_max_s, max_cell = stop_window(rt), si_t_max(f_max, rt), round(si_max_cell(f_max, eps), 6)
+    window_s, t_max_s = stop_window(rt), si_t_max(f_max, rt)
     limit = lambda_min(f_max, max(s.eps_r for s in zs if s.eps_r is not None)) / 20  # λ/20 in the highest εr
     long_ports = [("W_SI_LONG_PORT", {"name": p["name"], "length_mm": f"{length:.3f}", "limit_mm": f"{limit:.3f}"})
                   for p in ports if (length := _port_length(board, pieces, zs, p)) > limit]
     folder = Path(output or ".")
     board_path, other_drive = relative_path(board.path, folder)
     pair_of = {"p": lines[0].nets[0], "n": lines[1].nets[0], "by": how} if paired else None
-    project = make_si_project(
+    project = make_si_project(  # max_cell_mm null: the d fill, gate P4-C's (docs/validation/2026-11-07-p4-c.md)
         board_path, board_hash(board.path), stackup, classes,
         [{"role": "measured" if k < m else "victim", "chain": c} for k, c in enumerate(chains)], pair_of, others,
-        ports, interface, t_max_s=t_max_s, window_s=window_s, max_cell_mm=max_cell, preset=preset,
+        ports, interface, t_max_s=t_max_s, window_s=window_s, max_cell_mm=None, preset=preset,
         lid_height_mm=lid_height)
     path = _write(folder, project)
 
@@ -388,8 +388,7 @@ def new_si(board: str | Path, start: str, end: str, interface: str, *, pair: boo
               *map(_part_note, series + shunt + others),
               *map(_port_note, ports),
               ("I_SI_DEFAULTS", {"preset": preset, "t_max_ns": f"{t_max_s * 1e9:g}", "window_ns": f"{window_s * 1e9:g}",
-                                 "mesh_n": project["mesh"]["n"], "max_cell_mm": f"{max_cell:.3f}",
-                                 "eeff": f"{eps:.2f}", "dielectric": project["dielectric"],
+                                 "mesh_n": project["mesh"]["n"], "dielectric": project["dielectric"],
                                  "dt_floor": f"{project['gates']['dt_floor']:g}",
                                  "reach_h": f"{project['mesh']['reach_h']:g}", "reach_mm": f"{reach:g}"})]
     if heavy := stackup.nonstandard_copper():

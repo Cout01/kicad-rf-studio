@@ -14,6 +14,9 @@ from kicad_rf_studio.core.project import load_project, parts, save_project
 from test_cli_si import FIX, QSPI, si_project
 
 LEGS = (frozenset({"USB_D+", "MCU_D+"}), frozenset({"USB_D-", "MCU_D-"}))
+# the SI rule's cell, λ/40 at 10 GHz on usb2_hs's 2D εeff: new's until gate P4-C made the d fill its default
+# (docs/validation/2026-11-07-p4-c.md), and still what a project's mesh.max_cell_mm grades to
+CELL = 0.414074
 
 
 @pytest.fixture(scope="module")
@@ -70,20 +73,19 @@ def test_a_line_takes_its_own_dielectric_for_d_and_the_reach(tmp_path):  # desig
 
 
 def test_the_si_mesh_fills_d_at_the_edges_and_grades_to_max_cell_between(usb):  # design 5.3
-    project, board, geom, _ = usb
-    cap = project["mesh"]["max_cell_mm"]
-    si = mesh_with_lint(geom, geom.protected, 2, max_cell=cap)  # E_EDGE_LINT would raise
+    geom = usb[2]
+    si = mesh_with_lint(geom, geom.protected, 2, max_cell=CELL)  # E_EDGE_LINT would raise
     full = build_mesh(geom, geom.protected, 2)  # Stage 1's d fill
     box = extent(geom)
     mids = (si.x[1:] + si.x[:-1]) / 2
     steps = np.diff(si.x)[(mids > box[0]) & (mids < box[2])]
-    assert len(si.x) < len(full.x) and 2 * si.d < steps.max() <= cap + 1e-6
+    assert len(si.x) < len(full.x) and 2 * si.d < steps.max() <= CELL + 1e-6
 
 
 @pytest.mark.parametrize("name", ["usb2_hs", "qspi_clk"])
 def test_every_solid_rod_keeps_its_lines(name, tmp_path):  # plan 1's carried item; Review Focus 3
-    project, board, geom, _ = pipeline.load(si_project(tmp_path, FIX / f"{name}.kicad_pcb"))
-    m = build_mesh(geom, geom.protected, 2, max_cell=project["mesh"]["max_cell_mm"])
+    geom = pipeline.load(si_project(tmp_path, FIX / f"{name}.kicad_pcb"))[2]
+    m = build_mesh(geom, geom.protected, 2, max_cell=CELL)
     solid = [r for r in geom.rods if r.solid]
     # U1.17's near column of vias (the far column's rings lie past the 1.2 mm reach, so those rods are snapped), with
     # U2.2's via and J1.6's shield hole, or with qspi_clk's two signal vias
@@ -96,18 +98,18 @@ def test_every_solid_rod_keeps_its_lines(name, tmp_path):  # plan 1's carried it
 
 
 def test_a_rod_past_the_extent_on_one_axis_keeps_its_lines(usb):  # Review Focus 3: a fence via beside the route
-    project, board, geom, _ = usb
+    geom = usb[2]
     first = geom.rods[0]
     rod = Rod("GND", (114.0, round(extent(geom)[3] + 0.2, 6)), 0.15, first.z0, first.z1, True)  # x inside, y past
-    m = build_mesh(replace(geom, rods=[*geom.rods, rod]), geom.protected, 2, max_cell=project["mesh"]["max_cell_mm"])
+    m = build_mesh(replace(geom, rods=[*geom.rods, rod]), geom.protected, 2, max_cell=CELL)
     held = m.x[(m.x >= 114.0 - 0.15 - 1e-6) & (m.x <= 114.0 + 0.15 + 1e-6)]
     assert held.size >= 2 and np.diff(held).max() <= m.d + 1e-6  # graded to max_cell there, it would lose its nodes
 
 
 def test_staircased_copper_is_filled_at_d(tmp_path):  # design 5.3; plan 1's ponytail on 45° copper
-    project, board, geom, notes = pipeline.load(si_project(tmp_path, FIX / "usb2_hs_45.kicad_pcb"))
+    _, _, geom, notes = pipeline.load(si_project(tmp_path, FIX / "usb2_hs_45.kicad_pcb"))
     assert ("W_STAIRCASED", {"net": "USB_D+"}) in notes and len(geom.stairs) == 4  # two 45° segments a line
-    m = build_mesh(geom, geom.protected, 2, max_cell=project["mesh"]["max_cell_mm"])
+    m = build_mesh(geom, geom.protected, 2, max_cell=CELL)
     for x0, y0, x1, y1 in geom.stairs:  # each segment's copper, its round ends too
         for axis, lines, lo, hi in (("x", m.x, x0, x1), ("y", m.y, y0, y1)):
             assert not over_d(lines[(lines >= lo) & (lines <= hi)], m, axis)

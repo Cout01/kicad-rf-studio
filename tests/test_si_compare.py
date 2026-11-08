@@ -2,11 +2,13 @@
 import csv
 import io
 import math
+from dataclasses import replace
 
 import pytest
 
 from kicad_rf_studio import pipeline
-from kicad_rf_studio.core.messages import KrsError
+from kicad_rf_studio.core.messages import KrsError, english
+from kicad_rf_studio.core.post import si
 from kicad_rf_studio.core.post.antenna import DELTA_COLUMNS, deltas_csv
 from kicad_rf_studio.core.post.si import read, si_delta_lines, si_deltas, si_limits
 from kicad_rf_studio.core.project import load_project, save_project
@@ -19,12 +21,33 @@ from test_si_run import verified_si
 A = math.sqrt(2)  # pair6's coupling to P alone reads 3 dB down, driven differentially
 
 
+def test_the_thresholds_are_gate_p4es():  # design 5.8; gate P4-E's section 4, with plan 4 ruling R-13's DB and floor
+    assert (si.DIFF_OHM, si.SE_OHM, si.IL_DB, si.DB, si.LEVEL_FLOOR_DB, si.SCD21_FLOOR_DB, si.SKEW_PS) == (
+        2.2, 1.1, 0.05, 0.5, -50.0, -37.7, 1.0)
+
+
+def test_scd21_resolves_only_above_its_own_floor():  # plan 4 ruling R-13: zero by symmetry on a symmetric pair
+    b = read(pair6(), F, P100, 3.0)
+
+    def at(scd21_db: float, sdd11_db: float):  # b with a flat |Scd21| and |Sdd11| at these levels
+        m = b.m.copy()
+        m[:, 3, 0], m[:, 0, 0] = 10 ** (scd21_db / 20), 10 ** (sdd11_db / 20)
+        return replace(b, m=m)
+
+    def resolved(variant) -> dict:
+        return {r["quantity"]: r["resolved"] for r in si_deltas(P100, at(-45.0, -45.0), variant)}
+
+    assert {k: v for k, v in resolved(at(-40.0, -40.0)).items() if k.endswith("_worst")} == {
+        "sdd11_worst": True, "scd21_worst": False}  # each 5 dB up: Sdd11 above -50 dB, Scd21 under its -37.7 dB
+    assert resolved(at(-37.0, -45.0))["scd21_worst"] is True
+
+
 def test_the_si_deltas_and_their_significance():  # design 5.8; Review Focus 2
     b = read(pair6(A * 10 ** (-60 / 20), A * 10 ** (-70 / 20)), F, P100, 3.0)
     v = read(pair6(A * 10 ** (-45 / 20), A * 10 ** (-60 / 20), 0.2e-9 + 1.5e-12), F, P100, 3.0)
     rows = si_deltas(P100, b, v)
     assert [(r["quantity"], r["marker"], r["threshold"], r["resolved"]) for r in rows] == [
-        ("tdr_lowest", "", 1.0, False), ("tdr_highest", "", 1.0, False), ("sdd21", "marker", 0.05, False),
+        ("tdr_lowest", "", 2.2, False), ("tdr_highest", "", 2.2, False), ("sdd21", "marker", 0.05, False),
         ("sdd21", "f_max", 0.05, False), ("sdd11_worst", "", 0.5, False), ("scd21_worst", "", 0.5, True),
         ("skew", "", 1.0, True), ("next", "AUX", 0.5, True), ("fext", "AUX", 0.5, False)]  # FEXT: both under -50 dB
     assert rows[6]["delta"] == pytest.approx(1.498, abs=0.005) and rows[8]["delta"] == pytest.approx(10.0)
@@ -40,7 +63,7 @@ def test_the_deltas_of_a_net():  # design 5.8; anti-goal 2; Review Focus 3, 5
     n = read(line_s(ROUTE1, F), F, SE, 4.0)
     rows = si_deltas(SE, n, n)
     assert [(r["quantity"], r["marker"], r["threshold"]) for r in rows] == [
-        ("tdr_lowest", "short", 0.5), ("tdr_highest", "", 0.5), ("s21", "marker", 0.05), ("s21", "f_max", 0.05),
+        ("tdr_lowest", "short", 1.1), ("tdr_highest", "", 1.1), ("s21", "marker", 0.05), ("s21", "f_max", 0.05),
         ("s11_worst", "", 0.5)]  # the 3 mm bump's level: marked in compare.csv
     assert {r["resolved"] for r in rows} == {False}
     assert [code for code, _ in si_delta_lines(SE, rows)][:2] == ["I_SI_COMPARE_LEVEL_SHORT", "I_SI_COMPARE_LEVEL"]
@@ -58,7 +81,12 @@ def test_the_si_delta_lines_and_csv():  # design 5.8
     assert lines[6][1] == {"base": "+0.00", "variant": "+1.50", "delta": "+1.50", "verdict": "T_RESOLVED"}
     assert lines[7][1] == {"kind": "NEXT", "net": "AUX", "base": "-60.00", "variant": "-45.00", "delta": "+15.00",
                            "verdict": "T_RESOLVED"}
-    assert lines[-1][1] == {"ohm": "1", "il_db": "0.05", "db": "0.5", "floor_db": "-50", "ps": "1"}
+    assert lines[-1][1] == {"ohm": "2.2", "il_db": "0.05", "db": "0.5", "floor_db": "-50", "scd21_floor_db": "-37.7",
+                            "ps": "1"}
+    assert english("I_SI_COMPARE_THRESHOLDS", **lines[-1][1]) == (
+        "Resolved means larger than the significance threshold: 2.2 Ω on a TDR level, 0.05 dB on Sdd21 or S21, 0.5 dB "
+        "on Sdd11, S11, NEXT and FEXT where the higher of the two levels stands above -50 dB and on Scd21 where it "
+        "stands above -37.7 dB, and 1 ps on the skew: the values gate P4-E set from the model's measured noise.")
     short = read(line_s([(50.0, 4.0, 5.0)], F), F, SE, 4.0)
     assert [code for code, _ in si_delta_lines(SE, si_deltas(SE, short, short))][0] == "I_SI_COMPARE_NO_LEVELS"
     table = list(csv.reader(io.StringIO(deltas_csv(rows).decode())))

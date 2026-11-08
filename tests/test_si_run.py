@@ -180,7 +180,8 @@ def test_an_si_run_records_its_route_and_fingerprint_before_its_jobs(tmp_path, c
 
 def test_an_si_fingerprint_leaves_out_what_the_lines_set(tmp_path, fake):  # design 5.8; Review Focus 4
     a, b = (load_project(si_project(tmp_path / n, FIX / f"{n}.kicad_pcb")) for n in ("usb2_hs", "usb2_hs_45"))
-    assert a["mesh"]["max_cell_mm"] != b["mesh"]["max_cell_mm"]  # λ/40 at each board's largest 2D εeff
+    assert a["mesh"]["max_cell_mm"] is b["mesh"]["max_cell_mm"] is None  # the d fill on both (gate P4-C)
+    b["mesh"]["max_cell_mm"] = 0.414  # a hand-set SI rule's cell
     assert pipeline.fingerprint(a) == pipeline.fingerprint(b)  # a 45° bend is a variant compare takes
 
 

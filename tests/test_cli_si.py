@@ -43,15 +43,15 @@ def test_new_interface_writes_an_si_project(tmp_path, capsys):  # design 5.1, 5.
     assert [(q["ref"], q["role"]) for x in d["lines"] for q in x["chain"]["series"]] == [("R1", "port"), ("R2", "port")]
     assert [(q["ref"], q["role"]) for q in d["others"]] == [("C1", "copper")]
     assert (d["t_max_s"], d["window_s"], d["region"]["expand_h"]) == (9e-9, 2e-9, 6.0)  # 30.405 mm: the T_max floor
-    assert d["mesh"]["max_cell_mm"] == pytest.approx(0.4141, abs=5e-4)  # λ/40 at 10 GHz, the 2D εeff 3.28
+    assert d["mesh"]["max_cell_mm"] is None  # the d fill (gate P4-C, docs/validation/2026-11-07-p4-c.md)
     out = capsys.readouterr().out
     for line in (render("I_SI_PAIR", p="USB_D+", n="USB_D-", how="T_PAIR_RULE"),
                  render("I_SI_INTERFACE", interface="usb2-hs", target="90", kind="T_DIFFERENTIAL", tolerance_pct="10",
                         rise_ps="500", marker_mhz="240", f_max_ghz="10", local_ps="125"),
                  render("I_PORT_PLANE", name="P1", signal="J1.3", layer="In1.Cu"),
                  render("I_SI_VICTIM", start="TP1.1", end="TP2.1", net="AUX"),
-                 render("I_SI_DEFAULTS", preset="normal", t_max_ns="9", window_ns="2", mesh_n=2, max_cell_mm="0.414",
-                        eeff="3.28", dielectric="lossless", dt_floor="0.6", reach_h="6", reach_mm="1.2")):
+                 render("I_SI_DEFAULTS", preset="normal", t_max_ns="9", window_ns="2", mesh_n=2,
+                        dielectric="lossless", dt_floor="0.6", reach_h="6", reach_mm="1.2")):
         assert line in out
 
 
@@ -63,6 +63,8 @@ def test_new_interface_on_the_qspi_clock(tmp_path):  # design 5.1, 5.11; Review 
     assert d["lines"][0]["chain"]["shunt"] == []  # U1 has three netted pads: no part across P1's own pads
     assert [(q["ref"], q["role"]) for q in d["others"]] == [("C1", "copper")]  # in the ROI U1.17's reference widens
     assert "W_SI_LONG_PORT" not in [c for c, _ in notes]
+    assert set(dict(notes)["I_SI_DEFAULTS"]) == {"preset", "t_max_ns", "window_ns", "mesh_n", "dielectric", "dt_floor",
+                                                 "reach_h", "reach_mm"}  # the d fill's: no max_cell_mm, no eeff
 
 
 def test_the_partner_given_by_pair_with(tmp_path):  # design 5.1

@@ -208,7 +208,7 @@ def si_interface(name: str, f_max: float | None, target: float | None, paired: b
 
 def make_si_project(board_path: str, board_sha256: str, stackup: Stackup, classes: Classes, lines: list[dict],
                     pair: dict | None, others: list[dict], ports: list[dict], interface: dict, *, t_max_s: float,
-                    window_s: float, max_cell_mm: float, preset: str = DEFAULT_PRESET,
+                    window_s: float, max_cell_mm: float | None, preset: str = DEFAULT_PRESET,
                     lid_height_mm: float | None = None) -> dict:
     """project.json of an SI project (schema 3, Stage 4 design 5.1) as `new --interface` writes it: make_project's dict
     without f0_hz, harmonics, band_factor and chain, with schema SCHEMA_SI, `t_max_s`, region {"expand_h": REACH_H,

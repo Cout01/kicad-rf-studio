@@ -29,7 +29,7 @@ def test_an_si_model_is_mur_lossless_and_pulsed_from_dc(usb):  # design 5.2-5.5;
     assert model.blocked == []
     x, box = model.mesh.x, shapely.total_bounds(list(geom.protected.area.values()))
     mids = (x[1:] + x[:-1]) / 2
-    assert np.diff(x)[(mids > box[0]) & (mids < box[2])].max() > 2 * model.mesh.d  # the SI rule, not the d fill
+    assert np.diff(x)[(mids > box[0]) & (mids < box[2])].max() <= model.mesh.d + 1e-6  # the d fill (gate P4-C)
 
 
 def test_a_debye_si_model_fits_each_lossy_substrate(tmp_path):  # design 5.3
@@ -56,7 +56,7 @@ def test_a_debye_models_cells_are_its_substrates_nodes(usb, tmp_path):  # ruling
     save_project(pj, {**load_project(pj), "dielectric": "debye"})
     project, board, geom, _ = pipeline.load(pj)
     spec = pipeline.build_model(project, board, geom).spec
-    assert (debye_cells(spec), math.prod(len(spec["mesh"][a]) for a in "xyz")) == (582291, 2072070)  # share 0.281
+    assert (debye_cells(spec), math.prod(len(spec["mesh"][a]) for a in "xyz")) == (1110091, 3745434)  # share 0.296
     assert debye_cells(usb[2].spec) == 0  # lossless: no Debye material
 
 

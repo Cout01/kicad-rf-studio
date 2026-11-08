@@ -60,9 +60,9 @@ def tdr(s11: np.ndarray, f: np.ndarray, t_r: float, z_ref: float = 50.0) -> tupl
     return t, z_ref * (1 + rho) / (1 - rho)
 
 
-# design 5.8: the significance of a differential and a single-ended TDR level; a level that close to the target marks
-# no feature
-DIFF_OHM, SE_OHM = 1.0, 0.5
+# gate P4-E (docs/validation/2026-11-07-p4-e.md): the design's value where the model's noise lay under a third of it,
+# else three times that noise; SE_OHM = DIFF_OHM/2; DIFF_OHM and SE_OHM are also levels()' band
+DIFF_OHM, SE_OHM = 2.2, 1.1
 ARRIVAL_FLOOR = 1e-3  # a TDT whose peak stays under this has no arrival: nothing passes the line
 FLOOR_DB = -300.0  # the level in dB an exact zero reads as: an ideal pair's Scd21, crosstalk at DC
 Level = tuple[float, float, bool]  # (t in s, Z in Ω, short)
@@ -430,8 +430,10 @@ def compare_verify(own: Reading, retuned: Reading) -> dict:
     return {"ds_max": float(ds[k]), "f_hz": float(own.f[k + 1]), "levels": levels}
 
 
-# design 5.8: the significance thresholds registered before any gate runs; gate P4-E keeps or widens each (plan 4)
-IL_DB, DB, LEVEL_FLOOR_DB, SKEW_PS = 0.05, 0.5, -50.0, 1.0
+# gate P4-E (docs/validation/2026-11-07-p4-e.md): the design's value where the model's noise lay under a third of it,
+# else three times that noise; plan 4 ruling R-13 (P4-E section 4): DB stays the design's 0.5 dB, and Scd21, zero by
+# symmetry on a symmetric pair, resolves only above its own floor, three times the null edit's Scd21 noise amplitude
+IL_DB, DB, LEVEL_FLOOR_DB, SCD21_FLOOR_DB, SKEW_PS = 0.05, 0.5, -50.0, -37.7, 1.0
 
 
 def si_deltas(project: dict, base: Reading, variant: Reading) -> list[dict]:
@@ -441,15 +443,16 @@ def si_deltas(project: dict, base: Reading, variant: Reading) -> list[dict]:
     keeps the mark); sdd21 (a net's s21) at "marker" and at "f_max", with its f_hz (dB, IL_DB); sdd11_worst
     (s11_worst), and for a pair scd21_worst (dB, DB); for a pair skew (ps, N − P, SKEW_PS; None without both
     arrivals); and for each victim next and fext, the victim's first net in `marker` (dB, DB). Resolved when |delta| >
-    threshold, and for the DB rows only when the higher of the two levels stands above LEVEL_FLOOR_DB; None when the
-    delta is None. Short features compare too (design 5.6: the same settings filter alike)."""
+    threshold, and for the DB rows only when the higher of the two levels stands above the row's floor, SCD21_FLOOR_DB
+    for scd21_worst and LEVEL_FLOOR_DB for the others (plan 4 ruling R-13); None when the delta is None. Short features
+    compare too (design 5.6: the same settings filter alike)."""
     from kicad_rf_studio.core.post.antenna import DELTA_COLUMNS  # here only (C-5)
 
     # ponytail: antenna.deltas' row, with the floor; one shared helper if a third kind compares
-    def row(quantity, marker, f_hz, b, v, unit, threshold, floor=False):  # numbers as Python floats
+    def row(quantity, marker, f_hz, b, v, unit, threshold, floor=None):  # numbers as Python floats
         f_hz, b, v = (None if x is None else float(x) for x in (f_hz, b, v))
         delta = None if b is None or v is None else v - b
-        resolved = None if delta is None else abs(delta) > threshold and (not floor or max(b, v) > LEVEL_FLOOR_DB)
+        resolved = None if delta is None else abs(delta) > threshold and (floor is None or max(b, v) > floor)
         return dict(zip(DELTA_COLUMNS, (quantity, marker, f_hz, b, v, unit, delta, unit, threshold, resolved)))
 
     paired = project["pair"] is not None
@@ -460,15 +463,16 @@ def si_deltas(project: dict, base: Reading, variant: Reading) -> list[dict]:
                         DIFF_OHM if paired else SE_OHM))
     for marker, k in (("marker", base.marker), ("f_max", -1)):  # the variant's grid is the base's, by the fingerprint
         rows.append(row(f"{s}21", marker, base.f[k], db(base.m[k, 1, 0]), db(variant.m[k, 1, 0]), "dB", IL_DB))
-    for quantity, i, j in ((f"{s}11_worst", 0, 0), *((("scd21_worst", 3, 0),) if paired else ())):
-        rows.append(row(quantity, "", None, db(base.m[:, i, j]).max(), db(variant.m[:, i, j]).max(), "dB", DB, True))
+    for quantity, i, j, floor in ((f"{s}11_worst", 0, 0, LEVEL_FLOOR_DB),
+                                  *((("scd21_worst", 3, 0, SCD21_FLOOR_DB),) if paired else ())):
+        rows.append(row(quantity, "", None, db(base.m[:, i, j]).max(), db(variant.m[:, i, j]).max(), "dB", DB, floor))
     if paired:
         b, v = (None if r.skew is None else (r.skew[1] - r.skew[0]) * 1e12 for r in (base, variant))
         rows.append(row("skew", "", None, b, v, "ps", SKEW_PS))
     victims = [line["chain"]["nets"][0] for line in project["lines"] if line["role"] == "victim"]
     for net, xb, xv in zip(victims, base.xt, variant.xt):  # xt: (NEXT dB, Hz, FEXT dB, Hz)
-        rows += [row("next", net, None, xb[0], xv[0], "dB", DB, True),
-                 row("fext", net, None, xb[2], xv[2], "dB", DB, True)]
+        rows += [row("next", net, None, xb[0], xv[0], "dB", DB, LEVEL_FLOOR_DB),
+                 row("fext", net, None, xb[2], xv[2], "dB", DB, LEVEL_FLOOR_DB)]
     return rows
 
 
@@ -477,9 +481,9 @@ def si_delta_lines(project: dict, rows: list[dict]) -> list[tuple[str, dict]]:
     I_SI_COMPARE_LEVEL per TDR row (level T_LOWEST, T_HIGHEST), I_SI_COMPARE_LEVEL_SHORT when its marker is "short",
     or one I_SI_COMPARE_NO_LEVELS for both when they hold none; I_SI_COMPARE_INSERTION per sdd21 row (mode Sdd21 or
     S21, f_mhz); I_SI_COMPARE_WORST (mode Sdd11, S11, Scd21); I_SI_COMPARE_SKEW, or I_SI_COMPARE_NO_SKEW;
-    I_SI_COMPARE_XT (kind NEXT or FEXT, net); then I_SI_COMPARE_THRESHOLDS {ohm, il_db, db, floor_db, ps} (:g, ohm by
-    the project's kind). Ω and dB to 2 decimals, an insertion's dB to 3, the skew's ps signed to 2, each delta
-    signed."""
+    I_SI_COMPARE_XT (kind NEXT or FEXT, net); then I_SI_COMPARE_THRESHOLDS {ohm, il_db, db, floor_db, scd21_floor_db,
+    ps} (:g, ohm by the project's kind). Ω and dB to 2 decimals, an insertion's dB to 3, the skew's ps signed to 2, each
+    delta signed."""
     def shown(r: dict, digits: int, sign: str = "") -> dict:  # the row's numbers and its verdict
         return {"base": f"{r['base']:{sign}.{digits}f}", "variant": f"{r['variant']:{sign}.{digits}f}",
                 "delta": f"{r['delta']:+.{digits}f}", "verdict": "T_RESOLVED" if r["resolved"] else "T_NOT_RESOLVED"}
@@ -504,4 +508,5 @@ def si_delta_lines(project: dict, rows: list[dict]) -> list[tuple[str, dict]]:
             lines.append(("I_SI_COMPARE_XT", {"kind": q.upper(), "net": r["marker"], **shown(r, 2)}))
     return lines + [("I_SI_COMPARE_THRESHOLDS", {"ohm": f"{DIFF_OHM if project['pair'] is not None else SE_OHM:g}",
                                                  "il_db": f"{IL_DB:g}", "db": f"{DB:g}",
-                                                 "floor_db": f"{LEVEL_FLOOR_DB:g}", "ps": f"{SKEW_PS:g}"})]
+                                                 "floor_db": f"{LEVEL_FLOOR_DB:g}",
+                                                 "scd21_floor_db": f"{SCD21_FLOOR_DB:g}", "ps": f"{SKEW_PS:g}"})]

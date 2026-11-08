@@ -28,14 +28,15 @@ from kicad_rf_studio.core.model.readers import read_stats
 from kicad_rf_studio.core.model.spec import debye_cells
 from kicad_rf_studio.core.post.checks import RECIP_LIMIT, SIGMA_LIMIT
 from kicad_rf_studio.core.post.si import Reading, read, si_deltas
-from kicad_rf_studio.core.project import load_project
+from kicad_rf_studio.core.project import load_project, save_project
 from kicad_rf_studio.stoprule import KEPT
 
-sys.path.append(str(p0.ROOT / "tests"))  # test_p4_fixtures: P4_NEW, each board's new arguments written once
-from test_p4_fixtures import P4_NEW  # noqa: E402
+sys.path.append(str(p0.ROOT / "tests"))  # test_p4_fixtures: P4_NEW, each board's new arguments written once, and LINES
+from test_p4_fixtures import LINES, P4_NEW  # noqa: E402
 
 N = 2  # mesh n, P4-B's checkpoint (B-6)
-# the SI rule, "l40" (new's λ/40), "l80" (λ/80) or "dfill" (max_cell_mm null), P4-C's checkpoint (C-2, C-3)
+# the SI rule, "l40" (LINES' λ/40, new's until Task 16), "l80" (λ/80) or "dfill" (max_cell_mm null), P4-C's checkpoint
+# (C-2, C-3)
 RULE = "dfill"
 DIELECTRIC = "lossless"  # P4-D's checkpoint (§5.3's rule)
 EDITS: dict[str, dict] = {}  # project edits by board, Task 3's recorded fit2d blocks (Stage 3 ruling 2's limit)
@@ -47,8 +48,9 @@ enter, records, run_steps = p3.enter, p3.records, p3.run_steps  # the gates fold
 
 def base(out: Path, board: str) -> Path:
     """The base project of the fixture `board` (its file's stem), made when missing by `new` with P4_NEW's arguments
-    on its copy in out/boards, copied once. RuntimeError naming new's exit code and last line on a non-zero exit.
-    Returns the project file."""
+    on its copy in out/boards, copied once, at LINES' λ/40 cell where LINES records one: new wrote it until Task 16 made
+    the d fill its default, so "l40" and "l80" stay the gates' own. RuntimeError naming new's exit code and last line
+    on a non-zero exit. Returns the project file."""
     kept, pj = out / "boards" / f"{board}.kicad_pcb", p3.project_path(out, board)
     if not kept.is_file():
         kept.parent.mkdir(parents=True, exist_ok=True)
@@ -57,6 +59,8 @@ def base(out: Path, board: str) -> Path:
         code, text = p0.cli("new", str(kept), *P4_NEW[board], "-o", str(pj.parent))
         if code:
             raise RuntimeError(f"p4: new exited {code}: {(text.strip().splitlines() or [''])[-1]}")
+        if board in LINES:
+            save_project(pj, p0.edit(load_project(pj), {"mesh.max_cell_mm": LINES[board][3]}))
     return pj
 
 
@@ -70,10 +74,13 @@ def name(board: str, n: int | None = None, rule: str | None = None, dielectric: 
 
 def settings(base: dict, n: int | None = None, rule: str | None = None, dielectric: str | None = None) -> dict:
     """The edits (p0.edit's dotted keys) that set the base project `base` to mesh n `n`, the rule `rule` and the
-    dielectric `dielectric`, each None for its checkpoint constant: "mesh.n"; "mesh.max_cell_mm", the base's (new's
-    λ/40) for "l40", half of it to 1e-6 mm for "l80", None for "dfill"; "dielectric"."""
+    dielectric `dielectric`, each None for its checkpoint constant: "mesh.n"; "mesh.max_cell_mm", the base's (LINES'
+    λ/40, base()) for "l40", half of it to 1e-6 mm for "l80", None for "dfill"; "dielectric"."""
+    # ponytail: a board LINES holds no cell for (the usb2_hs fixtures) reads None, the d fill, at "l40" and "l80" too;
+    # the gates ran those at the d fill only
     cell = base["mesh"]["max_cell_mm"]
-    return {"mesh.n": n or N, "mesh.max_cell_mm": {"l40": cell, "l80": round(cell / 2, 6), "dfill": None}[rule or RULE],
+    half = None if cell is None else round(cell / 2, 6)
+    return {"mesh.n": n or N, "mesh.max_cell_mm": {"l40": cell, "l80": half, "dfill": None}[rule or RULE],
             "dielectric": dielectric or DIELECTRIC}
 
 
