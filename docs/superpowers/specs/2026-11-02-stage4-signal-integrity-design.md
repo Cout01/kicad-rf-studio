@@ -6,7 +6,7 @@ Status: written on 2026-11-02 by the controller, right after Stage 3 closed (mai
 - r3, the engine;
 - r4, the references and the gates.
 
-An independent builder read the design before the commit. Its four questions are settled in §5.1 (the TDR's two rise times, the presets' band and their marker frequency), §5.3 (the Debye default's rule) and §5.3 again (SI's timestep floor).
+An independent builder read the design before the commit. Its four questions are settled in §5.1 (the TDR's two rise times, the presets' band and their marker frequency), §5.3 (the Debye default's rule) and §5.3 again (SI's timestep floor). Amended on 2026-11-08 by plan 4 with the gates' results (P4-B to P4-F, `docs/validation/2026-11-06-p4-b.md` to `2026-11-08-p4-f.md`).
 
 References: "Stage 1 §x" names a section of the Stage 1 spec (`docs/superpowers/specs/2026-10-16-stage1-validated-engine-design.md`), and so does every § in a list or heading that names that spec; "Stage 3 §x" names one of `docs/superpowers/specs/2026-10-29-stage3-antenna-placement-design.md`; a bare § names a section of this design.
 
@@ -230,7 +230,7 @@ Anti-goals:
   - 0.5 dB on Sdd11, Scd21, NEXT and FEXT where the level is above −50 dB ("not resolved" below it);
   - 1 ps on the skew.
 
-  Gate P4-E keeps each default whose measured noise proper lies under a third of it, and widens the others to three times that noise (as A-39 did).
+  Gate P4-E kept IL_DB (0.05 dB) and SKEW_PS (1.0 ps), and DB (0.5 dB) by ruling R-13 with Scd21's own floor (−37.7 dB), and set DIFF_OHM at three times the measured noise, 2.2 Ω, with SE_OHM its half (`docs/validation/2026-11-07-p4-e.md`, A-63); P4-F resolved its positive control at them.
 
 ### 5.9 Cost and the 2D table
 
