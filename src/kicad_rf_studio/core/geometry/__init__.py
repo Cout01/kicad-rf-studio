@@ -89,7 +89,8 @@ def build_geometry(board: Board, project: dict) -> Geometry:
     parts are measured. Its `layers`, the lines' copper layers (sections.line_layers), give the region and the
     protected set their substrate height, substrate_h(zs, layers): the thinnest dielectric next to them, which grows
     the ROI and sets the reach. `legs` are a pair's two measured lines' nets, and `stairs` the copper bounds of each of
-    the lines' tracks that the mesh staircases (sections.off_axis), its round ends included."""
+    the lines' tracks that the mesh staircases (sections.off_axis), its round ends included. W_STAIRCASED_SI, which
+    states gate P4-B's 45° pairs, names its staircased nets in W_STAIRCASED's place."""
     # imported here, so that importing a submodule still pulls in none of the others, nor core.mesh, built on them
     from kicad_rf_studio.core.geometry.copper import SIMPLIFY, connectivity, copper_pieces
     from kicad_rf_studio.core.geometry.lid import find_lid
@@ -132,6 +133,8 @@ def build_geometry(board: Board, project: dict) -> Geometry:
     if ant and ("W_STAIRCASED", {"net": feed}) not in stairs and staircased(
             a.polygon for a in board.areas if a.ref == project["antenna"]["ref"]):
         stairs.append(("W_STAIRCASED", {"net": feed}))
+    if si(project):  # gate P4-B's 45° pairs, in an SI project's own words (A-58)
+        stairs = [("W_STAIRCASED_SI", p) if c == "W_STAIRCASED" else (c, p) for c, p in stairs]
     lid, gate = find_lid(board, classes, replace(region, roi=region.crop) if ant else region, zs, project)
     width = min((t.width for t in board.tracks if t.net in chain.nets), default=math.inf)
     copper = [s.copper for s in zs if s.kind == "copper"]  # bottom to top

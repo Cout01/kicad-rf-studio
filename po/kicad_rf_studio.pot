@@ -86,6 +86,11 @@ msgstr ""
 msgid "Net {net} has copper that is not axis-aligned (45° segments or arcs), which the mesh staircases. P0-A measured a staircased 45° line 4.6 % off its axis-aligned twin in Z0 at mesh n 2, within the 5 % budget, so the run goes on, but its accuracy is not validated. For a validated result, route the measured nets with horizontal and vertical tracks. A finer mesh lowers the error: set \"mesh\": {{\"n\": 3}} in project.json."
 msgstr ""
 
+#. W_STAIRCASED_SI
+#, python-brace-format
+msgid "Net {net} has copper that is not axis-aligned (45° segments or arcs), which the mesh staircases. Gate P4-B measured a staircased 45° pair −2.27 % (90 Ω) and +5.35 % (100 Ω) off its axis-aligned twin at mesh n 2, the second past the 5 % budget, so the run goes on, but a 45° pair's accuracy is not validated, and whether such a pair is refused or run at a finer mesh is not decided yet. For a validated result, route the measured nets with horizontal and vertical tracks."
+msgstr ""
+
 #. W_LIDS_LEFT_OUT
 #, python-brace-format
 msgid "Shields {refs} on the antenna's board get no lid: one lid is modelled, over {ref}, the shield over most of the board."
@@ -711,7 +716,7 @@ msgstr ""
 
 #. I_SI_COST_SPEED
 #, python-brace-format
-msgid "This signal-integrity model's speed is taken as {ratio} × the calibration's per-job speed, the measured ratio of SI models to the calibration's uniform one, until a run with this many jobs at once measures it."
+msgid "This signal-integrity model's speed is taken as {ratio} × the calibration's per-job speed, the gates' measured ratio of SI models to the calibration's uniform one, until any run, of any kind, with this many jobs at once measures that level. With two jobs at once the gates measured SI models at 1.229 × it, so such a run is priced about 1.9 times long, on the safe side."
 msgstr ""
 
 #. I_SI_COST_RING
@@ -820,7 +825,7 @@ msgstr ""
 
 #. W_JOB_T_MAX
 #, python-brace-format
-msgid "{port}: reached T_max ({t_ns} ns) at a residual of {residual_db} dB. S is kept and flagged; raise t_max_s in project.json for a converged result."
+msgid "{port}: not converged where its S ends, at {t_ns} ns with a residual of {residual_db} dB: at T_max, or, for a signal-integrity job whose residual still fell fast enough there, past it, where that fall slowed or the ring rule's ceiling came. S is kept and flagged; raise t_max_s in project.json for a converged result."
 msgstr ""
 
 #. E_JOB_DIVERGED
@@ -900,7 +905,7 @@ msgstr ""
 
 #. E_S2P_BAND
 #, python-brace-format
-msgid "Part {ref}: {path} covers {f_lo}–{f_hi} MHz, not the simulated band {f1}–{f2} MHz, and it is never extrapolated. Give a file that covers the band, or, for a C, L or R, a value with `retune PROJECT {ref}=VALUE`."
+msgid "Part {ref}: {path} covers {f_lo}–{f_hi} MHz, not the {f1}–{f2} MHz its load is read over, and it is never extrapolated. Give a file that covers that band, or, for a C, L or R, a value with `retune PROJECT {ref}=VALUE`."
 msgstr ""
 
 #. W_S2P_FIXTURE
@@ -1391,6 +1396,10 @@ msgstr ""
 #. I_SI_LOSS_DIELECTRIC
 #, python-brace-format
 msgid "Not in S either, the dielectric being lossless: its loss over the same length, about {at_marker_db} dB at the marker and {at_f_max_db} dB at f_max."
+msgstr ""
+
+#. I_SI_NO_LOSS
+msgid "No loss estimate: the measured line has no straight, axis-aligned section whose 2D cut reads, so neither the copper's nor the dielectric's loss over its route is estimated, and its distances take the stack's largest εr."
 msgstr ""
 
 #. I_PLOT_SI_TITLE
@@ -1916,7 +1925,7 @@ msgstr ""
 
 #. G_S2P_BAND
 #, python-brace-format
-msgid "Part {ref}: {path} covers {f_lo}–{f_hi} MHz, not the simulated band {f1}–{f2} MHz, and it is never extrapolated. Choose a file that covers the band, or, for a C, L or R, clear the file to use its value."
+msgid "Part {ref}: {path} covers {f_lo}–{f_hi} MHz, not the {f1}–{f2} MHz its load is read over, and it is never extrapolated. Choose a file that covers that band, or, for a C, L or R, clear the file to use its value."
 msgstr ""
 
 #. G_S2P_FIXTURE

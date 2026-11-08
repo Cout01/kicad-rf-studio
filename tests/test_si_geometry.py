@@ -48,7 +48,8 @@ def test_an_si_projects_lines_are_one_chain_of_measured_copper(usb):  # design 5
     assert (geom.layers, geom.legs, geom.stairs) == (("F.Cu",), LEGS, ())
     assert geom.partners("MCU_D-") == LEGS[0] and geom.partners("AUX") == frozenset()
     assert geom.protected.nets == frozenset(c.nets)
-    assert not {"E_OPEN_IN_ROI", "E_SHORT_IN_ROI", "W_STAIRCASED", "W_OFF_TOP_LAYER"} & {code for code, _ in notes}
+    assert not {"E_OPEN_IN_ROI", "E_SHORT_IN_ROI", "W_STAIRCASED", "W_STAIRCASED_SI",
+                "W_OFF_TOP_LAYER"} & {code for code, _ in notes}
     # every line's copper and parts, J1's pins to U1's exposed pad and the test points, 6 × 0.2 mm past them
     assert geom.region.roi.bounds == pytest.approx((96.5875, -102.85, 132.05, -97.55), abs=1e-6)
 
@@ -107,8 +108,8 @@ def test_a_rod_past_the_extent_on_one_axis_keeps_its_lines(usb):  # Review Focus
 
 
 def test_staircased_copper_is_filled_at_d(tmp_path):  # design 5.3; plan 1's ponytail on 45° copper
-    _, _, geom, notes = pipeline.load(si_project(tmp_path, FIX / "usb2_hs_45.kicad_pcb"))
-    assert ("W_STAIRCASED", {"net": "USB_D+"}) in notes and len(geom.stairs) == 4  # two 45° segments a line
+    _, _, geom, notes = pipeline.load(si_project(tmp_path, FIX / "usb2_hs_45.kicad_pcb"))  # two 45° segments a line
+    assert ("W_STAIRCASED_SI", {"net": "USB_D+"}) in notes and len(geom.stairs) == 4 and "W_STAIRCASED" not in dict(notes)
     m = build_mesh(geom, geom.protected, 2, max_cell=CELL)
     for x0, y0, x1, y1 in geom.stairs:  # each segment's copper, its round ends too
         for axis, lines, lo, hi in (("x", m.x, x0, x1), ("y", m.y, y0, y1)):

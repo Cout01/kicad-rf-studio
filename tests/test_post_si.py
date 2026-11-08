@@ -249,7 +249,7 @@ def test_a_route_with_no_level_says_why():  # design 5.6; Review Focus 2, 5
     cut = read(np.zeros((len(F), 2, 2), complex), F, SE, 4.0)  # nothing passes the line
     assert ("I_SI_TDR_NO_ARRIVAL", {"floor": "0.001"}) in si_lines(SE, cut, ROUTE)
     none = si_lines(SE, short, {**ROUTE, "loss_db": None})  # no section solved: no loss estimate
-    assert none[-1] == ("W_NO_SECTIONS", {}) and "I_SI_LOSS_CONDUCTOR" not in dict(none)
+    assert none[-1] == ("I_SI_NO_LOSS", {}) and "I_SI_LOSS_CONDUCTOR" not in dict(none)
 
 
 def test_the_limits_follow_the_dielectric():  # design 5.6

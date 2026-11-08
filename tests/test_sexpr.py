@@ -15,7 +15,7 @@ import pytest
 
 from kicad_rf_studio.core import messages
 from kicad_rf_studio.core.kicad.sexpr import Quoted, atom, child, children, num, parse, repair
-from kicad_rf_studio.core.messages import CATALOG, KrsError, reason, render
+from kicad_rf_studio.core.messages import CATALOG, KrsError, english, reason, render
 
 
 def test_parse_nested_quoted_and_escaped():
@@ -330,3 +330,12 @@ def test_every_translation_keeps_the_identifiers_numbers_filters_and_ellipses():
             if any(k not in s for k in KEEP.findall(m)) or m.endswith("…") != s.endswith("…")] == []
     filters = [CATALOG[code] for code in ("G_OPEN_FILTER", "G_BOARD_FILTER", "G_S2P_FILTER") if CATALOG[code] in pt]
     assert [m for m in filters if not pt[m].endswith(m.split()[-1])] == []  # Qt reads the filter at the end
+
+
+def test_plan_5s_words_say_where_s_ends_what_refreshes_the_si_speed_and_where_a_load_is_read():  # rulings 2, 4, 13
+    assert english("W_JOB_T_MAX", port="P1", t_ns="22.48", residual_db="-55.0").startswith(
+        "P1: not converged where its S ends, at 22.48 ns with a residual of -55.0 dB: at T_max, or,")
+    assert "any run, of any kind, with this many jobs at once" in CATALOG["I_SI_COST_SPEED"]
+    assert "1.9 times" in CATALOG["I_SI_COST_SPEED"]  # a pool-2 SI run, priced high (docs/validation/2026-11-08-p4-refit.md)
+    assert all("MHz its load is read over" in CATALOG[code] for code in ("E_S2P_BAND", "G_S2P_BAND"))
+    assert "−2.27 %" in CATALOG["W_STAIRCASED_SI"] and "+5.35 %" in CATALOG["W_STAIRCASED_SI"]  # gate P4-B

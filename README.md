@@ -143,7 +143,7 @@ The retune stays labelled relative / what-if until P0-C passes: `run` and `retun
 
 ```
 P1: converged at 30.18 ns (residual -71.4 dB).
-P2: reached T_max (39.99 ns) at a residual of -69.7 dB. S is kept and flagged; raise t_max_s in project.json for a converged result.
+P2: not converged where its S ends, at 39.99 ns with a residual of -69.7 dB: at T_max, or, for a signal-integrity job whose residual still fell fast enough there, past it, where that fall slowed or the ring rule's ceiling came. S is kept and flagged; raise t_max_s in project.json for a converged result.
 ```
 
 P0-B's consistency criterion, `verify` against the co-simulation, failed (|ΔS21| at f0 0.1019 dB against 0.1 dB, max |ΔS| 0.0926 against 0.03), and P0-B was decided fail at the ceiling. Read P0-B's report before you take `verify`'s comparison as agreement.

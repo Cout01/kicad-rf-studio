@@ -247,7 +247,7 @@ def si_lines(project: dict, r: Reading, route: dict) -> list[tuple[str, dict]]:
     t_far, else I_SI_TDR_NO_ARRIVAL {floor: ARRIVAL_FLOOR}; I_SI_SKEW for a pair with both arrivals; I_SI_CROSSTALK per
     victim (project's victim lines in order, its first net, start and end; source T_PAIR_DRIVE or T_LINE_DRIVE);
     I_SI_LOSS_CONDUCTOR at the project's marker_hz (the formula's own frequency, not the grid point's), then
-    I_SI_LOSS_DIELECTRIC with a lossless dielectric; W_NO_SECTIONS in their place when the route has no loss
+    I_SI_LOSS_DIELECTRIC with a lossless dielectric; I_SI_NO_LOSS in their place when the route has no loss
     estimate."""
     paired, target = project["pair"] is not None, project["target_ohm"]
     marker_mhz, f_max_ghz = f"{r.f[r.marker] / 1e6:g}", f"{r.f[-1] / 1e9:g}"
@@ -294,7 +294,7 @@ def si_lines(project: dict, r: Reading, route: dict) -> list[tuple[str, dict]]:
                                   "end": v["end"], "fext_db": f"{fext_db:.2f}", "fext_mhz": f"{fext_hz / 1e6:g}"})
               for v, (next_db, next_hz, fext_db, fext_hz) in zip(victims, r.xt)]
     if route["loss_db"] is None:  # no section solved: no loss estimate
-        return lines + [("W_NO_SECTIONS", {})]
+        return lines + [("I_SI_NO_LOSS", {})]
     conductor, dielectric = route["loss_db"]["conductor"], route["loss_db"]["dielectric"]
     lines.append(("I_SI_LOSS_CONDUCTOR", {"length_mm": f"{route['length_mm']:.1f}",
                                           "marker_mhz": f"{project['marker_hz'] / 1e6:g}",

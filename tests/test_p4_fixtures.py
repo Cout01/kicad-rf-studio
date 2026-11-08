@@ -93,7 +93,7 @@ def test_the_ports_take_the_kinds_the_gates_compare(build):  # B-1, D-1
             "si_line100": {"plane"}, "p4b_ms90_vic": {"plane"}}
     for board, rules in want.items():
         assert {q["rule"] for q in build(board)[0]["ports"]} == rules, board
-    assert [c for c, _ in build("p4b_ms90_45")[3]].count("W_STAIRCASED") == 2  # each leg's staircased diagonal
+    assert [c for c, _ in build("p4b_ms90_45")[3]].count("W_STAIRCASED_SI") == 2  # each leg's staircased diagonal
 
 
 def test_p4es_variants_move_one_thing(build):  # E-1: the shift, the gap ± d, the null edit
