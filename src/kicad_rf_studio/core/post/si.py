@@ -350,7 +350,12 @@ def tdr_csv(r: Reading) -> bytes:
                                               r.tdt_link[k]]))
 
 
-def draw_si(fig, curves: list[tuple[str, Reading]], project: dict, title: str, label: str | None = None) -> list:
+# |S| curves' mixed-mode entries by their labels: draw_si draws them, retrace_si finds them
+SYMBOLS = {"Sdd21": (1, 0), "Sdd11": (0, 0), "Scc21": (3, 2), "Scd21": (3, 0), "S21": (1, 0), "S11": (0, 0)}
+
+
+def draw_si(fig, curves: list[tuple[str, Reading]], project: dict, title: str, label: str | None = None,
+            gui: bool = False) -> list:
     """si_summary.png's and compare.png's plots (design 5.6, 5.8) on the matplotlib Figure `fig`, each curve
     (name, Reading) on every panel: the TDR, the localising rise solid and the link's dashed, against the distance
     along the route on _span, with the round-trip time on a secondary axis on top (distance_mm at the first curve's
@@ -361,13 +366,16 @@ def draw_si(fig, curves: list[tuple[str, Reading]], project: dict, title: str, l
     victim's NEXT and FEXT, named by the project's victim lines. A TDR curve is labelled by its rise time and its
     resolution length ("125 ps, 9.4 mm"), an |S| curve by its symbol, after the curve's name when there are two
     curves. Under `title`, then I_SI_RELATIVE, then `label` when given; the rendered si_limits, one a line, at the foot
-    (fig.supxlabel, as draw_antenna). Returns the axes, the TDR's first."""
+    (fig.supxlabel, as draw_antenna). With `gui` (the window's Results canvas, plan 5) there is no foot, the limits
+    being the window's lines, and an |S| panel whose top lies above −60 dB has its bottom at −100 dB at the lowest,
+    where an exact zero (FLOOR_DB) would stretch it to −300 dB and squeeze every curve a retune moves at those limits (a
+    panel with every curve under −100 dB keeps its autoscale, never inverted); si_png never passes it, so
+    si_summary.png and compare.png keep their bytes. Returns the axes, the TDR's first."""
     first, two = curves[0][1], len(curves) > 1
     paired, target, tolerance = project["pair"] is not None, project["target_ohm"], project["tolerance"]
     axes = list(fig.subplots(1, 3 if first.xt else 2))
     ax_tdr, ax_s = axes[:2]
-    symbols = ((("Sdd21", 1, 0), ("Sdd11", 0, 0), ("Scc21", 3, 2), ("Scd21", 3, 0)) if paired
-               else (("S21", 1, 0), ("S11", 0, 0)))
+    symbols = ("Sdd21", "Sdd11", "Scc21", "Scd21") if paired else ("S21", "S11")
     victims = [line["chain"]["nets"][0] for line in project["lines"] if line["role"] == "victim"]
     for name, r in curves:
         prefix, k, ghz = f"{name} " if two else "", _span(r), r.f / 1e9
@@ -378,7 +386,8 @@ def draw_si(fig, curves: list[tuple[str, Reading]], project: dict, title: str, l
             color = trace.get_color()  # the link's in the localising curve's colour
         for t, z, short in r.levels or ():
             ax_tdr.plot(distance_mm(t, r.eeff), z, "x" if short else "o", color=color)
-        for symbol, i, j in symbols:
+        for symbol in symbols:
+            i, j = SYMBOLS[symbol]
             ax_s.plot(ghz, db(r.m[:, i, j]), label=prefix + symbol)
         if first.xt:
             for net, v in zip(victims, range(4 if paired else 2, r.m.shape[1], 2)):
@@ -400,10 +409,46 @@ def draw_si(fig, curves: list[tuple[str, Reading]], project: dict, title: str, l
         if ax is not ax_tdr:
             ax.set(xlabel=render("I_PLOT_FREQUENCY"), ylabel="|S| (dB)")
         ax.legend()
+    if gui:
+        # ponytail: −100 dB at the lowest, and 40 dB under the top at least, so a panel whose curves all lie under
+        # −100 dB (an exact-zero victim, a far one) keeps its autoscale; a floor per panel if users ask
+        for ax in axes[1:]:
+            lo, hi = ax.get_ylim()
+            ax.set_ylim(max(lo, min(-100.0, hi - 40.0)), hi)
     fig.suptitle(title + "\n" + render("I_SI_RELATIVE") + ("\n" + label if label else ""), wrap=True)
-    fig.supxlabel("\n".join(render(code) for code in si_limits(project)), x=0.01, ha="left", fontsize="small",
-                  wrap=True)
+    if not gui:
+        fig.supxlabel("\n".join(render(code) for code in si_limits(project)), x=0.01, ha="left", fontsize="small",
+                      wrap=True)
     return axes
+
+
+def retrace_si(axes: list, r: Reading) -> list | None:
+    """Moves the curves that draw_si drew of one reading on `axes` (its return) to the reading `r`, at the limits drawn
+    (the GUI's instant retune, Stage 4 design 5.10): both TDRs on _span(r), each level's marker and its mark, each |S|
+    curve by its label (SYMBOLS) and each victim's NEXT and FEXT. Returns those Line2D, or None when `r` holds another
+    count of levels than drawn, which a full draw then shows."""
+    # ponytail: a level that appears or goes (an arrival found or lost) costs one full draw; a fixed pair of marker
+    # lines if users meet it often
+    traces, marks = axes[0].lines[:2], axes[0].lines[2:]  # the localising TDR, the link's, then one marker a level
+    curves = axes[1].lines[:-1]  # the marker frequency's line last
+    xt = axes[2].lines if len(axes) > 2 else []  # NEXT then FEXT, a victim at a time
+    if len(marks) != len(r.levels or ()):
+        return None
+    k = _span(r)
+    d = distance_mm(r.t[k], r.eeff)
+    for line, z in zip(traces, (r.z[k], r.z_link[k])):
+        line.set_data(d, z)
+    for line, (t, z, short) in zip(marks, r.levels or ()):
+        line.set_data([distance_mm(t, r.eeff)], [z])
+        line.set_marker("x" if short else "o")
+    for line in curves:
+        i, j = SYMBOLS[line.get_label()]
+        line.set_ydata(db(r.m[:, i, j]))
+    paired = "Sdd21" in [line.get_label() for line in curves]
+    for v, near, far in zip(range(4 if paired else 2, r.m.shape[1], 2), xt[::2], xt[1::2]):
+        near.set_ydata(db(r.m[:, v, 0]))
+        far.set_ydata(db(r.m[:, v + 1, 0]))
+    return [*traces, *marks, *curves, *xt]
 
 
 def si_png(curves: list[tuple[str, Reading]], project: dict, title: str, label: str | None = None) -> bytes:

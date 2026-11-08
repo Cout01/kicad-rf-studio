@@ -13,8 +13,9 @@ from scipy.constants import c as C0
 from kicad_rf_studio.core.messages import render
 from kicad_rf_studio.core.post.si import (ARRIVAL_FLOOR, COPPER_RHO, FLOOR_DB, LEAD, LOCAL_RISE, N_TDR, SE_OHM,
                                           SI_OUTPUTS, TDR_COLUMNS, Reading, arrival, compare_verify, db, distance_mm,
-                                          draw_si, hammerstad, levels, mixed_mode, read, rise_filter, si_csv,
-                                          si_limits, si_lines, si_png, step_response, tdr, tdr_csv, uniform_grid)
+                                          draw_si, hammerstad, levels, mixed_mode, read, retrace_si, rise_filter,
+                                          si_csv, si_limits, si_lines, si_png, step_response, tdr, tdr_csv,
+                                          uniform_grid)
 from p4a import cohn, even_odd_s
 from test_project import si_dict
 
@@ -292,6 +293,43 @@ def test_the_summary_png_holds_the_label_the_limits_and_marks_a_short_feature():
     two = draw_si(Figure(), [("a", pair), ("b", pair)], P100, "T")
     assert len(two) == 3 and [line.get_marker() for line in two[0].lines].count("o") == 4  # every curve's levels
     assert si_png([("proj", n)], SE, "Title")[:8] == b"\x89PNG\r\n\x1a\n"
+
+
+def test_draw_si_draws_each_s_curve_by_its_symbol_as_before():  # ruling 18: a guard for Task 1's SYMBOLS
+    for r, project, want in ((read(pair6(0.05, 0.02), F, P100, 3.0), P100,
+                              (("Sdd21", 1, 0), ("Sdd11", 0, 0), ("Scc21", 3, 2), ("Scd21", 3, 0))),
+                             (read(line_s(ROUTE1, F), F, SE, 4.0), SE, (("S21", 1, 0), ("S11", 0, 0)))):
+        curves = draw_si(Figure(), [("p", r)], project, "T")[1].lines[:-1]  # the marker's line last
+        assert [c.get_label() for c in curves] == [s for s, _, _ in want]
+        assert all(np.array_equal(c.get_ydata(), db(r.m[:, i, j])) for c, (_, i, j) in zip(curves, want))
+
+
+def test_the_windows_si_figure_has_no_foot_no_s_under_minus_100_db_and_moves_in_place():  # ruling 1; RF 1
+    pair = read(pair6(0.05, 0.02), F, P100, 3.0)  # an ideal pair: its Scd21 an exact zero, FLOOR_DB
+    assert draw_si(Figure(), [("p", pair)], P100, "T")[1].get_ylim()[0] < -100  # si_summary.png's, as before
+    fig = Figure()
+    axes = draw_si(fig, [("p", pair)], P100, "T", "label", gui=True)
+    assert not [t for t in fig.texts if render("I_LIMIT_SI_CROP") in t.get_text()]  # the limits go to the lines
+    assert axes[1].get_ylim()[0] == -100.0 and axes[2].get_ylim()[0] >= -100.0
+    quiet = draw_si(Figure(), [("p", read(pair6(), F, P100, 3.0))], P100, "T", gui=True)  # exact-zero crosstalk
+    assert quiet[2].get_ylim()[0] < -100 and not any(ax.yaxis_inverted() for ax in [*axes, *quiet])  # autoscaled
+    other = read(pair6(0.1, 0.05, 0.2e-9 + 2e-12), F, P100, 3.0)  # NEXT, FEXT and the N leg moved
+    limits = [(ax.get_xlim(), ax.get_ylim()) for ax in axes]
+    moved = retrace_si(axes, other)
+    assert moved == [*axes[0].lines, *axes[1].lines[:-1], *axes[2].lines]  # the marker's line stays where it is
+    assert [(ax.get_xlim(), ax.get_ylim()) for ax in axes] == limits  # at the limits drawn
+    k = (other.t >= -2 * other.rise[0]) & (other.t <= (other.t_far or 0) + 2 * other.rise[1])
+    assert np.array_equal(axes[0].lines[0].get_ydata(), other.z[k])
+    assert np.array_equal(axes[0].lines[1].get_ydata(), other.z_link[k])
+    assert [line.get_marker() for line in axes[0].lines[2:]] == ["x" if s else "o" for _, _, s in other.levels]
+    assert np.array_equal(axes[1].lines[3].get_ydata(), db(other.m[:, 3, 0]))  # Scd21
+    assert np.array_equal(axes[2].lines[1].get_ydata(), db(other.m[:, 5, 0]))  # FEXT into AUX
+    cut = read(np.zeros((len(F), 6, 6), complex), F, P100, 3.0)  # nothing passes the line: no level
+    assert cut.levels is None and retrace_si(axes, cut) is None  # another count of levels: the window draws in full
+    net = draw_si(Figure(), [("n", read(line_s(ROUTE1, F), F, SE, 4.0))], SE, "T", gui=True)  # S21 and S11, no xt
+    m = read(line_s([(50.0, 4.0, 15.0), (61.0, 4.0, 30.0), *ROUTE1[2:]], F), F, SE, 4.0)  # its 60 Ω at 61 Ω
+    assert len(net) == 2 and retrace_si(net, m) == [*net[0].lines, *net[1].lines[:-1]]
+    assert np.array_equal(net[1].lines[0].get_ydata(), db(m.m[:, 1, 0]))  # S21, found by its label
 
 
 def test_verifys_comparison_keeps_the_short_mark():  # design 5.7; anti-goal 2; Review Focus 3

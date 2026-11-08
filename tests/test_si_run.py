@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 import json
 import warnings
+from dataclasses import replace
 from pathlib import Path
 
 import numpy as np
@@ -96,6 +97,22 @@ def test_an_si_run_writes_its_results(tmp_path, calibrated, monkeypatch):  # des
     assert ("I_SI_TDR_NO_ARRIVAL", {"floor": "0.001"}) in block  # the fake's star passes no differential step
     assert np.abs(read_s(pj.parent / "results" / "chain.s6p") - res.chain).max() <= 1e-12
     assert layout(p, p["results"], np.array([0.0, 2e8, 2.5e8, 1e9])).markers == [2]  # the nearest point, on any grid
+
+
+def test_the_si_view_is_what_run_prints_and_write_outputs_reports(tmp_path, calibrated, monkeypatch):  # RF 1, ruling 1
+    monkeypatch.setenv("KRS_FAKE", "network")
+    pj = si_project(tmp_path / "p")
+    assert pipeline.run(pj) == 0
+    p = load_project(pj)
+    res = pipeline.chain_results(pj, p, errors_as_lines=True)
+    reading, lines = pipeline.si_view(p, res)
+    assert lines == result_lines(p["results"]["run_dir"])[1:len(lines) + 1]  # run printed them after I_RESULTS
+    assert np.array_equal(reading.m, read(res.chain, res.lay.f, p, p["results"]["route"]["eeff"]).m)
+    outputs = pipeline.write_outputs(pj, p, "x", errors_as_lines=True)
+    assert outputs[:len(lines)] == lines
+    assert [c for c, _ in outputs[len(lines):]] == ["I_WHAT_IF", "I_OUTPUTS", *si_limits(p)]
+    assert pipeline.si_view(p, replace(res, chain=None)) == (None, res.lines)  # a part's refusal: no reading
+    assert res.reading is None  # chain_results leaves it to si_view's callers
 
 
 def test_a_nets_run_reads_its_levels_and_holds_each_load_at_dc(tmp_path, calibrated, monkeypatch):  # RF 1, 5
