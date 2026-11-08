@@ -1111,15 +1111,18 @@ def fingerprint(project: dict) -> dict:
     project.json sets it, so that the records made before it still compare; and the versions of this app and of
     openEMS as a worker sees it (runs.openems_versions: metadata in an isolated subprocess, nothing imported). An SI
     project's (Stage 4 design 5.8): its preset, region, interface, f_max_hz, rise_s, marker_hz, target_ohm, stackup,
-    dielectric, lid and lid_height_mm, its mesh without max_cell_mm, "ends" (its external ports' signal pads, in order,
-    so two projects of other lines or victims never compare) and the versions; max_cell_mm, t_max_s and window_s, the
-    stop window, stay out, as they follow the lines' 2D εeff and length, which a variant may change."""
+    dielectric, lid and lid_height_mm, its mesh without max_cell_mm's value but with "d_fill", whether it is null (the d
+    fill, gate P4-C), so a d-fill run never compares with a set cell's; "ends" (its external ports' signal pads, in
+    order, so two projects of other lines or victims never compare) and the versions; t_max_s and window_s, the stop
+    window, stay out, as they follow the lines' 2D εeff and length, which a variant may change."""
     if si(project):
-        # ponytail: max_cell_mm out, so a hand-edited coarser cell compares too; a recorded factor if users edit it
+        # ponytail: max_cell_mm's value out, so a hand-edited coarser cell compares too; whether it is null in, as the
+        # d fill and a set cell differ by more than the thresholds (gate P4-C); a recorded factor if users edit it
         keys = ("preset", "region", "interface", "f_max_hz", "rise_s", "marker_hz", "target_ohm", "stackup",
                 "dielectric", "lid", "lid_height_mm")
         return {**{key: project[key] for key in keys},
-                "mesh": {key: v for key, v in project["mesh"].items() if key != "max_cell_mm"},
+                "mesh": {**{key: v for key, v in project["mesh"].items() if key != "max_cell_mm"},
+                         "d_fill": project["mesh"].get("max_cell_mm") is None},
                 "ends": [q["signal"] for q in project["ports"]], "app": __version__,
                 "openems": runs.openems_versions()[0]}
     keys = ("preset", "mesh", "region", "band", "f0_hz", "t_max_s", "air_gap_mm", "boundary", "far_field", "stackup",

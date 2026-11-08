@@ -163,7 +163,8 @@ def test_an_si_run_records_its_route_and_fingerprint_before_its_jobs(tmp_path, c
     assert d["results"]["route"] == pipeline.si_route(board, geom, project)
     keys = ("preset", "region", "interface", "f_max_hz", "rise_s", "marker_hz", "target_ohm", "stackup", "dielectric",
             "lid", "lid_height_mm")  # design 5.8's fields; t_max_s, window_s, tolerance and gates stay out
-    assert d["results"]["fingerprint"] == {**{key: d[key] for key in keys}, "mesh": {"n": 2, "reach_h": 6.0},
+    assert d["results"]["fingerprint"] == {**{key: d[key] for key in keys},
+                                           "mesh": {"n": 2, "reach_h": 6.0, "d_fill": True},  # new's null, gate P4-C
                                            "ends": ["U1.11", "U2.6"], "app": __version__,
                                            "openems": "0.37.0"}  # fake_cli's openems_versions
     calls = []
@@ -181,8 +182,17 @@ def test_an_si_run_records_its_route_and_fingerprint_before_its_jobs(tmp_path, c
 def test_an_si_fingerprint_leaves_out_what_the_lines_set(tmp_path, fake):  # design 5.8; Review Focus 4
     a, b = (load_project(si_project(tmp_path / n, FIX / f"{n}.kicad_pcb")) for n in ("usb2_hs", "usb2_hs_45"))
     assert a["mesh"]["max_cell_mm"] is b["mesh"]["max_cell_mm"] is None  # the d fill on both (gate P4-C)
-    b["mesh"]["max_cell_mm"] = 0.414  # a hand-set SI rule's cell
     assert pipeline.fingerprint(a) == pipeline.fingerprint(b)  # a 45° bend is a variant compare takes
+
+
+def test_an_si_fingerprint_holds_whether_the_mesh_is_the_d_fill(tmp_path, fake):  # design 5.8; gate P4-C
+    p, prints = load_project(si_project(tmp_path / "p")), []
+    for cell in (None, 0.414, 0.3):  # the d fill, then two hand-set cells
+        p["mesh"]["max_cell_mm"] = cell
+        prints.append(pipeline.fingerprint(p))
+    d_fill, set_cell, finer = prints
+    assert [key for key in d_fill if d_fill[key] != set_cell[key]] == ["mesh"]  # never compared with a set cell's run
+    assert set_cell == finer  # the cell's value stays out
 
 
 def test_an_si_retune_closes_the_part_ports_at_their_new_values(tmp_path, calibrated, monkeypatch):  # design 5.7
