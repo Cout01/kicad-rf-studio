@@ -1,8 +1,9 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """P4-F, the positive control (Stage 4 design 5.11; plan 4 rulings F-1 to F-3). It runs usb2_hs, its neck-down and its
 plane gap at new's values and P4-B to P4-D's settings, under the ring rule, compared through their runs. The rows each
-case is built to move are judged against `tests/fixtures/p4f/criteria.json` with P4-E's thresholds, and p4f.json and
-p4f.md are written in <out>/p4f. Run: `python tools/p4f.py --out DIR [--steps usb2_hs,usb2_hs_neck,usb2_hs_gap]`."""
+case is built to move are judged against `tests/fixtures/p4f/criteria.json` with P4-E's thresholds (DB and the gap's
+Scd21 floor by plan 4 ruling R-13), and p4f.json and p4f.md are written in <out>/p4f.
+Run: `python tools/p4f.py --out DIR [--steps usb2_hs,usb2_hs_neck,usb2_hs_gap]`."""
 import argparse
 import json
 import sys
@@ -35,7 +36,7 @@ def step(out: Path, name: str) -> dict:
 def measure(out: Path) -> dict:
     """P4-F's measurements in <out>, in this process:
     - "thresholds": P4-E's, <out>/p4e/p4e.json's, with "floor_db" from p4e.CRITERIA (SystemExit "run P4-E's report
-      first" without it);
+      first" without it), and ruling R-13's (CRITERIA's "r13"): its "DB" in place of P4-E's, and "scd21_floor_db";
     - "runs": p4.measure of each recorded case by its name, with "verdicts", its jobs' in port order, "t_max_s", its
       project's T_max, and "ceiling_s", the ring rule's RING_CEILING × T_max;
     - "neck" and "gap": p4.deltas of the base's run against the neck's and the gap's, each None while either reading
@@ -48,7 +49,8 @@ def measure(out: Path) -> dict:
     file = out / "p4e" / "p4e.json"
     if not file.is_file():
         raise SystemExit("run P4-E's report first")
-    thresholds = {**json.loads(file.read_text(encoding="utf-8"))["thresholds"], "floor_db": p4e.CRITERIA["floor_db"]}
+    thresholds = {**json.loads(file.read_text(encoding="utf-8"))["thresholds"], "floor_db": p4e.CRITERIA["floor_db"],
+                  **CRITERIA["r13"]}
     runs = {}
     for case in CASES:
         if (x := p4.measure(out, p4.name(case))) is not None:
@@ -74,12 +76,12 @@ def measure(out: Path) -> dict:
 
 
 def decide(m: dict, t: dict) -> dict:
-    """P4-F's checks (design 5.11; F-2) on the measures `m` (measure's shape) at P4-E's thresholds `t` ("DIFF_OHM",
-    "DB", "floor_db"), a missing row or delta a fail:
+    """P4-F's checks (design 5.11; F-2) on the measures `m` (measure's shape) at measure's thresholds `t` ("DIFF_OHM",
+    "DB", "scd21_floor_db"), a missing row or delta a fail:
     - "neck": the neck pair's tdr_highest row (its "quantity" alone without one) with its "limit", neck_factor ×
       DIFF_OHM, and "pass", its delta at least that;
-    - "gap": the gap pair's scd21_worst row (likewise) with its "limit", DB, its "floor_db" and "pass", resolved:
-      |delta| above DB and the higher of its two levels above floor_db;
+    - "gap": the gap pair's scd21_worst row (likewise) with its "limit", DB, its "floor_db", scd21_floor_db, and
+      "pass", resolved: |delta| above DB and the higher of its two levels above scd21_floor_db;
     - "verdict": {"value": "fail" on a fail, else "pass"; "fails": "neck: tdr_highest", "gap: scd21_worst" and
       "<case>: valid"; "owner": "neck: short mark" when the neck run's own highest level is unmarked (neck_short
       False), the short-feature rule's true positive missed, an owner item}."""
@@ -89,11 +91,11 @@ def decide(m: dict, t: dict) -> dict:
     neck, gap, limit = row("neck"), row("gap"), CRITERIA["neck_factor"] * t["DIFF_OHM"]
     passed = {"neck": neck.get("delta") is not None and neck["delta"] >= limit,
               "gap": gap.get("delta") is not None and abs(gap["delta"]) > t["DB"]
-              and max(gap["base"], gap["variant"]) > t["floor_db"]}
+              and max(gap["base"], gap["variant"]) > t["scd21_floor_db"]}
     fails = [f"{case}: {JUDGED[case]}" for case, ok in passed.items() if not ok]
     fails += [f"{case}: valid" for case in m["invalid"]]
     return {"neck": {"quantity": JUDGED["neck"], **neck, "limit": limit, "pass": passed["neck"]},
-            "gap": {"quantity": JUDGED["gap"], **gap, "limit": t["DB"], "floor_db": t["floor_db"],
+            "gap": {"quantity": JUDGED["gap"], **gap, "limit": t["DB"], "floor_db": t["scd21_floor_db"],
                     "pass": passed["gap"]},
             "verdict": {"value": "fail" if fails else "pass", "fails": fails,
                         "owner": ["neck: short mark"] if m["neck_short"] is False else []}}
@@ -106,7 +108,7 @@ def tables(result: dict) -> str:
     predicted and wall times, valid; then the references' soft notes beside what was measured."""
     c, t, v, refs, rows = (result[k] for k in ("criteria", "thresholds", "verdict", "references", "rows"))
     items = [*({"item": k, "value": result[k]} for k in ("neck_short", "base_short")),
-             *({"item": k, "value": t[k]} for k in ("DIFF_OHM", "DB", "floor_db")),
+             *({"item": k, "value": t[k]} for k in ("DIFF_OHM", "DB", "floor_db", "scd21_floor_db")),
              {"item": "verdict", "value": v["value"]}, {"item": "fails", "value": ", ".join(v["fails"]) or "none"},
              {"item": "owner", "value": ", ".join(v["owner"]) or "none"}]
 
@@ -129,8 +131,9 @@ def tables(result: dict) -> str:
         f"Each case's run against usb2_hs's at mesh n {result['n_now']}, the rule {result['rule_now']} and "
         f"{result['dielectric_now']}, compared through their runs' chains (no retune or verify). neck: the highest TDR "
         f"level's delta at least {c['neck_factor']:g} × DIFF_OHM; gap: the worst Scd21's change resolved, |delta| "
-        "above DB and the higher of its two levels above floor_db; each run valid. DIFF_OHM, DB and floor_db are "
-        "P4-E's. The neck run's own highest level should be marked short, the short-feature rule's true positive (the "
+        "above DB and the higher of its two levels above Scd21's floor (scd21_floor_db); each run valid. DIFF_OHM and "
+        "floor_db are P4-E's; DB and scd21_floor_db are ruling R-13's (P4-E's computed DB, 85.7 dB, is not taken). "
+        "The neck run's own highest level should be marked short, the short-feature rule's true positive (the "
         "delta row's mark carries the base's levels, short already); a miss is an owner item.",
         p0.table([{"case": case, **result[case]} for case in JUDGED],
                  ["case", "quantity", "marker", "base", "variant", "delta", "limit", "pass"]),
