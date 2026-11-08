@@ -1,8 +1,8 @@
 {
   "gate": "P4-B",
   "versions": {
-    "commit": "a76c979",
-    "code": "693592c3cd14433aee691dc80b4fa3dbb7bb26e5",
+    "commit": "43ec752",
+    "code": "e5469200427c76d82e9d2893363696ead16cf351",
     "python": "3.14.2",
     "openems": "0.37.0",
     "csxcad": "0.7.0",
@@ -189,8 +189,9 @@
       "16": 353.18075294829146
     },
     "levels": {
-      "4": 135.3892015926453,
-      "1": 552.2402669961639
+      "4": 124.93866541272695,
+      "1": 552.2402669961639,
+      "2": 264.66020534485403
     }
   },
   "rows": {
@@ -2028,7 +2029,7 @@
     "next_db": -21.37020153376948,
     "fext_db": -18.982943213320244
   },
-  "bends_n3": "pending",
+  "bends_n3": "declined",
   "checks": [
     {
       "step": "p4b_ms90-n2",
@@ -2173,17 +2174,17 @@
   ],
   "decisions": {
     "mesh_n": 2,
-    "staircase": null,
+    "staircase": "owner",
     "cut_victim": "refusal kept"
   },
   "verdict": {
-    "value": "incomplete",
+    "value": "fallback",
     "fails": []
   },
   "machine": {
     "steps": 10,
     "machine_hours": 6.429503111916711,
     "loaded": [],
-    "elapsed_days": 15
+    "elapsed_days": 17
   }
 }
