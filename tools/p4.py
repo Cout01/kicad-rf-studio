@@ -40,7 +40,7 @@ RULE = "dfill"
 DIELECTRIC = "lossless"  # P4-D's checkpoint (§5.3's rule)
 EDITS: dict[str, dict] = {}  # project edits by board, Task 3's recorded fit2d blocks (Stage 3 ruling 2's limit)
 # the owner's answer on a 45° twin's n 3 run (B-4): "pending", or "declined" when no go comes by P4-F's report
-BENDS_N3 = "pending"
+BENDS_N3 = "declined"
 
 enter, records, run_steps = p3.enter, p3.records, p3.run_steps  # the gates folder, the one-code check, the step loop
 
