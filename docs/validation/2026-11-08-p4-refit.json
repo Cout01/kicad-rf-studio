@@ -1,0 +1,285 @@
+{
+  "rows": [
+    {
+      "step": "p4-p4b_ms100-n2-l40-run",
+      "pool": 4,
+      "cells": 1339954,
+      "debye_cells": 0,
+      "node_mcs": 132.86803561609355,
+      "cal_mcs": 206.89629804509312
+    },
+    {
+      "step": "p4-p4b_ms100-n3-l40-run",
+      "pool": 4,
+      "cells": 1860408,
+      "debye_cells": 0,
+      "node_mcs": 125.48639444435784,
+      "cal_mcs": 206.89629804509312
+    },
+    {
+      "step": "p4-p4b_ms100_45-n2-l40-run",
+      "pool": 4,
+      "cells": 9910054,
+      "debye_cells": 0,
+      "node_mcs": 135.4178685291559,
+      "cal_mcs": 206.89629804509312
+    },
+    {
+      "step": "p4-p4b_ms90-n2-dfill-rep-run",
+      "pool": 4,
+      "cells": 5647026,
+      "debye_cells": 0,
+      "node_mcs": 139.22614553544315,
+      "cal_mcs": 206.89629804509312
+    },
+    {
+      "step": "p4-p4b_ms90-n2-dfill-run",
+      "pool": 4,
+      "cells": 5647026,
+      "debye_cells": 0,
+      "node_mcs": 137.94844035994527,
+      "cal_mcs": 206.89629804509312
+    },
+    {
+      "step": "p4-p4b_ms90-n2-l40-run",
+      "pool": 4,
+      "cells": 1369368,
+      "debye_cells": 0,
+      "node_mcs": 138.79384555364254,
+      "cal_mcs": 206.89629804509312
+    },
+    {
+      "step": "p4-p4b_ms90-n2-l80-run",
+      "pool": 4,
+      "cells": 2450140,
+      "debye_cells": 0,
+      "node_mcs": 136.81760518551886,
+      "cal_mcs": 206.89629804509312
+    },
+    {
+      "step": "p4-p4b_ms90-n3-l40-run",
+      "pool": 4,
+      "cells": 1990386,
+      "debye_cells": 0,
+      "node_mcs": 122.7320450725911,
+      "cal_mcs": 206.89629804509312
+    },
+    {
+      "step": "p4-p4b_ms90_45-n2-l40-run",
+      "pool": 4,
+      "cells": 10097626,
+      "debye_cells": 0,
+      "node_mcs": 136.54704045051926,
+      "cal_mcs": 206.89629804509312
+    },
+    {
+      "step": "p4-p4b_ms90_cut-n2-l40-run",
+      "pool": 4,
+      "cells": 1374758,
+      "debye_cells": 0,
+      "node_mcs": 133.12994838674234,
+      "cal_mcs": 206.89629804509312
+    },
+    {
+      "step": "p4-p4b_ms90_vic-n2-dfill-run",
+      "pool": 4,
+      "cells": 5765760,
+      "debye_cells": 0,
+      "node_mcs": 137.2225798226861,
+      "cal_mcs": 206.89629804509312
+    },
+    {
+      "step": "p4-p4b_ms90_vic-n2-l40-run",
+      "pool": 4,
+      "cells": 1571724,
+      "debye_cells": 0,
+      "node_mcs": 126.864695694814,
+      "cal_mcs": 206.89629804509312
+    },
+    {
+      "step": "p4-p4b_sl90-n2-l40-run",
+      "pool": 4,
+      "cells": 5806080,
+      "debye_cells": 0,
+      "node_mcs": 104.6299329051246,
+      "cal_mcs": 206.89629804509312
+    },
+    {
+      "step": "p4-p4b_sl90-n3-l40-run",
+      "pool": 4,
+      "cells": 8774688,
+      "debye_cells": 0,
+      "node_mcs": 111.33688296482094,
+      "cal_mcs": 206.89629804509312
+    },
+    {
+      "step": "p4-p4c_l90-n2-dfill-run",
+      "pool": 4,
+      "cells": 7737653,
+      "debye_cells": 0,
+      "node_mcs": 138.32450487981168,
+      "cal_mcs": 206.89629804509312
+    },
+    {
+      "step": "p4-p4c_l90-n2-l40-run",
+      "pool": 4,
+      "cells": 1686608,
+      "debye_cells": 0,
+      "node_mcs": 119.365037679356,
+      "cal_mcs": 206.89629804509312
+    },
+    {
+      "step": "p4-p4c_l90-n2-l80-run",
+      "pool": 4,
+      "cells": 2897972,
+      "debye_cells": 0,
+      "node_mcs": 129.8441124922636,
+      "cal_mcs": 206.89629804509312
+    },
+    {
+      "step": "p4-p4c_step35-n2-dfill-run",
+      "pool": 2,
+      "cells": 6998992,
+      "debye_cells": 0,
+      "node_mcs": 264.1901922038563,
+      "cal_mcs": 206.89629804509312
+    },
+    {
+      "step": "p4-p4c_step75-n2-dfill-run",
+      "pool": 2,
+      "cells": 16989210,
+      "debye_cells": 0,
+      "node_mcs": 260.66627554112347,
+      "cal_mcs": 206.89629804509312
+    },
+    {
+      "step": "p4-p4e_gapm-n2-dfill-run",
+      "pool": 4,
+      "cells": 9088832,
+      "debye_cells": 0,
+      "node_mcs": 141.82184388457495,
+      "cal_mcs": 206.89629804509312
+    },
+    {
+      "step": "p4-p4e_gapp-n2-dfill-run",
+      "pool": 4,
+      "cells": 5591663,
+      "debye_cells": 0,
+      "node_mcs": 138.7857649067358,
+      "cal_mcs": 206.89629804509312
+    },
+    {
+      "step": "p4-p4e_null-n2-dfill-run",
+      "pool": 4,
+      "cells": 5702389,
+      "debye_cells": 0,
+      "node_mcs": 139.68345144465064,
+      "cal_mcs": 206.89629804509312
+    },
+    {
+      "step": "p4-p4e_shift-n2-dfill-run",
+      "pool": 4,
+      "cells": 5647026,
+      "debye_cells": 0,
+      "node_mcs": 139.4004397461676,
+      "cal_mcs": 206.89629804509312
+    },
+    {
+      "step": "p4-p4e_vshift-n2-dfill-run",
+      "pool": 4,
+      "cells": 5765760,
+      "debye_cells": 0,
+      "node_mcs": 137.21061840652845,
+      "cal_mcs": 206.89629804509312
+    },
+    {
+      "step": "p4-si_line100-n2-dfill-debye-run",
+      "pool": 2,
+      "cells": 6296752,
+      "debye_cells": 1772828,
+      "node_mcs": 8.442609607987562,
+      "cal_mcs": 206.89629804509312
+    },
+    {
+      "step": "p4-si_line100-n2-dfill-run",
+      "pool": 2,
+      "cells": 6296752,
+      "debye_cells": 0,
+      "node_mcs": 264.66020534485403,
+      "cal_mcs": 206.89629804509312
+    },
+    {
+      "step": "p4-si_pad_coupon-n2-dfill-run",
+      "pool": 2,
+      "cells": 3702160,
+      "debye_cells": 0,
+      "node_mcs": 254.2752113275002,
+      "cal_mcs": 206.89629804509312
+    },
+    {
+      "step": "p4-si_pad_coupon-n2-dfill-v-run",
+      "pool": 2,
+      "cells": 3561558,
+      "debye_cells": 0,
+      "node_mcs": 251.7154844350509,
+      "cal_mcs": 206.89629804509312
+    },
+    {
+      "step": "p4-si_pad_coupon_tall-n2-dfill-run",
+      "pool": 2,
+      "cells": 252840,
+      "debye_cells": 0,
+      "node_mcs": 197.8531927483794,
+      "cal_mcs": 206.89629804509312
+    },
+    {
+      "step": "p4-si_pad_coupon_tall-n2-dfill-v-run",
+      "pool": 2,
+      "cells": 252840,
+      "debye_cells": 0,
+      "node_mcs": 200.7806349032026,
+      "cal_mcs": 206.89629804509312
+    },
+    {
+      "step": "p4-usb2_hs-n2-dfill-run",
+      "pool": 4,
+      "cells": 3745434,
+      "debye_cells": 0,
+      "node_mcs": 123.98860381169735,
+      "cal_mcs": 206.89629804509312
+    },
+    {
+      "step": "p4-usb2_hs_gap-n2-dfill-run",
+      "pool": 4,
+      "cells": 3745434,
+      "debye_cells": 0,
+      "node_mcs": 125.00320199240716,
+      "cal_mcs": 206.89629804509312
+    },
+    {
+      "step": "p4-usb2_hs_neck-n2-dfill-run",
+      "pool": 4,
+      "cells": 3714480,
+      "debye_cells": 0,
+      "node_mcs": 125.01992433651336,
+      "cal_mcs": 206.89629804509312
+    }
+  ],
+  "result": {
+    "si_speed": 0.663,
+    "range": [
+      0.5057119624359856,
+      1.279192560937805
+    ],
+    "by_pool": {
+      "2": 1.2289983616433815,
+      "4": 0.6545205004085743
+    },
+    "rows": 32
+  },
+  "w": 108.79093283522843,
+  "before": {
+    "SI_SPEED": 0.55,
+    "DEBYE_WEIGHT": 6.8
+  }
+}

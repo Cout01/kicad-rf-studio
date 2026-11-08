@@ -84,7 +84,7 @@ def test_the_calibrations_own_per_job_speed_is_what_no_run_refreshes():  # rulin
     assert runs.calibrated_mcs({**entry, "single": {}}, 1) == 200.0
     fresh = {**entry, "levels": {"2": 200.0, "1": 180.0}}  # the levels runs.calibrate stores with it
     assert all(runs.per_job_mcs(fresh, k) == runs.calibrated_mcs(fresh, k) for k in (1, 2, 4))
-    assert runs.SI_SPEED == 0.55  # plan 2's and plan 3's runs, until the refit (Task 15)
+    assert runs.SI_SPEED == 0.663  # the refit's median of gates P4-B to P4-F's 32 lossless runs (Task 15)
 
 
 def test_an_si_models_speed_is_si_speed_until_a_run_measures_its_level(calibrated):  # ruling K-1

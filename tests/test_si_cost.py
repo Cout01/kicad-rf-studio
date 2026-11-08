@@ -99,7 +99,7 @@ def test_a_debye_models_cost_counts_its_cells_at_their_weight(tmp_path):  # desi
     save_project(pj, {**load_project(pj), "dielectric": "debye"})
     project, board, geom, _ = pipeline.load(pj)
     notes = dict(pipeline.cost_notes(pipeline.build_model(project, board, geom), project, setup, 8, 2, 100.0))
-    assert runs.DEBYE_WEIGHT == 6.8  # r1's five-pole probe, until the refit (Task 15)
+    assert runs.DEBYE_WEIGHT == 108.8  # gate P4-D's D2 run at the calibration's 4 threads a job (Task 15's refit)
     assert notes["I_SI_COST_DEBYE"] == {"mcells": "0.58", "weight": f"{runs.DEBYE_WEIGHT:g}", "poles": 4}
     weighted = 2072070 + (runs.DEBYE_WEIGHT - 1) * 582291
     assert notes["I_COST_TIME"]["time"] == pipeline.duration(4 * weighted * (9e-9 / 1e-13) / 100e6)  # 8 runs, 2 at once
