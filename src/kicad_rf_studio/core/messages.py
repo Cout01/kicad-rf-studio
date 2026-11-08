@@ -355,6 +355,7 @@ CATALOG: dict[str, str] = {
     "G_LOADING": "Reading the project and building its model…",
     "G_PROJECT": "{path}: f0 {f0_mhz} MHz, {harmonics} harmonics, preset {preset}.",
     "G_PROJECT_ANTENNA": "{path}: antenna {ref}, band {f_lo_mhz} to {f_hi_mhz} MHz, preset {preset}.",
+    "G_PROJECT_SI": "{path}: signal integrity, interface {interface}, target {target} Ω, {start} → {end}, preset {preset}.",
     "G_NO_COST": "No cost of this model yet: estimate it, then Run… asks to start the run.",
     "G_COST_REUSED": "The cost in {folder} matches this model: Run… asks to start the run.",
     "G_CONFIRM_TITLE": "Start the run?",

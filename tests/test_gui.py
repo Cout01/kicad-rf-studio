@@ -9,6 +9,7 @@ import subprocess
 import sys
 import time
 import tomllib
+from concurrent.futures import Future
 from importlib import metadata
 from pathlib import Path
 
@@ -25,20 +26,23 @@ from kicad_rf_studio.core.messages import render
 from kicad_rf_studio.core.post.antenna import ANTENNA_LIMITS
 from kicad_rf_studio.core.post.chain import with_box, z_part
 from kicad_rf_studio.core.post.outputs import LIMITS
+from kicad_rf_studio.core.post.si import db, si_limits
 from kicad_rf_studio.core.post.waves import grid
 from kicad_rf_studio.core.project import board_file, load_project, parts, save_project
 from kicad_rf_studio.gui import control
-from kicad_rf_studio.gui.window import COMPARE_COLUMNS, FIXTURE, PART, S2P, SNAP, VALUE, MainWindow
+from kicad_rf_studio.gui.window import COMPARE_COLUMNS, FIXTURE, PART, S2P, SNAP, TABLE_2D, VALUE, MainWindow
 from networks import C_BOX, star, terminate_np, write_s2p
 from test_antenna_kicad import KINDS
 from test_cli_antenna import antenna_project
 from test_cli_cost import FIX, fail, new_project
+from test_cli_si import si_project
 from test_compare import edited, twin
 from test_gui_control import FAKE_PREFIX, press, until
-from test_match_antenna import pi_run
+from test_match_antenna import pi_run, result_lines
 from test_post_chain import M0402
 from test_run import lpf_loads, lpf_project, lpf_run
 from test_run_dir import events
+from test_si_run import verified_si
 from test_verify import verified
 
 F, _ = grid(915e6, 3, 1.1)
@@ -129,6 +133,7 @@ def dispose(windows):
                 proc.wait()
         w.close()
         w.pool.shutdown(wait=True)  # a read still going would outlive the fake data folder
+        w.tuner.shutdown(wait=True)
 
 
 @pytest.fixture
@@ -1255,6 +1260,126 @@ def test_verify_brings_an_antennas_far_field_and_the_retune_blits_on_its_six_pan
     assert r.stale.text() == render("G_VERIFY_STALE")
     assert "openEMS" not in sys.modules and "CSXCAD" not in sys.modules
     grab(w, "antenna-verify")
+
+
+def test_an_si_project_shows_its_tdr_mixed_mode_s_and_crosstalk_with_the_clis_lines(window, qapp, tmp_path,
+                                                                                     monkeypatch):  # 5.10; ruling 1
+    pj = verified_si(tmp_path, monkeypatch).resolve()
+    w = window()
+    w.open_project(pj)
+    opened(w)
+    d, r, fig = load_project(pj), w.results, w.results.canvas.figure
+    assert w.project_status.text() == render("G_PROJECT_SI", path=str(pj), interface="usb2-hs", target="90",
+                                             start="J1.3", end="U1.3", preset="normal")
+    assert column(r.parts, PART) == ["R1", "R2"] and column(r.parts, VALUE) == ["22", "22"]
+    assert [r.parts.cellWidget(k, SNAP).currentData() for k in range(2)] == ["E24", "E24"]  # ruling 3
+    lines = w.opened.results.lines
+    assert lines == result_lines(d["results"]["run_dir"])[1:len(lines) + 1]  # what run printed, by construction
+    assert items(r.lines) == [control.text(c, p) for c, p in lines] + [render(c) for c in si_limits(d)]
+    assert len(fig.axes) == 3 and fig.get_suptitle() == "\n".join(
+        [render("I_PLOT_SI_TITLE", name="usb2_hs"), render("I_SI_RELATIVE"), render("G_WHAT_IF")])
+    assert not [t for t in fig.texts if render("I_LIMIT_SI_CROP") in t.get_text()] and r.axes[1].get_ylim()[0] >= -100
+    assert not any(ax.yaxis_inverted() for ax in r.axes)  # the fake's crosstalk, exact zeros, keeps its autoscale
+    w.tabs.setCurrentWidget(r)
+    qapp.processEvents()
+    assert min(ax.get_window_extent().height for ax in fig.axes) >= 100  # three panels in one row at 1200 x 800
+    grab(w, "si-results")
+    a = w.advanced
+    rows = {a.table.item(k, 0).text(): k for k in range(a.table.rowCount())}
+    assert not {"kind", "schema"} & set(rows) and a.table.item(rows["mesh.max_cell_mm"], 2).text() == "null"
+    assert [a.table.item(rows["target_ohm"], c).text() for c in (2, 3)] == ["90.0", render("G_UNIT_OHM")]
+    w.tabs.setCurrentWidget(a)
+    qapp.processEvents()
+    grab(w, "si-advanced")
+    assert "openEMS" not in sys.modules and "CSXCAD" not in sys.modules
+
+
+def test_an_si_retune_runs_off_the_gui_thread_and_blits_within_the_budget(window, qapp, tmp_path, monkeypatch):
+    pj = verified_si(tmp_path, monkeypatch).resolve()  # Stage 2 design 2 goal 4; Review Focus 1
+    w = window()
+    w.open_project(pj)
+    opened(w)
+    r, fig = w.results, w.results.canvas.figure
+    w.tabs.setCurrentWidget(r)
+    qapp.processEvents()  # the first paint draws the canvas and keeps its background for the blits
+    axes, draws, real = list(r.axes), [], r.canvas.draw
+    monkeypatch.setattr(r.canvas, "draw", lambda: draws.append(1) or real())
+    monkeypatch.setattr(pipeline, "layout", fail)  # the stored layout serves every retune: no waves read
+    edits, takes = [], []
+    for typed in ("25", "33", "25"):  # each snapped on commit to E24, SI's default
+        start = time.perf_counter()
+        r.parts.item(0, VALUE).setText(typed)
+        edits.append(time.perf_counter() - start)
+        assert isinstance(w.retuning, Future)  # submitted, not computed here
+        w.retuning.result(timeout=60)
+        start = time.perf_counter()
+        w.take_retune()
+        takes.append(time.perf_counter() - start)
+    res = control.retuned(pj, w.opened.project, w.opened.results, r.rows())
+    assert column(r.parts, VALUE) == ["24", "22"] and min(edits) < 0.05 and min(takes) < 0.05
+    assert w.retuning is None and draws == [] and list(r.axes) == axes  # moved in place and blitted, never redrawn
+    assert np.array_equal(r.axes[1].lines[2].get_ydata(), db(res.reading.m[:, 3, 2]))  # Scc21
+    assert items(r.lines) == ([control.text(c, p) for c, p in res.lines]
+                              + [render(c) for c in si_limits(load_project(pj))])
+    assert fig.get_suptitle().endswith("\n" + render("G_WHAT_IF")) and r.stale.text() == render("G_VERIFY_NONE")
+    assert "openEMS" not in sys.modules and "CSXCAD" not in sys.modules
+
+
+def test_only_the_latest_si_retune_is_drawn_and_a_revert_or_a_read_drops_it(window, qapp, tmp_path, monkeypatch):
+    pj = verified_si(tmp_path, monkeypatch).resolve()  # Review Focus 1, 2
+    w = window()
+    w.open_project(pj)
+    opened(w)
+    r = w.results
+    r.parts.item(0, VALUE).setText("33")
+    first = w.retuning
+    r.parts.item(1, VALUE).setText("33")
+    assert w.retuning is not first  # the newer edit's; the first is never shown
+    w.retuning.result(timeout=60)
+    w.take_retune()
+    res = control.retuned(pj, w.opened.project, w.opened.results, r.rows())
+    assert np.array_equal(r.axes[1].lines[2].get_ydata(), db(res.reading.m[:, 3, 2]))  # both at 33 Ω
+    r.parts.item(0, VALUE).setText("47")
+    pending = w.retuning
+    r.revert_button.click()
+    assert w.retuning is None and column(r.parts, VALUE) == ["22", "22"]
+    pending.result(timeout=60)
+    w.take_retune()  # nothing to take: the stored values' curves stay
+    assert np.array_equal(r.axes[1].lines[2].get_ydata(), db(w.opened.results.reading.m[:, 3, 2]))
+    r.parts.item(0, VALUE).setText("47")
+    pending = w.retuning
+    save_project(pj, load_project(pj))  # a read: the unapplied row is carried over it and retuned again
+    w.tick()
+    opened(w)
+    assert w.retuning is not pending and column(r.parts, VALUE) == ["47", "22"]
+    w.retuning.result(timeout=60)
+    w.take_retune()
+    res = control.retuned(pj, w.opened.project, w.opened.results, r.rows())
+    assert np.array_equal(r.axes[1].lines[2].get_ydata(), db(res.reading.m[:, 3, 2]))
+    r.parts.item(1, VALUE).setText("33")  # the event loop alone takes this one: tune_timer polls take_retune
+    until(lambda: qapp.processEvents() or w.retuning is None)
+    res = control.retuned(pj, w.opened.project, w.opened.results, r.rows())
+    assert np.array_equal(r.axes[1].lines[2].get_ydata(), db(res.reading.m[:, 3, 2])) and not w.tune_timer.isActive()
+
+
+def test_an_si_cost_lists_its_2d_table_first_and_run_asks_on_the_estimate_alone(window, tmp_path, monkeypatch):
+    pj = si_project(tmp_path / "usb2_hs").resolve()  # design 5.9, 5.10; ruling 4
+    w = window()
+    w.open_project(pj)
+    opened(w)
+    w.cost_button.click()
+    until(lambda: w.tick() or w.cost_status.text() == render("G_END_DONE", exit_code=0))
+    codes = [e["code"] for e in events(w.run_dir, kind="cost")]
+    table = [k for k, code in enumerate(codes) if code in TABLE_2D]
+    assert table and max(table) < codes.index("I_COST_TIME") and "I_SI_COST_RING" in codes
+    opened(w)
+    asked = []
+    monkeypatch.setattr(w, "ask", lambda text: asked.append(text) or False)
+    w.run_button.click()
+    shown = [(e["code"], control.text(e["code"], e["params"])) for e in events(w.cost, kind="cost")]
+    assert [text for code, text in shown if code == "I_COST_TIME"][0] in asked[0]
+    assert not [text for code, text in shown if code in TABLE_2D and text in asked[0]]  # the table stays in Cost
+    grab(w, "si-cost")
 
 
 def test_compare_runs_on_the_pool_into_the_bases_folder_and_never_the_variants(window, qapp, tmp_path, monkeypatch):

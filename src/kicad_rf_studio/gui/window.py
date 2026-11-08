@@ -6,9 +6,10 @@ CLI's retune and Verify checks; Compare compares an antenna project with a varia
 project.json's fields and saves them under the project lock (AdvancedView); all driven by one 500 ms timer (`tick`).
 The project is read, a board's pads and antennas listed, a KiCad button press read, the board refilled and saved in
 KiCad, new run, retune and compare waited for on a pool thread (control.open_project, control.board_choices,
-control.handed, button.refill, cli.new or cli.new_antenna, control.apply, control.compare); cost, run and verify start
-as a detached orchestrator (control.start), so this process never reaches runs.run_jobs. Its Help menu shows About
-(control.about) and Qt's About."""
+control.handed, button.refill, cli.new or cli.new_antenna, control.apply, control.compare); an SI project's retune
+(Stage 4 design 5.10) runs on a thread of its own (control.retuned on `tuner`), polled every TUNE_MS (take_retune);
+cost, run and verify start as a detached orchestrator (control.start), so this process never reaches runs.run_jobs.
+Its Help menu shows About (control.about) and Qt's About."""
 import html
 import json
 import subprocess
@@ -32,10 +33,16 @@ from kicad_rf_studio.core.kicad.values import parse_band, parse_frequency
 from kicad_rf_studio.core.messages import KrsError, detail, reason, render
 from kicad_rf_studio.core.post.antenna import ANTENNA_LIMITS, draw_antenna, retrace_antenna
 from kicad_rf_studio.core.post.outputs import LIMITS, draw_summary, retrace_summary
-from kicad_rf_studio.core.project import DEFAULT_PRESET, HARMONICS, antenna, check_project, load_project, save_project
+from kicad_rf_studio.core.post.si import draw_si, retrace_si, si_limits
+from kicad_rf_studio.core.project import (DEFAULT_PRESET, HARMONICS, antenna, check_project, load_project, save_project,
+                                          si)
 from kicad_rf_studio.gui import control
 
 COLUMNS = ("G_COL_PORT", "G_COL_TIME", "G_COL_RESIDUAL", "G_COL_SPEED", "G_COL_VERDICT")
+# an SI cost's 2D table, which the Cost tab lists and Run…'s confirmation leaves out (Stage 4 design 5.9, 5.10)
+TABLE_2D = ("I_SI_2D_HEADER", "I_SI_2D_PAIR", "I_SI_2D_LEG", "I_SI_2D_LINE", "W_2D_SHORT", "I_SI_SHORT_ROUTE")
+# an SI retune's poll: about 70 ms of scikit-rf on the tuner's thread, then its blit (Stage 2 design 2 goal 4)
+TUNE_MS = 20
 PROGRESS = ("port", "t_ns", "residual_db", "speed_mcs")  # a progress event's params, in the first four columns
 PART, VALUE, SNAP, S2P, FIXTURE = range(5)  # the parts table's columns
 PART_COLUMNS = ("G_COL_PART", "G_COL_VALUE", "G_COL_SNAP", "G_COL_S2P", "G_COL_FIXTURE")
@@ -97,11 +104,12 @@ class ResultsView(QWidget):
     (`buttons`) of S2P file…, Revert, Apply and the retune's status line; summary.png's drawing on a FigureCanvasQTAgg;
     and the row (`footer`) of the result's lines and stated limits, then the last verify's comparison (`verify_lines`),
     shown only with part ports. `series` holds each part's Snapping as the user set it. `shown` is the read on display
-    (display sets it), whose project and far field an antenna's chain is drawn with. A row's edit emits `edited`; the
-    window answers it with the chain of the rows (show_chain). The plot: its `axes` as draw_summary or draw_antenna drew
-    them (None without a plot, or to draw the next one in full) and its `curves`, animated, which a retune moves and
-    blits (retrace_summary or retrace_antenna, blit) on the background (`bg`) that the last full draw kept (on_draw),
-    None until one."""
+    (display sets it), whose project and far field an antenna's chain is drawn with, and whose project an SI chain is.
+    A row's edit emits `edited`; the window answers it with the chain of the rows (show_chain), an SI project's once
+    its retune ends off the GUI thread (MainWindow.take_retune). The plot: its `axes` as draw_summary, draw_antenna or
+    draw_si drew them (None without a plot, or to draw the next one in full) and its `curves`, animated, which a retune
+    moves and blits (retrace_summary, retrace_antenna or retrace_si, blit) on the background (`bg`) that the last full
+    draw kept (on_draw), None until one."""
 
     edited = Signal()
 
@@ -166,8 +174,8 @@ class ResultsView(QWidget):
 
     def show_rows(self, rows: list[control.Row]) -> None:
         """`rows` in the parts table, its signals blocked: Part read-only; Value and S2P file editable; Snapping the
-        part's series as the user set it (`series`), else its default (control.default_series); S2P fixture the row's
-        connection. The retune box shows only with rows."""
+        part's series as the user set it (`series`), else its default in the project on display (control.default_series:
+        E24 for every part of an SI project); S2P fixture the row's connection. The retune box shows only with rows."""
         with QSignalBlocker(self.parts):
             self.parts.setRowCount(len(rows))
             for k, row in enumerate(rows):
@@ -176,7 +184,7 @@ class ResultsView(QWidget):
                 for column, item in ((PART, part), (VALUE, QTableWidgetItem(row.value)),
                                      (S2P, QTableWidgetItem(row.s2p))):
                     self.parts.setItem(k, column, item)
-                series = self.series.get(row.ref, control.default_series(row.ref))
+                series = self.series.get(row.ref, control.default_series(row.ref, self.shown.project))
                 self.parts.setCellWidget(k, SNAP, combo(SNAPPING, series, self.snapping_changed))
                 self.parts.setCellWidget(k, FIXTURE, combo(FIXTURES, row.connection, self.fixture_changed))
         self.retune_box.setVisible(bool(rows))
@@ -236,7 +244,8 @@ class ResultsView(QWidget):
         event loop runs (draw_idle). An antenna's chain (Stage 3 design 5.10) draws draw_antenna's figure for the window
         (gui: the six panels in one row, the limits in the lines) with the far field of the read (the run's, or the
         current verify's while the retune moves S11), the title's last line saying which run it comes from, and is
-        moved by retrace_antenna."""
+        moved by retrace_antenna. An SI chain (Stage 4 design 5.10) draws draw_si's figure for the window (gui: no
+        foot, the limits in the lines) with its reading, moved by retrace_si."""
         # ponytail: the curves keep the limits of the last full draw (the stored values', or the first good values after
         # a refusal); a retune far off clips until Revert or Apply draws again
         fig = self.canvas.figure
@@ -244,20 +253,29 @@ class ResultsView(QWidget):
         label = self.what_if.text() if res is not None and res.what_if else None
         self.what_if.setVisible(label is not None)
         ant = res is not None and antenna(self.shown.project)  # a result always comes with its project
+        is_si = res is not None and si(self.shown.project)
         if res is not None:
-            self.lines.addItems([control.text(c, p) for c, p in res.lines]
-                                + [render(c) for c in (ANTENNA_LIMITS if ant else LIMITS)])
-        plot = res is not None and res.chain is not None and len(res.ext) == (1 if ant else 2)
+            limits = si_limits(self.shown.project) if is_si else ANTENNA_LIMITS if ant else LIMITS
+            self.lines.addItems([control.text(c, p) for c, p in res.lines] + [render(c) for c in limits])
+        plot = res is not None and (res.reading is not None if is_si
+                                    else res.chain is not None and len(res.ext) == (1 if ant else 2))
         if plot and self.axes is not None:
-            if ant:
-                retrace_antenna(self.axes, res.lay.f, res.chain[:, 0, 0], self.shown.project)
+            if is_si:
+                moved = retrace_si(self.axes, res.reading)
+            elif ant:
+                moved = retrace_antenna(self.axes, res.lay.f, res.chain[:, 0, 0], self.shown.project)
             else:
-                retrace_summary(self.axes, res.lay, res.chain, res.ideal)
-            self.blit()
-            return
+                moved = retrace_summary(self.axes, res.lay, res.chain, res.ideal)
+            if moved is not None:  # an SI reading with another count of levels is drawn in full below
+                self.blit()
+                return
         fig.clear()
         self.axes, self.curves, self.bg = None, [], None
-        if plot and ant:
+        if plot and is_si:
+            self.axes = draw_si(fig, [(name, res.reading)], self.shown.project, render("I_PLOT_SI_TITLE", name=name),
+                                label, gui=True)
+            self.curves = retrace_si(self.axes, res.reading)  # the data unchanged
+        elif plot and ant:
             # ponytail: with part ports the η and cut panels stay the current verify's while the retune moves S11,
             # labelled so; the instant far field by superposition (design 7) would move them too
             p, source = self.shown.project, self.shown.far_source
@@ -277,8 +295,8 @@ class ResultsView(QWidget):
         (canvas.blit); without a background, the canvas drawn in full, whose draw_event keeps one (on_draw)."""
         # ponytail: a status line that changes height (G_APPLIED cleared, the stale indicator lit) resizes the canvas,
         # which Qt then redraws once in full (about 0.1 s for v1's figure, a quarter of a second for an antenna's six
-        # panels, as on the first edit after a verify); fixed-height status lines (setRetainSizeWhenHidden) if that is
-        # felt
+        # panels or an SI figure's three, as on the first edit after a verify); fixed-height status lines
+        # (setRetainSizeWhenHidden) if that is felt
         if self.bg is None:
             self.canvas.draw()
             return
@@ -495,10 +513,12 @@ class MainWindow(QMainWindow):
     """The main window; `prefix` is the command that starts the orchestrator (control.orchestrator() by default).
     Its state: `path`, the resolved project file; `opened`, its last read (control.Opened) and `loading`, the read
     going on (a Future); `applying`, Apply's retune going on (a Future), and `verify_next`, whether its end starts
-    verify (Verify's Yes to G_APPLY_FIRST); `cost`, the folder of this model's last cost, which Run… confirms on; the
-    Compare tab (`comparison`, a CompareView), with `variant`, the resolved project file it compares the project with
-    (None until Variant… picks one), and `comparing`, its compare going on (a Future); the watch: `command`,
-    `run_dir`, its events' `tail`, its `end` event and `proc`, only a
+    verify (Verify's Yes to G_APPLY_FIRST); an SI project's retune session (Stage 4 design 5.10): `tuner`, the
+    one-thread executor its retunes run on, `retuning`, the latest one (a Future, None without one), and `tune_timer`,
+    which polls it every TUNE_MS while one goes on (take_retune); `cost`, the folder of this model's last cost, which
+    Run… confirms on; the Compare tab (`comparison`, a CompareView), with `variant`, the resolved project file it
+    compares the project with (None until Variant… picks one), and `comparing`, its compare going on (a Future); the
+    watch: `command`, `run_dir`, its events' `tail`, its `end` event and `proc`, only a
     process this window started; `live`, whether the watched process goes on; `mtime`, project.json's and the board
     file's st_mtime_ns at the last read (stamp); `started`, every process this window started, polled every tick, so
     that none is left a zombie on Linux; the New form's work going on (Futures): `pads_read`, the chosen board's
@@ -521,6 +541,7 @@ class MainWindow(QMainWindow):
         self.variant = self.comparing = None
         self.live, self.started, self.verify_next = False, [], False
         self.pool = ThreadPoolExecutor(1)
+        self.tuner, self.retuning = ThreadPoolExecutor(1), None
         self.open_button, self.project_status, self.new_form = QPushButton(render("G_OPEN")), QLabel(), NewForm()
         self.cost_lines, self.cost_status = sentences(), QLabel()
         self.cost_button, self.run_button = QPushButton(render("G_COST")), QPushButton(render("G_RUN"))
@@ -566,6 +587,9 @@ class MainWindow(QMainWindow):
         self.timer = QTimer(self)
         self.timer.timeout.connect(self.tick)
         self.timer.start(500)
+        self.tune_timer = QTimer(self)
+        self.tune_timer.setInterval(TUNE_MS)
+        self.tune_timer.timeout.connect(self.take_retune)
 
     def browse(self) -> None:
         """Open a project…: the project file picked in the dialog; nothing on Cancel."""
@@ -577,11 +601,12 @@ class MainWindow(QMainWindow):
         """Opens the project file `path`, a folder standing for its project.json: the views and the watch cleared,
         then its read and a tick. A process this window started goes on, no longer watched, and so does an Apply's
         retune of the previous project, which ends on the pool unread (`applying` None) and starts no verify
-        (`verify_next` False), and a compare of the previous project, which ends on the pool unread too (`comparing`
-        None); the Compare tab is emptied and says G_COMPARE_NONE, its variant kept."""
+        (`verify_next` False), an SI retune of it, which ends on the tuner unshown (`retuning` None), and a compare of
+        the previous project, which ends on the pool unread too (`comparing` None); the Compare tab is emptied and says
+        G_COMPARE_NONE, its variant kept."""
         self.path = pipeline.project_path(str(path)).resolve()
         self.command = self.run_dir = self.tail = self.end = self.proc = self.cost = self.opened = self.applying = None
-        self.verify_next, self.comparing = False, None
+        self.verify_next, self.comparing, self.retuning = False, None, None
         self.comparison.display([], [], None)
         self.comparison.status.setText(render("G_COMPARE_NONE"))
         for view in (self.cost_lines, self.cost_status, self.log, self.run_status, self.advanced.status):
@@ -764,12 +789,14 @@ class MainWindow(QMainWindow):
         self.start("cost")
 
     def run(self) -> None:
-        """Run…: asks to start the run, showing the cost lines of `cost`'s folder, and starts it on Yes. The project is
-        bound before the question, as refill binds its press: when another project opened while the question was open
-        (a later start's request), Yes starts nothing."""
+        """Run…: asks to start the run, showing the cost lines of `cost`'s folder, an SI project's without its 2D table
+        (TABLE_2D, which stays in the Cost tab), and starts it on Yes. The project is bound before the question, as
+        refill binds its press: when another project opened while the question was open (a later start's request), Yes
+        starts nothing."""
         path = self.path
+        table = TABLE_2D if si(self.opened.project) else ()
         lines = [control.text(e["code"], e["params"]) for e in control.Tail(self.cost / "events.jsonl").read()
-                 if e["kind"] == "cost"]
+                 if e["kind"] == "cost" and e["code"] not in table]
         if self.ask("\n".join([render("G_CONFIRM_RUN"), "", *lines])) and self.path == path:
             self.start("run")
 
@@ -787,12 +814,14 @@ class MainWindow(QMainWindow):
         (self.run_dir / "STOP").touch()
 
     def show_project(self, opened: control.Opened) -> None:
-        """A project read: its line (G_PROJECT, an antenna's G_PROJECT_ANTENNA with its antenna and band), or its
-        refusal when there is no project, and its cost; while nothing is watched and the project has no lock, its
-        newest run or verify that ended (opened.last) is watched, which replays it. Unless a cost is watched, live or
-        ended, the Cost tab replays the last cost of this model (G_COST_REUSED), or says there is none (G_NO_COST).
-        Last, the Results tab shows the read (ResultsView) and its stale indicator (show_stale), and Advanced
-        project.json as stored (AdvancedView), which drops unsaved edits."""
+        """A project read: an SI retune going on dropped (`retuning` None), its rows' read being gone; its line
+        (G_PROJECT, an antenna's G_PROJECT_ANTENNA with its antenna and band, an SI project's G_PROJECT_SI with its
+        interface, target and first line's ends), or its refusal when there is no project, and its cost; while nothing
+        is watched and the project has no lock, its newest run or verify that ended (opened.last) is watched, which
+        replays it. Unless a cost is watched, live or ended, the Cost tab replays the last cost of this model
+        (G_COST_REUSED), or says there is none (G_NO_COST). Last, the Results tab shows the read (ResultsView) and its
+        stale indicator (show_stale), and Advanced project.json as stored (AdvancedView), which drops unsaved edits."""
+        self.retuning = None
         p = opened.project
         if p is None:
             line = control.text(*opened.problem)
@@ -800,6 +829,10 @@ class MainWindow(QMainWindow):
             band = p["band"]
             line = render("G_PROJECT_ANTENNA", path=str(self.path), ref=p["antenna"]["ref"],
                           f_lo_mhz=f"{band['f_lo_hz'] / 1e6:g}", f_hi_mhz=f"{band['f_hi_hz'] / 1e6:g}", preset=p["preset"])
+        elif si(p):
+            chain = p["lines"][0]["chain"]  # the first line: New's start and end
+            line = render("G_PROJECT_SI", path=str(self.path), interface=p["interface"], target=f"{p['target_ohm']:g}",
+                          start=chain["start"], end=chain["end"], preset=p["preset"])
         else:
             line = render("G_PROJECT", path=str(self.path), f0_mhz=f"{p['f0_hz'] / 1e6:g}", harmonics=p["harmonics"],
                           preset=p["preset"])
@@ -825,16 +858,39 @@ class MainWindow(QMainWindow):
         """A row edited (results.edited): the retune's status line cleared, then the chain of the table's rows on the
         last read's layout (control.retuned, which never raises; an antenna's lines on the far field and its layout that
         the read holds, Opened.far and far_lay), shown under the what-if label (show_chain), and the stale indicator of
-        those rows (show_stale)."""
+        those rows (show_stale). An SI project's retune (Stage 4 design 5.10), some 70 ms of scikit-rf, more than Stage
+        2's 50 ms (design 2 goal 4), is only submitted here: to the tuner, as `retuning`, the older one cancelled (an
+        older edit's, never shown, dropped if not begun), with tune_timer started, whose take_retune shows it."""
+        # ponytail: an SI retune queued behind an older one waits for it (about 70 ms each); a coalescing queue if fast
+        # typing lags
         self.results.retune_status.clear()
-        self.results.show_chain(control.retuned(self.path, self.opened.project, self.opened.results,
-                                                self.results.rows(), self.opened.far, self.opened.far_lay),
-                                self.path.parent.name)
+        args = (self.path, self.opened.project, self.opened.results, self.results.rows(), self.opened.far,
+                self.opened.far_lay)
+        if si(self.opened.project):
+            if self.retuning is not None:
+                self.retuning.cancel()
+            self.retuning = self.tuner.submit(control.retuned, *args)
+            self.tune_timer.start()
+        else:
+            self.results.show_chain(control.retuned(*args), self.path.parent.name)
         self.show_stale()
 
+    def take_retune(self) -> None:
+        """The tuner's end, polled every TUNE_MS while an SI retune goes on (tune_timer): once the latest (`retuning`)
+        ended, its chain shown (show_chain: moved in place and blitted). An earlier one is never shown, as `retuning`
+        names the latest, and open_project, show_project and revert drop the one in flight."""
+        if self.retuning is not None and not self.retuning.done():
+            return
+        self.tune_timer.stop()
+        if self.retuning is not None:
+            done, self.retuning = self.retuning, None
+            self.results.show_chain(done.result(), self.path.parent.name)
+
     def revert(self) -> None:
-        """Revert: the retune's status line cleared, then the last read shown again (display): the rows at their stored
-        values, drawn in full, with their stale indicator (show_stale)."""
+        """Revert: an SI retune going on dropped (`retuning` None), the retune's status line cleared, then the last read
+        shown again (display): the rows at their stored values, drawn in full, with their stale indicator
+        (show_stale)."""
+        self.retuning = None
         self.results.retune_status.clear()
         self.results.display(self.opened, self.path.parent)
         self.show_stale()
@@ -1150,13 +1206,16 @@ class MainWindow(QMainWindow):
 
     def closeEvent(self, event: QCloseEvent) -> None:
         """Closing the window first closes its server and unlocks gui.lock (serve), so that a later start serves itself
-        instead of waiting on a closing window whose pool may still run; it then stops its timer and drops the pool's
-        work not yet begun (project reads, a pad list, a New, an Apply, a compare, a refill); what it started goes on
-        (design 5.1: a run outlives its window, and the next window re-attaches it), an Apply's retune included, and so
-        does a refill already begun, which ends when KiCad answers, within FILL_WAIT_S, as an Apply's retune does."""
+        instead of waiting on a closing window whose pool may still run; it then stops its timers and drops the work
+        not yet begun of its pool (project reads, a pad list, a New, an Apply, a compare, a refill) and of its tuner (an
+        SI retune); what it started goes on (design 5.1: a run outlives its window, and the next window re-attaches it),
+        an Apply's retune included, and so does a refill already begun, which ends when KiCad answers, within
+        FILL_WAIT_S, as an Apply's retune does."""
         if self.server is not None:  # serve keeps both
             self.server.close()
             self.lock.unlock()
         self.timer.stop()
+        self.tune_timer.stop()
         self.pool.shutdown(wait=False, cancel_futures=True)
+        self.tuner.shutdown(wait=False, cancel_futures=True)
         super().closeEvent(event)

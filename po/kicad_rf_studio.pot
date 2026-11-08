@@ -1649,6 +1649,11 @@ msgstr ""
 msgid "{path}: antenna {ref}, band {f_lo_mhz} to {f_hi_mhz} MHz, preset {preset}."
 msgstr ""
 
+#. G_PROJECT_SI
+#, python-brace-format
+msgid "{path}: signal integrity, interface {interface}, target {target} Ω, {start} → {end}, preset {preset}."
+msgstr ""
+
 #. G_NO_COST
 msgid "No cost of this model yet: estimate it, then Run… asks to start the run."
 msgstr ""

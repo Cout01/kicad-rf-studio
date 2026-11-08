@@ -1651,6 +1651,11 @@ msgstr "{path}: f0 {f0_mhz} MHz, harmônicos: {harmonics}, predefinição {prese
 msgid "{path}: antenna {ref}, band {f_lo_mhz} to {f_hi_mhz} MHz, preset {preset}."
 msgstr "{path}: antena {ref}, banda de {f_lo_mhz} a {f_hi_mhz} MHz, predefinição {preset}."
 
+#. G_PROJECT_SI
+#, python-brace-format
+msgid "{path}: signal integrity, interface {interface}, target {target} Ω, {start} → {end}, preset {preset}."
+msgstr "{path}: integridade de sinal, interface {interface}, alvo de {target} Ω, {start} → {end}, predefinição {preset}."
+
 #. G_NO_COST
 msgid "No cost of this model yet: estimate it, then Run… asks to start the run."
 msgstr "Ainda não há custo deste modelo: estime-o, e então o botão Executar… pede para iniciar a execução."
