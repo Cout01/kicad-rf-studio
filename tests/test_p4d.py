@@ -6,6 +6,7 @@ import pytest
 
 import p4
 import p4d
+from kicad_rf_studio import runs
 from kicad_rf_studio.core.project import load_project
 from test_cli_si import si_project
 from test_p4 import gates  # noqa: F401 (the fixture)
@@ -91,3 +92,8 @@ def test_p4d_runs_its_steps_and_writes_its_report(gates, monkeypatch):  # design
     assert '"reading"' not in text and '"project"' not in text
     md = (gates / "p4d" / "p4d.md").read_text(encoding="utf-8")
     assert md.startswith("## P4D-1 The ports") and "| v | v_valid | v_over_h |" in md  # R-5: the v run's validity
+    name = p4.name("si_line100", dielectric="debye")  # P4-D's Debye step, run above
+    m = p4.measure(gates, name)
+    assert m["debye_cells"] > 0 and m["worst_s"] is not None
+    monkeypatch.setattr(runs, "DEBYE_WEIGHT", 50.0)
+    assert p4.measure(gates, name)["worst_s"] == m["worst_s"]  # the run's own Debye weight (G-2)
