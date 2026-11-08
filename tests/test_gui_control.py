@@ -24,7 +24,7 @@ from kicad_rf_studio.core import messages
 from kicad_rf_studio.core.kicad import load_board
 from kicad_rf_studio.core.messages import CATALOG, KrsError, render
 from kicad_rf_studio.core.model.spec import spec_hash
-from kicad_rf_studio.core.post.antenna import ANTENNA_LIMITS
+from kicad_rf_studio.core.post.antenna import ANTENNA_LIMITS, DELTA_COLUMNS
 from kicad_rf_studio.core.post.outputs import LIMITS
 from kicad_rf_studio.core.post.si import si_limits
 from kicad_rf_studio.core.post.waves import grid
@@ -35,10 +35,12 @@ from test_antenna_kicad import KINDS
 from test_cli_antenna import antenna_project
 from test_cli_cost import FIX, new_project
 from test_cli_si import si_project
+from test_compare import twin
 from test_match_antenna import pi_run
 from test_post_chain import M0402, lpf
 from test_run import lpf_loads, lpf_run
 from test_sexpr import mo_pairs
+from test_si_run import verified_si
 
 F, _ = grid(915e6, 3, 1.1)
 FAKE_CLI = Path(__file__).with_name("fake_cli.py")
@@ -658,8 +660,7 @@ def test_advanced_shows_an_si_projects_fields_with_its_interfaces_defaults_and_u
 
 
 def test_compare_runs_into_the_bases_own_folder_and_gives_its_table_in_the_windows_words(tmp_path, calibrated):
-    from test_compare import twin  # design 5.8, 5.10
-    a = antenna_project(tmp_path / "a").resolve()
+    a = antenna_project(tmp_path / "a").resolve()  # design 5.8, 5.10
     assert pipeline.run(a) == 0
     b = twin(a, tmp_path / "b")
     code, lines, cells = control.compare(a, b)
@@ -672,6 +673,39 @@ def test_compare_runs_into_the_bases_own_folder_and_gives_its_table_in_the_windo
                                                                     gain["f_mhz"], gain["variant_dbi"])
     assert sorted(p.name for p in (a.parent / control.COMPARE_FOLDER).iterdir()) == ["compare.csv", "compare.png"]
     assert not (b.parent / control.COMPARE_FOLDER).exists()
+
+
+def test_the_compare_tables_cells_word_each_si_quantity_and_mark_and_round_as_the_lines():  # ruling 5
+    def row(quantity, marker, f_hz, base, variant, unit, delta, threshold, resolved):
+        return dict(zip(DELTA_COLUMNS, (quantity, marker, f_hz, base, variant, unit, delta, unit, threshold, resolved)))
+
+    rows = [row("tdr_highest", "short", "", "95.01", "97.22", "Ω", "2.21", "2.2", "True"),
+            row("sdd21", "marker", "240000000.0", "-1.9123", "-1.9", "dB", "0.0123", "0.05", "False"),
+            row("scd21_worst", "", "", "-45.56", "-27.89", "dB", "17.67", "0.5", "True"),
+            row("skew", "", "", "1.5", "-0.5", "ps", "-2.0", "1.0", "True"),
+            row("next", "AUX", "", "-25.72", "-19.37", "dB", "6.35", "0.5", "True")]
+    assert control.cells(rows) == [
+        [render("G_QUANTITY_TDR_HIGHEST"), render("G_MARK_SHORT"), "", "95.01", "97.22", "Ω", "+2.21", "Ω", "2.20",
+         render("T_RESOLVED")],
+        ["Sdd21", render("G_MARK_MARKER"), "240.0", "-1.912", "-1.900", "dB", "+0.012", "dB", "0.050",
+         render("T_NOT_RESOLVED")],  # an insertion to 3 decimals, as si_delta_lines prints it
+        ["Scd21", "", "", "-45.56", "-27.89", "dB", "+17.67", "dB", "0.50", render("T_RESOLVED")],
+        [render("G_QUANTITY_SKEW"), "", "", "+1.50", "-0.50", "ps", "-2.00", "ps", "1.00", render("T_RESOLVED")],
+        ["NEXT", "AUX", "", "-25.72", "-19.37", "dB", "+6.35", "dB", "0.50", render("T_RESOLVED")]]  # skew signed
+
+
+def test_compare_gives_two_si_projects_table_in_the_windows_words(tmp_path, calibrated, monkeypatch):  # ruling 5
+    a = verified_si(tmp_path, monkeypatch).resolve()
+    assert pipeline.verify(a) == 0
+    b = twin(a, tmp_path / "b")
+    code, lines, cells = control.compare(a, b)
+    assert code == 0 and lines[0] == ("I_SI_RELATIVE", {})
+    assert [row[0] for row in cells] == [render("G_QUANTITY_TDR_LOWEST"), render("G_QUANTITY_TDR_HIGHEST"), "Sdd21",
+                                         "Sdd21", "Sdd11", "Scd21", render("G_QUANTITY_SKEW"), "NEXT", "FEXT"]
+    assert [row[1] for row in cells] == ["", "", render("G_MARK_MARKER"), "f_max", "", "", "", "AUX", "AUX"]
+    insertion = next(p for c, p in lines if c == "I_SI_COMPARE_INSERTION")
+    assert (cells[2][2], cells[2][3], cells[2][6]) == ("240.0", insertion["base"], insertion["delta"])
+    assert sorted(p.name for p in (a.parent / control.COMPARE_FOLDER).iterdir()) == ["compare.csv", "compare.png"]
 
 
 def test_about_names_the_version_the_licence_notices_and_each_runtime_dependency(monkeypatch):  # design 5.3 About

@@ -2058,17 +2058,17 @@ msgid "Comparing…"
 msgstr ""
 
 #. G_COMPARE_NONE
-msgid "Open an antenna project, then choose the variant to compare it with."
+msgid "Open an antenna or a signal-integrity project, then choose the variant to compare it with."
 msgstr ""
 
 #. G_COMPARE_KIND
 #, python-brace-format
-msgid "{path} is not an antenna project: Compare the projects compares two antenna projects, made with New from a board and the kind Antenna."
+msgid "{path} is not of the kind Compare the projects takes here: two antenna projects or two signal-integrity projects, made with New from a board and the kind Antenna or Signal integrity."
 msgstr ""
 
 #. G_COMPARE_NO_RESULT
 #, python-brace-format
-msgid "{path} has no result that Compare the projects can use: a run of its current model, made by this version, with no part on the chain, or, with part ports, a verify of that run at the values project.json holds. Run it (a board re-saved since its run needs one), then press Verify for a project with part ports."
+msgid "{path} has no result that Compare the projects can use: a run of its current model, made by this version, with no part port on its chain or lines, or, with part ports, a verify of that run at the values project.json holds. Run it (a board re-saved since its run needs one), then press Verify for a project with part ports."
 msgstr ""
 
 #. G_RESULTS_WRITE
@@ -2118,6 +2118,26 @@ msgstr ""
 
 #. G_QUANTITY_PEAK_GAIN
 msgid "Peak gain"
+msgstr ""
+
+#. G_QUANTITY_TDR_LOWEST
+msgid "Lowest TDR level"
+msgstr ""
+
+#. G_QUANTITY_TDR_HIGHEST
+msgid "Highest TDR level"
+msgstr ""
+
+#. G_QUANTITY_SKEW
+msgid "Intra-pair skew"
+msgstr ""
+
+#. G_MARK_SHORT
+msgid "short feature"
+msgstr ""
+
+#. G_MARK_MARKER
+msgid "marker"
 msgstr ""
 
 #. G_TAB_ADVANCED

@@ -2,14 +2,14 @@
 """The main window (Stage 2 design 5.1, 5.3, 5.4): it creates a project from a board (NewForm) or opens one, shows its
 cost, starts, follows and stops a run, its own or one it re-attaches through the project lock, replays the project's
 last run and shows its results, which its parts' rows retune in this process (ResultsView), Apply stores through the
-CLI's retune and Verify checks; Compare compares an antenna project with a variant (CompareView); Advanced edits
-project.json's fields and saves them under the project lock (AdvancedView); all driven by one 500 ms timer (`tick`).
-The project is read, a board's pads and antennas listed, a KiCad button press read, the board refilled and saved in
-KiCad, new run, retune and compare waited for on a pool thread (control.open_project, control.board_choices,
-control.handed, button.refill, cli.new or cli.new_antenna, control.apply, control.compare); an SI project's retune
-(Stage 4 design 5.10) runs on a thread of its own (control.retuned on `tuner`), polled every TUNE_MS (take_retune);
-cost, run and verify start as a detached orchestrator (control.start), so this process never reaches runs.run_jobs.
-Its Help menu shows About (control.about) and Qt's About."""
+CLI's retune and Verify checks; Compare compares an antenna or an SI project with a variant of its kind (CompareView);
+Advanced edits project.json's fields and saves them under the project lock (AdvancedView); all driven by one 500 ms
+timer (`tick`). The project is read, a board's pads and antennas listed, a KiCad button press read, the board refilled
+and saved in KiCad, new run, retune and compare waited for on a pool thread (control.open_project,
+control.board_choices, control.handed, button.refill, cli.new, cli.new_antenna or cli.new_si, control.apply,
+control.compare); an SI project's retune (Stage 4 design 5.10) runs on a thread of its own (control.retuned on
+`tuner`), polled every TUNE_MS (take_retune); cost, run and verify start as a detached orchestrator (control.start),
+so this process never reaches runs.run_jobs. Its Help menu shows About (control.about) and Qt's About."""
 import html
 import json
 import subprocess
@@ -463,9 +463,10 @@ class NewForm(QGroupBox):
 
 
 class CompareView(QWidget):
-    """The Compare tab (Stage 3 design 5.8, 5.10): the row of Variant… (`variant_button`), the variant's project file
-    (`variant`, which the window sets) and Compare the projects (`compare_button`, which the window enables); its status
-    line (`status`); compare's lines (`lines`); its deltas (`table`, control.compare's cells under COMPARE_COLUMNS); and
+    """The Compare tab (Stage 3 and Stage 4 design 5.8, 5.10), for two antenna projects or two SI projects: the row of
+    Variant… (`variant_button`), the variant's project file (`variant`, which the window sets) and Compare the projects
+    (`compare_button`, which the window enables); its status line (`status`); compare's lines (`lines`); its deltas
+    (`table`, control.cells under COMPARE_COLUMNS, an SI row's quantity and mark in the window's words); and
     compare.png (`picture`), at its own size in a scroll area."""
 
     def __init__(self):

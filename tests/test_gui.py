@@ -114,6 +114,11 @@ def items(widget):
     return [widget.item(i).text() for i in range(widget.count())]
 
 
+def stamps(*roots):
+    """Each of `roots` and everything under it, by its st_mtime_ns: a folder read in place keeps them all."""
+    return {p: p.stat().st_mtime_ns for root in roots for p in [root, *root.rglob("*")]}
+
+
 @pytest.fixture(autouse=True)
 def collected():
     """Each test's garbage collected at its end, on this thread, the GUI's: a window left in a reference cycle (the
@@ -1516,6 +1521,50 @@ def test_compare_runs_on_the_pool_into_the_bases_folder_and_never_the_variants(w
     for project, shown in ((lpf, render("G_COMPARE_KIND", path=str(lpf))),
                            (fresh, render("G_COMPARE_NO_RESULT", path=str(fresh))),
                            (wrong.resolve(), render("E_COMPARE_SETTINGS", fields="preset"))):
+        choose(project)
+        c.compare_button.click()
+        w.comparing.exception(timeout=120)
+        w.tick()
+        assert (c.status.text(), c.lines.count(), c.table.rowCount()) == (shown, 0, 0)
+    assert "openEMS" not in sys.modules and "CSXCAD" not in sys.modules
+
+
+def test_compare_two_si_projects_in_the_window_into_the_bases_folder(window, qapp, tmp_path, monkeypatch):
+    a = verified_si(tmp_path, monkeypatch).resolve()  # design 5.8, 5.10; ruling 5; Review Focus 4
+    assert pipeline.verify(a) == 0
+    b, cell, target = (twin(a, tmp_path / name) for name in ("b", "cell", "target"))
+    d = load_project(cell)
+    d["verify"]["fingerprint"]["mesh"]["d_fill"] = False  # verified with a set cell, not the d fill
+    save_project(cell, d)
+    save_project(target, {**load_project(target), "target_ohm": 85.0})  # read at 85 Ω, as Results would show it
+    ant = antenna_project(tmp_path / "ant").resolve()
+    watched = (b.parent, Path(load_project(a)["results"]["run_dir"]), Path(load_project(a)["verify"]["run_dir"]))
+    before = stamps(*watched)
+    w = window()
+    w.open_project(a)
+    opened(w)
+    c = w.comparison
+    assert c.status.text() == render("G_COMPARE_NONE")
+
+    def choose(project):
+        monkeypatch.setattr(QFileDialog, "getOpenFileName", lambda *x, **k: (str(project), ""))
+        c.variant_button.click()
+        w.tick()
+
+    choose(b)
+    c.compare_button.click()
+    code, lines, cells = w.comparing.result(timeout=120)
+    w.tick()
+    assert code == 0 and items(c.lines) == [control.text(x, p) for x, p in lines] and len(cells) == 9
+    assert [[c.table.item(k, j).text() for j in range(10)] for k in range(c.table.rowCount())] == cells
+    w.tabs.setCurrentWidget(c)
+    qapp.processEvents()
+    assert not c.picture.pixmap().isNull() and (a.parent / "compare" / "compare.png").is_file()
+    assert stamps(*watched) == before and not (b.parent / "compare").exists()  # read in place, never written
+    grab(w, "compare-si")
+    for project, shown in ((ant, render("G_COMPARE_KIND", path=str(ant))),
+                           (cell, render("E_COMPARE_SETTINGS", fields="mesh")),  # the fingerprint's d_fill
+                           (target, render("E_COMPARE_SETTINGS", fields="target_ohm"))):
         choose(project)
         c.compare_button.click()
         w.comparing.exception(timeout=120)

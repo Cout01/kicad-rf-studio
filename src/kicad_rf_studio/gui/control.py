@@ -569,37 +569,60 @@ def handed(path: Path) -> Handed:
 
 COMPARE_FOLDER = "compare"  # Compare's folder, in the base project's folder (Stage 3 design 5.10)
 # compare.csv's quantities in the window's words, compare's lines' own (I_COMPARE_RESONANCE, I_COMPARE_BANDWIDTH,
-# I_COMPARE_ETA, I_COMPARE_GAIN)
+# I_COMPARE_ETA, I_COMPARE_GAIN; an SI project's I_SI_COMPARE_LEVEL, lowest and highest, and I_SI_COMPARE_SKEW)
 QUANTITIES = {"resonance": "G_QUANTITY_RESONANCE", "bandwidth_10db": "G_QUANTITY_BANDWIDTH",
-              "eta_tot": "G_QUANTITY_ETA_TOT", "peak_gain": "G_QUANTITY_PEAK_GAIN"}
-DIGITS = {"MHz": 1, "%": 1, "dBi": 2, "dB": 2}  # a number's decimals by its unit, as delta_lines rounds it
+              "eta_tot": "G_QUANTITY_ETA_TOT", "peak_gain": "G_QUANTITY_PEAK_GAIN",
+              "tdr_lowest": "G_QUANTITY_TDR_LOWEST", "tdr_highest": "G_QUANTITY_TDR_HIGHEST", "skew": "G_QUANTITY_SKEW"}
+MARKS = {"short": "G_MARK_SHORT", "marker": "G_MARK_MARKER"}  # an SI row's marks in the window's words (si_deltas)
+# a number's decimals by its unit, as delta_lines and si_delta_lines round it, but an SI insertion's (INSERTION)
+DIGITS = {"MHz": 1, "%": 1, "dBi": 2, "dB": 2, "Ω": 2, "ps": 2}
+INSERTION = ("sdd21", "s21")  # an SI line's insertion, its dB to 3 decimals, as I_SI_COMPARE_INSERTION prints it
+
+
+def cells(rows: list[dict[str, str]]) -> list[list[str]]:
+    """compare.csv's `rows`, as csv.DictReader reads them, as the Compare table shows them (Stage 3 and Stage 4 design
+    5.10), a list of texts per row under DELTA_COLUMNS: the quantity in the window's words (QUANTITIES), else the
+    symbol si_delta_lines writes (NEXT, FEXT; Sdd21, S11, Scd21); the marker in the window's words (MARKS), else as
+    compare.csv holds it (an antenna's f_lo, f0 or f_hi, an insertion's f_max, a victim's net); f in MHz to 1 decimal;
+    base and variant to DIGITS of their unit, the delta (signed) and the threshold to DIGITS of the delta's, but an
+    insertion's to 3 decimals, and the skew's base and variant signed, as compare's lines print them; the verdict,
+    T_RESOLVED or T_NOT_RESOLVED. An empty cell stays empty, as in a row with no value (no TDR level, no skew)."""
+    def fixed(cell: str, digits: int, sign: str = "", scale: float = 1.0) -> str:  # an empty cell stays empty
+        return cell and f"{float(cell) / scale:{sign}.{digits}f}"
+
+    def word(q: str) -> str:  # the quantity
+        if q in QUANTITIES:
+            return render(QUANTITIES[q])
+        # symbols, the same in both languages (pt-BR design 5.1), so no catalog code
+        return q.upper() if q in ("next", "fext") else q.removesuffix("_worst").capitalize()
+
+    verdicts, shown = {"True": render("T_RESOLVED"), "False": render("T_NOT_RESOLVED")}, []
+    for r in rows:
+        q, mark = r["quantity"], r["marker"]
+        digits, delta_digits = (3, 3) if q in INSERTION else (DIGITS[r["unit"]], DIGITS[r["delta_unit"]])
+        sign = "+" if q == "skew" else ""  # as I_SI_COMPARE_SKEW signs them
+        shown.append([word(q), render(MARKS[mark]) if mark in MARKS else mark, fixed(r["f_hz"], 1, scale=1e6),
+                      fixed(r["base"], digits, sign), fixed(r["variant"], digits, sign), r["unit"],
+                      fixed(r["delta"], delta_digits, "+"), r["delta_unit"], fixed(r["threshold"], delta_digits),
+                      verdicts.get(r["resolved"], "")])
+    return shown
 
 
 def compare(base: Path, variant: Path) -> tuple[int, list[tuple[str, dict]], list[list[str]]]:
-    """Compare (Stage 3 design 5.8, 5.10), off the GUI thread: compare_projects of the project files `base` and
-    `variant` into the base's own folder's compare/ (COMPARE_FOLDER), never the variant's; its lines and, when it
-    exited 0, compare.csv's rows as the Compare table shows them (cells: DELTA_COLUMNS, the quantity in the window's
-    words, f in MHz, the numbers rounded as the lines round them). Returns (exit code, lines, cells). Raises
-    compare_projects' refusals (E_COMPARE_KIND, E_COMPARE_NO_RESULT, E_COMPARE_SETTINGS)."""
+    """Compare (Stage 3 and Stage 4 design 5.8, 5.10), off the GUI thread: compare_projects of the project files `base`
+    and `variant`, two antenna projects or two SI projects, into the base's own folder's compare/ (COMPARE_FOLDER),
+    never the variant's; its lines and, when it exited 0, compare.csv's rows as the Compare table shows them (cells).
+    Returns (exit code, lines, cells). Raises compare_projects' refusals (E_COMPARE_KIND, E_COMPARE_NO_RESULT,
+    E_COMPARE_SETTINGS)."""
     # ponytail: compare/ is replaced on each compare; one folder per variant if users keep several
-    # ponytail: compare_png draws on this pool thread while the GUI thread may draw the Results canvas: separate
-    # Figures, and matplotlib keys its font cache by thread; a lock around both if a crash ever shows
+    # ponytail: compare_png (si_png for SI) draws on this pool thread while the GUI thread may draw the Results canvas:
+    # separate Figures, and matplotlib keys its font cache by thread; a lock around both if a crash ever shows
     folder, lines = base.parent / COMPARE_FOLDER, []
     code = pipeline.compare_projects(base, variant, folder, lambda c, p: lines.append((c, p)))
     if code != 0:
         return code, lines, []
     with open(folder / "compare.csv", encoding="utf-8", newline="") as f:
-        rows = list(csv.DictReader(f))
-
-    def fixed(cell: str, digits: int, sign: str = "", scale: float = 1.0) -> str:  # an empty cell stays empty
-        return cell and f"{float(cell) / scale:{sign}.{digits}f}"
-
-    verdicts = {"True": render("T_RESOLVED"), "False": render("T_NOT_RESOLVED")}
-    return code, lines, [[render(QUANTITIES[r["quantity"]]), r["marker"], fixed(r["f_hz"], 1, scale=1e6),
-                           fixed(r["base"], DIGITS[r["unit"]]), fixed(r["variant"], DIGITS[r["unit"]]), r["unit"],
-                           fixed(r["delta"], DIGITS[r["delta_unit"]], "+"), r["delta_unit"],
-                           fixed(r["threshold"], DIGITS[r["delta_unit"]]), verdicts.get(r["resolved"], "")]
-                          for r in rows]
+        return code, lines, cells(list(csv.DictReader(f)))
 
 
 def message(error: Exception) -> str:

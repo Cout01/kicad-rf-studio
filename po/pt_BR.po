@@ -2060,18 +2060,18 @@ msgid "Comparing…"
 msgstr "Comparando…"
 
 #. G_COMPARE_NONE
-msgid "Open an antenna project, then choose the variant to compare it with."
-msgstr "Abra um projeto de antena e escolha a variante a comparar com ele."
+msgid "Open an antenna or a signal-integrity project, then choose the variant to compare it with."
+msgstr "Abra um projeto de antena ou de integridade de sinal e escolha a variante a comparar com ele."
 
 #. G_COMPARE_KIND
 #, python-brace-format
-msgid "{path} is not an antenna project: Compare the projects compares two antenna projects, made with New from a board and the kind Antenna."
-msgstr "{path} não é um projeto de antena: o botão Comparar os projetos compara dois projetos de antena, criados com Novo projeto a partir de uma placa e o tipo Antena."
+msgid "{path} is not of the kind Compare the projects takes here: two antenna projects or two signal-integrity projects, made with New from a board and the kind Antenna or Signal integrity."
+msgstr "{path} não é do tipo que o botão Comparar os projetos compara aqui: dois projetos de antena ou dois projetos de integridade de sinal, criados com Novo projeto a partir de uma placa e o tipo Antena ou Integridade de sinal."
 
 #. G_COMPARE_NO_RESULT
 #, python-brace-format
-msgid "{path} has no result that Compare the projects can use: a run of its current model, made by this version, with no part on the chain, or, with part ports, a verify of that run at the values project.json holds. Run it (a board re-saved since its run needs one), then press Verify for a project with part ports."
-msgstr "{path} não tem resultado que o botão Comparar os projetos possa usar: uma execução do modelo atual dele, feita por esta versão, sem componente na cadeia ou, com portas de componentes, uma verificação dessa execução com os valores que o project.json guarda. Execute-o (uma placa salva de novo desde a execução precisa de uma) e depois pressione Verificar num projeto com portas de componentes."
+msgid "{path} has no result that Compare the projects can use: a run of its current model, made by this version, with no part port on its chain or lines, or, with part ports, a verify of that run at the values project.json holds. Run it (a board re-saved since its run needs one), then press Verify for a project with part ports."
+msgstr "{path} não tem resultado que o botão Comparar os projetos possa usar: uma execução do modelo atual dele, feita por esta versão, sem porta de componente na cadeia ou nas linhas ou, com portas de componentes, uma verificação dessa execução com os valores que o project.json guarda. Execute-o (uma placa salva de novo desde a execução precisa de uma) e depois pressione Verificar num projeto com portas de componentes."
 
 #. G_RESULTS_WRITE
 #, python-brace-format
@@ -2121,6 +2121,26 @@ msgstr "Eficiência total"
 #. G_QUANTITY_PEAK_GAIN
 msgid "Peak gain"
 msgstr "Ganho de pico"
+
+#. G_QUANTITY_TDR_LOWEST
+msgid "Lowest TDR level"
+msgstr "Nível mais baixo do TDR"
+
+#. G_QUANTITY_TDR_HIGHEST
+msgid "Highest TDR level"
+msgstr "Nível mais alto do TDR"
+
+#. G_QUANTITY_SKEW
+msgid "Intra-pair skew"
+msgstr "Skew intrapar"
+
+#. G_MARK_SHORT
+msgid "short feature"
+msgstr "trecho curto"
+
+#. G_MARK_MARKER
+msgid "marker"
+msgstr "marcador"
 
 #. G_TAB_ADVANCED
 msgid "Advanced"
@@ -2793,4 +2813,13 @@ msgstr "uma ilha, um ponto, um plano (o nome da camada de cobre dele) ou null"
 
 #~ msgid "Cannot read \"{value}\" as the value of {ref}: on an antenna's chain a C, L or R takes a value in its own unit (4.7pF, 4p7, 15nH, 50R), 0R replaces a series part with a short and open removes a shunt part (a C of 0 F could mean either, so it is refused), and any part takes an S2P file in its row."
 #~ msgstr "Não foi possível ler \"{value}\" como o valor de {ref}: na cadeia de uma antena, um C, L ou R recebe um valor na própria unidade (4.7pF, 4p7, 15nH, 50R), 0R troca um componente em série por um curto e open retira um componente shunt (um C de 0 F poderia ser qualquer um dos dois, então é recusado), e qualquer componente recebe um arquivo S2P na linha dele."
+
+#~ msgid "Open an antenna project, then choose the variant to compare it with."
+#~ msgstr "Abra um projeto de antena e escolha a variante a comparar com ele."
+
+#~ msgid "{path} is not an antenna project: Compare the projects compares two antenna projects, made with New from a board and the kind Antenna."
+#~ msgstr "{path} não é um projeto de antena: o botão Comparar os projetos compara dois projetos de antena, criados com Novo projeto a partir de uma placa e o tipo Antena."
+
+#~ msgid "{path} has no result that Compare the projects can use: a run of its current model, made by this version, with no part on the chain, or, with part ports, a verify of that run at the values project.json holds. Run it (a board re-saved since its run needs one), then press Verify for a project with part ports."
+#~ msgstr "{path} não tem resultado que o botão Comparar os projetos possa usar: uma execução do modelo atual dele, feita por esta versão, sem componente na cadeia ou, com portas de componentes, uma verificação dessa execução com os valores que o project.json guarda. Execute-o (uma placa salva de novo desde a execução precisa de uma) e depois pressione Verificar num projeto com portas de componentes."
 
