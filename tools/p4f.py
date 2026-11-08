@@ -103,9 +103,10 @@ def decide(m: dict, t: dict) -> dict:
 
 def tables(result: dict) -> str:
     """The Markdown of the gate JSON `result` (write's), by p0.table: P4F-1 the judged rows with their limits, the neck
-    run's own mark against the base's, P4-E's thresholds and the verdict; P4F-2 every other row of both pairs, as
-    compare words them; P4F-3 the runs: verdicts, t_stop against T_max and the ring rule's ceiling, the DC point, cells,
-    predicted and wall times, valid; then the references' soft notes beside what was measured."""
+    run's own mark against the base's, the thresholds it judged at (P4-E's, with ruling R-13's DB and Scd21 floor) and
+    the verdict; P4F-2 every other row of both pairs, as compare words them; P4F-3 the runs: verdicts, t_stop against
+    T_max and the ring rule's ceiling, the DC point, cells, predicted and wall times, valid; then the references' soft
+    notes beside what was measured."""
     c, t, v, refs, rows = (result[k] for k in ("criteria", "thresholds", "verdict", "references", "rows"))
     items = [*({"item": k, "value": result[k]} for k in ("neck_short", "base_short")),
              *({"item": k, "value": t[k]} for k in ("DIFF_OHM", "DB", "floor_db", "scd21_floor_db")),

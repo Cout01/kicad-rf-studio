@@ -4,6 +4,7 @@ import json
 import numpy as np
 import pytest
 
+import p4
 import p4d
 from kicad_rf_studio.core.project import load_project
 from test_cli_si import si_project
@@ -69,10 +70,11 @@ def test_the_committed_references_hold_the_curve_and_the_projectors():  # G-1; D
     assert np.abs(refs["dc"]["usb2_hs"]["s"]) == pytest.approx(np.abs(USB_DC), abs=1e-12)
 
 
-def test_p4d_runs_its_steps_and_writes_its_report(gates):  # design 5.11: the tool on the network fake
+def test_p4d_runs_its_steps_and_writes_its_report(gates, monkeypatch):  # design 5.11: the tool on the network fake
+    monkeypatch.setattr(p4, "RULE", "dfill")  # as P4-D ran: its usb2_hs Debye model holds no λ/40 cell (p4.settings)
     steps = "si_pad_coupon-h,si_pad_coupon-v,si_line100,si_line100-debye,si_line100-n3"
     assert p4d.main(["--out", str(gates), "--steps", steps]) == 1  # no such step
-    vertical = load_project(gates / "projects" / "si_pad_coupon-n2-l40-v" / "project.json")["ports"]
+    vertical = load_project(gates / "projects" / "si_pad_coupon-n2-dfill-v" / "project.json")["ports"]
     assert {(q["rule"], q["reference"]["plane"]) for q in vertical} == {("plane", "In1.Cu")}
     with pytest.raises(SystemExit, match="never regenerated"):
         p4d.main(["--references"])
@@ -80,7 +82,8 @@ def test_p4d_runs_its_steps_and_writes_its_report(gates):  # design 5.11: the to
     text = (gates / "p4d" / "p4d.json").read_text(encoding="utf-8")
     result = json.loads(text)
     assert sorted(result["runs"]) == ["si_line100", "si_line100-debye", "si_pad_coupon-h", "si_pad_coupon-v"]
-    assert sorted(result["dc"]) == ["si_line100-n2-l40", "si_pad_coupon-n2-l40", "si_pad_coupon-n2-l40-v"]  # no Debye
+    assert sorted(result["dc"]) == ["si_line100-n2-dfill", "si_pad_coupon-n2-dfill",
+                                    "si_pad_coupon-n2-dfill-v"]  # no Debye
     assert result["port"] is None and result["verdict"]["value"] == "fail"  # the star network's DC point, 0.9025
     debye = result["debye"]
     assert {"w", "f_usb", "predicted", "measured", "il_ok", "il_worst", "dc_loss"} <= set(debye)

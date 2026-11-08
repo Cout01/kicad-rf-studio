@@ -75,10 +75,12 @@ def name(board: str, n: int | None = None, rule: str | None = None, dielectric: 
 def settings(base: dict, n: int | None = None, rule: str | None = None, dielectric: str | None = None) -> dict:
     """The edits (p0.edit's dotted keys) that set the base project `base` to mesh n `n`, the rule `rule` and the
     dielectric `dielectric`, each None for its checkpoint constant: "mesh.n"; "mesh.max_cell_mm", the base's (LINES'
-    λ/40, base()) for "l40", half of it to 1e-6 mm for "l80", None for "dfill"; "dielectric"."""
-    # ponytail: a board LINES holds no cell for (the usb2_hs fixtures) reads None, the d fill, at "l40" and "l80" too;
-    # the gates ran those at the d fill only
+    λ/40, base()) for "l40", half of it to 1e-6 mm for "l80", None for "dfill"; "dielectric". ValueError for "l40" or
+    "l80" on a base with no cell (a board LINES holds none for, the usb2_hs fixtures, which the gates ran at the d fill
+    only), never the d fill under a λ rule's name."""
     cell = base["mesh"]["max_cell_mm"]
+    if cell is None and (rule or RULE) != "dfill":
+        raise ValueError(f"p4: rule {rule or RULE} needs a recorded λ/40 cell, which this base project lacks")
     half = None if cell is None else round(cell / 2, 6)
     return {"mesh.n": n or N, "mesh.max_cell_mm": {"l40": cell, "l80": half, "dfill": None}[rule or RULE],
             "dielectric": dielectric or DIELECTRIC}
@@ -123,7 +125,9 @@ def measure(out: Path, name: str) -> dict | None:
     """The measurements of the run step on the project `name`, in this process; None when the step has no record.
     p0.summary of the record, with "predicted_s" (to the longest t_stop of the jobs that kept S) and "worst_s" (to
     the spec's T_max) by predicted_s, as cost printed them: on the run folder's model.json and the calibration the
-    step's load saw at its start. Then "speeds_mcs", the MC/s of each job that wrote its openEMS_stats.txt, and
+    step's load saw at its start. The SI speed and the Debye weight are the run's own, from its events' cost lines:
+    I_SI_COST_SPEED's ratio (a message event, as prepare emits it) and I_SI_COST_DEBYE's weight, each 1.0 when absent.
+    Then "speeds_mcs", the MC/s of each job that wrote its openEMS_stats.txt, and
     "node_mcs", their median; "cal_mcs", runs.calibrated_mcs at the run's pool; "debye_cells"; "converged", every
     job converged, a run with none not; "valid", converged with the summary's sigma and recip within
     checks.SIGMA_LIMIT and RECIP_LIMIT (the product's flags); "blocked", exit 3; "t_stop_s", the longest t_stop kept;
@@ -139,12 +143,19 @@ def measure(out: Path, name: str) -> dict | None:
     folder = p0.run_path(m["run_dir"]) if m["run_dir"] else None
     file = folder and folder / "model.json"
     spec = json.loads(file.read_text(encoding="utf-8")) if file and file.is_file() else None
+    log = folder and folder / "events.jsonl"
+    events = log.read_text(encoding="utf-8").splitlines() if log and log.is_file() else []
+    said = {e["code"]: e["params"] for e in map(json.loads, events)}  # every kind: I_SI_COST_SPEED is a message one
+    speed = float(said.get("I_SI_COST_SPEED", {"ratio": 1})["ratio"])  # absent: cost applied no ratio
+    weight = float(said.get("I_SI_COST_DEBYE", {"weight": 1})["weight"])  # absent: no Debye cell to weigh
     pool, dt = m["pool"], m["dt"]
     t_stop = max((job["t_stop"] for job in m["jobs"] if job["verdict"] in KEPT and job["t_stop"] is not None),
                  default=None)
 
     def time_to(t: float | None) -> float | None:
-        return None if None in (spec, dt, t, pool, entry) else predicted_s(spec, dt, t, pool, len(spec["ports"]), entry)
+        if None in (spec, dt, t, pool, entry):
+            return None
+        return predicted_s(spec, dt, t, pool, len(spec["ports"]), entry, speed, weight)
 
     stats = sorted(folder.glob("job-[1-9]*/openEMS_stats.txt")) if folder else []
     speeds = [s["speed"] / 1e6 for p in stats if (s := read_stats(p.read_text(encoding="utf-8")))]
@@ -178,17 +189,19 @@ def deltas(a: dict, b: dict) -> list[dict]:
     return si_deltas(a["project"], a["reading"], b["reading"])
 
 
-def predicted_s(spec: dict, dt: float, t: float, pool: int, jobs: int, entry: dict) -> float:
+def predicted_s(spec: dict, dt: float, t: float, pool: int, jobs: int, entry: dict, speed: float,
+                weight: float) -> float:
     """The machine time in s that cost predicts for `jobs` jobs of the SI model `spec` at the timestep `dt` (s) to the
     simulated time `t` (s), `pool` at once, on the calibration `entry`: each cell of a Debye dielectric (debye_cells)
-    counts as runs.DEBYE_WEIGHT cells, at runs.per_job_mcs at that pool, taken at runs.SI_SPEED of it while it is the
-    calibration's own (runs.calibrated_mcs)."""
+    counts as `weight` cells, at runs.per_job_mcs at that pool, taken at `speed` of it while it is the calibration's own
+    (runs.calibrated_mcs). The two figures are the run's own, as its cost lines printed them, never runs.SI_SPEED and
+    runs.DEBYE_WEIGHT as they stand later (ruling G-2)."""
     # mirrors pipeline.cost_notes and prepare(si=True)
     mcs = runs.per_job_mcs(entry, pool)
     if mcs == runs.calibrated_mcs(entry, pool):
-        mcs *= runs.SI_SPEED
+        mcs *= speed
     cells = math.prod(len(spec["mesh"][a]) for a in "xyz")
-    return p0.predicted_s(jobs, pool, cells + (runs.DEBYE_WEIGHT - 1) * debye_cells(spec), dt, t, mcs)
+    return p0.predicted_s(jobs, pool, cells + (weight - 1) * debye_cells(spec), dt, t, mcs)
 
 
 def rows(out: Path) -> list[dict]:

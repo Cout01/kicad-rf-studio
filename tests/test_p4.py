@@ -9,7 +9,7 @@ from scipy.constants import c as C0
 
 import p0
 import p4
-from kicad_rf_studio import pipeline
+from kicad_rf_studio import pipeline, runs
 from kicad_rf_studio.core.post.si import Reading, read
 from kicad_rf_studio.core.project import load_project
 from test_p0 import in_process
@@ -37,6 +37,9 @@ def test_a_run_step_runs_the_product_once_and_measures_it(gates, monkeypatch):  
     monkeypatch.setattr(p0, "cli_run", lambda *a: pytest.fail("a recorded step ran again"))
     assert p4.run_step(gates, name) == record
     m = p4.measure(gates, name)
+    monkeypatch.setattr(runs, "SI_SPEED", 0.9)  # a refit after the run (0c94475's): the run's own figures still hold
+    monkeypatch.setattr(runs, "DEBYE_WEIGHT", 50.0)
+    assert p4.measure(gates, name)["worst_s"] == m["worst_s"]  # ruling G-2: the I_COST_TIME the run printed
     assert (m["pool"], m["cal_mcs"], m["speeds_mcs"], m["debye_cells"]) == (2, 200.0, [100.0] * 4, 0)
     assert isinstance(m["reading"], Reading) and m["reading_error"] is None and m["valid"] is True
     events = [json.loads(x) for x in (p0.run_path(m["run_dir"]) / "events.jsonl").read_text("utf-8").splitlines()]
@@ -56,6 +59,9 @@ def test_the_settings_follow_the_checkpoint_constants(gates, monkeypatch):  # G-
     assert p4.settings(base, rule="dfill", dielectric="debye")["mesh.max_cell_mm"] is None
     usb = load_project(p4.base(gates, "usb2_hs"))  # no LINES cell: P4-D's and P4-F's board, run at the d fill only
     assert p4.settings(usb, rule="dfill")["mesh.max_cell_mm"] is None
+    for rule in ("l40", "l80"):  # never the d fill under a λ rule's name
+        with pytest.raises(ValueError, match=f"rule {rule} needs a recorded λ/40 cell"):
+            p4.settings(usb, rule=rule)
     assert p4.name("si_line100", dielectric="debye", tag="v") == "si_line100-n3-l80-debye-v"
     monkeypatch.setattr(p4, "EDITS", {"p4b_sl90": {"gates.fit2d_limit": 0.05}})
     assert load_project(p4.project(gates, "p4b_sl90")[1])["gates"]["fit2d_limit"] == 0.05

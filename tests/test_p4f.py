@@ -4,6 +4,7 @@ import json
 import pytest
 
 import p0
+import p4
 import p4f
 from test_p4 import gates  # noqa: F401 (the fixture)
 
@@ -33,7 +34,8 @@ def test_a_neck_its_own_run_leaves_unmarked_is_an_owner_item():  # design 5.6; p
     assert p4f.decide(m(short=False), T)["verdict"] == {"value": "pass", "fails": [], "owner": ["neck: short mark"]}
 
 
-def test_p4f_runs_its_steps_and_writes_its_report(gates):  # design 5.11: the tool on the network fake
+def test_p4f_runs_its_steps_and_writes_its_report(gates, monkeypatch):  # design 5.11: the tool on the network fake
+    monkeypatch.setattr(p4, "RULE", "dfill")  # as P4-F ran: its usb2_hs boards hold no λ/40 cell (p4.settings)
     assert p4f.main(["--out", str(gates), "--steps", "usb2_hs,usb2_hs_neck,usb2_hs_bogus"]) == 1  # no such step
     with pytest.raises(SystemExit, match="run P4-E's report first"):
         p4f.main(["--out", str(gates)])
