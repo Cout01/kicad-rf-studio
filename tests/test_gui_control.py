@@ -26,6 +26,7 @@ from kicad_rf_studio.core.messages import CATALOG, KrsError, render
 from kicad_rf_studio.core.model.spec import spec_hash
 from kicad_rf_studio.core.post.antenna import ANTENNA_LIMITS
 from kicad_rf_studio.core.post.outputs import LIMITS
+from kicad_rf_studio.core.post.si import si_limits
 from kicad_rf_studio.core.post.waves import grid
 from kicad_rf_studio.core.project import board_file, load_project, parts, save_project
 from kicad_rf_studio.gui import control
@@ -33,6 +34,7 @@ from networks import star, terminate_np
 from test_antenna_kicad import KINDS
 from test_cli_antenna import antenna_project
 from test_cli_cost import FIX, new_project
+from test_cli_si import si_project
 from test_match_antenna import pi_run
 from test_post_chain import M0402, lpf
 from test_run import lpf_loads, lpf_run
@@ -328,10 +330,12 @@ def test_a_run_going_on_is_found_through_its_lock_and_stops_by_its_stop_file(tmp
     ("C2", "9" * 400 + "pF", "E24", "9" * 400 + "pF"),  # reads as inf, which snap cannot take
     ("C1", "100pF/50V", "E24", "100pF/50V"),  # on the series: kept as typed, its rating too
     ("C2", "0.0000125pF", "E24", "0.0000125pF"), ("R1", "5000000000G", "E24", "5000000000G"),  # outside p to G
-    ("C2", "0." + "0" * 311 + "5p", "E24", "0." + "0" * 311 + "5p")])  # subnormal: snap cannot take it
+    ("C2", "0." + "0" * 311 + "5p", "E24", "0." + "0" * 311 + "5p"),  # subnormal: snap cannot take it
+    ("R1", "25", "E24", "24"), ("R1", "25", "E12", "27"), ("R1", "open", "E24", "open")])
 def test_snapping_writes_back_the_nearest_value_as_port_value_reads_it(ref, text, series, shown):  # design 5.3, 7
     assert control.snapped(ref, text, series) == shown
     assert [control.default_series(r) for r in ("C2", "L1", "R1", "FB1")] == ["E24", "E24", "off", "off"]
+    assert [control.default_series(r, {"schema": 3}) for r in ("R1", "C1", "FB1")] == ["E24"] * 3
     assert control.SERIES == ("off", "E12", "E24")
 
 
@@ -579,16 +583,71 @@ def test_advanced_shows_an_antennas_fields_with_its_own_defaults_and_units():  #
     assert (v1["t_max_s"], v1["region.expand_h"], v1["lid"]) == ("4e-08", "3.0", "null")  # v1's as before
 
 
-def test_an_si_project_is_refused_until_plan_5(tmp_path, fake):  # Stage 4 plan 2: the window reads f0 and harmonics
+def test_an_si_project_opens_with_the_clis_reading_and_lines(tmp_path, calibrated, monkeypatch):  # 5.10; ruling 1
     from test_project import si_dict
-    p = tmp_path / "project.json"
-    save_project(p, si_dict())
-    opened = control.open_project(p)
-    assert opened.project is None and opened.problem == ("G_SI_LATER", {"path": str(p)})
-    assert opened.stored["schema"] == 3  # Advanced still opens it, with an SI project's own defaults
-    shown = {f.name: f.default for f in control.fields(opened.stored)}
-    assert "kind" not in shown and (shown["gates.dt_floor"], shown["region.expand_h"], shown["lid"],
-                                    shown["t_max_s"]) == ("0.6", "6.0", "true", "")
+    p = tmp_path / "unread" / "project.json"
+    p.parent.mkdir()
+    save_project(p, si_dict())  # its board is not beside it: the read stops there, Advanced still gets it
+    unread = control.open_project(p)
+    assert unread.problem[0] == "E_BOARD_UNREADABLE" and unread.stored == si_dict()
+    monkeypatch.setenv("KRS_FAKE", "network")
+    pj = si_project(tmp_path / "usb2_hs").resolve()
+    assert control.open_project(pj).problem == ("E_NO_RESULTS", {})  # opened, no longer refused
+    assert pipeline.run(pj) == 0
+    opened, d = control.open_project(pj), load_project(pj)
+    reading, lines = pipeline.si_view(d, pipeline.chain_results(pj, d, errors_as_lines=True))
+    assert (opened.problem, opened.results.refs, opened.results.lines) == (None, ["R1", "R2"], lines)
+    assert np.array_equal(opened.results.reading.m, reading.m) and "G_SI_LATER" not in CATALOG
+
+
+def test_the_si_retune_session_gives_retunes_reading_and_lines_and_reads_no_waves(tmp_path, calibrated, monkeypatch):
+    monkeypatch.setenv("KRS_FAKE", "network")  # design 5.7, 5.10; ruling 3
+    pj = si_project(tmp_path / "usb2_hs").resolve()
+    assert pipeline.run(pj) == 0
+    opened = control.open_project(pj)
+    rows = [replace(row, value="24") for row in control.rows(opened.project, pj.parent, opened.results.refs)]
+    with monkeypatch.context() as m:  # the stored layout serves the session: no waves read
+        m.setattr(pipeline, "layout", lambda *a, **k: 1 / 0)
+        res = control.retuned(pj, opened.project, opened.results, rows)
+    lines = []
+    assert pipeline.retune(pj, ["R1=24", "R2=24"], lambda c, p: lines.append((c, p))) == 0
+    assert lines[:len(res.lines)] == res.lines
+    assert [c for c, _ in lines[len(res.lines):]] == ["I_WHAT_IF", "I_OUTPUTS", *si_limits(load_project(pj))]
+    d = load_project(pj)
+    assert np.array_equal(res.reading.m, pipeline.si_view(d, pipeline.chain_results(pj, d))[0].m)
+    bad = control.retuned(pj, opened.project, opened.results, [replace(rows[0], value="open"), rows[1]])
+    assert (bad.chain, bad.reading, bad.lines) == (None, None, [("E_RETUNE_OPEN_SERIES", {"ref": "R1"})])
+    assert control.text(*bad.lines[0]) == render("G_RETUNE_OPEN_SERIES", ref="R1")
+
+
+def test_an_si_verify_is_stale_when_a_bypass_changes():  # Stage 4 design 5.7; ruling 3; Review Focus 5
+    from test_project import si_dict
+    d = si_dict()
+    d["lines"][0]["chain"]["series"] = [{"ref": "C1", "value": "0R"}]  # an AC-coupling capacitor bypassed
+    d = {**d, "results": {"model_hash": "M"}, "verify": {"base_hash": "M", "values": {"C1": "0R"}, "run_dir": "v"}}
+
+    def stale(c1):
+        return control.verify_stale(d, [control.Row("C1", c1, "", "series")])
+
+    assert stale("0R") is None and stale("open") == "G_VERIFY_STALE"  # port_value reads both as None
+
+
+def test_advanced_shows_an_si_projects_fields_with_its_interfaces_defaults_and_units():  # ruling 8
+    from test_project import si_dict
+    d = si_dict()
+    by = {f.name: f for f in control.fields(d)}
+    assert not {"kind", "schema"} & set(by)
+    names = ("f_max_hz", "rise_s", "marker_hz", "target_ohm", "tolerance", "dielectric", "window_s", "t_max_s",
+             "mesh.max_cell_mm", "gates.dt_floor", "region.expand_h", "lid")
+    assert {n: (by[n].default, by[n].unit) for n in names} == {
+        "f_max_hz": ("10000000000.0", "G_UNIT_HZ"), "rise_s": ("5e-10", "G_UNIT_S"),
+        "marker_hz": ("240000000.0", "G_UNIT_HZ"), "target_ohm": ("90.0", "G_UNIT_OHM"), "tolerance": ("0.1", None),
+        "dielectric": ('"lossless"', None), "window_s": ("", "G_UNIT_S"), "t_max_s": ("", "G_UNIT_S"),
+        "mesh.max_cell_mm": ("null", "G_UNIT_MM"), "gates.dt_floor": ("0.6", None),
+        "region.expand_h": ("6.0", "G_UNIT_SUBSTRATE"), "lid": ("true", None)}  # null: the d fill (gate P4-C)
+    for interface in ("custom", ["x"]):  # the user's own, and a hand edit that is not text, which Advanced must open
+        listed = {f.name: f.default for f in control.fields({**d, "interface": interface})}
+        assert [listed[n] for n in ("f_max_hz", "rise_s", "marker_hz", "target_ohm")] == [""] * 4
 
 
 def test_compare_runs_into_the_bases_own_folder_and_gives_its_table_in_the_windows_words(tmp_path, calibrated):

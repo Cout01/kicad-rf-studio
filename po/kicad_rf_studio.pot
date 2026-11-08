@@ -1649,11 +1649,6 @@ msgstr ""
 msgid "{path}: antenna {ref}, band {f_lo_mhz} to {f_hi_mhz} MHz, preset {preset}."
 msgstr ""
 
-#. G_SI_LATER
-#, python-brace-format
-msgid "{path} is a signal-integrity project (schema 3), which this window does not open yet: use the command line, `kicad-rf-studio cost` and `kicad-rf-studio run`."
-msgstr ""
-
 #. G_NO_COST
 msgid "No cost of this model yet: estimate it, then Run… asks to start the run."
 msgstr ""
@@ -1895,17 +1890,17 @@ msgstr ""
 
 #. G_RETUNE_SHORT_SHUNT
 #, python-brace-format
-msgid "{ref} joins the antenna's chain to {net}: 0 Ω there would short the chain to {net}. In the Value column, 0R replaces a series part with a short, and open removes a part like this one."
+msgid "{ref} joins the chain to {net}: 0 Ω there would short the chain to {net}. In the Value column, 0R replaces a series part with a short, and open removes a part like this one."
 msgstr ""
 
 #. G_RETUNE_OPEN_SERIES
 #, python-brace-format
-msgid "{ref} is a series part of the antenna's chain: open there would cut the antenna off its feed. In the Value column, 0R replaces it with a short; open removes a shunt part."
+msgid "{ref} is a series part of the chain: open there would cut it, an antenna off its feed or a line in two. In the Value column, 0R replaces it with a short; open removes a shunt part."
 msgstr ""
 
 #. G_RETUNE_ANTENNA_VALUE
 #, python-brace-format
-msgid "Cannot read \"{value}\" as the value of {ref}: on an antenna's chain a C, L or R takes a value in its own unit (4.7pF, 4p7, 15nH, 50R), 0R replaces a series part with a short and open removes a shunt part (a C of 0 F could mean either, so it is refused), and any part takes an S2P file in its row."
+msgid "Cannot read \"{value}\" as the value of {ref}: on an antenna's chain or a signal-integrity line, a C, L or R takes a value in its own unit (4.7pF, 4p7, 15nH, 50R), 0R replaces a series part with a short and open removes a shunt part (a C of 0 F could mean either, so it is refused), and any part takes an S2P file in its row."
 msgstr ""
 
 #. G_PART_NO_VALUE
