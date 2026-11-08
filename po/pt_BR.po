@@ -2624,6 +2624,10 @@ msgstr "\"lossless\" ou \"debye\""
 msgid "a list of lines, each with its role and chain: the measured line, or a pair's two, first, then up to two victims"
 msgstr "uma lista de linhas, cada uma com seu role e sua chain: a linha medida, ou as duas de um par, primeiro, depois até duas vítimas"
 
+#. T_EXPECT_SI_OWN_NETS
+msgid "a list of lines whose nets are each their own: no net on two lines"
+msgstr "uma lista de linhas cujas redes são de cada uma: nenhuma rede em duas linhas"
+
 #. T_EXPECT_LINE_ROLE
 msgid "measured or victim"
 msgstr "measured ou victim"

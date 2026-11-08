@@ -1281,16 +1281,24 @@ def antenna_result(path: Path) -> dict:
             "fingerprint": record["fingerprint"], "source": source, "run_dir": record["run_dir"]}
 
 
+# an SI reading's settings that no model spec holds: read at project.json's current values, as Results reads them
+# (A-67); the tolerance is left out, since no delta reads it and compare.png draws the base's band alone
+SI_READ_AT = ("target_ohm", "marker_hz", "rise_s")
+
+
 def si_result(path: Path) -> dict:
     """The full simulation `compare` reads of the SI project at `path` (Stage 4 design 5.8): _full_record's run or
     current verify, read (read, at the run's route's εeff) from that record's layout, which is the chain itself:
     verify's layout holds its external ports alone, its parts in the grid, and the run's at M = 0 its chain. Its
-    reading, fingerprint, source (T_RUN or T_VERIFY) and run folder. No kind check of its own: compare_projects, its
-    one caller, checks both projects' kinds first. Raises _full_record's E_COMPARE_NO_RESULT. It starts no worker."""
+    reading, fingerprint, source (T_RUN or T_VERIFY) and run folder. Its fingerprint holds project.json's current
+    SI_READ_AT, which it reads at, over the record's, so two projects edited alike compare at those values and two
+    edited apart are refused (E_COMPARE_SETTINGS). No kind check of its own: compare_projects, its one caller, checks
+    both projects' kinds first. Raises _full_record's E_COMPARE_NO_RESULT. It starts no worker."""
     project, record, lay, source = _full_record(path)
     return {"path": path, "project": project,
             "reading": read(lay.s, lay.f, project, project["results"]["route"]["eeff"]),
-            "fingerprint": record["fingerprint"], "source": source, "run_dir": record["run_dir"]}
+            "fingerprint": {**record["fingerprint"], **{key: project[key] for key in SI_READ_AT}},
+            "source": source, "run_dir": record["run_dir"]}
 
 
 def compare_projects(base: Path, variant: Path, output: Path | None = None,

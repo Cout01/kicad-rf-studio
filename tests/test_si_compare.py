@@ -115,8 +115,8 @@ def test_compare_refuses_si_projects_it_cannot_compare(tmp_path, calibrated, mon
     assert pipeline.verify(a) == 0
     b, old = twin(a, tmp_path / "b"), twin(a, tmp_path / "old")
     d = load_project(b)
-    d["verify"]["fingerprint"] = {**d["verify"]["fingerprint"], "ends": ["J1.3", "J1.2", "U1.3", "U1.2"],
-                                  "target_ohm": 85.0}  # no victim, another target
+    d["verify"]["fingerprint"] = {**d["verify"]["fingerprint"], "ends": ["J1.3", "J1.2", "U1.3", "U1.2"]}  # no victim
+    d["target_ohm"] = 85.0  # another current target: compare reads it, not the record's (plan 5)
     save_project(b, d)
     d = load_project(old)
     del d["results"]["route"]  # plan 2's results
@@ -138,6 +138,22 @@ def test_compare_refuses_si_projects_it_cannot_compare(tmp_path, calibrated, mon
                 pipeline.compare_projects(base, variant, tmp_path / "out")
             assert (e.value.code, e.value.params) == ("E_COMPARE_KIND", {"path": str(variant)})
     assert not (tmp_path / "out").exists()
+
+
+def test_compare_reads_each_si_project_at_its_current_target_marker_and_rise(tmp_path, calibrated, monkeypatch):
+    a = verified_si(tmp_path, monkeypatch)  # ruling 5, plan 3's deferred item; Review Focus 4
+    assert pipeline.verify(a) == 0
+    b = twin(a, tmp_path / "b")
+    for path in (a, b):  # edited alike after the verify: no part of the model, so the results stay current
+        save_project(path, {**load_project(path), "target_ohm": 85.0})
+    assert pipeline.si_result(a)["fingerprint"]["target_ohm"] == 85.0  # as Results reads it
+    assert load_project(a)["verify"]["fingerprint"]["target_ohm"] == 90.0  # the record keeps the run's
+    compared(a, b, tmp_path / "out")  # both read at 85 Ω: exit 0
+    save_project(b, {**load_project(b), "target_ohm": 90.0, "marker_hz": 250e6, "rise_s": 1e-9})
+    with pytest.raises(KrsError) as e:
+        pipeline.compare_projects(a, b, tmp_path / "out2")
+    assert (e.value.code, e.value.params) == ("E_COMPARE_SETTINGS", {"fields": "marker_hz, rise_s, target_ohm"})
+    assert not (tmp_path / "out2").exists()
 
 
 def test_compare_reads_a_partless_si_projects_run(tmp_path, calibrated, monkeypatch):  # 5.7, 5.8; Review Focus 5

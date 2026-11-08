@@ -348,6 +348,9 @@ def test_the_custom_interface_and_the_presets_refusals():  # design 5.1
     (lambda d: {"lines": d["lines"][::-1]}, "lines", "T_EXPECT_SI_LINES"),  # the measured lines come first
     (lambda d: {"lines": [{**d["lines"][0], "role": "aggressor"}, *d["lines"][1:]]}, "lines[0].role",
      "T_EXPECT_LINE_ROLE"),
+    (lambda d: {"lines": [d["lines"][0], {**d["lines"][1], "chain": {**d["lines"][1]["chain"],
+                                                                     "nets": ["USB_D-", "MCU_D+"]}}, d["lines"][2]]},
+     "lines", "T_EXPECT_SI_OWN_NETS"),  # MCU_D+ on two lines: new refuses it (E_SI_LINE_SHARED), and so does Save
     (lambda d: {"ports": d["ports"][1:] + d["ports"][:1]}, "ports", "T_EXPECT_SI_PORTS"),  # se2gmm reads this order
     (lambda d: {"ports": [{**d["ports"][0], "rule": "vertical"}, *d["ports"][1:]]}, "ports[0].rule",
      "T_EXPECT_SI_RULE"),

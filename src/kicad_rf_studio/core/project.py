@@ -385,11 +385,11 @@ def check_project(data: dict, path: Path) -> dict:
     3: one band a run), its f0_hz lies in the band, and its far field's first frequency is f0_hz (the worker draws the
     cuts at the first) and each lies within pulse_band, in that order. An SI project's rise_s is then at least
     LOCAL_RISE/f_max_hz, the localising TDR's (Stage 4 design 5.1), its lines' roles are 1 or 2 measured, then 0 to 2
-    victims, its pair is null with one measured line, else p and n are the two measured lines' first nets, and its
-    ports' signals are each measured line's start, each one's end, then each victim's start and end (the order se2gmm
-    reads a pair's ports in), checked in that order. An antenna's `copper` and `flat_s` are optional (a project made
-    before plan 4 has neither): solid copper (copper_model) and flat_window's (excitation). `results` is optional, and
-    an object."""
+    victims, its lines' nets each on one line (as `new` refuses with E_SI_LINE_SHARED), its pair is null with one
+    measured line, else p and n are the two measured lines' first nets, and its ports' signals are each measured line's
+    start, each one's end, then each victim's start and end (the order se2gmm reads a pair's ports in), checked in that
+    order. An antenna's `copper` and `flat_s` are optional (a project made before plan 4 has neither): solid copper
+    (copper_model) and flat_window's (excitation). `results` is optional, and an object."""
     _check(data, _FIELDS_ANTENNA if antenna(data) else _FIELDS_SI if si(data) else _FIELDS, "", path)
     if antenna(data):
         f_lo, f_hi, f0, far = data["band"]["f_lo_hz"], data["band"]["f_hi_hz"], data["f0_hz"], data["far_field"]["f_hz"]
@@ -407,9 +407,11 @@ def check_project(data: dict, path: Path) -> dict:
         measured, victims = [line["chain"] for line in lines[:m]], [line["chain"] for line in lines[m:]]
         ends = [*(c["start"] for c in measured), *(c["end"] for c in measured),
                 *(end for c in victims for end in (c["start"], c["end"]))]
+        nets = [n for line in lines for n in line["chain"]["nets"]]
         for field, expected, ok in (
                 ("rise_s", "T_EXPECT_RISE", data["rise_s"] >= LOCAL_RISE / data["f_max_hz"] * (1 - 1e-9)),
                 ("lines", "T_EXPECT_SI_LINES", m in (1, 2) and v <= 2 and roles == ["measured"] * m + ["victim"] * v),
+                ("lines", "T_EXPECT_SI_OWN_NETS", len(nets) == len(set(nets))),
                 ("pair", "T_EXPECT_SI_PAIR", pair is None if m == 1 else
                  pair is not None and [pair["p"], pair["n"]] == [n for c in measured for n in c["nets"][:1]]),
                 ("ports", "T_EXPECT_SI_PORTS", [port["signal"] for port in data["ports"]] == ends)):

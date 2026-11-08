@@ -584,6 +584,7 @@ CATALOG: dict[str, str] = {
     "T_EXPECT_RISE": "a time in s of at least 1.25/f_max_hz, the localising TDR's rise time",
     "T_EXPECT_DIELECTRIC": '"lossless" or "debye"',
     "T_EXPECT_SI_LINES": "a list of lines, each with its role and chain: the measured line, or a pair's two, first, then up to two victims",
+    "T_EXPECT_SI_OWN_NETS": "a list of lines whose nets are each their own: no net on two lines",
     "T_EXPECT_LINE_ROLE": "measured or victim",
     "T_EXPECT_SI_PAIR": 'null for one measured line, or p and n, the first nets of the two measured lines, with by "rule", "alias" or "given"',
     "T_EXPECT_SI_PORTS": "a list of ports whose signals are the lines' ends in order: each measured line's start, then each one's end, then each victim's start and end",

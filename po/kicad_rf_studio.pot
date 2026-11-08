@@ -2614,6 +2614,10 @@ msgstr ""
 msgid "a list of lines, each with its role and chain: the measured line, or a pair's two, first, then up to two victims"
 msgstr ""
 
+#. T_EXPECT_SI_OWN_NETS
+msgid "a list of lines whose nets are each their own: no net on two lines"
+msgstr ""
+
 #. T_EXPECT_LINE_ROLE
 msgid "measured or victim"
 msgstr ""
