@@ -1778,6 +1778,80 @@ msgstr ""
 msgid "{ref} is a chip antenna: its radiator is inside the part's body and the board file holds only its pads, so it cannot be simulated as an antenna. The matching chain up to it still can: choose the kind Matching chain, with a pad of {ref} as the end pad."
 msgstr ""
 
+#. G_KIND_SI
+msgid "Signal integrity"
+msgstr ""
+
+#. G_NEW_INTERFACE
+msgid "Interface"
+msgstr ""
+
+#. G_INTERFACE_CUSTOM
+msgid "Custom"
+msgstr ""
+
+#. G_NEW_F_MAX
+msgid "f_max (for example 10GHz)"
+msgstr ""
+
+#. G_NEW_TARGET
+msgid "Target (Ω)"
+msgstr ""
+
+#. G_NEW_PAIR
+msgid "Pair"
+msgstr ""
+
+#. G_PAIR_NONE
+msgid "None (a single-ended net)"
+msgstr ""
+
+#. G_PAIR_RULE
+msgid "By KiCad's pair rule"
+msgstr ""
+
+#. G_PAIR_PICK
+msgid "Picked: the partner's two end pads"
+msgstr ""
+
+#. G_PAIR_PICKED
+msgid "its two end pads, picked here"
+msgstr ""
+
+#. G_NEW_VICTIM
+#, python-brace-format
+msgid "Victim {n} (start and end pads)"
+msgstr ""
+
+#. G_SI_ENDS_HALF
+msgid "A victim needs both its end pads, and so does a partner picked in the Pair row: pick both, or leave a victim's two empty."
+msgstr ""
+
+#. G_SI_NEEDS_PAIR
+#, python-brace-format
+msgid "Interface {interface} is a differential pair's: in the Pair row, take the partner by KiCad's pair rule or pick its two end pads, or, for a single-ended net, choose se50 or Custom in the Interface row."
+msgstr ""
+
+#. G_SI_NOT_PAIR
+#, python-brace-format
+msgid "Interface {interface} is a single-ended net's: in the Pair row, choose None, or choose the interface Custom for a pair."
+msgstr ""
+
+#. G_SI_PARTNER
+#, python-brace-format
+msgid "The partner of net {net} (pad {pad}) on {ref} is {partner} by KiCad's pair rule or the DP/DM alias, with pads {pads} on {ref}, where one is needed. In the Pair row, pick the partner's two end pads."
+msgstr ""
+
+#. G_SI_LINE_SHARED
+#, python-brace-format
+msgid "The line from {start} to {end} runs on net {net}, which an earlier line of this project holds: each line needs nets of its own. Pick the partner's two end pads, or a victim's, on another net."
+msgstr ""
+
+#. G_SI_LONG_PORT
+#, python-brace-format
+msgid "Port {name} spans {length_mm} mm from its pad to its reference, more than λ/20 at f_max ({limit_mm} mm): its launch reads as an inductive bump, which the TDR marks as the port's own. A lower f_max, with the interface Custom, shortens it in wavelengths."
+msgstr ""
+
 #. G_BROWSE
 msgid "Browse…"
 msgstr ""

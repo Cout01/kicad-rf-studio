@@ -284,6 +284,13 @@ def test_the_gui_names_a_fixture_by_its_combo_label_not_the_cli_syntax(monkeypat
     assert line == render("G_S2P_FIXTURE", ref="C3", path="p", named="SERIES-LABEL", fits="SHUNT-LABEL")
 
 
+def test_the_window_words_a_picked_partner_without_the_clis_option():  # ruling 6
+    picked = control.text("I_SI_PAIR", {"p": "USB_D+", "n": "USB_D-", "how": "T_PAIR_WITH"})
+    assert picked == render("I_SI_PAIR", p="USB_D+", n="USB_D-", how=render("G_PAIR_PICKED")) and "--" not in picked
+    assert control.text("I_SI_PAIR", {"p": "A", "n": "B", "how": "T_PAIR_RULE"}) == render(
+        "I_SI_PAIR", p="A", n="B", how="T_PAIR_RULE")
+
+
 def test_open_project_reads_results_only_while_they_apply(tmp_path, calibrated, monkeypatch):  # Review Focus 1, 5
     pj = new_project(tmp_path, "coupon_gcpw_pads", preset="draft").resolve()
     fresh = control.open_project(pj)

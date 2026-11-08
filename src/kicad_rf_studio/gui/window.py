@@ -34,8 +34,8 @@ from kicad_rf_studio.core.messages import KrsError, detail, reason, render
 from kicad_rf_studio.core.post.antenna import ANTENNA_LIMITS, draw_antenna, retrace_antenna
 from kicad_rf_studio.core.post.outputs import LIMITS, draw_summary, retrace_summary
 from kicad_rf_studio.core.post.si import draw_si, retrace_si, si_limits
-from kicad_rf_studio.core.project import (DEFAULT_PRESET, HARMONICS, antenna, check_project, load_project, save_project,
-                                          si)
+from kicad_rf_studio.core.project import (DEFAULT_PRESET, HARMONICS, INTERFACES, SI_F_MAX, antenna, check_project,
+                                          load_project, save_project, si)
 from kicad_rf_studio.gui import control
 
 COLUMNS = ("G_COL_PORT", "G_COL_TIME", "G_COL_RESIDUAL", "G_COL_SPEED", "G_COL_VERDICT")
@@ -315,22 +315,28 @@ class ResultsView(QWidget):
 
 
 class NewForm(QGroupBox):
-    """New from a board (Stage 2 design 5.3, 5.5; Stage 3 design 5.10): the board and the project folder, each with its
-    Browse…, and Refill zones and save in KiCad after the board's (`refill_button`, disabled until the window enables
-    it); the project's kind (`kind`: a matching chain, or an antenna), which shows its own rows (kind_changed); the
-    start pad, picked from the board's pads or typed; a chain's end pad, picked or typed too, with Swap beside it, its
-    f0 and its harmonics; an antenna's footprint (`antenna`), picked from the board's antennas (show_antennas), and its
-    band (`band`), one of control.BANDS or Custom, whose F_LO:F_HI is typed in `band_text` (band_changed); new's
-    options at new's defaults (the board's own stackup, and a lid height of 0 for none); Create, its status line and
-    new's notes. `chosen` is the board text whose pads were last read; `form` is the form's layout, and `end_row` and
-    `band_row` are the layouts of the end's row and the band's."""
+    """New from a board (Stage 2 design 5.3, 5.5; Stage 3 design 5.10; Stage 4 design 5.10): the board and the project
+    folder, each with its Browse…, and Refill zones and save in KiCad after the board's (`refill_button`, disabled until
+    the window enables it); the project's kind (`kind`: a matching chain, an antenna or signal integrity), which shows
+    its own rows alone (kind_changed); the start pad, picked from the board's pads or typed; the end pad of a chain or
+    an SI line, picked or typed too, with Swap beside it; a chain's f0 and its harmonics; an antenna's footprint
+    (`antenna`), picked from the board's antennas (show_antennas), and its band (`band`), one of control.BANDS or
+    Custom, whose F_LO:F_HI is typed in `band_text` (band_changed); an SI project's `interface`, a preset of INTERFACES,
+    whose f_max and target the rows show disabled, or Custom, whose `f_max` (text, as f0) and `target` (Ω) are typed
+    (interface_changed); its `pair`, None for a single-ended net, the partner by KiCad's pair rule, or the partner's two
+    end pads picked in `pair_with` (pair_changed); and up to two victims, each a row of its start and end pickers
+    (`victims`); new's options at new's defaults (the board's own stackup, and a lid height of 0 for none); Create, its
+    status line and new's notes. `chosen` is the board text whose pads were last read; `form` is the form's layout, and
+    `end_row`, `band_row`, `pair_row` and `victim_rows` are the layouts of the end's row, the band's, the pair's and
+    the victims'."""
 
     def __init__(self):
         super().__init__(render("G_NEW"))
         self.board, self.board_button = QLineEdit(), QPushButton(render("G_BROWSE"))
         self.refill_button = QPushButton(render("G_REFILL"))
         self.refill_button.setEnabled(False)  # until a press gives a KiCad to ask
-        self.kind = combo((("chain", "G_KIND_CHAIN"), ("antenna", "G_KIND_ANTENNA")), "chain", self.kind_changed)
+        self.kind = combo((("chain", "G_KIND_CHAIN"), ("antenna", "G_KIND_ANTENNA"), ("si", "G_KIND_SI")), "chain",
+                          self.kind_changed)
         self.start, self.end, self.f0 = QComboBox(editable=True), QComboBox(editable=True), QLineEdit()
         self.swap_button = QPushButton(render("G_SWAP"))
         self.antenna, self.band, self.band_text = QComboBox(), QComboBox(), QLineEdit()
@@ -341,6 +347,17 @@ class NewForm(QGroupBox):
         # PySide6 6.12)
         self.band.setCurrentIndex(2)
         self.harmonics = QSpinBox(minimum=1, maximum=99, value=HARMONICS)
+        self.interface, self.f_max = QComboBox(), QLineEdit()
+        for name in INTERFACES:
+            self.interface.addItem(name, name)
+        self.interface.addItem(render("G_INTERFACE_CUSTOM"), "custom")
+        self.target = QDoubleSpinBox(minimum=1, maximum=1000, decimals=1, locale=QLocale.c())  # C, as the lid's
+        # ponytail: a partner by the rule is shown in new's notes (I_SI_PAIR), not before Create; a live preview if
+        # users ask for it
+        self.pair = combo(((None, "G_PAIR_NONE"), ("rule", "G_PAIR_RULE"), ("given", "G_PAIR_PICK")), "rule",
+                          self.pair_changed)
+        self.pair_with = (QComboBox(editable=True), QComboBox(editable=True))
+        self.victims = tuple((QComboBox(editable=True), QComboBox(editable=True)) for _ in range(2))
         self.preset, self.stackup = QComboBox(), QComboBox()
         self.preset.addItems(cli.PRESETS)
         self.preset.setCurrentText(DEFAULT_PRESET)
@@ -356,19 +373,29 @@ class NewForm(QGroupBox):
         self.form, self.end_row = QFormLayout(self), beside(self.end, self.swap_button)
         self.end_row.setStretch(0, 1)  # the end picker takes the row's width, as the start one does; Swap keeps its own
         self.band_row = beside(self.band, self.band_text)
+        self.pair_row = beside(self.pair, *self.pair_with)
+        self.victim_rows = tuple(beside(*boxes) for boxes in self.victims)
         for code, field in (("G_NEW_BOARD", beside(self.board, self.board_button, self.refill_button)),
                             ("G_NEW_KIND", self.kind), ("G_NEW_START", self.start), ("G_NEW_END", self.end_row),
                             ("G_NEW_ANTENNA", self.antenna), ("G_NEW_F0", self.f0),
                             ("G_NEW_HARMONICS", self.harmonics), ("G_NEW_BAND", self.band_row),
-                            ("G_NEW_PRESET", self.preset), ("G_NEW_STACKUP", self.stackup), ("G_NEW_LID", self.lid),
+                            ("G_NEW_INTERFACE", self.interface), ("G_NEW_F_MAX", self.f_max),
+                            ("G_NEW_TARGET", self.target), ("G_NEW_PAIR", self.pair_row)):
+            self.form.addRow(render(code), field)
+        for n, row in enumerate(self.victim_rows, 1):
+            self.form.addRow(render("G_NEW_VICTIM", n=n), row)
+        for code, field in (("G_NEW_PRESET", self.preset), ("G_NEW_STACKUP", self.stackup), ("G_NEW_LID", self.lid),
                             ("G_NEW_FOLDER", beside(self.folder, self.folder_button))):
             self.form.addRow(render(code), field)
         for widget in (self.create_button, self.status, self.notes):
             self.form.addRow(widget)
         self.swap_button.clicked.connect(self.swap)
         self.band.currentIndexChanged.connect(self.band_changed)
+        self.interface.currentIndexChanged.connect(self.interface_changed)
         self.kind_changed()
         self.band_changed()
+        self.interface_changed()
+        self.pair_changed()
 
     def swap(self) -> None:
         """Swap: start and end exchange their texts."""
@@ -378,12 +405,15 @@ class NewForm(QGroupBox):
 
     def kind_changed(self) -> None:
         """The kind set (kind's currentIndexChanged, and once at the start): the antenna's and the band's rows shown
-        for an antenna, the end's, f0's and the harmonics' for a chain; the rows to hide first, since a row shown lays
-        the form out at once, which would keep the space of a row still to hide until the event loop runs (probed: a
-        grab then shows the gap)."""
-        ant = self.kind.currentData() == "antenna"
-        rows = ((self.antenna, ant), (self.band_row, ant), (self.end_row, not ant), (self.f0, not ant),
-                (self.harmonics, not ant))
+        for an antenna, the end's for a chain or SI, f0's and the harmonics' for a chain, and the interface's, f_max's,
+        the target's, the pair's and both victims' for SI; the rows to hide first, since a row shown lays the form out
+        at once, which would keep the space of a row still to hide until the event loop runs (probed: a grab then shows
+        the gap)."""
+        kind = self.kind.currentData()
+        si_rows = (self.interface, self.f_max, self.target, self.pair_row, *self.victim_rows)
+        rows = ((self.antenna, kind == "antenna"), (self.band_row, kind == "antenna"),
+                (self.end_row, kind != "antenna"), (self.f0, kind == "chain"), (self.harmonics, kind == "chain"),
+                *((row, kind == "si") for row in si_rows))
         for row, shown in sorted(rows, key=lambda pair: pair[1]):  # False first
             self.form.setRowVisible(row, shown)
 
@@ -391,6 +421,26 @@ class NewForm(QGroupBox):
         """The band set (band's currentIndexChanged, and once at the start): its F_LO:F_HI text enabled only for
         Custom."""
         self.band_text.setEnabled(self.band.currentData() is None)
+
+    def interface_changed(self) -> None:
+        """The interface set (interface's currentIndexChanged, and once at the start): f_max and the target enabled
+        only for Custom, which keeps what they hold; a preset shows its band (SI_F_MAX) and its target there, and sets
+        the pair's mode to its own, by the rule for a pair's preset and None for a net's."""
+        name = self.interface.currentData()
+        custom = name == "custom"
+        self.f_max.setEnabled(custom)
+        self.target.setEnabled(custom)
+        if not custom:
+            preset = INTERFACES[name]
+            self.f_max.setText(f"{SI_F_MAX / 1e9:g}GHz")
+            self.target.setValue(preset["target_ohm"])
+            self.pair.setCurrentIndex(self.pair.findData("rule" if preset["pair"] else None))
+
+    def pair_changed(self) -> None:
+        """The pair's mode set (pair's currentIndexChanged, and once at the start): the partner's two end pickers
+        (`pair_with`) enabled only for a partner picked here ("given")."""
+        for box in self.pair_with:
+            box.setEnabled(self.pair.currentData() == "given")
 
     def show_antennas(self, kinds: dict[str, str], antenna: str = "") -> None:
         """The antenna footprints `kinds` (control._antennas: each one's kind by its reference) in the footprint combo,
@@ -816,11 +866,12 @@ class MainWindow(QMainWindow):
     def show_project(self, opened: control.Opened) -> None:
         """A project read: an SI retune going on dropped (`retuning` None), its rows' read being gone; its line
         (G_PROJECT, an antenna's G_PROJECT_ANTENNA with its antenna and band, an SI project's G_PROJECT_SI with its
-        interface, target and first line's ends), or its refusal when there is no project, and its cost; while nothing
-        is watched and the project has no lock, its newest run or verify that ended (opened.last) is watched, which
-        replays it. Unless a cost is watched, live or ended, the Cost tab replays the last cost of this model
-        (G_COST_REUSED), or says there is none (G_NO_COST). Last, the Results tab shows the read (ResultsView) and its
-        stale indicator (show_stale), and Advanced project.json as stored (AdvancedView), which drops unsaved edits."""
+        interface, named as New's combo names it, its target and its first line's ends), or its refusal when there is
+        no project, and its cost; while nothing is watched and the project has no lock, its newest run or verify that
+        ended (opened.last) is watched, which replays it. Unless a cost is watched, live or ended, the Cost tab replays
+        the last cost of this model (G_COST_REUSED), or says there is none (G_NO_COST). Last, the Results tab shows the
+        read (ResultsView) and its stale indicator (show_stale), and Advanced project.json as stored (AdvancedView),
+        which drops unsaved edits."""
         self.retuning = None
         p = opened.project
         if p is None:
@@ -831,7 +882,9 @@ class MainWindow(QMainWindow):
                           f_lo_mhz=f"{band['f_lo_hz'] / 1e6:g}", f_hi_mhz=f"{band['f_hi_hz'] / 1e6:g}", preset=p["preset"])
         elif si(p):
             chain = p["lines"][0]["chain"]  # the first line: New's start and end
-            line = render("G_PROJECT_SI", path=str(self.path), interface=p["interface"], target=f"{p['target_ohm']:g}",
+            # a preset by its name, custom by its label, as New's combo lists them
+            interface = render("G_INTERFACE_CUSTOM") if p["interface"] == "custom" else p["interface"]
+            line = render("G_PROJECT_SI", path=str(self.path), interface=interface, target=f"{p['target_ohm']:g}",
                           start=chain["start"], end=chain["end"], preset=p["preset"])
         else:
             line = render("G_PROJECT", path=str(self.path), f0_mhz=f"{p['f0_hz'] / 1e6:g}", harmonics=p["harmonics"],
@@ -1053,21 +1106,37 @@ class MainWindow(QMainWindow):
         the harmonics, and calls new_antenna with the same board, start, options and folder. No antenna picked starts
         nothing: G_NO_ANTENNA in the status line after a read that succeeded (`chosen` set and no `pads_read`
         pending), else the status line as it is (a refused read's refusal, or a read going on, whose end fills the
-        combo); then a band that does not read goes to the status line, before the folder's check."""
+        combo); then a band that does not read goes to the status line, before the folder's check. The SI kind (Stage 4
+        design 5.10) takes the end, the interface, Custom's f_max, read here (parse_frequency), and its target, the
+        pair's mode, the partner's two end pads when picked here and each victim whose two end pads are picked, and
+        calls new_si with the same board, start, options and folder: a victim with one end pad only, or a partner
+        picked with an end pad empty, puts G_SI_ENDS_HALF in the status line before the folder's check, and nothing
+        starts; new_si's refusals (a pair's interface without its partner, a net's with one, a partner the rule cannot
+        find, two lines on one net) come back as new's do, in the window's words (control.GUI)."""
         f = self.new_form
-        ant = f.kind.currentData() == "antenna"
-        if ant and f.antenna.currentData() is None:
+        kind = f.kind.currentData()
+        if kind == "antenna" and f.antenna.currentData() is None:
             if f.chosen and self.pads_read is None:  # a read that succeeded found no printed antenna
                 f.status.setText(render("G_NO_ANTENNA"))
             return
+        custom = f.interface.currentData() == "custom"
         try:
-            if ant:
+            if kind == "antenna":
                 band = f.band.currentData() or parse_band(f.band_text.text())
+            elif kind == "si":
+                f_max = parse_frequency(f.f_max.text()) if custom else None
             else:
                 f0 = parse_frequency(f.f0.text())
         except KrsError as e:
             f.status.setText(control.message(e))
             return
+        if kind == "si":
+            mode = f.pair.currentData()
+            victims = [tuple(box.currentText().strip() for box in row) for row in f.victims]
+            pair_with = tuple(box.currentText().strip() for box in f.pair_with) if mode == "given" else None
+            if any(any(v) and not all(v) for v in victims) or pair_with and not all(pair_with):
+                f.status.setText(render("G_SI_ENDS_HALF"))
+                return
         if not f.folder.text().strip():
             f.status.setText(render("G_NEW_NO_FOLDER"))
             return
@@ -1077,24 +1146,30 @@ class MainWindow(QMainWindow):
         options = {"preset": f.preset.currentText(), "stackup": f.stackup.currentData(),
                    "lid_height": f.lid.value() or None,  # a lid height of 0: none, new's default
                    "output": f.folder.text().strip()}
-        if ant:
+        if kind == "antenna":
             self.creating = self.pool.submit(cli.new_antenna, board, start, f.antenna.currentData(), band, **options)
+        elif kind == "si":
+            self.creating = self.pool.submit(cli.new_si, board, start, f.end.currentText().strip(),
+                                             f.interface.currentData(), pair=mode == "rule", pair_with=pair_with,
+                                             victims=[v for v in victims if all(v)], f_max=f_max,
+                                             target=f.target.value() if custom else None, **options)
         else:
             self.creating = self.pool.submit(cli.new, board, start, f.end.currentText().strip(), f0,
                                              harmonics=f.harmonics.value(), **options)
 
     def show_pads(self, done: Future) -> None:
-        """New's read (`done`): the board's pads and antennas (control.board_choices), the pads in the start and end
-        pickers, none picked for the user, and the antennas in the footprint combo (NewForm.show_antennas); or a press
-        (control.handed), kept as `handed`: its kind in New's Kind, its board's antennas in the footprint combo with
-        its antenna picked, its board in the board field and as `chosen` ("" when the press has no pads, a refusal, so
-        that the board, fixed and picked again, is read again), the project folder beside it as board_chosen sets it,
-        and kept, as there, when the board is `chosen` already, its pads in the pickers with its start and end picked,
-        and its problem in the status line, which is otherwise left as it is. On a refusal
-        (load_board's, else E_INTERNAL), the pickers and the footprint combo left empty, the refusal in the status line
-        and `chosen` cleared, so that the same board, fixed and picked again, is read again. The exception is taken,
-        never raised again: its traceback would then hold this frame, and so the window, in a cycle with the Future
-        that only the garbage collector frees, maybe on a pool thread (probed)."""
+        """New's read (`done`): the board's pads and antennas (control.board_choices), the pads in every pad picker
+        (start, end, the partner's two and the victims' four), none picked for the user, and the antennas in the
+        footprint combo (NewForm.show_antennas); or a press (control.handed), kept as `handed`: its kind in New's Kind,
+        its board's antennas in the footprint combo with its antenna picked, its board in the board field and as
+        `chosen` ("" when the press has no pads, a refusal, so that the board, fixed and picked again, is read again),
+        the project folder beside it as board_chosen sets it, and kept, as there, when the board is `chosen` already,
+        its pads in the pickers with its start and end picked and none other, and its problem in the status line,
+        which is otherwise left as it is. On a refusal (load_board's, else E_INTERNAL), the pickers and the footprint
+        combo left empty, the refusal in the status line and `chosen` cleared, so that the same board, fixed and picked
+        again, is read again. The exception is taken, never raised again: its traceback would then hold this frame, and
+        so the window, in a cycle with the Future that only the garbage collector frees, maybe on a pool thread
+        (probed)."""
         f, error = self.new_form, done.exception()
         if error is not None:
             f.status.setText(control.message(error))
@@ -1114,7 +1189,8 @@ class MainWindow(QMainWindow):
         else:
             names, kinds = read
             f.show_antennas(kinds)
-        for box, pick in ((f.start, start), (f.end, end)):
+        others = (*f.pair_with, *(box for row in f.victims for box in row))  # none picked, for the user
+        for box, pick in ((f.start, start), (f.end, end), *((box, "") for box in others)):
             box.clear()
             box.addItems(names)
             box.setCurrentIndex(box.findText(pick))  # -1, none picked, for "": no pad's name is empty

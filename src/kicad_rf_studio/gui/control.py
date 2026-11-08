@@ -48,7 +48,9 @@ GUI = {"E_LOCKED": "G_LOCKED", "I_RUN_START": "G_RUN_START", "I_WHAT_IF": "G_WHA
        "E_RETUNE_SHORT_SHUNT": "G_RETUNE_SHORT_SHUNT", "E_RETUNE_OPEN_SERIES": "G_RETUNE_OPEN_SERIES",
        "E_RETUNE_ANTENNA_VALUE": "G_RETUNE_ANTENNA_VALUE", "I_ANTENNA_NO_FAR_FIELD": "G_ANTENNA_NO_FAR_FIELD",
        "E_ANTENNA_MODULE": "G_ANTENNA_MODULE", "E_ANTENNA_CHIP": "G_ANTENNA_CHIP", "E_COMPARE_KIND": "G_COMPARE_KIND",
-       "E_COMPARE_NO_RESULT": "G_COMPARE_NO_RESULT", "E_RESULTS_WRITE": "G_RESULTS_WRITE"}
+       "E_COMPARE_NO_RESULT": "G_COMPARE_NO_RESULT", "E_RESULTS_WRITE": "G_RESULTS_WRITE",
+       "E_SI_NEEDS_PAIR": "G_SI_NEEDS_PAIR", "E_SI_NOT_PAIR": "G_SI_NOT_PAIR", "E_SI_PARTNER": "G_SI_PARTNER",
+       "E_SI_LINE_SHARED": "G_SI_LINE_SHARED", "W_SI_LONG_PORT": "G_SI_LONG_PORT"}
 # an S2P fixture combo's label code by its data
 FIXTURE_LABELS = {"series": "G_FIXTURE_SERIES", "shunt": "G_FIXTURE_SHUNT"}
 
@@ -288,10 +290,13 @@ def run_state(run_dir: Path, end: dict | None, holder: dict | None, own: bool,
 def text(code: str, params: dict) -> str:
     """The line the GUI shows for the CLI's `code` with `params`: the GUI's own words (GUI) for the lines whose advice
     is a terminal's, else the CLI's line; W_S2P_FIXTURE's fixtures named by the combo's labels, not the CLI's syntax
-    (pt-BR design 5.1)."""
+    (pt-BR design 5.1), and I_SI_PAIR's partner picked in New's Pair row (T_PAIR_WITH, which names --pair-with) as
+    G_PAIR_PICKED (Stage 4 design 5.10)."""
     if code == "W_S2P_FIXTURE":
         params = {**params, "named": render(FIXTURE_LABELS[params["named"]]),
                   "fits": render(FIXTURE_LABELS[params["fits"]])}
+    elif code == "I_SI_PAIR" and params["how"] == "T_PAIR_WITH":  # new_si's note names --pair-with
+        params = {**params, "how": render("G_PAIR_PICKED")}
     return render(GUI.get(code, code), **params)
 
 

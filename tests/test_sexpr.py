@@ -291,7 +291,9 @@ QUOTED = {  # a G_ message that names a widget, and that widget's label codes (d
     "G_RETUNE_OPEN_SERIES": ("G_COL_VALUE",), "G_ANTENNA_NO_FAR_FIELD": ("G_VERIFY",),
     "G_ANTENNA_MODULE": ("G_KIND_CHAIN",), "G_ANTENNA_CHIP": ("G_KIND_CHAIN",), "G_NO_ANTENNA": ("G_KIND_CHAIN",),
     "G_COMPARE_KIND": ("G_COMPARE", "G_NEW", "G_KIND_ANTENNA"), "G_COMPARE_NO_RESULT": ("G_COMPARE", "G_VERIFY"),
-    "G_BUTTON_ACTION": ("G_NEW",)}
+    "G_BUTTON_ACTION": ("G_NEW",), "G_SI_NEEDS_PAIR": ("G_NEW_PAIR", "G_NEW_INTERFACE", "G_INTERFACE_CUSTOM"),
+    "G_SI_NOT_PAIR": ("G_NEW_PAIR", "G_INTERFACE_CUSTOM"), "G_SI_PARTNER": ("G_NEW_PAIR",),
+    "G_SI_LONG_PORT": ("G_INTERFACE_CUSTOM",), "G_SI_ENDS_HALF": ("G_NEW_PAIR",)}
 # what a msgstr keeps of its msgid (design 3, 6.2 rule 3): a command in backticks, quoted JSON, an option, a file-dialog
 # filter, a dotted number, and a file, field or variable name (project.json, mesh.n, ports[].reference, t_max_s, STOP)
 KEEP = re.compile(r'`[^`]+`|"[^"]*"|--[a-z][\w-]*|\(\*\.\w+\)|\d+(?:\.\d+)+|\w+(?:\[\])?(?:\.\w+)+|\w*_\w+|\bSTOP\b')

@@ -1780,6 +1780,80 @@ msgstr "{ref} é um módulo: o cobre da antena dele fica dentro do módulo, não
 msgid "{ref} is a chip antenna: its radiator is inside the part's body and the board file holds only its pads, so it cannot be simulated as an antenna. The matching chain up to it still can: choose the kind Matching chain, with a pad of {ref} as the end pad."
 msgstr "{ref} é uma antena chip: o radiador fica dentro do corpo do componente e o arquivo da placa só tem as ilhas dela, então ela não pode ser simulada como antena. A cadeia de casamento até ela ainda pode: escolha o tipo Cadeia de casamento, com uma ilha de {ref} como ilha final."
 
+#. G_KIND_SI
+msgid "Signal integrity"
+msgstr "Integridade de sinal"
+
+#. G_NEW_INTERFACE
+msgid "Interface"
+msgstr "Interface"
+
+#. G_INTERFACE_CUSTOM
+msgid "Custom"
+msgstr "Personalizada"
+
+#. G_NEW_F_MAX
+msgid "f_max (for example 10GHz)"
+msgstr "f_max (por exemplo 10GHz)"
+
+#. G_NEW_TARGET
+msgid "Target (Ω)"
+msgstr "Alvo (Ω)"
+
+#. G_NEW_PAIR
+msgid "Pair"
+msgstr "Par"
+
+#. G_PAIR_NONE
+msgid "None (a single-ended net)"
+msgstr "Nenhum (uma rede single-ended)"
+
+#. G_PAIR_RULE
+msgid "By KiCad's pair rule"
+msgstr "Pela regra de pares do KiCad"
+
+#. G_PAIR_PICK
+msgid "Picked: the partner's two end pads"
+msgstr "Escolhido: as duas pontas do par"
+
+#. G_PAIR_PICKED
+msgid "its two end pads, picked here"
+msgstr "suas duas pontas, escolhidas aqui"
+
+#. G_NEW_VICTIM
+#, python-brace-format
+msgid "Victim {n} (start and end pads)"
+msgstr "Vítima {n} (ilhas inicial e final)"
+
+#. G_SI_ENDS_HALF
+msgid "A victim needs both its end pads, and so does a partner picked in the Pair row: pick both, or leave a victim's two empty."
+msgstr "Uma vítima precisa das duas ilhas das pontas, e um par escolhido no campo Par também: escolha as duas, ou deixe vazias as duas de uma vítima."
+
+#. G_SI_NEEDS_PAIR
+#, python-brace-format
+msgid "Interface {interface} is a differential pair's: in the Pair row, take the partner by KiCad's pair rule or pick its two end pads, or, for a single-ended net, choose se50 or Custom in the Interface row."
+msgstr "A interface {interface} é de um par diferencial: no campo Par, tome o par pela regra de pares do KiCad ou escolha as duas pontas dele, ou, para uma rede single-ended, escolha se50 ou Personalizada no campo Interface."
+
+#. G_SI_NOT_PAIR
+#, python-brace-format
+msgid "Interface {interface} is a single-ended net's: in the Pair row, choose None, or choose the interface Custom for a pair."
+msgstr "A interface {interface} é de uma rede single-ended: no campo Par, escolha Nenhum, ou escolha a interface Personalizada para um par."
+
+#. G_SI_PARTNER
+#, python-brace-format
+msgid "The partner of net {net} (pad {pad}) on {ref} is {partner} by KiCad's pair rule or the DP/DM alias, with pads {pads} on {ref}, where one is needed. In the Pair row, pick the partner's two end pads."
+msgstr "O par da rede {net} (ilha {pad}) em {ref} é {partner} pela regra de pares do KiCad ou pelo apelido DP/DM, com ilhas {pads} em {ref}, onde uma é necessária. No campo Par, escolha as duas pontas do par."
+
+#. G_SI_LINE_SHARED
+#, python-brace-format
+msgid "The line from {start} to {end} runs on net {net}, which an earlier line of this project holds: each line needs nets of its own. Pick the partner's two end pads, or a victim's, on another net."
+msgstr "A linha de {start} a {end} passa pela rede {net}, que uma linha anterior deste projeto já tem: cada linha precisa de redes próprias. Escolha as duas pontas do par, ou as de uma vítima, em outra rede."
+
+#. G_SI_LONG_PORT
+#, python-brace-format
+msgid "Port {name} spans {length_mm} mm from its pad to its reference, more than λ/20 at f_max ({limit_mm} mm): its launch reads as an inductive bump, which the TDR marks as the port's own. A lower f_max, with the interface Custom, shortens it in wavelengths."
+msgstr "A porta {name} se estende por {length_mm} mm da ilha até a referência, mais que λ/20 em f_max ({limit_mm} mm): a entrada dela aparece como um degrau indutivo, que o TDR marca como da própria porta. Um f_max menor, com a interface Personalizada, a encurta em comprimentos de onda."
+
 #. G_BROWSE
 msgid "Browse…"
 msgstr "Procurar…"

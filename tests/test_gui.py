@@ -221,10 +221,12 @@ def test_every_list_of_sentences_wraps_at_its_width(window, qapp):  # Task 6 Ste
     assert w.log.visualItemRect(w.log.item(0)).width() <= w.log.viewport().width()
 
 
-def test_the_window_fits_1200_by_800_and_its_tabs_need_no_scrolling(window):  # pt-BR design 3; Review Focus 4
+def test_the_window_fits_1200_by_800_and_its_tabs_need_no_scrolling(window):  # pt-BR design 3; ruling 6
     w = window()
-    hint = w.minimumSizeHint()  # English probed: 830 × 518
-    assert hint.width() <= 1200 and hint.height() <= 800
+    for kind in ("chain", "antenna", "si"):  # only the active kind's rows show
+        w.new_form.kind.setCurrentIndex(w.new_form.kind.findData(kind))
+        hint = w.minimumSizeHint()  # English probed at 5302aae: 830 x 518 for the chain
+        assert hint.width() <= 1200 and hint.height() <= 800, kind
     # a tab never elides or narrows (scroll buttons appear instead), so every label is whole when the bar fits
     assert w.tabs.tabBar().sizeHint().width() <= w.tabs.width()
 
@@ -658,6 +660,80 @@ def test_new_makes_an_antenna_project_from_its_kind_its_antenna_and_its_band(win
     f.create_button.click()  # a board never read: its refusal stays, never G_NO_ANTENNA
     assert refusal and (f.antenna.count(), w.creating, f.status.text()) == (0, None, refusal)
     assert board.read_bytes() == (FIX / "ifa2g4_pi.kicad_pcb").read_bytes()
+    assert "openEMS" not in sys.modules and "CSXCAD" not in sys.modules
+
+
+def test_new_makes_an_si_project_from_its_interface_its_pair_and_its_victims(window, tmp_path, monkeypatch):
+    board = tmp_path / "usb2_hs.kicad_pcb"  # design 5.10; ruling 6
+    board.write_bytes((FIX / "usb2_hs.kicad_pcb").read_bytes())
+    monkeypatch.setattr(QFileDialog, "getOpenFileName", lambda *a, **k: (str(board), ""))
+    w = window()
+    f = w.new_form
+    f.board_button.click()
+    w.pads_read.result(timeout=60)
+    w.tick()
+    f.kind.setCurrentIndex(f.kind.findData("si"))
+    assert all(f.form.isRowVisible(x) for x in (f.end_row, f.interface, f.f_max, f.target, f.pair_row, *f.victim_rows))
+    assert not any(f.form.isRowVisible(x) for x in (f.f0, f.harmonics, f.antenna, f.band_row))
+    assert [f.interface.itemText(k) for k in range(4)] == ["usb2-hs", "100base-tx", "se50", render("G_INTERFACE_CUSTOM")]
+    assert (f.interface.currentData(), f.pair.currentData(), f.f_max.text(), f.target.value()) == (
+        "usb2-hs", "rule", "10GHz", 90.0)  # the preset's band and target, shown disabled
+    assert not (f.f_max.isEnabled() or f.target.isEnabled() or f.pair_with[0].isEnabled())
+    assert f.victims[1][0].count() == len(control.pads(board))  # every picker lists the board's pads
+    f.start.setCurrentText("J1.3")
+    f.end.setCurrentText("U1.3")
+    f.victims[0][0].setCurrentText("TP1.1")
+    f.victims[0][1].setCurrentText("TP2.1")
+    f.create_button.click()
+    path, notes = w.creating.result(timeout=120)
+    w.tick()
+    same = cli.new_si(board, "J1.3", "U1.3", "usb2-hs", pair=True, victims=[("TP1.1", "TP2.1")],
+                      output=tmp_path / "cli")[0]
+    assert path == tmp_path / "usb2_hs" / "project.json" and load_project(path) == load_project(same)
+    assert items(f.notes) == [control.text(c, p) for c, p in notes]  # new --interface's own call, nothing duplicated
+    opened(w)
+    grab(w, "new-si")
+
+    def create(folder):  # Create into `folder`, then the status line once new ended or refused
+        f.folder.setText(str(tmp_path / folder))
+        f.create_button.click()
+        if w.creating is not None:
+            w.creating.exception(timeout=120)
+            w.tick()
+        return f.status.text()
+
+    f.pair.setCurrentIndex(f.pair.findData("given"))
+    f.pair_with[0].setCurrentText("J1.2")
+    f.pair_with[1].setCurrentText("U1.2")
+    assert create("picked") == "" and "--pair-with" not in " ".join(items(f.notes))
+    f.victims[1][0].setCurrentText("TP1.1")
+    f.victims[1][1].setCurrentText("TP2.1")  # the second row reaches new: AUX on two lines
+    assert create("two") == render("G_SI_LINE_SHARED", start="TP1.1", end="TP2.1", net="AUX")
+    f.victims[1][1].setCurrentText("")
+    assert create("half") == render("G_SI_ENDS_HALF") and w.creating is None  # nothing starts
+    f.victims[1][0].setCurrentText("")
+    f.victims[0][0].setCurrentText("J1.3")
+    f.victims[0][1].setCurrentText("U1.3")  # a victim on the measured line's nets
+    assert create("shared") == render("G_SI_LINE_SHARED", start="J1.3", end="U1.3", net="USB_D+")
+    for box in f.victims[0]:
+        box.setCurrentText("")
+    f.pair.setCurrentIndex(f.pair.findData(None))
+    assert create("nopair") == render("G_SI_NEEDS_PAIR", interface="usb2-hs")
+    f.interface.setCurrentIndex(f.interface.findData("se50"))
+    assert (f.pair.currentData(), f.target.value()) == (None, 50.0)  # the preset sets the pair and the target
+    f.pair.setCurrentIndex(f.pair.findData("rule"))
+    assert create("se50pair") == render("G_SI_NOT_PAIR", interface="se50")
+    f.interface.setCurrentIndex(f.interface.findData("custom"))
+    assert f.f_max.isEnabled() and f.target.isEnabled()
+    f.f_max.setText("abc")
+    assert create("custom") == render("E_BAD_FREQUENCY", text="abc")
+    f.f_max.setText("10GHz")  # a pair at 50 Ω, Custom: the project line names it as the combo does
+    assert create("custom") == ""
+    opened(w)
+    assert w.project_status.text() == render("G_PROJECT_SI", path=str((tmp_path / "custom" / "project.json").resolve()),
+                                             interface=render("G_INTERFACE_CUSTOM"), target="50", start="J1.3",
+                                             end="U1.3", preset="normal")
+    assert board.read_bytes() == (FIX / "usb2_hs.kicad_pcb").read_bytes()
     assert "openEMS" not in sys.modules and "CSXCAD" not in sys.modules
 
 
