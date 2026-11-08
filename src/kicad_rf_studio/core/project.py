@@ -53,7 +53,7 @@ GATES_SI = {"fit2d_limit": 0.03, "dt_floor": 0.6}  # an SI project's: SI's times
 SI_F_MAX = 10e9  # the presets' band, for the localising TDR, design 5.1
 SI_TOLERANCE = 0.1  # the target impedance's ± fraction, every interface's (design 5.1)
 DIELECTRICS = ("lossless", "debye")  # an SI project's dielectric models (design 5.3), never v1's constant κ
-SI_DIELECTRIC = "lossless"  # lossless until gate P4-D sets the default, design 5.3
+SI_DIELECTRIC = "lossless"  # lossless, the default gate P4-D kept, Debye an option (docs/validation/2026-11-07-p4-d.md)
 LINE_ROLES = ("measured", "victim")  # an SI line's role (design 5.1): the measured line or a pair's leg, or a victim
 # Stage 4 design 5.1: each target from a public application note; rise_s the edge the link's driver makes, marker_hz the
 # link's Nyquist frequency or its clock; every preset runs to SI_F_MAX

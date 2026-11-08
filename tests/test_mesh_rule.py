@@ -13,7 +13,7 @@ from kicad_rf_studio.core.cs2d import solve
 from kicad_rf_studio.core.geometry import Geometry
 from kicad_rf_studio.core.geometry.copper import Piece, copper_pieces
 from kicad_rf_studio.core.geometry.mask import mask_model
-from kicad_rf_studio.core.geometry.region import build_region, coarse_cell, lambda_min, si_max_cell
+from kicad_rf_studio.core.geometry.region import build_region, coarse_cell, lambda_min
 from kicad_rf_studio.core.geometry.sections import Section, cross_section, sections, staircase_gap
 from kicad_rf_studio.core.geometry.vias import via_rods
 from kicad_rf_studio.core.geometry.zstack import substrate_h, zstack
@@ -929,7 +929,7 @@ def test_every_fixture_section_passes_the_fit2d_gate(name, start, end, n):  # de
 
 
 SI_D, SI_H = 0.075, 0.2  # a 0.15 mm pair with a 0.15 mm gap on 0.2 mm, at n 2
-SI_COARSE, SI_CELL = coarse_cell(10e9, 4.3), si_max_cell(10e9, 3.3)  # λ_min/20 and λ_eff/40 at 10 GHz
+SI_COARSE, SI_CELL = coarse_cell(10e9, 4.3), 0.412576  # λ_min/20, and a set SI cell, λ_eff/40 at 10 GHz on εeff 3.3
 STRAIGHT = [(0.0, 1), (100.0, -1)]  # a 100 mm pair along x: its ends
 ACROSS = [(-0.225, 1), (-0.075, -1), (0.075, 1), (0.225, -1)]  # its two legs, across it
 L_X = [(0.0, 1), (49.775, 1), (49.925, -1), (50.075, 1), (50.225, -1)]  # an L: 50 mm along x, then down along y
@@ -970,7 +970,6 @@ def test_the_si_rule_fills_a_via_margin_at_d_clear_of_or_over_an_edge(edges, ext
     assert inner[0] == span[0] and np.diff(inner).max() <= SI_D + GRID_TOL  # 49.8 lies d/3 from an edge line: merged
     assert lint_hits(si, edges, SI_D) == [] and bad_pairs(si, [e for e, _ in edges]) == []
     assert np.diff(si).min() >= SI_D / 3 - GRID_TOL
-    assert si_max_cell(10e9, 3.3) == pytest.approx(0.412576, abs=1e-6)  # 30 mm/√3.3/40
 
 
 def test_a_span_never_moves_a_wall_and_a_backwards_span_is_refused():  # plan 1 final review F2

@@ -291,9 +291,8 @@ def eps_eff_2d(board: Board, nets: Iterable[str], pieces: list[Piece], zs: tuple
     """The largest εeff of the sections of `nets` (Stage 4 design 5.3, 5.4), each cut solved alone on cs2d's own grid,
     without the mask, in a box of its own layer's substrate (cross_section's `h`); a cut that other copper touches
     (ShortError) is skipped. None with no section solved."""
-    # ponytail: without the mask, which raises a 0.3 mm line's εeff by about 8 %: max_cell about 4 % coarser than λ/40
-    # on the coated line and the round trip about 4 % short; the widest section sets it (the 0.6 mm run through an ESD
-    # array's pads)
+    # ponytail: without the mask, which raises a 0.3 mm line's εeff by about 8 %: the round trip about 4 % short on the
+    # coated line; the widest section sets it (the 0.6 mm run through an ESD array's pads)
     found = []
     for s in sections(board, nets, pieces)[0]:
         try:

@@ -51,16 +51,6 @@ def coarse_cell(f_max: float, eps_r_max: float) -> float:
     return lambda_min(f_max, eps_r_max) / 20
 
 
-# an SI mesh's largest cell along a line is λ_eff(f_max)/SI_CELLS (Stage 4 design 5.3); gate P4-C may move it
-SI_CELLS = 40
-
-
-def si_max_cell(f_max: float, eps_eff: float) -> float:
-    """An SI mesh's max_cell, λ_eff(f_max)/SI_CELLS, in mm: f_max in Hz, eps_eff the lines' 2D εeff (Stage 4 design
-    5.3)."""
-    return lambda_min(f_max, eps_eff) / SI_CELLS
-
-
 @dataclass(frozen=True)
 class Region:
     roi: Polygon | MultiPolygon  # in pieces only where the outline splits the grown box (a U-shaped board)

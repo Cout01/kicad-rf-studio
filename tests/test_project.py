@@ -296,7 +296,8 @@ def test_schema_3_is_an_si_project_whose_fields_are_checked(tmp_path):  # Stage 
 
 
 def si_dict():
-    """A schema 3 dict for usb2_hs's pair and victim, as new_si writes it, its parts left out."""
+    """A schema 3 dict for usb2_hs's pair and victim, as new_si wrote it before the d fill (a set cell), its parts left
+    out."""
     b = load_board(FIX / "usb2_hs.kicad_pcb")
     lines = [{"role": role, "chain": {"start": s, "end": e, "nets": nets, "series": [], "shunt": []}}
              for role, s, e, nets in (("measured", "J1.3", "U1.3", ["USB_D+", "MCU_D+"]),

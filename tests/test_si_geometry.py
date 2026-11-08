@@ -15,7 +15,7 @@ from test_cli_si import FIX, QSPI, si_project
 
 LEGS = (frozenset({"USB_D+", "MCU_D+"}), frozenset({"USB_D-", "MCU_D-"}))
 # the SI rule's cell, λ/40 at 10 GHz on usb2_hs's 2D εeff: new's until gate P4-C made the d fill its default
-# (docs/validation/2026-11-07-p4-c.md), and still what a project's mesh.max_cell_mm grades to
+# (docs/validation/2026-11-07-p4-c.md), and a set mesh.max_cell_mm's value, which the SI mesh grades to
 CELL = 0.414074
 
 

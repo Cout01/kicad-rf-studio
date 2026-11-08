@@ -633,9 +633,10 @@ def fields(data: dict) -> list[Field]:
     schema, results and verify (records, not settings), an antenna's kind and copper (sheet copper is not offered,
     Stage 3 plan 4) and an SI project's kind, each with the default that `new` writes when it has one, an antenna's its
     own (Stage 3 design 5.10): its T_max, air gap and far-field frequencies those of its band; an SI project's its own
-    (Stage 4 design 5.1): lid true, region.expand_h REACH_H and gates.dt_floor GATES_SI's, and none for t_max_s and
-    mesh.max_cell_mm, which `new` derives from the route. The preset is read through str(), so a hand-edited one that
-    is not text (a list) cannot raise: unchecked data is what Advanced is there to fix."""
+    (Stage 4 design 5.1): lid true, region.expand_h REACH_H and gates.dt_floor GATES_SI's, and none for t_max_s, which
+    `new` derives from the route, nor for mesh.max_cell_mm, which `new` writes null, the d fill (gate P4-C). The preset
+    is read through str(), so a hand-edited one that is not text (a list) cannot raise: unchecked data is what Advanced
+    is there to fix."""
     # ponytail: a list of objects can be edited but not grown, and a reference cannot switch between pad and point
     # here; a text editor does both
     defaults = {"harmonics": HARMONICS, "preset": DEFAULT_PRESET, "band_factor": BAND_FACTOR, "t_max_s": T_MAX_S,
