@@ -1,7 +1,7 @@
 {
   "gate": "P4-D",
   "versions": {
-    "commit": "8faa7d6",
+    "commit": "43ec752",
     "code": "e5469200427c76d82e9d2893363696ead16cf351",
     "python": "3.14.2",
     "openems": "0.37.0",
@@ -4366,7 +4366,7 @@
       "16": 353.18075294829146
     },
     "levels": {
-      "4": 129.79663879498762,
+      "4": 124.93866541272695,
       "1": 552.2402669961639,
       "2": 264.66020534485403
     }
@@ -5171,6 +5171,206 @@
         "openems": "0.37.0"
       },
       "reading_error": null
+    },
+    "usb2_hs": {
+      "exit": 0,
+      "cells": 3745434,
+      "dt": 8.07792e-14,
+      "dt_ratio": 1.0851704079850617,
+      "pool": 4,
+      "jobs": [
+        {
+          "t_stop": 3.07268089435e-09,
+          "port": "P1",
+          "verdict": "converged",
+          "t_cut": 3.06024089073e-09,
+          "residual_db": -60.94635815577302,
+          "growth_db": 0.0
+        },
+        {
+          "t_stop": 3.07268089435e-09,
+          "port": "P2",
+          "verdict": "converged",
+          "t_cut": 3.06024089073e-09,
+          "residual_db": -60.66100418945545,
+          "growth_db": 0.0
+        },
+        {
+          "t_stop": 3.04780088711e-09,
+          "port": "P3",
+          "verdict": "converged",
+          "t_cut": 3.03536088349e-09,
+          "residual_db": -62.49309713024061,
+          "growth_db": 0.0
+        },
+        {
+          "t_stop": 3.04780088711e-09,
+          "port": "P4",
+          "verdict": "converged",
+          "t_cut": 3.03536088349e-09,
+          "residual_db": -62.39493157064568,
+          "growth_db": 0.0
+        },
+        {
+          "t_stop": 2.74924080021e-09,
+          "port": "P5",
+          "verdict": "converged",
+          "t_cut": 2.73680079659e-09,
+          "residual_db": -60.44168268844988,
+          "growth_db": 0.0
+        },
+        {
+          "t_stop": 2.77412080745e-09,
+          "port": "P6",
+          "verdict": "converged",
+          "t_cut": 2.76168080383e-09,
+          "residual_db": -62.14304083838647,
+          "growth_db": 0.0
+        },
+        {
+          "t_stop": 2.99804087262e-09,
+          "port": "R1",
+          "verdict": "converged",
+          "t_cut": 2.985600869e-09,
+          "residual_db": -61.39375777368693,
+          "growth_db": 0.0
+        },
+        {
+          "t_stop": 2.99804087262e-09,
+          "port": "R2",
+          "verdict": "converged",
+          "t_cut": 2.985600869e-09,
+          "residual_db": -61.236819306269425,
+          "growth_db": 0.0
+        }
+      ],
+      "wall_s": 2344.281567899976,
+      "predicted_s": 1613.9997240244468,
+      "worst_s": 4727.46699565523,
+      "indicators": {
+        "sigma": 1.0083,
+        "recip": 0.0153,
+        "loss_pct": null,
+        "expected_pct": null
+      },
+      "warnings": [],
+      "lid_mm": null,
+      "run_dir": "usb2_hs-n2-dfill-20261107-222613-95e7",
+      "speeds_mcs": [
+        123.5226421585863,
+        123.4864544164834,
+        122.64909506084929,
+        124.45456546480841,
+        125.3535129423452,
+        123.09110877638591,
+        127.64654279627571,
+        127.5639044429775
+      ],
+      "node_mcs": 123.98860381169735,
+      "cal_mcs": 206.89629804509312,
+      "debye_cells": 0,
+      "converged": true,
+      "valid": true,
+      "blocked": false,
+      "t_stop_s": 3.07268089435e-09,
+      "fingerprint": {
+        "preset": "normal",
+        "region": {
+          "expand_h": 6.0,
+          "margin_scale": 1.0
+        },
+        "interface": "usb2-hs",
+        "f_max_hz": 10000000000.0,
+        "rise_s": 5e-10,
+        "marker_hz": 240000000.0,
+        "target_ohm": 90.0,
+        "stackup": {
+          "source": "board",
+          "layers": [
+            {
+              "name": "F.Mask",
+              "kind": "mask",
+              "thickness_mm": 0.01,
+              "epsilon_r": 3.3,
+              "loss_tangent": 0.0
+            },
+            {
+              "name": "F.Cu",
+              "kind": "copper",
+              "thickness_mm": 0.035,
+              "epsilon_r": null,
+              "loss_tangent": null
+            },
+            {
+              "name": "dielectric 1",
+              "kind": "dielectric",
+              "thickness_mm": 0.2,
+              "epsilon_r": 4.3,
+              "loss_tangent": 0.02
+            },
+            {
+              "name": "In1.Cu",
+              "kind": "copper",
+              "thickness_mm": 0.035,
+              "epsilon_r": null,
+              "loss_tangent": null
+            },
+            {
+              "name": "dielectric 2",
+              "kind": "dielectric",
+              "thickness_mm": 1.04,
+              "epsilon_r": 4.5,
+              "loss_tangent": 0.02
+            },
+            {
+              "name": "In2.Cu",
+              "kind": "copper",
+              "thickness_mm": 0.035,
+              "epsilon_r": null,
+              "loss_tangent": null
+            },
+            {
+              "name": "dielectric 3",
+              "kind": "dielectric",
+              "thickness_mm": 0.2,
+              "epsilon_r": 4.3,
+              "loss_tangent": 0.02
+            },
+            {
+              "name": "B.Cu",
+              "kind": "copper",
+              "thickness_mm": 0.035,
+              "epsilon_r": null,
+              "loss_tangent": null
+            },
+            {
+              "name": "B.Mask",
+              "kind": "mask",
+              "thickness_mm": 0.01,
+              "epsilon_r": 3.3,
+              "loss_tangent": 0.0
+            }
+          ]
+        },
+        "dielectric": "lossless",
+        "lid": true,
+        "lid_height_mm": null,
+        "mesh": {
+          "n": 2,
+          "reach_h": 6.0
+        },
+        "ends": [
+          "J1.3",
+          "J1.2",
+          "U1.3",
+          "U1.2",
+          "TP1.1",
+          "TP2.1"
+        ],
+        "app": "0.1.0.dev0",
+        "openems": "0.37.0"
+      },
+      "reading_error": null
     }
   },
   "ports": {
@@ -5196,7 +5396,10 @@
     "si_pad_coupon-n2-dfill": 3.5875410293443295e-06,
     "si_pad_coupon-n2-dfill-v": 2.7512893549741513e-05,
     "si_pad_coupon_tall-n2-dfill": 4.588139104366389e-06,
-    "si_pad_coupon_tall-n2-dfill-v": 3.1535045543523464e-06
+    "si_pad_coupon_tall-n2-dfill-v": 3.1535045543523464e-06,
+    "usb2_hs-n2-dfill": 2.4306094157933167e-05,
+    "usb2_hs_gap-n2-dfill": 0.00020603981068477895,
+    "usb2_hs_neck-n2-dfill": 2.8252769446457382e-05
   },
   "invalid": [
     "si_pad_coupon_tall-h"
@@ -5225,9 +5428,9 @@
     ]
   },
   "machine": {
-    "steps": 6,
-    "machine_hours": 11.169775589055563,
+    "steps": 9,
+    "machine_hours": 16.940699279777732,
     "loaded": [],
-    "elapsed_days": 16
+    "elapsed_days": 17
   }
 }

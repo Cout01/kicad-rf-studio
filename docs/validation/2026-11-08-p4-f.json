@@ -1,0 +1,1007 @@
+{
+  "gate": "P4-F",
+  "versions": {
+    "commit": "43ec752",
+    "code": "e5469200427c76d82e9d2893363696ead16cf351",
+    "python": "3.14.2",
+    "openems": "0.37.0",
+    "csxcad": "0.7.0",
+    "os": "Windows-11-10.0.26200-SP0",
+    "cpus": 16
+  },
+  "criteria": {
+    "source": "Stage 4 design 5.11, gate P4-F; plan 4 rulings F-1 to F-3: usb2_hs, its neck-down and its plane gap, each by run at new's values and the decided settings, compared through their runs' chains (no retune or verify), the gap under the ring rule; judged: the neck's highest TDR level's delta at least neck_factor x DIFF_OHM and the gap's Scd21 change resolved, each run valid; the neck run's own highest level marked short (the short-feature rule's true positive; the delta row's mark carries the base's levels, short already) checked, a miss an owner item; every other row recorded, with the ladder model's predictions as soft notes. R-13 (CP-E, recorded in the gates ledger before block F1): DB 0.5 dB, not P4-E's computed 85.7 dB, and the gap's Scd21 judged above its own floor, −37.7 dB, three times the null's Scd21 noise amplitude.",
+    "neck_factor": 3,
+    "r13": {
+      "DB": 0.5,
+      "scd21_floor_db": -37.7
+    }
+  },
+  "references": {
+    "source": "plan 4 research r3 section 2: an ideal-line ladder model of usb2_hs (the 2D table's sections, 22 ohm and 0.5 nH a leg, 0.2 nH launches) through core.post.si; soft notes, never criteria",
+    "neck": {
+      "tdr_highest_delta_ohm": 8.05,
+      "tdr_lowest_delta_ohm": 3.29,
+      "pointwise_max_ohm": 11.3
+    },
+    "gap": {
+      "tdr_highest_delta_ohm": [
+        2.2,
+        3.9
+      ],
+      "plan3_preview": {
+        "tdr_highest_delta_ohm": 2.21,
+        "scd21_worst_delta_db": 17.65
+      }
+    }
+  },
+  "calibration": {
+    "aggregate_mcs": 827.5851921803725,
+    "pool": 4,
+    "threads": 4,
+    "single": {
+      "1": 229.6142480632537,
+      "2": 383.5132895692081,
+      "4": 552.2402669961639,
+      "16": 353.18075294829146
+    },
+    "levels": {
+      "4": 124.93866541272695,
+      "1": 552.2402669961639,
+      "2": 264.66020534485403
+    }
+  },
+  "n_now": 2,
+  "rule_now": "dfill",
+  "dielectric_now": "lossless",
+  "thresholds": {
+    "DIFF_OHM": 2.2,
+    "IL_DB": 0.05,
+    "DB": 0.5,
+    "SKEW_PS": 1.0,
+    "SE_OHM": 1.1,
+    "kept": {
+      "DIFF_OHM": false,
+      "IL_DB": true,
+      "DB": false,
+      "SKEW_PS": true
+    },
+    "floor_db": -50.0,
+    "scd21_floor_db": -37.7
+  },
+  "rows": {
+    "neck": [
+      {
+        "quantity": "tdr_lowest",
+        "marker": "short",
+        "f_hz": null,
+        "base": 84.9692698213458,
+        "variant": 88.86740976696969,
+        "unit": "Ω",
+        "delta": 3.898139945623882,
+        "delta_unit": "Ω",
+        "threshold": 1.0,
+        "resolved": true
+      },
+      {
+        "quantity": "tdr_highest",
+        "marker": "short",
+        "f_hz": null,
+        "base": 96.09888279014135,
+        "variant": 103.23710551999353,
+        "unit": "Ω",
+        "delta": 7.138222729852188,
+        "delta_unit": "Ω",
+        "threshold": 1.0,
+        "resolved": true
+      },
+      {
+        "quantity": "sdd21",
+        "marker": "marker",
+        "f_hz": 240000000.0,
+        "base": -1.9124025191536314,
+        "variant": -1.9082168223927953,
+        "unit": "dB",
+        "delta": 0.004185696760836022,
+        "delta_unit": "dB",
+        "threshold": 0.05,
+        "resolved": false
+      },
+      {
+        "quantity": "sdd21",
+        "marker": "f_max",
+        "f_hz": 10000000000.0,
+        "base": -2.8995800467188895,
+        "variant": -3.0895057090404614,
+        "unit": "dB",
+        "delta": -0.18992566232157193,
+        "delta_unit": "dB",
+        "threshold": 0.05,
+        "resolved": true
+      },
+      {
+        "quantity": "sdd11_worst",
+        "marker": "",
+        "f_hz": null,
+        "base": -7.428457284224706,
+        "variant": -6.626911258864122,
+        "unit": "dB",
+        "delta": 0.801546025360584,
+        "delta_unit": "dB",
+        "threshold": 0.5,
+        "resolved": true
+      },
+      {
+        "quantity": "scd21_worst",
+        "marker": "",
+        "f_hz": null,
+        "base": -45.55555033603865,
+        "variant": -44.37660271109397,
+        "unit": "dB",
+        "delta": 1.1789476249446764,
+        "delta_unit": "dB",
+        "threshold": 0.5,
+        "resolved": true
+      },
+      {
+        "quantity": "skew",
+        "marker": "",
+        "f_hz": null,
+        "base": -0.011484459917317984,
+        "variant": -0.1473467847854868,
+        "unit": "ps",
+        "delta": -0.13586232486816882,
+        "delta_unit": "ps",
+        "threshold": 1.0,
+        "resolved": false
+      },
+      {
+        "quantity": "next",
+        "marker": "AUX",
+        "f_hz": null,
+        "base": -25.71704532702875,
+        "variant": -25.53691758053644,
+        "unit": "dB",
+        "delta": 0.18012774649231034,
+        "delta_unit": "dB",
+        "threshold": 0.5,
+        "resolved": false
+      },
+      {
+        "quantity": "fext",
+        "marker": "AUX",
+        "f_hz": null,
+        "base": -28.91755631005001,
+        "variant": -27.778947668975192,
+        "unit": "dB",
+        "delta": 1.1386086410748177,
+        "delta_unit": "dB",
+        "threshold": 0.5,
+        "resolved": true
+      }
+    ],
+    "gap": [
+      {
+        "quantity": "tdr_lowest",
+        "marker": "short",
+        "f_hz": null,
+        "base": 84.9692698213458,
+        "variant": 85.30591656085952,
+        "unit": "Ω",
+        "delta": 0.3366467395137107,
+        "delta_unit": "Ω",
+        "threshold": 1.0,
+        "resolved": false
+      },
+      {
+        "quantity": "tdr_highest",
+        "marker": "short",
+        "f_hz": null,
+        "base": 96.09888279014135,
+        "variant": 98.15497756296365,
+        "unit": "Ω",
+        "delta": 2.0560947728223056,
+        "delta_unit": "Ω",
+        "threshold": 1.0,
+        "resolved": true
+      },
+      {
+        "quantity": "sdd21",
+        "marker": "marker",
+        "f_hz": 240000000.0,
+        "base": -1.9124025191536314,
+        "variant": -1.9116060465112172,
+        "unit": "dB",
+        "delta": 0.0007964726424141144,
+        "delta_unit": "dB",
+        "threshold": 0.05,
+        "resolved": false
+      },
+      {
+        "quantity": "sdd21",
+        "marker": "f_max",
+        "f_hz": 10000000000.0,
+        "base": -2.8995800467188895,
+        "variant": -3.2876693353921818,
+        "unit": "dB",
+        "delta": -0.3880892886732923,
+        "delta_unit": "dB",
+        "threshold": 0.05,
+        "resolved": true
+      },
+      {
+        "quantity": "sdd11_worst",
+        "marker": "",
+        "f_hz": null,
+        "base": -7.428457284224706,
+        "variant": -7.175489801208923,
+        "unit": "dB",
+        "delta": 0.25296748301578287,
+        "delta_unit": "dB",
+        "threshold": 0.5,
+        "resolved": false
+      },
+      {
+        "quantity": "scd21_worst",
+        "marker": "",
+        "f_hz": null,
+        "base": -45.55555033603865,
+        "variant": -27.89018281153031,
+        "unit": "dB",
+        "delta": 17.66536752450834,
+        "delta_unit": "dB",
+        "threshold": 0.5,
+        "resolved": true
+      },
+      {
+        "quantity": "skew",
+        "marker": "",
+        "f_hz": null,
+        "base": -0.011484459917317984,
+        "variant": 0.38387900355103427,
+        "unit": "ps",
+        "delta": 0.39536346346835227,
+        "delta_unit": "ps",
+        "threshold": 1.0,
+        "resolved": false
+      },
+      {
+        "quantity": "next",
+        "marker": "AUX",
+        "f_hz": null,
+        "base": -25.71704532702875,
+        "variant": -19.36256631761889,
+        "unit": "dB",
+        "delta": 6.354479009409861,
+        "delta_unit": "dB",
+        "threshold": 0.5,
+        "resolved": true
+      },
+      {
+        "quantity": "fext",
+        "marker": "AUX",
+        "f_hz": null,
+        "base": -28.91755631005001,
+        "variant": -21.0814049899332,
+        "unit": "dB",
+        "delta": 7.836151320116809,
+        "delta_unit": "dB",
+        "threshold": 0.5,
+        "resolved": true
+      }
+    ]
+  },
+  "neck_short": true,
+  "base_short": [
+    true,
+    true
+  ],
+  "recorded": {
+    "neck": [
+      "The lowest TDR level between the launches: 84.97 Ω against 88.87 Ω, +3.90 Ω: resolved; one of them lies on a feature shorter than two resolution lengths, so it is not that feature's impedance, and the delta compares two levels filtered alike.",
+      "Sdd21 at 240 MHz: -1.912 dB against -1.908 dB, +0.004 dB: not resolved.",
+      "Sdd21 at 10000 MHz: -2.900 dB against -3.090 dB, -0.190 dB: resolved.",
+      "The worst Sdd11 up to f_max: -7.43 dB against -6.63 dB, +0.80 dB: resolved.",
+      "The worst Scd21 up to f_max: -45.56 dB against -44.38 dB, +1.18 dB: resolved.",
+      "The intra-pair skew: -0.01 ps against -0.15 ps, -0.14 ps: not resolved.",
+      "NEXT into AUX, its peak: -25.72 dB against -25.54 dB, +0.18 dB: not resolved.",
+      "FEXT into AUX, its peak: -28.92 dB against -27.78 dB, +1.14 dB: resolved.",
+      "Resolved means larger than the significance threshold: 1 Ω on a TDR level, 0.05 dB on Sdd21 or S21, 0.5 dB on Sdd11, S11, Scd21, NEXT and FEXT where the higher of the two levels stands above -50 dB, and 1 ps on the skew: the design's registered values until gate P4-E measures the model's noise."
+    ],
+    "gap": [
+      "The lowest TDR level between the launches: 84.97 Ω against 85.31 Ω, +0.34 Ω: not resolved; one of them lies on a feature shorter than two resolution lengths, so it is not that feature's impedance, and the delta compares two levels filtered alike.",
+      "The highest TDR level between the launches: 96.10 Ω against 98.15 Ω, +2.06 Ω: resolved; one of them lies on a feature shorter than two resolution lengths, so it is not that feature's impedance, and the delta compares two levels filtered alike.",
+      "Sdd21 at 240 MHz: -1.912 dB against -1.912 dB, +0.001 dB: not resolved.",
+      "Sdd21 at 10000 MHz: -2.900 dB against -3.288 dB, -0.388 dB: resolved.",
+      "The worst Sdd11 up to f_max: -7.43 dB against -7.18 dB, +0.25 dB: not resolved.",
+      "The intra-pair skew: -0.01 ps against +0.38 ps, +0.40 ps: not resolved.",
+      "NEXT into AUX, its peak: -25.72 dB against -19.36 dB, +6.35 dB: resolved.",
+      "FEXT into AUX, its peak: -28.92 dB against -21.08 dB, +7.84 dB: resolved.",
+      "Resolved means larger than the significance threshold: 1 Ω on a TDR level, 0.05 dB on Sdd21 or S21, 0.5 dB on Sdd11, S11, Scd21, NEXT and FEXT where the higher of the two levels stands above -50 dB, and 1 ps on the skew: the design's registered values until gate P4-E measures the model's noise."
+    ]
+  },
+  "runs": {
+    "usb2_hs": {
+      "exit": 0,
+      "cells": 3745434,
+      "dt": 8.07792e-14,
+      "dt_ratio": 1.0851704079850617,
+      "pool": 4,
+      "jobs": [
+        {
+          "t_stop": 3.07268089435e-09,
+          "port": "P1",
+          "verdict": "converged",
+          "t_cut": 3.06024089073e-09,
+          "residual_db": -60.94635815577302,
+          "growth_db": 0.0
+        },
+        {
+          "t_stop": 3.07268089435e-09,
+          "port": "P2",
+          "verdict": "converged",
+          "t_cut": 3.06024089073e-09,
+          "residual_db": -60.66100418945545,
+          "growth_db": 0.0
+        },
+        {
+          "t_stop": 3.04780088711e-09,
+          "port": "P3",
+          "verdict": "converged",
+          "t_cut": 3.03536088349e-09,
+          "residual_db": -62.49309713024061,
+          "growth_db": 0.0
+        },
+        {
+          "t_stop": 3.04780088711e-09,
+          "port": "P4",
+          "verdict": "converged",
+          "t_cut": 3.03536088349e-09,
+          "residual_db": -62.39493157064568,
+          "growth_db": 0.0
+        },
+        {
+          "t_stop": 2.74924080021e-09,
+          "port": "P5",
+          "verdict": "converged",
+          "t_cut": 2.73680079659e-09,
+          "residual_db": -60.44168268844988,
+          "growth_db": 0.0
+        },
+        {
+          "t_stop": 2.77412080745e-09,
+          "port": "P6",
+          "verdict": "converged",
+          "t_cut": 2.76168080383e-09,
+          "residual_db": -62.14304083838647,
+          "growth_db": 0.0
+        },
+        {
+          "t_stop": 2.99804087262e-09,
+          "port": "R1",
+          "verdict": "converged",
+          "t_cut": 2.985600869e-09,
+          "residual_db": -61.39375777368693,
+          "growth_db": 0.0
+        },
+        {
+          "t_stop": 2.99804087262e-09,
+          "port": "R2",
+          "verdict": "converged",
+          "t_cut": 2.985600869e-09,
+          "residual_db": -61.236819306269425,
+          "growth_db": 0.0
+        }
+      ],
+      "wall_s": 2344.281567899976,
+      "predicted_s": 1613.9997240244468,
+      "worst_s": 4727.46699565523,
+      "indicators": {
+        "sigma": 1.0083,
+        "recip": 0.0153,
+        "loss_pct": null,
+        "expected_pct": null
+      },
+      "warnings": [],
+      "lid_mm": null,
+      "run_dir": "usb2_hs-n2-dfill-20261107-222613-95e7",
+      "speeds_mcs": [
+        123.5226421585863,
+        123.4864544164834,
+        122.64909506084929,
+        124.45456546480841,
+        125.3535129423452,
+        123.09110877638591,
+        127.64654279627571,
+        127.5639044429775
+      ],
+      "node_mcs": 123.98860381169735,
+      "cal_mcs": 206.89629804509312,
+      "debye_cells": 0,
+      "converged": true,
+      "valid": true,
+      "blocked": false,
+      "t_stop_s": 3.07268089435e-09,
+      "fingerprint": {
+        "preset": "normal",
+        "region": {
+          "expand_h": 6.0,
+          "margin_scale": 1.0
+        },
+        "interface": "usb2-hs",
+        "f_max_hz": 10000000000.0,
+        "rise_s": 5e-10,
+        "marker_hz": 240000000.0,
+        "target_ohm": 90.0,
+        "stackup": {
+          "source": "board",
+          "layers": [
+            {
+              "name": "F.Mask",
+              "kind": "mask",
+              "thickness_mm": 0.01,
+              "epsilon_r": 3.3,
+              "loss_tangent": 0.0
+            },
+            {
+              "name": "F.Cu",
+              "kind": "copper",
+              "thickness_mm": 0.035,
+              "epsilon_r": null,
+              "loss_tangent": null
+            },
+            {
+              "name": "dielectric 1",
+              "kind": "dielectric",
+              "thickness_mm": 0.2,
+              "epsilon_r": 4.3,
+              "loss_tangent": 0.02
+            },
+            {
+              "name": "In1.Cu",
+              "kind": "copper",
+              "thickness_mm": 0.035,
+              "epsilon_r": null,
+              "loss_tangent": null
+            },
+            {
+              "name": "dielectric 2",
+              "kind": "dielectric",
+              "thickness_mm": 1.04,
+              "epsilon_r": 4.5,
+              "loss_tangent": 0.02
+            },
+            {
+              "name": "In2.Cu",
+              "kind": "copper",
+              "thickness_mm": 0.035,
+              "epsilon_r": null,
+              "loss_tangent": null
+            },
+            {
+              "name": "dielectric 3",
+              "kind": "dielectric",
+              "thickness_mm": 0.2,
+              "epsilon_r": 4.3,
+              "loss_tangent": 0.02
+            },
+            {
+              "name": "B.Cu",
+              "kind": "copper",
+              "thickness_mm": 0.035,
+              "epsilon_r": null,
+              "loss_tangent": null
+            },
+            {
+              "name": "B.Mask",
+              "kind": "mask",
+              "thickness_mm": 0.01,
+              "epsilon_r": 3.3,
+              "loss_tangent": 0.0
+            }
+          ]
+        },
+        "dielectric": "lossless",
+        "lid": true,
+        "lid_height_mm": null,
+        "mesh": {
+          "n": 2,
+          "reach_h": 6.0
+        },
+        "ends": [
+          "J1.3",
+          "J1.2",
+          "U1.3",
+          "U1.2",
+          "TP1.1",
+          "TP2.1"
+        ],
+        "app": "0.1.0.dev0",
+        "openems": "0.37.0"
+      },
+      "reading_error": null,
+      "verdicts": [
+        "converged",
+        "converged",
+        "converged",
+        "converged",
+        "converged",
+        "converged",
+        "converged",
+        "converged"
+      ],
+      "t_max_s": 9e-09,
+      "ceiling_s": 3.6e-08
+    },
+    "usb2_hs_neck": {
+      "exit": 0,
+      "cells": 3714480,
+      "dt": 7.49998e-14,
+      "dt_ratio": 1.0075363720630315,
+      "pool": 4,
+      "jobs": [
+        {
+          "t_stop": 3.08759087078e-09,
+          "port": "P1",
+          "verdict": "converged",
+          "t_cut": 3.0751409076e-09,
+          "residual_db": -62.40278778055672,
+          "growth_db": 0.0
+        },
+        {
+          "t_stop": 3.08759087078e-09,
+          "port": "P2",
+          "verdict": "converged",
+          "t_cut": 3.0751409076e-09,
+          "residual_db": -62.85999252608807,
+          "growth_db": 0.0
+        },
+        {
+          "t_stop": 3.03779101803e-09,
+          "port": "P3",
+          "verdict": "converged",
+          "t_cut": 3.02534105484e-09,
+          "residual_db": -60.77100936702817,
+          "growth_db": 0.0
+        },
+        {
+          "t_stop": 3.03779101803e-09,
+          "port": "P4",
+          "verdict": "converged",
+          "t_cut": 3.02534105484e-09,
+          "residual_db": -61.04314079682286,
+          "growth_db": 0.0
+        },
+        {
+          "t_stop": 2.75144186469e-09,
+          "port": "P5",
+          "verdict": "converged",
+          "t_cut": 2.7389919015e-09,
+          "residual_db": -60.38694053628197,
+          "growth_db": 0.0
+        },
+        {
+          "t_stop": 2.77634179107e-09,
+          "port": "P6",
+          "verdict": "converged",
+          "t_cut": 2.76389182788e-09,
+          "residual_db": -61.47651853199971,
+          "growth_db": 0.0
+        },
+        {
+          "t_stop": 2.98799116528e-09,
+          "port": "R1",
+          "verdict": "converged",
+          "t_cut": 2.97554120209e-09,
+          "residual_db": -60.09188963477925,
+          "growth_db": 0.0
+        },
+        {
+          "t_stop": 2.98799116528e-09,
+          "port": "R2",
+          "verdict": "converged",
+          "t_cut": 2.97554120209e-09,
+          "residual_db": -60.36571340549297,
+          "growth_db": 0.0
+        }
+      ],
+      "wall_s": 2466.0106500999536,
+      "predicted_s": 2452.1563319929974,
+      "worst_s": 7147.775696836969,
+      "indicators": {
+        "sigma": 1.0088,
+        "recip": 0.0175,
+        "loss_pct": null,
+        "expected_pct": null
+      },
+      "warnings": [],
+      "lid_mm": null,
+      "run_dir": "usb2_hs_neck-n2-dfill-20261107-230611-e2d2",
+      "speeds_mcs": [
+        125.1138535220217,
+        125.5364903877922,
+        123.6821885789202,
+        123.99155613331669,
+        124.7650000591737,
+        124.925995151005,
+        129.2096311912675,
+        129.1799080759815
+      ],
+      "node_mcs": 125.01992433651336,
+      "cal_mcs": 206.89629804509312,
+      "debye_cells": 0,
+      "converged": true,
+      "valid": true,
+      "blocked": false,
+      "t_stop_s": 3.08759087078e-09,
+      "fingerprint": {
+        "preset": "normal",
+        "region": {
+          "expand_h": 6.0,
+          "margin_scale": 1.0
+        },
+        "interface": "usb2-hs",
+        "f_max_hz": 10000000000.0,
+        "rise_s": 5e-10,
+        "marker_hz": 240000000.0,
+        "target_ohm": 90.0,
+        "stackup": {
+          "source": "board",
+          "layers": [
+            {
+              "name": "F.Mask",
+              "kind": "mask",
+              "thickness_mm": 0.01,
+              "epsilon_r": 3.3,
+              "loss_tangent": 0.0
+            },
+            {
+              "name": "F.Cu",
+              "kind": "copper",
+              "thickness_mm": 0.035,
+              "epsilon_r": null,
+              "loss_tangent": null
+            },
+            {
+              "name": "dielectric 1",
+              "kind": "dielectric",
+              "thickness_mm": 0.2,
+              "epsilon_r": 4.3,
+              "loss_tangent": 0.02
+            },
+            {
+              "name": "In1.Cu",
+              "kind": "copper",
+              "thickness_mm": 0.035,
+              "epsilon_r": null,
+              "loss_tangent": null
+            },
+            {
+              "name": "dielectric 2",
+              "kind": "dielectric",
+              "thickness_mm": 1.04,
+              "epsilon_r": 4.5,
+              "loss_tangent": 0.02
+            },
+            {
+              "name": "In2.Cu",
+              "kind": "copper",
+              "thickness_mm": 0.035,
+              "epsilon_r": null,
+              "loss_tangent": null
+            },
+            {
+              "name": "dielectric 3",
+              "kind": "dielectric",
+              "thickness_mm": 0.2,
+              "epsilon_r": 4.3,
+              "loss_tangent": 0.02
+            },
+            {
+              "name": "B.Cu",
+              "kind": "copper",
+              "thickness_mm": 0.035,
+              "epsilon_r": null,
+              "loss_tangent": null
+            },
+            {
+              "name": "B.Mask",
+              "kind": "mask",
+              "thickness_mm": 0.01,
+              "epsilon_r": 3.3,
+              "loss_tangent": 0.0
+            }
+          ]
+        },
+        "dielectric": "lossless",
+        "lid": true,
+        "lid_height_mm": null,
+        "mesh": {
+          "n": 2,
+          "reach_h": 6.0
+        },
+        "ends": [
+          "J1.3",
+          "J1.2",
+          "U1.3",
+          "U1.2",
+          "TP1.1",
+          "TP2.1"
+        ],
+        "app": "0.1.0.dev0",
+        "openems": "0.37.0"
+      },
+      "reading_error": null,
+      "verdicts": [
+        "converged",
+        "converged",
+        "converged",
+        "converged",
+        "converged",
+        "converged",
+        "converged",
+        "converged"
+      ],
+      "t_max_s": 9e-09,
+      "ceiling_s": 3.6e-08
+    },
+    "usb2_hs_gap": {
+      "exit": 0,
+      "cells": 3745434,
+      "dt": 8.07792e-14,
+      "dt_ratio": 1.0851704079850617,
+      "pool": 4,
+      "jobs": [
+        {
+          "t_stop": 2.20063664053e-08,
+          "port": "P1",
+          "verdict": "converged",
+          "t_cut": 2.19939264017e-08,
+          "residual_db": -60.6468535767017,
+          "growth_db": 0.004971391502778033
+        },
+        {
+          "t_stop": 2.24790865429e-08,
+          "port": "P2",
+          "verdict": "converged",
+          "t_cut": 2.24666465392e-08,
+          "residual_db": -61.49827808631052,
+          "growth_db": 0.0036791336161172694
+        },
+        {
+          "t_stop": 2.03891659346e-08,
+          "port": "P3",
+          "verdict": "converged",
+          "t_cut": 2.03767259309e-08,
+          "residual_db": -62.23369241821449,
+          "growth_db": 0.0404405985974563
+        },
+        {
+          "t_stop": 2.0538445978e-08,
+          "port": "P4",
+          "verdict": "converged",
+          "t_cut": 2.05260059744e-08,
+          "residual_db": -62.08596225840854,
+          "growth_db": 0.04843330330859885
+        },
+        {
+          "t_stop": 2.19441663872e-08,
+          "port": "P5",
+          "verdict": "converged",
+          "t_cut": 2.19317263835e-08,
+          "residual_db": -61.292496425753676,
+          "growth_db": 0.03142357125139483
+        },
+        {
+          "t_stop": 2.17824463401e-08,
+          "port": "P6",
+          "verdict": "converged",
+          "t_cut": 2.17700063365e-08,
+          "residual_db": -61.696504765843144,
+          "growth_db": 0.009892963410038647
+        },
+        {
+          "t_stop": 1.97920457608e-08,
+          "port": "R1",
+          "verdict": "converged",
+          "t_cut": 1.97796057571e-08,
+          "residual_db": -62.19790511637889,
+          "growth_db": 0.0005712614448327713
+        },
+        {
+          "t_stop": 1.99040057934e-08,
+          "port": "R2",
+          "verdict": "converged",
+          "t_cut": 1.98915657897e-08,
+          "residual_db": -62.07794287205107,
+          "growth_db": 0.0
+        }
+      ],
+      "wall_s": 15823.53191079991,
+      "predicted_s": 16570.23316798089,
+      "worst_s": 6634.259725243651,
+      "indicators": {
+        "sigma": 1.0126,
+        "recip": 0.0187,
+        "loss_pct": null,
+        "expected_pct": null
+      },
+      "warnings": [],
+      "lid_mm": null,
+      "run_dir": "usb2_hs_gap-n2-dfill-20261107-234941-01c8",
+      "speeds_mcs": [
+        124.9067285552628,
+        124.98868281392599,
+        123.3350744905235,
+        124.65683438879711,
+        125.8199600636116,
+        125.7366649415985,
+        125.0476568772078,
+        125.01772117088831
+      ],
+      "node_mcs": 125.00320199240716,
+      "cal_mcs": 206.89629804509312,
+      "debye_cells": 0,
+      "converged": true,
+      "valid": true,
+      "blocked": false,
+      "t_stop_s": 2.24790865429e-08,
+      "fingerprint": {
+        "preset": "normal",
+        "region": {
+          "expand_h": 6.0,
+          "margin_scale": 1.0
+        },
+        "interface": "usb2-hs",
+        "f_max_hz": 10000000000.0,
+        "rise_s": 5e-10,
+        "marker_hz": 240000000.0,
+        "target_ohm": 90.0,
+        "stackup": {
+          "source": "board",
+          "layers": [
+            {
+              "name": "F.Mask",
+              "kind": "mask",
+              "thickness_mm": 0.01,
+              "epsilon_r": 3.3,
+              "loss_tangent": 0.0
+            },
+            {
+              "name": "F.Cu",
+              "kind": "copper",
+              "thickness_mm": 0.035,
+              "epsilon_r": null,
+              "loss_tangent": null
+            },
+            {
+              "name": "dielectric 1",
+              "kind": "dielectric",
+              "thickness_mm": 0.2,
+              "epsilon_r": 4.3,
+              "loss_tangent": 0.02
+            },
+            {
+              "name": "In1.Cu",
+              "kind": "copper",
+              "thickness_mm": 0.035,
+              "epsilon_r": null,
+              "loss_tangent": null
+            },
+            {
+              "name": "dielectric 2",
+              "kind": "dielectric",
+              "thickness_mm": 1.04,
+              "epsilon_r": 4.5,
+              "loss_tangent": 0.02
+            },
+            {
+              "name": "In2.Cu",
+              "kind": "copper",
+              "thickness_mm": 0.035,
+              "epsilon_r": null,
+              "loss_tangent": null
+            },
+            {
+              "name": "dielectric 3",
+              "kind": "dielectric",
+              "thickness_mm": 0.2,
+              "epsilon_r": 4.3,
+              "loss_tangent": 0.02
+            },
+            {
+              "name": "B.Cu",
+              "kind": "copper",
+              "thickness_mm": 0.035,
+              "epsilon_r": null,
+              "loss_tangent": null
+            },
+            {
+              "name": "B.Mask",
+              "kind": "mask",
+              "thickness_mm": 0.01,
+              "epsilon_r": 3.3,
+              "loss_tangent": 0.0
+            }
+          ]
+        },
+        "dielectric": "lossless",
+        "lid": true,
+        "lid_height_mm": null,
+        "mesh": {
+          "n": 2,
+          "reach_h": 6.0
+        },
+        "ends": [
+          "J1.3",
+          "J1.2",
+          "U1.3",
+          "U1.2",
+          "TP1.1",
+          "TP2.1"
+        ],
+        "app": "0.1.0.dev0",
+        "openems": "0.37.0"
+      },
+      "reading_error": null,
+      "verdicts": [
+        "converged",
+        "converged",
+        "converged",
+        "converged",
+        "converged",
+        "converged",
+        "converged",
+        "converged"
+      ],
+      "t_max_s": 9e-09,
+      "ceiling_s": 3.6e-08
+    }
+  },
+  "dc": {
+    "usb2_hs": 2.4306094157933167e-05,
+    "usb2_hs_neck": 2.8252769446457382e-05,
+    "usb2_hs_gap": 0.00020603981068477895
+  },
+  "invalid": [],
+  "neck": {
+    "quantity": "tdr_highest",
+    "marker": "short",
+    "f_hz": null,
+    "base": 96.09888279014135,
+    "variant": 103.23710551999353,
+    "unit": "Ω",
+    "delta": 7.138222729852188,
+    "delta_unit": "Ω",
+    "threshold": 1.0,
+    "resolved": true,
+    "limit": 6.6000000000000005,
+    "pass": true
+  },
+  "gap": {
+    "quantity": "scd21_worst",
+    "marker": "",
+    "f_hz": null,
+    "base": -45.55555033603865,
+    "variant": -27.89018281153031,
+    "unit": "dB",
+    "delta": 17.66536752450834,
+    "delta_unit": "dB",
+    "threshold": 0.5,
+    "resolved": true,
+    "limit": 0.5,
+    "floor_db": -37.7,
+    "pass": true
+  },
+  "verdict": {
+    "value": "pass",
+    "fails": [],
+    "owner": []
+  },
+  "machine": {
+    "steps": 3,
+    "machine_hours": 5.770923690722169,
+    "loaded": [],
+    "elapsed_days": 17
+  }
+}
