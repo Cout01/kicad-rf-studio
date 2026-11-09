@@ -324,6 +324,7 @@ CATALOG: dict[str, str] = {
     "I_SI_COMPARE_NO_SKEW": "The intra-pair skew is not compared: one of the projects has a leg whose TDT does not arrive.",
     "I_SI_COMPARE_XT": "{kind} into {net}, its peak: {base} dB against {variant} dB, {delta} dB: {verdict}.",
     "I_SI_COMPARE_THRESHOLDS": "Resolved means larger than the significance threshold: {ohm} Ω on a TDR level, {il_db} dB on Sdd21 or S21, {db} dB on Sdd11, S11, NEXT and FEXT where the higher of the two levels stands above {floor_db} dB and on Scd21 where it stands above {scd21_floor_db} dB, and {ps} ps on the skew: the values gate P4-E set from the model's measured noise.",
+    "W_EMC_GAP_CROSSING": "#{n} R1: {net} on {layer} runs {run_mm} mm over a void in its {ref_net} reference ({ref_layer}, h {h_mm} mm), {extent_mm} mm across, at ({x_mm}, {y_mm}) mm; λ/20 at f_max is {l_mm} mm. Crossing a split or void in the reference is a known return-path fault (LearnEMC; Ansys SIwave's Net Crossing Split; HyperLynx DRC); a run counts from 1 mm, a cut measured on three public boards.",
     "E_INTERNAL": "Internal error: {detail}. Please report it.",
     "G_APP": "kicad-rf-studio",
     "G_RUNNING": "Running in {folder}…",
