@@ -230,6 +230,7 @@ def test_the_window_fits_1200_by_800_and_its_tabs_need_no_scrolling(window):  # 
     w = window()
     for kind in ("chain", "antenna", "si"):  # only the active kind's rows show
         w.new_form.kind.setCurrentIndex(w.new_form.kind.findData(kind))
+        assert w.new_form.kind.currentData() == kind
         hint = w.minimumSizeHint()  # English probed at 5302aae: 830 x 518 for the chain
         assert hint.width() <= 1200 and hint.height() <= 800, kind
     # a tab never elides or narrows (scroll buttons appear instead), so every label is whole when the bar fits
@@ -1468,6 +1469,7 @@ def test_only_the_latest_si_retune_is_drawn_and_a_revert_or_a_read_drops_it(wind
     until(lambda: qapp.processEvents() or w.retuning is None)
     res = control.retuned(pj, w.opened.project, w.opened.results, r.rows())
     assert np.array_equal(r.axes[1].lines[2].get_ydata(), db(res.reading.m[:, 3, 2])) and not w.tune_timer.isActive()
+    assert "openEMS" not in sys.modules and "CSXCAD" not in sys.modules
 
 
 def test_an_si_cost_lists_its_2d_table_first_and_run_asks_on_the_estimate_alone(window, tmp_path, monkeypatch):
@@ -1488,6 +1490,7 @@ def test_an_si_cost_lists_its_2d_table_first_and_run_asks_on_the_estimate_alone(
     assert [text for code, text in shown if code == "I_COST_TIME"][0] in asked[0]
     assert not [text for code, text in shown if code in TABLE_2D and text in asked[0]]  # the table stays in Cost
     grab(w, "si-cost")
+    assert "openEMS" not in sys.modules and "CSXCAD" not in sys.modules
 
 
 def test_compare_runs_on_the_pool_into_the_bases_folder_and_never_the_variants(window, qapp, tmp_path, monkeypatch):
@@ -1997,7 +2000,11 @@ def test_one_si_project_through_the_window_new_cost_run_retune_apply_verify_comp
     assert pipeline.si_result(variant)["source"] == "T_VERIFY"  # usable before an hour is spent
     vd = load_project(variant)
     assert (board_file(variant, vd).name, vd["verify"]["values"]) == ("usb2_hs_gap.kicad_pcb", SI_VALUES)
-    masks = [(str(out), "<KRS_E2E_DIR>"), (str(variant.parents[2]), "<VARIANT>")]
+    # ponytail: each folder masked resolved, then as given (Task 14's compare named the variant's verify folder in its
+    # 8.3 short form); a variant verified under a third spelling of its folder still shows it
+    masks = [(str(out), "<KRS_E2E_DIR>"), (str(variant.parents[2]), "<VARIANT>"),
+             (str(Path(os.environ["KRS_E2E_DIR"])), "<KRS_E2E_DIR>"),
+             (str(Path(os.environ["KRS_E2E_SI_VARIANT"]).parents[2]), "<VARIANT>")]
 
     def say(step, begin, lines):  # the record and the README quote these: no machine path shows in them
         line = " | ".join(lines)
