@@ -13,7 +13,7 @@ from kicad_rf_studio.core.kicad import classify, load_board
 from kicad_rf_studio.core.kicad.board import CopperArea, Footprint, Pad, Track, Via
 from kicad_rf_studio.core.kicad.tracer import antenna_kind
 from kicad_rf_studio.core.review.planes import Ref, plane_map, plane_nets
-from kicad_rf_studio.core.review.rules import exclusions, groups, r1, r3, return_share
+from kicad_rf_studio.core.review.rules import exclusions, groups, r1, r2, r3, return_share
 from kicad_rf_studio.core.review.tags import tag
 
 FIX = Path(__file__).parent / "fixtures"
@@ -116,6 +116,31 @@ def test_the_share_of_return_current_past_the_edge():  # design 5.2 R3: Johnson 
     assert return_share(0.0, 0.2, None) == pytest.approx(0.5)
 
 
+def test_r2_fires_on_flash_clks_vias_from_in1s_ground_to_in2s_supply():  # design 5.14 R2 positive
+    b, c, pm, tags, gs = setup("qspi_clk")
+    found = r2(b, c, pm, tags, L5)
+    assert [(f.net, f.layer, f.ref, f.params["to_layer"], f.params["to_net"], f.measured["return_mm"])
+            for f in found] == [
+        ("FLASH_CLK", "F.Cu", Ref("In1.Cu", "GND", 0.2, None), "In2.Cu", "+3V3", 2.262),
+        ("FLASH_CLK", "F.Cu", Ref("In1.Cu", "GND", 0.2, None), "In2.Cu", "+3V3", 9.773)]
+    assert {(f.code, f.limit, f.params["path"]) for f in found} == {("I_EMC_REF_CHANGE", 2.0, "T_EMC_RETURN_CAP")}
+    assert found[0].params["nearest"] == "2.262 mm"
+
+
+def test_r2_is_silent_on_a_bridged_change_and_on_a_same_net_change_with_a_via_near():  # design 5.14 R2 negatives
+    b, c, pm, tags, gs = setup("emc_review")
+    assert r2(b, c, pm, tags, L5) == []  # C1's pads 0.890 mm from CLK_MID's via
+
+    def ground_in2(b):
+        b.areas = [replace(a, net="GND") if a.layer == "In2.Cu" else a for a in b.areas]
+
+    b, c, pm, tags, gs = setup("qspi_clk", ground_in2)
+    assert [(f.params["path"], f.measured["return_mm"]) for f in r2(b, c, pm, tags, L5)] == [
+        ("T_EMC_RETURN_VIA", 3.444), ("T_EMC_RETURN_VIA", 7.879)]
+    b.vias.append(Via((107.0, -98.99), 0.6, 0.3, ("F.Cu", "B.Cu"), "GND", "v"))  # 0.8 mm from the first
+    assert [f.measured["return_mm"] for f in r2(b, c, pm, tags, L5)] == [7.879]
+
+
 # --- beyond the brief's tests ----------------------------------------------------------------------------------------
 
 
@@ -155,3 +180,30 @@ def test_r3_merges_the_flagged_entries_that_meet_and_places_a_part_its_band_miss
         box(105, -105, 151, -99))))
     (f,) = r3(b, gs, 2.0)
     assert f.measured["d_mm"] == 0.399 and f.at == pytest.approx(s, abs=1e-3)
+
+
+def test_r2_names_its_via_tracks_and_return_reads_none_without_one_and_a_return_via_must_span_both_layers():  # AR-1
+    b, c, pm, tags, gs = setup("qspi_clk")
+    via = next(v for v in b.vias if v.net == "FLASH_CLK")
+    sides = sorted(t.uuid for t in b.tracks if t.net == "FLASH_CLK" and via.at in (t.start, t.end))
+    f = r2(b, c, pm, tags, L5)[0]
+    assert f.kiids == {"tracks": sides, "vias": [via.uuid], "zones": [], "pads": [],
+                       "footprints": [b.footprints["C1"].uuid]}
+    assert (f.at, f.bounds) == ((107.0, -99.79), (106.7, -100.09, 107.3, -99.49))  # the via's 0.6 mm disc
+    del b.footprints["C1"]
+    assert [(f.measured["return_mm"], f.params["nearest"]) for f in r2(b, c, pm, tags, L5)] == [(None, "T_NONE")] * 2
+
+    def no_in2(b):
+        b.areas = [a for a in b.areas if a.layer != "In2.Cu"]
+
+    def ground_in2(b):
+        b.areas = [replace(a, net="GND") if a.layer == "In2.Cu" else a for a in b.areas]
+
+    b, c, pm, tags, gs = setup("qspi_clk", no_in2)
+    assert r2(b, c, pm, tags, L5) == []  # both sides over In1.Cu's GND: the same layer and net
+    b, c, pm, tags, gs = setup("qspi_clk", ground_in2)
+    b.vias.append(Via((107.0, -98.99), 0.3, 0.15, ("F.Cu", "In1.Cu"), "GND", "m"))  # stops short of In2.Cu
+    assert [f.measured["return_mm"] for f in r2(b, c, pm, tags, L5)] == [3.444, 7.879]
+    b.vias.append(Via((107.0, -98.89), 0.3, 0.15, ("In2.Cu", "In1.Cu"), "GND", "u"))  # buried, 0.9 mm off
+    (f,) = r2(b, c, pm, tags, L5)
+    assert f.kiids["vias"] == sorted(v.uuid for v in b.vias if v.at in ((117.0, -99.79), (124.475, -97.3)))

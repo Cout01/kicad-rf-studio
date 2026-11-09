@@ -1521,6 +1521,11 @@ msgstr "#{n} R1: {net} em {layer} passa {run_mm} mm sobre um vazio na sua refer�
 msgid "#{n} R3: {net} on {layer} runs {d_mm} mm from the board edge at ({x_mm}, {y_mm}) mm, under {k}·h = {kh_mm} mm (h {h_mm} mm to {ref_layer}): about {share_pct} % of its ideal return current would lie past the edge. Critical nets belong at least 2h from the board edge (LearnEMC)."
 msgstr "#{n} R3: {net} em {layer} passa a {d_mm} mm da borda da placa em ({x_mm}, {y_mm}) mm, abaixo de {k}·h = {kh_mm} mm (h {h_mm} mm até {ref_layer}): cerca de {share_pct} % da sua corrente de retorno ideal ficaria além da borda. Redes críticas ficam a pelo menos 2h da borda da placa (LearnEMC)."
 
+#. I_EMC_REF_CHANGE
+#, python-brace-format
+msgid "#{n} R2: {net}'s via at ({x_mm}, {y_mm}) mm moves its reference from {from_net} on {from_layer} to {to_net} on {to_layer}; {path}: {nearest}, against {limit_mm} mm (TI SLLA656: within 200 mils, closer is better; Siemens: manage reference plane changes). For information."
+msgstr "#{n} R2: a via de {net} em ({x_mm}, {y_mm}) mm muda a referência de {from_net} em {from_layer} para {to_net} em {to_layer}; {path}: {nearest}, contra {limit_mm} mm (TI SLLA656: até 200 mils, quanto mais perto, melhor; Siemens: gerenciar trocas de plano de referência). Apenas informativo."
+
 #. E_INTERNAL
 #, python-brace-format
 msgid "Internal error: {detail}. Please report it."
@@ -2766,6 +2771,14 @@ msgstr "connector, ic, copper, plane ou null"
 #. T_EXPECT_SI_REFERENCE
 msgid "a pad, a point, a plane (its copper layer's name) or null"
 msgstr "uma ilha, um ponto, um plano (o nome da camada de cobre dele) ou null"
+
+#. T_EMC_RETURN_CAP
+msgid "the nearest capacitor between the two nets"
+msgstr "o capacitor mais próximo entre as duas redes"
+
+#. T_EMC_RETURN_VIA
+msgid "the nearest via joining the two layers"
+msgstr "a via mais próxima que une as duas camadas"
 
 #~ msgid "Cells: {board} M in the board, {air} M of air and {pml} M of PML; the time counts a PML cell as {weight} cells and runs this model at {ratio} × the calibrated speed (gate P3-A)."
 #~ msgstr "Células: {board} M na placa, {air} M de ar e {pml} M de PML; o tempo conta uma célula de PML como {weight} células e executa este modelo a {ratio} × a velocidade calibrada (checagem prévia P3-A)."

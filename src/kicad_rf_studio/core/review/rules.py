@@ -1,9 +1,10 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """The review's rules (Stage 5 design 5.2), each finding measured against its threshold and the threshold's public
-source: R1, a tagged run over a void of its reference net; R3, a tagged track near the board edge. A rule reads the
-tagged tracks in groups, a net's tracks on one layer with one reference, less the exclusions (5.1): the hulls of the
-connectors, the footprints with a keep-out and the printed antennas, grown by EXCLUDE_H·h. Every mm value is rounded to
-1e-3 before it is compared or stored."""
+source: R1, a tagged run over a void of its reference net; R2, a tagged via that changes its reference with no return
+near, for information; R3, a tagged track near the board edge. R1 and R3 read the tagged tracks in groups, a net's
+tracks on one layer with one reference, less the exclusions (5.1): the hulls of the connectors, the footprints with a
+keep-out and the printed antennas, grown by EXCLUDE_H·h. Every mm value is rounded to 1e-3 before it is compared or
+stored."""
 from __future__ import annotations
 
 import math
@@ -16,14 +17,15 @@ import shapely
 from shapely.geometry import Point, box
 from shapely.geometry.base import BaseGeometry
 
-from kicad_rf_studio.core.kicad.board import Board, Track
+from kicad_rf_studio.core.kicad.board import Board, Track, Via
 from kicad_rf_studio.core.kicad.shapes import XY
-from kicad_rf_studio.core.kicad.tracer import Classes, _copper, antenna_kind
+from kicad_rf_studio.core.kicad.tracer import Classes, _copper, _netted, _prefix, antenna_kind
 from kicad_rf_studio.core.review.planes import PlaneMap, Ref, centre_line, cover, reference
 
 RUN_MIN = 1.0  # mm: the shortest bare run R1 counts, a cut measured on three public boards (f4)
 ANTIPAD = 0.6  # mm: a void within its lone hole's radius plus this is the hole's antipad (r1)
 EXCLUDE_H = 3.0  # the exclusion hulls grow by this many h (r1, A4)
+R2_FLOOR = 2.0  # mm: R2's d is max(L, this) (A5, f4)
 EDGE_K = 2.0  # R3's k: a tagged track under k·h from the board edge (A6)
 SOURCES: dict[str, str] = {  # each rule's source, in English: review.json's limit_source
     "R1": "LearnEMC: splitting or gapping a ground plane is almost always a bad idea; Ansys SIwave's Net Crossing "
@@ -157,6 +159,58 @@ def r1(board: Board, pm: PlaneMap, groups: list[Group], l_mm: float) -> list[Fin
                 g.net, g.layer, ref, (round(mid.x, 3), round(mid.y, 3)), tuple(round(v, 3) for v in run.bounds),
                 {"run_mm": run_mm, "extent_mm": extent, "l_mm": l_mm}, RUN_MIN,
                 {"tracks": sorted(tracks), "vias": [], "zones": sorted(zones), "pads": [], "footprints": []}))
+    return found
+
+
+def r2(board: Board, classes: Classes, pm: PlaneMap, tags: Collection[str], l_mm: float) -> list[Finding]:
+    """R2, a tagged via that changes its reference, for information (design 5.2; AR-1), in board.vias order. The
+    via's tracks are its net's with an end within its radius (+1 µm) and a reference, top to bottom: `from` is the
+    first one's reference and `to` the last one's. Between two nets, a return is a capacitor (letters "C") whose two
+    netted copper pads sit on exactly those nets, as far as its nearer pad centre; between two layers of one net, a via
+    of that net whose span holds both. It fires when no return lies within d = max(L, R2_FLOOR). `classes` is not
+    read."""
+    d = max(round(l_mm, 3), R2_FLOOR)
+    caps = [(fp.uuid, _netted(fp)) for ref, fp in board.footprints.items() if _prefix(ref) == "C"]
+
+    def span(v: Via) -> set[str]:  # the copper layers between a via's two
+        at = [pm.layers.index(layer) for layer in v.layers]
+        return set(pm.layers[min(at):max(at) + 1])
+
+    found = []
+    for v in board.vias:
+        if v.net not in tags:
+            continue
+        sides = sorted([(t, ref) for t in board.tracks if t.net == v.net
+                        and round(min(math.dist(t.start, v.at), math.dist(t.end, v.at)) - v.diameter / 2, 3) <= 1e-3
+                        and (ref := reference(pm, t.layer, centre_line(t)))], key=lambda s: pm.layers.index(s[0].layer))
+        if not sides:
+            continue
+        frm, to = sides[0][1], sides[-1][1]
+        if frm.net != to.net:  # a capacitor between the two nets is their return (r5; Olney's rule 15)
+            path, kind = "T_EMC_RETURN_CAP", "footprints"
+            returns = [(min(math.dist(p.center, v.at) for p in pads), uuid) for uuid, pads in caps
+                       if sorted(p.net for p in pads) == sorted((frm.net, to.net))]
+        elif frm.layer != to.layer:
+            path, kind = "T_EMC_RETURN_VIA", "vias"
+            returns = [(math.dist(u.at, v.at), u.uuid) for u in board.vias
+                       if u.net == frm.net and {frm.layer, to.layer} <= span(u)]
+        else:
+            continue
+        nearest = min(returns, default=None)
+        return_mm = None if nearest is None else round(nearest[0], 3)
+        if return_mm is not None and return_mm <= d:
+            continue
+        kiids = {"tracks": sorted({t.uuid for t, _ in sides}), "vias": [v.uuid], "zones": [], "pads": [],
+                 "footprints": []}
+        if nearest is not None:
+            kiids[kind] = sorted({*kiids[kind], nearest[1]})
+        (x, y), r = v.at, v.diameter / 2
+        found.append(Finding(
+            "R2", "I_EMC_REF_CHANGE",
+            {"net": v.net, "from_net": frm.net, "from_layer": frm.layer, "to_net": to.net, "to_layer": to.layer,
+             "path": path, "nearest": "T_NONE" if return_mm is None else f"{return_mm:.3f} mm", "limit_mm": f"{d:.3f}"},
+            v.net, sides[0][0].layer, frm, (round(x, 3), round(y, 3)),
+            tuple(round(c, 3) for c in (x - r, y - r, x + r, y + r)), {"return_mm": return_mm}, d, kiids))
     return found
 
 
