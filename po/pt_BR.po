@@ -2345,8 +2345,8 @@ msgstr "Ilhas selecionadas no KiCad além das da antena: {count}. Selecione a an
 
 #. G_HANDOFF_SI_ENDS
 #, python-brace-format
-msgid "{count} IC or connector pads lie on the line through {net} ({pads}). Pick the start and end pads here, or select the line's two end pads in KiCad with one of its tracks and press the button again."
-msgstr "Ilhas de CI ou de conector na linha que passa por {net}: {count} ({pads}). Escolha aqui as ilhas inicial e final, ou selecione no KiCad as duas ilhas das pontas da linha com uma das trilhas dela e pressione o botão de novo."
+msgid "Candidate end pads on the line through {net}: {count} ({pads}), not two. Pick the start and end pads here, or select the line's two end pads in KiCad with one of its tracks and press the button again."
+msgstr "Ilhas candidatas a ponta na linha que passa por {net}: {count} ({pads}), e não duas. Escolha aqui as ilhas inicial e final, ou selecione no KiCad as duas ilhas das pontas da linha com uma das trilhas dela e pressione o botão de novo."
 
 #. G_HANDOFF_NETS
 #, python-brace-format
@@ -2843,4 +2843,7 @@ msgstr "uma ilha, um ponto, um plano (o nome da camada de cobre dele) ou null"
 
 #~ msgid "{board} as saved lacks a pad or a part selected in KiCad, which holds edits not yet saved: save the board in KiCad and press the button again."
 #~ msgstr "A versão salva de {board} não tem uma ilha ou um componente selecionado no KiCad, que guarda edições ainda não salvas: salve a placa no KiCad e pressione o botão de novo."
+
+#~ msgid "{count} IC or connector pads lie on the line through {net} ({pads}). Pick the start and end pads here, or select the line's two end pads in KiCad with one of its tracks and press the button again."
+#~ msgstr "Ilhas de CI ou de conector na linha que passa por {net}: {count} ({pads}). Escolha aqui as ilhas inicial e final, ou selecione no KiCad as duas ilhas das pontas da linha com uma das trilhas dela e pressione o botão de novo."
 

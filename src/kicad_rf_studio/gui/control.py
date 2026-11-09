@@ -382,9 +382,9 @@ def retuned(path: Path, project: dict, stored: pipeline.ChainResults, rows: list
     Any exception on the way gives `stored` with no chain, no what-if and no reading, its lines that one line: a
     KrsError's (assign's refusal, E_S_SINGULAR), else E_INTERNAL. Writes nothing and never raises, so no stale curve
     stays on screen."""
-    # ponytail: each S2P file is read again on every update, on the GUI thread (about 2, 5 and 19 ms per file of 401,
-    # 1601 and 6401 points on lpf915; a file on a slow network share stalls it); cache by (file, mtime_ns), or read on
-    # the pool, when several large files pass 50 ms
+    # ponytail: each S2P file is read again on every update, on the GUI thread for v1 and antennas and on the tuner's
+    # thread for SI (about 2, 5 and 19 ms per file of 401, 1601 and 6401 points on lpf915; a file on a slow network
+    # share stalls the GUI's); cache by (file, mtime_ns), or read on the pool, when several large files pass 50 ms
     try:
         new = pipeline.assign(project, changed(project, path.parent, rows), path.parent)
         res = pipeline.chain_results(path, new, errors_as_lines=True, lay=stored.lay)

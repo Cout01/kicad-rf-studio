@@ -512,7 +512,7 @@ CATALOG: dict[str, str] = {
     "G_HANDOFF_PADS": "{count} pads are selected in KiCad. Select only the chain's two end pads and press the button again, or pick start and end here.",
     "G_HANDOFF_ANTENNAS": "{count} printed antennas are selected in KiCad ({refs}). Select one and press the button again, or pick it here.",
     "G_HANDOFF_START": "{count} pads besides the antenna's are selected in KiCad. Select the antenna with the one pad that feeds it, the radio pin, and press the button again, or pick the start pad here.",
-    "G_HANDOFF_SI_ENDS": "{count} IC or connector pads lie on the line through {net} ({pads}). Pick the start and end pads here, or select the line's two end pads in KiCad with one of its tracks and press the button again.",
+    "G_HANDOFF_SI_ENDS": "Candidate end pads on the line through {net}: {count} ({pads}), not two. Pick the start and end pads here, or select the line's two end pads in KiCad with one of its tracks and press the button again.",
     "G_HANDOFF_NETS": "Tracks or pads of {count} lines are selected in KiCad ({nets}). Select one line's tracks, or its pair's, and press the button again, or pick its pads here.",
     "G_HANDOFF_SI_NET": "The tracks and vias selected in KiCad are on {net}, a ground, power or netless net, which is no signal line. Select a track of the line to measure and press the button again.",
     "G_REFILL": "Refill zones and save in KiCad",

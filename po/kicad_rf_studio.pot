@@ -2335,7 +2335,7 @@ msgstr ""
 
 #. G_HANDOFF_SI_ENDS
 #, python-brace-format
-msgid "{count} IC or connector pads lie on the line through {net} ({pads}). Pick the start and end pads here, or select the line's two end pads in KiCad with one of its tracks and press the button again."
+msgid "Candidate end pads on the line through {net}: {count} ({pads}), not two. Pick the start and end pads here, or select the line's two end pads in KiCad with one of its tracks and press the button again."
 msgstr ""
 
 #. G_HANDOFF_NETS
