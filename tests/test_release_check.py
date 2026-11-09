@@ -130,8 +130,35 @@ def test_the_antenna_step_runs_new_on_the_releases_own_fixture_and_reads_schema_
     assert Path(command[2]).read_bytes() == fixture.read_bytes() and env["QT_QPA_PLATFORM"] == "offscreen"
     schema = {"schema": 1}
     assert release_check.antenna(tmp_path)[0] == "FAIL"  # no kind: read with .get, a FAIL line
-    assert [s.__name__ for s in release_check.STEPS] == ["build", "install", "gui", "antenna", "plugin", "privacy"]
+    assert [s.__name__ for s in release_check.STEPS] == ["build", "install", "gui", "antenna", "si", "plugin",
+                                                         "privacy"]
     assert release_check.NEEDS["antenna"] == "install"
+
+
+def test_the_si_step_runs_new_interface_on_the_releases_own_fixture_and_reads_schema_3(tmp_path, monkeypatch):
+    fixture = ROOT / "tests" / "fixtures" / "usb2_hs.kicad_pcb"  # Stage 4 design 5.12 item 5; ruling 12
+    with zipfile.ZipFile(tmp_path / "source.zip", "w") as z:
+        z.write(fixture, "tests/fixtures/usb2_hs.kicad_pcb")
+    line = {"chain": {"series": [{"role": "port"}], "shunt": []}}  # R1, then R2: a part port each
+    seen, data = [], {"schema": 3, "kind": "si", "ports": [{}] * 6, "lines": [line, line]}
+
+    def run(command, **kw):  # the fresh venv's new: it writes project.json where -o says
+        seen.append((command, kw["env"]))
+        out = Path(command[command.index("-o") + 1])
+        out.mkdir(parents=True, exist_ok=True)
+        (out / "project.json").write_text(json.dumps(data), encoding="utf-8")
+        return subprocess.CompletedProcess(command, 0, "", "")
+
+    monkeypatch.setattr(release_check, "run", run)
+    assert release_check.si(tmp_path)[0] == "PASS"
+    (command, env), = seen
+    assert command[:2] == [release_check.program(tmp_path, "kicad-rf-studio"), "new"]
+    assert command[3:12] == ["--start", "J1.3", "--end", "U1.3", "--interface", "usb2-hs", "--pair", "--victim",
+                             "TP1.1:TP2.1"]
+    assert Path(command[2]).read_bytes() == fixture.read_bytes() and env["QT_QPA_PLATFORM"] == "offscreen"
+    data = {**data, "ports": [{}] * 5}
+    assert release_check.si(tmp_path)[0] == "FAIL"  # 7 ports where a run takes 8
+    assert release_check.NEEDS["si"] == "install"
 
 
 def test_main_skips_what_a_failed_step_holds_up_fails_a_step_that_raises_and_removes_its_folder(monkeypatch, capsys):

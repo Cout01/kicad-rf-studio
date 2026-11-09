@@ -31,7 +31,7 @@ In PowerShell, on Windows 10 or 11:
    & "$venv\Scripts\kicad-rf-studio" install-kicad-plugin
    ```
 
-5. Start the GUI with `& "$venv\Scripts\kicad-rf-studio-gui"`, or from KiCad's PCB editor: select the chain's two end pads, or the antenna footprint (or one of its pads) and the radio pin, and press the kicad-rf-studio button.
+5. Start the GUI with `& "$venv\Scripts\kicad-rf-studio-gui"`, or from KiCad's PCB editor: select the chain's two end pads, the antenna footprint (or one of its pads) and the radio pin, or a track, arc or via of a signal-integrity line, and press the kicad-rf-studio button. After updating kicad-rf-studio, run `install-kicad-plugin` again: the button's tooltip, which says what it takes, is written there.
 
 ### Linux
 
@@ -285,6 +285,65 @@ In the GUI, New's kind Antenna takes the antenna footprint, the start pad and a 
 - A radio pin, feed and antenna pad in one line can be refused by the fit2d gate; raising `gates.fit2d_limit` in project.json is at your own risk.
 - `meander915` is no 915 MHz example: on its synthetic board it resonates above its band.
 
+## Signal-integrity tutorial
+
+This takes `usb2_hs`, the synthetic four-layer USB 2.0 high-speed board in `tests/fixtures`: a micro-B connector J1, the pads of a six-pin ESD array U2 on the pair, a 22 Ω 0402 series resistor on each leg (R1 and R2) and an MCU-like QFN U1 at the far end, with a neighbour net, AUX, running beside part of the route between the test points TP1 and TP2. It goes through `new --interface`, `cost`, `run`, `retune` and `verify`, then compares it with `usb2_hs_gap`, the same board with a slot in the plane under the pair. Run the commands as in the Tutorial above.
+
+The times were measured on the development PC (Windows 11, 16 CPUs) at the Normal preset, `new`'s default, by the run through the GUI that closed Stage 4 (`docs/validation/<date>-stage4-exit.md`). That run compared with the plane-gap board that gate P4-F had run (`docs/validation/2026-11-08-p4-f.md`), retuned and verified for it, so the gap's run time is P4-F's and its verify time that preparation's. `cost` prints your own machine's estimate before every run, and no runtime is promised. The excerpts are real output of that run; `<run folder>` stands for a run's folder in the per-user data folder, and `usb2_hs`, `usb2_hs_gap` and `compare` for the projects' and the compare's folders.
+
+**`new --interface`** traces the measured line from the connector's pin J1.3 through R1 to the MCU's pin U1.3, takes its partner by KiCad's pair rule (`--pair`: USB_D+ with USB_D-, ending at J1.2 and U1.2) and AUX between TP1.1 and TP2.1 as a victim, and writes a signal-integrity project for the `usb2-hs` interface: 90 Ω differential ± 10 %, the link's 500 ps edge and a 240 MHz marker, simulated to 10 GHz. R1 and R2 are part ports, so their values can be retuned.
+
+```
+<venv>\Scripts\kicad-rf-studio new tests/fixtures/usb2_hs.kicad_pcb --start J1.3 --end U1.3 --interface usb2-hs --pair --victim TP1.1:TP2.1 -o usb2_hs
+```
+
+**`cost`** first lists the 2D table, every straight section's impedance against the target band, in seconds and before any run; then the cells, the runs broken down into the lines' ends, the victim's and the part ports, the worst case, and the time a job whose planes ring may take past T_max.
+
+```
+<venv>\Scripts\kicad-rf-studio cost usb2_hs
+```
+
+**`run`** runs one job per port: the pair's four ends, the victim's two and the part ports R1 and R2. It gives the TDR along the route against the target band, the mixed-mode S (Sdd21, Sdd11, Scc21 and Scd21), the skew and the crosstalk into AUX, for any values of R1 and R2.
+
+```
+<venv>\Scripts\kicad-rf-studio run usb2_hs
+```
+
+**`retune`** closes the part ports at new values, with no new run: 24 Ω, the value the GUI's E24 snapping gives a typed 25 Ω. `0R` replaces a series part with a short.
+
+```
+<venv>\Scripts\kicad-rf-studio retune usb2_hs R1=24 R2=24
+```
+
+**`verify`** runs one job per external port with R1 and R2 in the grid at their values, as ideal parts, and compares the result with the retune's.
+
+```
+<venv>\Scripts\kicad-rf-studio verify usb2_hs
+```
+
+**`compare`** reads both projects' verified results, which must share every setting, and marks each difference resolved or not. First the same steps on the plane-gap board, then the compare, which writes `compare.csv` and `compare.png` into `compare`:
+
+```
+<venv>\Scripts\kicad-rf-studio new tests/fixtures/usb2_hs_gap.kicad_pcb --start J1.3 --end U1.3 --interface usb2-hs --pair --victim TP1.1:TP2.1 -o usb2_hs_gap
+<venv>\Scripts\kicad-rf-studio run usb2_hs_gap
+<venv>\Scripts\kicad-rf-studio retune usb2_hs_gap R1=24 R2=24
+<venv>\Scripts\kicad-rf-studio verify usb2_hs_gap
+<venv>\Scripts\kicad-rf-studio compare usb2_hs usb2_hs_gap -o compare
+```
+
+In the GUI, New's kind Signal integrity takes the start and end pads, the interface, the pair (none, KiCad's rule or its two end pads picked) and up to two victims; the Cost tab lists the 2D table before the estimate; Results shows the TDR with the target band, the mixed-mode S and the crosstalk, and retunes R1 and R2 with E24 snapping; the Compare tab compares the open project with a variant. The KiCad button pre-fills New with the signal-integrity kind, the pair and an interface that fits it from a selected track, arc or via, and with the line's two end pads, the connector's first, when it has exactly two IC or connector pads: on `usb2_hs` the ESD array's pads make four, so pick J1.3 and U1.3, or select them in KiCad with a track of the pair.
+
+### What these results do not tell you
+
+- Every signal-integrity result carries this line: "Relative: these signal-integrity results compare variants of one board under identical settings; they do not predict measured performance."
+- A TDR level marked short lies on a feature shorter than two resolution lengths, so it is not that feature's impedance; on this route about 1.1 resolution lengths lie between the launches, and the 2D table gives a straight section's impedance. A level within 2.2 Ω of a pair's target (1.1 Ω of a single net's) marks no feature, and the same values are compare's thresholds on a TDR level, three times the model's measured noise (gate P4-E, `docs/validation/2026-11-07-p4-e.md`).
+- Copper staircased at 45° or along arcs is only warned about: gate P4-B measured a 45° pair 2.27 % (90 Ω) and 5.35 % (100 Ω) off its axis-aligned twin at mesh n 2, and whether such a pair is refused or run at a finer mesh is not decided yet (`docs/validation/2026-11-06-p4-b.md`).
+- The dielectric is lossless by default, so S holds no dielectric loss, and the loss lines estimate it with the copper's. `"dielectric": "debye"` in project.json is the option, at a cost: a Debye cell weighs about 109 plain cells, so this board would run about 33 times slower (gate P4-D, `docs/validation/2026-11-07-p4-d.md`).
+- A job whose port residual still falls fast enough at T_max runs on, up to four times T_max: the planes' cavity resonances ring in a lossless model, and they depend on the crop, so their frequencies and depths are no predictions. `cost` prints the time to that ceiling.
+- `cost` prices a run of two jobs at once about 1.9 times too long, on the safe side, until a run with that many jobs at once measures the speed (`docs/validation/2026-11-08-p4-refit.md`).
+- Copper is a perfect conductor; packages, dies and the connector's body are absent, and the ESD array is its pads alone; the ports are lumped at the pads.
+- The retune stays what-if: `verify` checks the layout reduction with ideal parts, not the vendor parts.
+
 ## Development setup
 
 1. Create a virtual environment: `python -m venv .venv`
@@ -292,7 +351,7 @@ In the GUI, New's kind Antenna takes the antenna footprint, the start pad and a 
 3. Install the package in editable mode with the development extras: `python -m pip install -e .[dev]`
 4. Give the venv openEMS as Install says (on Windows, `kicad-rf-studio setup-openems <openEMS folder>`, and `CSXCAD_INSTALL_PATH` set to that folder: the tests import openEMS in this Python, which reads it to find openEMS's DLLs). Without it, the tests marked `openems` are skipped.
 5. Run the tests: `python -m pytest -q`
-6. Before a release, run `python tools/release_check.py`: it builds a wheel from git archive of HEAD and checks it, installs it in a fresh venv, starts the GUI there offscreen, runs `new --antenna` there on `tests/fixtures/ifa2g4_pi.kicad_pcb`, checks the KiCad button's plugin.json against KiCad's schemas, and runs the privacy gate's generic rules over the history and the wheel. One real run through the GUI, lpf915 at Draft then its verify, runs with `KRS_E2E_DIR` set to an empty folder outside the repository and openEMS importable (step 4): `python -X utf8 -m pytest tests/test_gui.py -k real_run -s`. It takes about lpf915's Draft run plus its verify, and its cost line prints the estimate first; a file named STOP in its newest run folder stops it. One antenna project through the GUI, `ifa2g4_pi` at Normal run, retuned, verified and compared with a verified ground-pour project, runs with `KRS_E2E_DIR` set to an empty folder outside the repository and `KRS_E2E_VARIANT` to that project's `project.json`, or to `window` to make the pour through the GUI first: `python -X utf8 -m pytest tests/test_gui.py -k antenna_project_through -s`. It takes about the pi project's run plus its verify, 1.4 h on the development PC (about 2.9 h with `window`, which also runs and verifies the pour).
+6. Before a release, run `python tools/release_check.py`: it builds a wheel from git archive of HEAD and checks it, installs it in a fresh venv, starts the GUI there offscreen, runs `new --antenna` there on `tests/fixtures/ifa2g4_pi.kicad_pcb` and `new --interface` on `tests/fixtures/usb2_hs.kicad_pcb`, checks the KiCad button's plugin.json against KiCad's schemas, and runs the privacy gate's generic rules over the history and the wheel. One real run through the GUI, lpf915 at Draft then its verify, runs with `KRS_E2E_DIR` set to an empty folder outside the repository and openEMS importable (step 4): `python -X utf8 -m pytest tests/test_gui.py -k real_run -s`. It takes about lpf915's Draft run plus its verify, and its cost line prints the estimate first; a file named STOP in its newest run folder stops it. One antenna project through the GUI, `ifa2g4_pi` at Normal run, retuned, verified and compared with a verified ground-pour project, runs with `KRS_E2E_DIR` set to an empty folder outside the repository and `KRS_E2E_VARIANT` to that project's `project.json`, or to `window` to make the pour through the GUI first: `python -X utf8 -m pytest tests/test_gui.py -k antenna_project_through -s`. It takes about the pi project's run plus its verify, 1.4 h on the development PC (about 2.9 h with `window`, which also runs and verifies the pour).
 7. After a change to a message in `src/kicad_rf_studio/core/messages.py`, run `python tools/catalog.py` (Babel comes with the dev extras), translate each entry of `po/pt_BR.po` whose msgstr is empty (a changed message's old translation stays at the file's end as a `#~` entry), then run it again: the tests refuse a catalog that is not complete and compiled. They run in English whatever your system's language, and `KRS_TEST_LANGUAGE=pt_BR` runs `tests/test_gui.py` in Brazilian Portuguese.
 
 ## Contributing

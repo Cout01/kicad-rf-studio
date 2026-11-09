@@ -7,6 +7,7 @@ import pytest
 import kicad_rf_studio
 from kicad_rf_studio.cli import main
 from kicad_rf_studio.core.messages import CATALOG
+from kicad_rf_studio.core.post.si import DIFF_OHM, SE_OHM
 
 ROOT = Path(__file__).resolve().parents[1]
 SPDX = "# SPDX-License-Identifier: GPL-3.0-or-later"
@@ -77,6 +78,21 @@ def test_the_readme_has_an_antenna_tutorial():  # Stage 3 design 5.12 item 5
                     "compare ifa2g4_pi ifa2g4_pi_pour -o compare"):
         assert f"kicad-rf-studio {command}\n" in tutorial, command
     assert "\n### What these results do not tell you\n" in tutorial and CATALOG["I_ANTENNA_RELATIVE"] in tutorial
+
+def test_the_readme_has_an_si_tutorial():  # Stage 4 design 5.12 item 5; ruling 11
+    readme = (ROOT / "README.md").read_text(encoding="utf-8")
+    assert readme.index("\n## Antenna tutorial\n") < readme.index("\n## Signal-integrity tutorial\n") < readme.index(
+        "\n## Development setup\n")
+    tutorial = readme.split("\n## Signal-integrity tutorial\n", 1)[1].split("\n## ", 1)[0]
+    pair = "--start J1.3 --end U1.3 --interface usb2-hs --pair --victim TP1.1:TP2.1"
+    for command in (f"new tests/fixtures/usb2_hs.kicad_pcb {pair} -o usb2_hs", "cost usb2_hs", "run usb2_hs",
+                    "retune usb2_hs R1=24 R2=24", "verify usb2_hs",
+                    f"new tests/fixtures/usb2_hs_gap.kicad_pcb {pair} -o usb2_hs_gap", "run usb2_hs_gap",
+                    "retune usb2_hs_gap R1=24 R2=24", "verify usb2_hs_gap", "compare usb2_hs usb2_hs_gap -o compare"):
+        assert f"kicad-rf-studio {command}\n" in tutorial, command
+    assert "\n### What these results do not tell you\n" in tutorial and CATALOG["I_SI_RELATIVE"] in tutorial
+    assert f"{DIFF_OHM:g} Ω" in tutorial and f"{SE_OHM:g} Ω" in tutorial  # the short band and compare's thresholds
+    assert "a track, arc or via" in readme.split("\n## Install\n", 1)[1].split("\n## ", 1)[0]
 
 def test_the_readme_installs_the_app_openems_and_the_button_with_real_commands(capsys):  # design 5.6, 7; RF 4
     readme = (ROOT / "README.md").read_text(encoding="utf-8")
