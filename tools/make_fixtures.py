@@ -600,6 +600,39 @@ def line100(b):
     planes(b, box)
 
 
+def emc_review(b):
+    """The review's board (Stage 5 design 5.14): 50 x 50 mm on STACKUP_4L, every zone drawn to the outline (KiCad's
+    0.5 mm edge clearance stops the fills 0.5 mm in). In1.Cu is GND as five zones that leave two 6 x 10 mm boxes bare,
+    overlapping 0.5 mm as planes(slot=)'s do; In2.Cu is +3V3 as four zones round a GND island under the second box, 1 mm
+    clear of it, the island tied to In1.Cu by a GND via. CLK_EDGE, 0.5 mm wide, runs 0.35 mm from the top edge over GND
+    (R3's positive); CLK_GAP crosses the first box, +3V3 under it (R1's positive, a void); CLK_LOOK crosses the second,
+    GND under it (R1's look-through negative); CLK_MID goes from F.Cu to B.Cu at a via 0.89 mm from C1's pads, +3V3 and
+    GND (R2's negative); SH1, lpf915's frame, with TP1 inside it and a GND via every 0.976 mm on its pads' centre line
+    (R4's negative)."""
+    rect(b, pcbnew.Edge_Cuts, 100, 100, 150, 150)
+    for r in ((100, 100, 110, 150), (116, 100, 150, 150), (109.5, 100, 116.5, 105), (109.5, 115, 116.5, 120),
+              (109.5, 130, 116.5, 150)):
+        square(b, pcbnew.In1_Cu, "GND", *r)
+    for r in ((100, 100, 107, 150), (119, 100, 150, 150), (106.5, 100, 119.5, 117), (106.5, 133, 119.5, 150)):
+        square(b, pcbnew.In2_Cu, "+3V3", *r)
+    square(b, pcbnew.In2_Cu, "GND", 108, 118, 118, 132)
+    via(b, (109, 119))  # the island's tie to In1.Cu's GND, which keeps KiCad's island removal off it
+    track(b, "CLK_EDGE", 0.5, (103, 100.6), (123, 100.6))
+    track(b, "CLK_GAP", W_SE, (103, 110), (123, 110))
+    track(b, "CLK_LOOK", W_SE, (103, 125), (123, 125))
+    track(b, "CLK_MID", W_SE, (103, 140), (113, 140))
+    via(b, (113, 140), "CLK_MID")
+    track(b, "CLK_MID", W_SE, (113, 140), (123, 140), layer=pcbnew.B_Cu)
+    decoupled(b, (113, 140.75))
+    place(b, "RF_Shielding:Wuerth_36103205_20x20mm", "SH1", "SHIELD", (137, 137), 0, {"1": "GND"})
+    place(b, TP1MM, "TP1", "TP", (137, 137), 0, {"1": "RF"})
+    lo, hi, n = 126.75, 147.25, 21  # the frame's 1 mm pads' centre line
+    for k in range(n):
+        s = lo + (hi - lo) * k / n
+        for at in ((s, lo), (hi, s), (lo + hi - s, hi), (lo, lo + hi - s)):
+            via(b, at)
+
+
 # an antenna board's 50 Ω microstrip keeps its top ground 1 mm off: the fill's clearance, and the gap fit2d reads
 ANTENNA_RULES = '(version 1)\n(rule "microstrip gap" (constraint clearance (min 1mm)))\n'
 # the stripline coupon keeps its fills 0.5 mm off its pads and vias (ruling B-1): its ports' gap and the antipads
@@ -725,6 +758,7 @@ BOARDS = {
     "p4e_gapp3": lambda b: pair_coupon(b, s=GAP + D_SI3),
     "p4e_gapm3": lambda b: pair_coupon(b, s=GAP - D_SI3),
     "p4e_vshift3": lambda b: pair_coupon(b, aux="vic", shift=D_SI3),
+    "emc_review": emc_review,
 }
 # the boards whose copper layers, thickness and stackup are their own (new_board's arguments)
 STACKS = {"p4b_sl90": (4, 1.6, STACKUP_SL), "si_pad_coupon_tall": (2, 1.6, STACKUP_2L16)}
@@ -784,9 +818,9 @@ def save(b, path):
 def main(out, names=()):
     """Build the boards `names` (every one in BOARDS when empty) into the folder `out`: the antenna boards under
     ANTENNA_RULES, p4b_sl90 under SL_RULES, the rest under RULES; a board in STACKS on its own (p4b_sl90 on STACKUP_SL,
-    si_pad_coupon_tall on KiCad's two layers at 1.6 mm), the rest of Stage 4's (usb2_hs*, qspi_clk, p4*, si_*) with four
-    copper layers, 1.6 mm and STACKUP_4L, and the others on KiCad's default two-layer 0.8 mm stackup. An unknown name
-    exits first, before any board is written."""
+    si_pad_coupon_tall on KiCad's two layers at 1.6 mm), the rest of Stage 4's (usb2_hs*, qspi_clk, p4*, si_*) and
+    Stage 5's emc_* with four copper layers, 1.6 mm and STACKUP_4L, and the others on KiCad's default two-layer 0.8 mm
+    stackup. An unknown name exits first, before any board is written."""
     if unknown := [n for n in names if n not in BOARDS]:
         sys.exit(f"unknown boards: {' '.join(unknown)}; known: {' '.join(BOARDS)}")
     out = Path(out)
@@ -794,7 +828,7 @@ def main(out, names=()):
     for name in names or BOARDS:
         path = out / f"{name}.kicad_pcb"
         rules = ANTENNA_RULES if name.startswith(("ifa2g4", "meander915")) else SL_RULES if name == "p4b_sl90" else RULES
-        stage4 = name.startswith(("usb2_hs", "qspi_clk", "p4", "si_"))
+        stage4 = name.startswith(("usb2_hs", "qspi_clk", "p4", "si_", "emc_"))
         b = new_board(path, zlib.crc32(name.encode()), rules, *STACKS.get(name, (4, 1.6, STACKUP_4L) if stage4 else ()))
         BOARDS[name](b)
         save(b, path)

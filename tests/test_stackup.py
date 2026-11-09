@@ -160,7 +160,7 @@ def test_no_preset_leaves_a_mask_or_dielectric_without_values(name):
 def test_every_fixture_board_carries_its_generators_stackup(path):
     b = load_board(path)
     # Stage 4's four layers: make_fixtures' STACKUP_4L, or p4b_sl90's STACKUP_SL; the tall pad coupon's two at 1.6 mm
-    if path.stem.startswith(("usb2_hs", "qspi_clk", "p4", "si_")) and path.stem != "si_pad_coupon_tall":
+    if path.stem.startswith(("usb2_hs", "qspi_clk", "p4", "si_", "emc_")) and path.stem != "si_pad_coupon_tall":
         assert [l.kind for l in b.stackup.layers] == ["mask", "copper", "dielectric", "copper", "dielectric", "copper",
                                                       "dielectric", "copper", "mask"]
         assert b.stackup.dielectric_thickness() == pytest.approx(b.thickness - 0.16)

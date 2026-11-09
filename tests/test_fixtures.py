@@ -13,7 +13,7 @@ NAMES = ["lpf915", "lpf915-45", "coupon_ms", "coupon_ms_masked", "coupon_gcpw", 
          "usb2_hs_gap", "usb2_hs_45", "qspi_clk", "p4b_ms90", "p4b_ms100", "p4b_sl90", "p4b_ms90_45", "p4b_ms100_45",
          "p4b_ms90_vic", "p4b_ms90_cut", "p4c_l90", "p4c_step75", "p4c_step35", "si_pad_coupon", "si_pad_coupon_tall",
          "si_line100", "p4e_shift", "p4e_gapp", "p4e_gapm", "p4e_null", "p4e_vshift", "p4e_shift3", "p4e_gapp3",
-         "p4e_gapm3", "p4e_vshift3"]
+         "p4e_gapm3", "p4e_vshift3", "emc_review"]
 
 
 @pytest.mark.parametrize("name", NAMES)

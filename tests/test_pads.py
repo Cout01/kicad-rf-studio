@@ -6,10 +6,11 @@ from collections import Counter
 from pathlib import Path
 
 import pytest
-from shapely.geometry import MultiPolygon, Point, Polygon
+import shapely
+from shapely.geometry import LineString, MultiPolygon, Point, Polygon
 from shapely.ops import unary_union
 
-from kicad_rf_studio.core.kicad import load_board
+from kicad_rf_studio.core.kicad import classify, load_board
 from kicad_rf_studio.core.kicad.board import Pad
 
 FIX = Path(__file__).parent / "fixtures"
@@ -23,7 +24,7 @@ QFN = "Package_DFN_QFN:QFN-16-1EP_3x3mm_P0.5mm_EP1.7x1.7mm"
                                   "p4b_ms100", "p4b_sl90", "p4b_ms90_45", "p4b_ms100_45", "p4b_ms90_vic",
                                   "p4b_ms90_cut", "p4c_l90", "p4c_step75", "p4c_step35", "si_pad_coupon",
                                   "si_pad_coupon_tall", "si_line100", "p4e_shift", "p4e_gapp", "p4e_gapm", "p4e_null",
-                                  "p4e_vshift", "p4e_shift3", "p4e_gapp3", "p4e_gapm3", "p4e_vshift3"])
+                                  "p4e_vshift", "p4e_shift3", "p4e_gapp3", "p4e_gapm3", "p4e_vshift3", "emc_review"])
 def test_pads_match_pcbnew(name):
     b = load_board(FIX / f"{name}.kicad_pcb")
     truth = json.loads((FIX / f"{name}.pads.json").read_text(encoding="utf-8"))
@@ -94,6 +95,32 @@ def test_the_si_fixtures():  # Stage 4 design 5.11: four layers, KiCad's own foo
     assert any(a.polygon.contains(Point(116.5, -100)) for a in usb.areas if a.layer == "In1.Cu")
     assert not any(a.polygon.contains(Point(116.5, -100)) for a in gap.areas if a.layer == "In1.Cu")
     assert sum(min(abs(t.end[0] - t.start[0]), abs(t.end[1] - t.start[1])) > 0.5 for t in bend.tracks) == 4
+
+
+def test_the_emc_review_fixture():  # Stage 5 design 5.14: emc_review, a positive or negative for each rule
+    b = load_board(FIX / "emc_review.kicad_pcb")
+    assert b.copper_layers == ("F.Cu", "In1.Cu", "In2.Cu", "B.Cu") and b.outline.bounds == (100.0, -150.0, 150.0, -100.0)
+    assert sorted({(a.layer, a.net) for a in b.areas if a.source == "zone"}) == [
+        ("In1.Cu", "GND"), ("In2.Cu", "+3V3"), ("In2.Cu", "GND")]
+    assert sorted((t.net, t.layer, t.width) for t in b.tracks if t.net.startswith("CLK")) == [
+        ("CLK_EDGE", "F.Cu", 0.5), ("CLK_GAP", "F.Cu", 0.33), ("CLK_LOOK", "F.Cu", 0.33), ("CLK_MID", "B.Cu", 0.33),
+        ("CLK_MID", "F.Cu", 0.33)]
+    c = classify(b)
+    assert (c.shields, c.connectors) == ({"SH1"}, frozenset())
+
+    def on(layer, net):
+        return shapely.union_all([a.polygon for a in b.areas if (a.layer, a.net, a.source) == (layer, net, "zone")])
+
+    gnd1 = on("In1.Cu", "GND")
+    assert gnd1.covers(LineString([(103, -100.6), (123, -100.6)]))  # CLK_EDGE over GND, its centre 0.6 mm in
+    for y in (110, 125):  # CLK_GAP's and CLK_LOOK's cut-outs: bare over x 110 to 116 exactly
+        assert gnd1.covers(LineString([(103, -y), (110, -y)])) and gnd1.covers(LineString([(116, -y), (123, -y)]))
+        assert not gnd1.intersects(LineString([(110.001, -y), (115.999, -y)]))
+    assert on("In2.Cu", "+3V3").covers(LineString([(103, -110), (123, -110)]))  # +3V3 under box 1
+    assert on("In2.Cu", "GND").covers(LineString([(108.5, -125), (117.5, -125)]))  # GND under box 2 only
+    assert not on("In2.Cu", "GND").intersects(LineString([(103, -110), (123, -110)]))
+    assert (len(b.vias), len([v for v in b.vias if v.net == "GND"])) == (88, 86)
+    assert round(min(math.dist(p.center, (113, -140)) for p in b.footprints["C1"].pads), 3) == 0.89
 
 
 # --- beyond the brief's two tests: what pcbnew's pad truth cannot show --------------------------------
