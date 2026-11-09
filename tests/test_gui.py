@@ -1858,3 +1858,167 @@ def test_one_antenna_project_through_the_window_new_cost_run_retune_apply_verify
         assert "openEMS" not in sys.modules and "CSXCAD" not in sys.modules  # design 4: the GUI process
     finally:
         dispose([w])  # a failed step leaves no run going
+
+
+SI_VALUES = {"R1": "24", "R2": "24"}  # a typed 25 Ω snapped to E24, SI's default (ruling 3); plan 3 verified them
+
+
+def si_through(w, out, variant, say, monkeypatch, scd21):
+    """Stage 4 design 5.14 item 3 on the window `w`: New (the SI kind on a copy of usb2_hs in out/board: J1.3 to U1.3,
+    usb2-hs, KiCad's pair rule, the victim TP1.1:TP2.1), Cost, Run, the retune (R1 and R2 typed 25, snapped to 24),
+    Apply, Verify, then Compare against the verified `variant`, read only, its Scd21 resolved when `scd21` (the real
+    run's; the fake's twin resolves nothing). Each step's lines go through say(step, begin, lines); validity lines are
+    printed, never asserted. Returns the base's project file."""
+    def ended(timeout):
+        until(lambda: w.tick() or w.proc.poll() is not None, timeout=timeout)
+        w.tick()
+
+    def printed():  # what the terminal prints but its progress, as the CLI renders it
+        return [render(e["code"], **e["params"]) for e in events(w.run_dir) if e["kind"] not in ("progress", "end")]
+
+    vd = load_project(variant)
+    watched = (variant.parent, Path(vd["results"]["run_dir"]), Path(vd["verify"]["run_dir"]))
+    before = stamps(*watched)
+    board, pj = out / "board" / "usb2_hs.kicad_pcb", out / "board" / "usb2_hs" / "project.json"
+    board.parent.mkdir(parents=True)
+    board.write_bytes((FIX / "usb2_hs.kicad_pcb").read_bytes())
+    begin, f = time.monotonic(), w.new_form
+    f.board.setText(str(board))
+    w.board_chosen()
+    w.pads_read.result(timeout=60)
+    w.tick()
+    f.kind.setCurrentIndex(f.kind.findData("si"))
+    f.start.setCurrentText("J1.3")
+    f.end.setCurrentText("U1.3")
+    f.victims[0][0].setCurrentText("TP1.1")
+    f.victims[0][1].setCurrentText("TP2.1")
+    assert (f.interface.currentData(), f.pair.currentData(), f.preset.currentText()) == ("usb2-hs", "rule", "normal")
+    f.create_button.click()
+    made, notes = w.creating.result(timeout=120)
+    assert made == pj
+    w.tick()
+    opened(w)
+    assert w.project_status.text() == render("G_PROJECT_SI", path=str(pj.resolve()), interface="usb2-hs", target="90",
+                                             start="J1.3", end="U1.3", preset="normal")
+    assert pipeline.fingerprint(load_project(pj)) == pipeline.si_result(variant)["fingerprint"]  # before an hour goes
+    grab(w, "e2e-usb2_hs-new")
+    say("usb2_hs new", begin, [render(c, **p) for c, p in notes])
+    begin = time.monotonic()
+    w.cost_button.click()  # a fresh data folder calibrates this machine first
+    ended(3600)
+    assert w.cost_status.text() == render("G_END_DONE", exit_code=0), w.cost_status.text()
+    codes = [e["code"] for e in events(w.run_dir, kind="cost")]
+    assert codes[0] == "I_SI_2D_HEADER" and codes.index("I_SI_2D_PAIR") < codes.index("I_COST_TIME")
+    assert "I_SI_COST_RING" in codes
+    say("usb2_hs cost", begin, printed())
+    opened(w)
+    assert w.cost == w.run_dir and w.run_button.isEnabled()
+    grab(w, "e2e-usb2_hs-cost")
+    asked = []
+    monkeypatch.setattr(w, "ask", lambda text: asked.append(text) or True)
+    begin = time.monotonic()
+    w.run_button.click()
+    shown = [(e["code"], control.text(e["code"], e["params"])) for e in events(w.cost, kind="cost")]
+    assert w.command == "run" and [text for code, text in shown if code == "I_COST_TIME"][0] in asked[0]
+    assert not [text for code, text in shown if code in TABLE_2D and text in asked[0]]  # ruling 4: the table in Cost
+    ended(12 * 3600)
+    assert (w.end["params"]["exit_code"], w.run_status.text()) == (0, render("G_END_DONE", exit_code=0)), \
+        w.run_status.text()
+    (kept,) = events(w.run_dir, code="I_RESULTS")
+    assert (kept["params"]["kept"], kept["params"]["runs"]) == (8, 8)
+    say("usb2_hs run", begin, printed())
+    grab(w, "e2e-usb2_hs-run")
+    opened(w)
+    r, begin = w.results, time.monotonic()
+    assert column(r.parts, PART) == ["R1", "R2"]
+    for k in (0, 1):
+        r.parts.item(k, VALUE).setText("25")  # snapped to E24's 24
+    assert column(r.parts, VALUE) == list(SI_VALUES.values()) and not r.what_if.isHidden()
+    w.retuning.result(timeout=120)
+    w.take_retune()
+    w.tabs.setCurrentWidget(r)
+    grab(w, "e2e-usb2_hs-retune")
+    r.apply_button.click()
+    code, lines = w.applying.result(timeout=300)
+    w.tick()
+    assert code == 0 and r.retune_status.text() == render("G_APPLIED", folder=str(pj.parent / "results"))
+    assert {ref: q["value"] for ref, q in parts(load_project(pj)).items() if ref in SI_VALUES} == SI_VALUES
+    say("usb2_hs retune", begin, lines)
+    opened(w)
+    begin = time.monotonic()
+    r.verify_button.click()  # applied: verify starts at once
+    assert w.command == "verify"
+    ended(12 * 3600)
+    assert (w.end["params"]["exit_code"], w.run_status.text()) == (0, render("G_END_DONE", exit_code=0)), \
+        w.run_status.text()
+    opened(w)
+    assert load_project(pj)["verify"]["values"] == SI_VALUES and r.stale.isHidden()
+    assert w.opened.verified[0][0] == "I_VERIFY_RESULTS"
+    assert items(r.verify_lines) == [control.text(c, p) for c, p in w.opened.verified]
+    say("usb2_hs verify", begin, printed())
+    w.tabs.setCurrentWidget(r)  # verify's watch selected the Run tab
+    grab(w, "e2e-usb2_hs-verify")
+    begin = time.monotonic()
+    monkeypatch.setattr(QFileDialog, "getOpenFileName", lambda *a, **k: (str(variant), ""))
+    w.comparison.variant_button.click()
+    w.tick()
+    w.comparison.compare_button.click()
+    code, lines, cells = w.comparing.result(timeout=600)
+    w.tick()
+    assert code == 0 and w.comparison.table.rowCount() == len(cells) == 9
+    assert (pj.parent / "compare" / "compare.png").is_file() and stamps(*watched) == before  # the variant read in place
+    if scd21:  # design 5.14 item 3: the plane gap's mode conversion; its TDR row may go either way at 2.2 Ω
+        assert (cells[5][0], cells[5][9]) == ("Scd21", render("T_RESOLVED"))
+    say("compare", begin, [render(c, **p) for c, p in lines])
+    w.tabs.setCurrentWidget(w.comparison)
+    grab(w, "e2e-compare")
+    return pj
+
+
+# ponytail: run by hand only; its body runs in the suite on the fake (test_the_si_acceptance_runs_its_steps_on_the_fake),
+# so only the real workers' side can lag. Its setup copies Stage 3's real-run test's, which stays as Stage 3's exit
+# record ran it
+@pytest.mark.openems
+@pytest.mark.skipif(not (os.environ.get("KRS_E2E_DIR") and os.environ.get("KRS_E2E_SI_VARIANT")),
+                    reason="one SI project through the window (Stage 4 design 5.14 item 3): set KRS_E2E_DIR to an empty "
+                    "folder outside the repository and KRS_E2E_SI_VARIANT to a verified plane-gap project.json")
+def test_one_si_project_through_the_window_new_cost_run_retune_apply_verify_compare(qapp, monkeypatch):
+    out = Path(os.environ["KRS_E2E_DIR"]).resolve()
+    assert not out.is_relative_to(ROOT), "KRS_E2E_DIR must be outside the repository"
+    out.mkdir(parents=True, exist_ok=True)
+    assert not any(out.iterdir()), "KRS_E2E_DIR must be empty: a fresh data folder, as on a new install"
+    assert qapp.platformName() == "offscreen"
+    for name in ("LOCALAPPDATA", "XDG_DATA_HOME"):
+        monkeypatch.setenv(name, str(out / "data"))
+    monkeypatch.setenv("KRS_GRAB_DIR", str(out / "grabs"))
+    for name in ("run_jobs", "ensure_calibrated"):
+        monkeypatch.setattr(runs, name, fail)  # no run in the GUI process
+    variant = Path(os.environ["KRS_E2E_SI_VARIANT"]).resolve()  # <VARIANT>/projects/<name>/project.json
+    assert pipeline.si_result(variant)["source"] == "T_VERIFY"  # usable before an hour is spent
+    vd = load_project(variant)
+    assert (board_file(variant, vd).name, vd["verify"]["values"]) == ("usb2_hs_gap.kicad_pcb", SI_VALUES)
+    masks = [(str(out), "<KRS_E2E_DIR>"), (str(variant.parents[2]), "<VARIANT>")]
+
+    def say(step, begin, lines):  # the record and the README quote these: no machine path shows in them
+        line = " | ".join(lines)
+        for real, shown in masks:
+            line = line.replace(real, shown)
+        print(f"e2e {step}: {time.monotonic() - begin:.0f} s: {line}", flush=True)
+
+    w = MainWindow()  # the real orchestrator (control.orchestrator)
+    w.show()
+    try:
+        si_through(w, out, variant, say, monkeypatch, scd21=True)
+        assert "openEMS" not in sys.modules and "CSXCAD" not in sys.modules  # design 4: the GUI process
+    finally:
+        dispose([w])  # a failed step leaves no run going
+
+
+def test_the_si_acceptance_runs_its_steps_on_the_fake(window, tmp_path, monkeypatch):  # ruling 14, tier (a)
+    monkeypatch.setenv("KRS_FAKE_CBOX", "6e-16")  # the detached verify's cell C, as verified_si patches it here
+    variant = verified_si(tmp_path / "variant", monkeypatch, FIX / "usb2_hs_gap.kicad_pcb").resolve()
+    assert pipeline.retune(variant, [f"{ref}={v}" for ref, v in SI_VALUES.items()], lambda c, p: None) == 0
+    assert pipeline.verify(variant) == 0
+    w = window()
+    si_through(w, tmp_path / "e2e", variant, lambda *args: None, monkeypatch, scd21=False)
+    assert "openEMS" not in sys.modules and "CSXCAD" not in sys.modules
