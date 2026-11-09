@@ -6,7 +6,7 @@ Status: written on 2026-11-02 by the controller, right after Stage 3 closed (mai
 - r3, the engine;
 - r4, the references and the gates.
 
-An independent builder read the design before the commit. Its four questions are settled in §5.1 (the TDR's two rise times, the presets' band and their marker frequency), §5.3 (the Debye default's rule) and §5.3 again (SI's timestep floor). Amended on 2026-11-08 by plan 4 with the gates' results (P4-B to P4-F, `docs/validation/2026-11-06-p4-b.md` to `2026-11-08-p4-f.md`). Stage 4 closed on 2026-11-09 with plan 5's GUI, button and docs (exit record `docs/validation/2026-11-09-stage4-exit.md`).
+An independent builder read the design before the commit. Its four questions are settled in §5.1 (the TDR's two rise times, the presets' band and their marker frequency), §5.3 (the Debye default's rule) and §5.3 again (SI's timestep floor). Amended on 2026-11-08 by plan 4 with the gates' results (P4-B to P4-F, `docs/validation/2026-11-06-p4-b.md` to `2026-11-08-p4-f.md`). Amended on 2026-11-09 by plan 5: an SI project's staircase warning is W_STAIRCASED_SI, W_STAIRCASED's SI variant (plan 5's ruling 13). Stage 4 closed on 2026-11-09 with plan 5's GUI, button and docs (exit record `docs/validation/2026-11-09-stage4-exit.md`).
 
 References: "Stage 1 §x" names a section of the Stage 1 spec (`docs/superpowers/specs/2026-10-16-stage1-validated-engine-design.md`), and so does every § in a list or heading that names that spec; "Stage 3 §x" names one of `docs/superpowers/specs/2026-10-29-stage3-antenna-placement-design.md`; a bare § names a section of this design.
 
@@ -156,7 +156,7 @@ Anti-goals:
   - **The whole run's slowdown** on the USB 2.0 fixture: 1 + f·(w − 1), where f is the fixture's share of Debye cells. r1's five-pole line, with 20 % of its cells in the substrate, ran 2.35 times slower.
 
   The rule, registered here before the gate runs: if the accuracy check passes and that slowdown is 1.5 or less, Debye becomes the SI default. Otherwise lossless stays the default and Debye is an option. Lossless is the cheaper default because the presets' interfaces lose little on a board's route, and the impedance profile, the mode conversion and the crosstalk are right without loss (r1). v1's constant κ is never used for SI.
-- **Diagonal and arc routing** keeps v1's W_STAIRCASED warning. Gate P4-B's 45° pair, against its axis-aligned twin, decides whether a staircased pair stays a warning or is raised to n 3 or refused.
+- **Diagonal and arc routing** keeps v1's W_STAIRCASED warning, as W_STAIRCASED_SI in an SI project's words. Gate P4-B's 45° pair, against its axis-aligned twin, decides whether a staircased pair stays a warning or is raised to n 3 or refused.
 - **Vias** are Stage 1's through vias: solid barrels, their end-layer rings and the antipads from the saved zone fills. Inner rings, back-drilling and blind or buried connectivity are deferred and stated.
 
 ### 5.4 Excitation and stop
@@ -375,7 +375,7 @@ Each item has the default this design applies:
 - **ESD arrays and common-mode chokes.** Default: their pads are copper and their capacitance is a stated limit; a route ends before a choke. An N-terminal part model is deferred.
 - **Net classes and KiCad 10's tuning profiles.** Default: not read.
 - **Runtime.** Default: measured and shown by `cost` before every run, with a warning past two hours; none promised.
-- **45° and arc pairs.** Default: warned, as W_STAIRCASED; P4-B decides any refusal.
+- **45° and arc pairs.** Default: warned, as W_STAIRCASED_SI, which states P4-B's twins; P4-B decides any refusal.
 - **Stripline.** Default: validated as a reference in P4-A and P4-B; the GUI's first concern is microstrip pairs.
 - **The significance thresholds.** Default: §5.8's values, widened by P4-E.
 - **EMerge as P4-G.** Default: optional, in its own venv, with "inconclusive" accepted.
@@ -394,7 +394,7 @@ Each item has the default this design applies:
 ## 8. Risks
 
 1. **Runtime on long routes with fine gaps.** With Stage 1 §5.4's rule, r3 estimated a 40 × 15 mm USB pair at about 13 M cells, 2–4 hours per job and 4–8 hours per pair. Mitigation: the SI mesh rule and its gate P4-C, cost before every run, and the warning.
-2. **Staircased 45° and arc pairs,** the common real routing, are not validated: mesh calibration read lpf915-45 at 2.77 % in fit2d at n 2 and refused it at n 3. Mitigation: P4-B, and the W_STAIRCASED warning until then.
+2. **Staircased 45° and arc pairs,** the common real routing, are not validated: mesh calibration read lpf915-45 at 2.77 % in fit2d at n 2 and refused it at n 3. Mitigation: P4-B, and the W_STAIRCASED_SI warning until then.
 3. **Loss.** Insertion loss reads optimistic with perfect copper and a lossless dielectric. Mitigation: P4-D's Debye model, the formula lines and the relative label.
 4. **The DC pulse on an unusual net.** A model whose port residual does not decay would stop only at T_max. Mitigation: P4-D's check and §5.4's fallback.
 5. **The crop's walls** colour a cut neighbour's crosstalk and invent plane resonances. Mitigation: victims inside the region, P4-B's cut-victim case and the stated limit.
