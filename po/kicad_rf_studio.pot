@@ -1524,6 +1524,11 @@ msgstr ""
 msgid "#{n} R2: {net}'s via at ({x_mm}, {y_mm}) mm moves its reference from {from_net} on {from_layer} to {to_net} on {to_layer}; {path}: {nearest}, against {limit_mm} mm (TI SLLA656: within 200 mils, closer is better; Siemens: manage reference plane changes). For information."
 msgstr ""
 
+#. W_EMC_FENCE_PITCH
+#, python-brace-format
+msgid "#{n} R4: the via fence ({fence}) leaves {gap_mm} mm of its line with no GND via, {lambdas} λ at f_max, at ({x_mm}, {y_mm}) mm, over λ/20 = {l_mm} mm (Bahl; Harper; Archambeault)."
+msgstr ""
+
 #. E_INTERNAL
 #, python-brace-format
 msgid "Internal error: {detail}. Please report it."
@@ -2768,5 +2773,9 @@ msgstr ""
 
 #. T_EMC_RETURN_VIA
 msgid "the nearest via joining the two layers"
+msgstr ""
+
+#. T_EMC_BOARD_EDGE
+msgid "board edge"
 msgstr ""
 

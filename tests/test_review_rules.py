@@ -13,7 +13,7 @@ from kicad_rf_studio.core.kicad import classify, load_board
 from kicad_rf_studio.core.kicad.board import CopperArea, Footprint, Pad, Track, Via
 from kicad_rf_studio.core.kicad.tracer import antenna_kind
 from kicad_rf_studio.core.review.planes import Ref, plane_map, plane_nets
-from kicad_rf_studio.core.review.rules import exclusions, groups, r1, r2, r3, return_share
+from kicad_rf_studio.core.review.rules import exclusions, groups, r1, r2, r3, r4, return_share
 from kicad_rf_studio.core.review.tags import tag
 
 FIX = Path(__file__).parent / "fixtures"
@@ -141,6 +141,52 @@ def test_r2_is_silent_on_a_bridged_change_and_on_a_same_net_change_with_a_via_ne
     assert [f.measured["return_mm"] for f in r2(b, c, pm, tags, L5)] == [7.879]
 
 
+def frame(b, ref="SH1"):  # the shield's ring and its pad-covered stretches, longest first, as Step 3 takes them
+    pads = shapely.union_all([p.polygon for p in b.footprints[ref].pads if b.footprints[ref].layer in p.layers])
+    ring = pads.convex_hull.exterior
+    return sorted(shapely.get_parts(shapely.line_merge(ring.intersection(pads.buffer(1e-6)))), key=lambda g: -g.length)
+
+
+def gnd_vias(points, tag="s"):
+    return [Via((p.x, p.y), 0.6, 0.3, ("F.Cu", "B.Cu"), "GND", f"{tag}{k}") for k, p in enumerate(points)]
+
+
+def test_r4_fires_on_lpf915s_unstitched_frame_and_on_the_edge_only_when_asked():  # design 5.14 R4 positive; A7
+    b, c, *_ = setup("lpf915")
+    (f,) = r4(b, c, L5, False)
+    assert (f.rule, f.code, f.net, f.layer, f.params["fence"], f.limit) == ("R4", "W_EMC_FENCE_PITCH", None, "F.Cu",
+                                                                            "SH1", 1.413)
+    assert f.measured == {"gap_mm": 47.2, "lambdas": 1.67}  # no GND via within 1 mm: the frame pads' whole cover
+    assert f.kiids["footprints"] == [b.footprints["SH1"].uuid] and f.params["lambdas"] == "1.67"
+    edge = [f for f in r4(b, c, L5, True) if f.params["fence"] == "T_EMC_BOARD_EDGE"]
+    assert [(f.layer, f.measured["gap_mm"]) for f in edge] == [(None, 104.43)]  # the outline's whole length
+
+
+def test_r4_is_silent_on_a_frame_stitched_every_0976_mm_around_its_corners():  # design 5.14 R4 negative; D-1
+    b, c, *_ = setup("emc_review")
+    assert r4(b, c, L5, False) == []
+
+
+def test_r4_leaves_the_frames_openings_out_and_fires_on_a_missing_via():  # design 5.2 R4; A7; D-1
+    b, c, *_ = setup("lpf915")
+    parts = frame(b)
+    vias = gnd_vias([p.interpolate(float(k)) for p in parts for k in range(int(p.length) + 1)])  # 1 mm, no opening
+    b.vias += vias
+    assert r4(b, c, L5, False) == []
+    mid = int(parts[0].length) // 2  # the longest stretch's middle via
+    b.vias.remove(vias[mid])
+    (f,) = r4(b, c, L5, False)
+    assert f.measured["gap_mm"] == 2.0 and sorted(f.kiids["vias"]) == sorted([vias[mid - 1].uuid, vias[mid + 1].uuid])
+
+
+def test_r4_two_vias_side_by_side_leave_the_rest_of_the_frame_open():  # design 5.2 R4; D-1
+    b, c, *_ = setup("lpf915")
+    longest = frame(b)[0]
+    b.vias += gnd_vias([longest.interpolate(0.0), longest.interpolate(1.0)])
+    (f,) = r4(b, c, L5, False)
+    assert f.measured["gap_mm"] > 40
+
+
 # --- beyond the brief's tests ----------------------------------------------------------------------------------------
 
 
@@ -207,3 +253,28 @@ def test_r2_names_its_via_tracks_and_return_reads_none_without_one_and_a_return_
     b.vias.append(Via((107.0, -98.89), 0.3, 0.15, ("In2.Cu", "In1.Cu"), "GND", "u"))  # buried, 0.9 mm off
     (f,) = r2(b, c, pm, tags, L5)
     assert f.kiids["vias"] == sorted(v.uuid for v in b.vias if v.at in ((117.0, -99.79), (124.475, -97.3)))
+
+
+def test_r4_places_a_gap_mid_stretch_round_the_rings_start_and_fences_only_ground_vias_within_reach():  # A7; AR-11
+    b, c, *_ = setup("lpf915")
+    parts = frame(b)  # parts[0] runs left along the ring's last side to its start, then 3.3 mm up its first
+    vias = gnd_vias([p.interpolate(float(k)) for p in parts for k in range(int(p.length) + 1)])
+    b.vias += vias[:3] + vias[4:]
+    (f,) = r4(b, c, L5, False)
+    assert (f.at, f.bounds) == ((96.125, -110.75), (95.825, -110.75, 97.125, -110.05))  # s2 to s4, round the corner
+    assert f.kiids == {"tracks": [], "vias": ["s2", "s4"], "zones": [], "pads": [],
+                       "footprints": [b.footprints["SH1"].uuid]}
+    b.vias += [Via((96.125, -111.75), 0.6, 0.3, ("F.Cu", "B.Cu"), "AUX", "x"),  # not ground
+               Via((96.125, -111.751), 0.6, 0.3, ("F.Cu", "B.Cu"), "GND", "y")]  # 1.001 mm off the ring
+    assert [f.measured["gap_mm"] for f in r4(b, c, L5, False)] == [2.0]
+    b.vias.append(Via((96.125, -111.75), 0.6, 0.3, ("F.Cu", "B.Cu"), "GND", "z"))  # FENCE_REACH off: 1.0 to s2 and s4
+    assert r4(b, c, L5, False) == []
+
+
+def test_r4_measures_the_board_edges_fence_along_an_outline_that_covers_itself():  # A7; D-1
+    b, c, *_ = setup("lpf915")
+    b.vias += gnd_vias([Point(122.54, -95.0), Point(122.54, -105.0)], "e")  # 0.5 mm in from the right edge, 10 apart
+    edge = [f for f in r4(b, c, L5, True) if f.params["fence"] == "T_EMC_BOARD_EDGE"]
+    # max(10, 10 - 0.5 - 0.5), then the rest of the 104.43 mm outline less both insets
+    assert [(f.measured["gap_mm"], f.at, f.kiids["vias"], f.kiids["footprints"]) for f in edge] == [
+        (10.0, (123.04, -100.0), ["e0", "e1"], []), (93.43, (94.825, -100.5), ["e0", "e1"], [])]

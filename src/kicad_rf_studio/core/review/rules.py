@@ -1,10 +1,10 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """The review's rules (Stage 5 design 5.2), each finding measured against its threshold and the threshold's public
 source: R1, a tagged run over a void of its reference net; R2, a tagged via that changes its reference with no return
-near, for information; R3, a tagged track near the board edge. R1 and R3 read the tagged tracks in groups, a net's
-tracks on one layer with one reference, less the exclusions (5.1): the hulls of the connectors, the footprints with a
-keep-out and the printed antennas, grown by EXCLUDE_H·h. Every mm value is rounded to 1e-3 before it is compared or
-stored."""
+near, for information; R3, a tagged track near the board edge; R4, a gap over L in a shield's via fence, or the board
+edge's. R1 and R3 read the tagged tracks in groups, a net's tracks on one layer with one reference, less the exclusions
+(5.1): the hulls of the connectors, the footprints with a keep-out and the printed antennas, grown by EXCLUDE_H·h. Every
+mm value is rounded to 1e-3 before it is compared or stored."""
 from __future__ import annotations
 
 import math
@@ -16,6 +16,7 @@ import numpy as np
 import shapely
 from shapely.geometry import Point, box
 from shapely.geometry.base import BaseGeometry
+from shapely.ops import substring
 
 from kicad_rf_studio.core.kicad.board import Board, Track, Via
 from kicad_rf_studio.core.kicad.shapes import XY
@@ -27,6 +28,7 @@ ANTIPAD = 0.6  # mm: a void within its lone hole's radius plus this is the hole'
 EXCLUDE_H = 3.0  # the exclusion hulls grow by this many h (r1, A4)
 R2_FLOOR = 2.0  # mm: R2's d is max(L, this) (A5, f4)
 EDGE_K = 2.0  # R3's k: a tagged track under k·h from the board edge (A6)
+FENCE_REACH = 1.0  # mm: R4's fence is the ground vias this near its line (A7, f4)
 SOURCES: dict[str, str] = {  # each rule's source, in English: review.json's limit_source
     "R1": "LearnEMC: splitting or gapping a ground plane is almost always a bad idea; Ansys SIwave's Net Crossing "
           "Split; HyperLynx DRC's signal traces crossing plane splits; a run of 1 mm or more, measured on three "
@@ -42,8 +44,8 @@ class Finding:
     rule: str
     code: str  # its message
     params: dict  # the message's, as text; review_board adds n, x_mm and y_mm
-    net: str
-    layer: str
+    net: str | None  # None for R4
+    layer: str | None  # None for R4's board edge
     ref: Ref | None
     at: XY  # its place
     bounds: tuple[float, float, float, float]
@@ -259,4 +261,52 @@ def r3(board: Board, groups: list[Group], edge_k: float) -> list[Finding]:
                 tuple(round(float(v), 3) for v in shapely.total_bounds([t.polygon() for t in tracks])),
                 {"d_mm": d, "h_mm": h, "k": edge_k, "share_pct": share}, limit,
                 {"tracks": sorted({t.uuid for t in tracks}), "vias": [], "zones": [], "pads": [], "footprints": []}))
+    return found
+
+
+def r4(board: Board, classes: Classes, l_mm: float, edge_fence: bool) -> list[Finding]:
+    """R4, a gap over L in a via fence (design 5.2; A7; D-1): the shields in sorted order, then, with `edge_fence` and
+    an outline, the board edge. A shield's line is the ring of the convex hull of its copper pads on its side, as
+    find_lid takes it, covered where those pads lie (within 1e-6); the edge's is the outline's exterior, which covers
+    itself. The fence is the vias of a ground net within FENCE_REACH of the line, in order along it. Between two
+    consecutive vias A and B, cyclic, the gap is min(covered, max(|AB|, along − dA − dB)): `along` is the line from A's
+    projection to B's, `covered` its covered part, and dA and dB the vias' distances to the line, so a side and a corner
+    read the pitch, an opening 0 and a cluster the covered stretch it leaves. With fewer than two vias, the whole
+    covered length is one gap. A gap over L fires, at the middle of its stretch of the line, or of the whole line with
+    fewer than two vias."""
+    l_mm = round(l_mm, 3)
+    fences = []  # (fence, layer, footprint KIIDs, line, the copper that covers the line within 1e-6)
+    for ref in sorted(classes.shields):
+        fp = board.footprints[ref]
+        pads = shapely.union_all([p.polygon for p in fp.pads if fp.layer in p.layers])
+        fences.append((ref, fp.layer, (fp.uuid,), pads.convex_hull.exterior, pads))
+    if edge_fence and board.outline is not None:
+        fences.append(("T_EMC_BOARD_EDGE", None, (), board.outline.exterior, board.outline))
+    found = []
+    for fence, layer, footprints, ring, copper in fences:
+        cover, n = copper.buffer(1e-6), ring.length
+        vias = sorted((v for v in board.vias
+                       if v.net in classes.gnd and round(ring.distance(Point(v.at)), 3) <= FENCE_REACH),
+                      key=lambda v: ring.project(Point(v.at)))
+        if len(vias) < 2:
+            gaps = [(ring.intersection(cover).length, [ring], n / 2, vias)]
+        else:
+            s, gaps = [ring.project(Point(v.at)) for v in vias], []
+            for a, b, s0, s1 in zip(vias, vias[1:] + vias[:1], s, s[1:] + [s[0] + n]):  # the last pair wraps round
+                stretch = [substring(ring, s0, min(s1, n))] + ([substring(ring, 0, s1 - n)] if s1 > n else [])
+                covered = sum(part.intersection(cover).length for part in stretch)
+                inner = s1 - s0 - ring.distance(Point(a.at)) - ring.distance(Point(b.at))  # along − dA − dB
+                gaps.append((min(covered, max(math.dist(a.at, b.at), inner)), stretch, ((s0 + s1) / 2) % n, [a, b]))
+        for gap, stretch, mid, pair in gaps:
+            gap = round(gap, 3)
+            if gap <= l_mm:
+                continue
+            lambdas, at = round(gap / (20 * l_mm), 2), ring.interpolate(mid)
+            found.append(Finding(
+                "R4", "W_EMC_FENCE_PITCH",
+                {"fence": fence, "gap_mm": f"{gap:.3f}", "lambdas": f"{lambdas:.2f}", "l_mm": f"{l_mm:.3f}"},
+                None, layer, None, (round(at.x, 3), round(at.y, 3)),
+                tuple(round(float(v), 3) for v in shapely.total_bounds(stretch)), {"gap_mm": gap, "lambdas": lambdas},
+                l_mm, {"tracks": [], "vias": sorted({v.uuid for v in pair}), "zones": [], "pads": [],
+                       "footprints": list(footprints)}))
     return found

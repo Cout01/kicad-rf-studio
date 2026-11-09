@@ -327,6 +327,7 @@ CATALOG: dict[str, str] = {
     "W_EMC_GAP_CROSSING": "#{n} R1: {net} on {layer} runs {run_mm} mm over a void in its {ref_net} reference ({ref_layer}, h {h_mm} mm), {extent_mm} mm across, at ({x_mm}, {y_mm}) mm; λ/20 at f_max is {l_mm} mm. Crossing a split or void in the reference is a known return-path fault (LearnEMC; Ansys SIwave's Net Crossing Split; HyperLynx DRC); a run counts from 1 mm, a cut measured on three public boards.",
     "W_EMC_EDGE": "#{n} R3: {net} on {layer} runs {d_mm} mm from the board edge at ({x_mm}, {y_mm}) mm, under {k}·h = {kh_mm} mm (h {h_mm} mm to {ref_layer}): about {share_pct} % of its ideal return current would lie past the edge. Critical nets belong at least 2h from the board edge (LearnEMC).",
     "I_EMC_REF_CHANGE": "#{n} R2: {net}'s via at ({x_mm}, {y_mm}) mm moves its reference from {from_net} on {from_layer} to {to_net} on {to_layer}; {path}: {nearest}, against {limit_mm} mm (TI SLLA656: within 200 mils, closer is better; Siemens: manage reference plane changes). For information.",
+    "W_EMC_FENCE_PITCH": "#{n} R4: the via fence ({fence}) leaves {gap_mm} mm of its line with no GND via, {lambdas} λ at f_max, at ({x_mm}, {y_mm}) mm, over λ/20 = {l_mm} mm (Bahl; Harper; Archambeault).",
     "E_INTERNAL": "Internal error: {detail}. Please report it.",
     "G_APP": "kicad-rf-studio",
     "G_RUNNING": "Running in {folder}…",
@@ -620,6 +621,7 @@ CATALOG: dict[str, str] = {
     "T_EXPECT_SI_REFERENCE": "a pad, a point, a plane (its copper layer's name) or null",
     "T_EMC_RETURN_CAP": "the nearest capacitor between the two nets",
     "T_EMC_RETURN_VIA": "the nearest via joining the two layers",
+    "T_EMC_BOARD_EDGE": "board edge",
 }
 
 

@@ -1526,6 +1526,11 @@ msgstr "#{n} R3: {net} em {layer} passa a {d_mm} mm da borda da placa em ({x_mm}
 msgid "#{n} R2: {net}'s via at ({x_mm}, {y_mm}) mm moves its reference from {from_net} on {from_layer} to {to_net} on {to_layer}; {path}: {nearest}, against {limit_mm} mm (TI SLLA656: within 200 mils, closer is better; Siemens: manage reference plane changes). For information."
 msgstr "#{n} R2: a via de {net} em ({x_mm}, {y_mm}) mm muda a referência de {from_net} em {from_layer} para {to_net} em {to_layer}; {path}: {nearest}, contra {limit_mm} mm (TI SLLA656: até 200 mils, quanto mais perto, melhor; Siemens: gerenciar trocas de plano de referência). Apenas informativo."
 
+#. W_EMC_FENCE_PITCH
+#, python-brace-format
+msgid "#{n} R4: the via fence ({fence}) leaves {gap_mm} mm of its line with no GND via, {lambdas} λ at f_max, at ({x_mm}, {y_mm}) mm, over λ/20 = {l_mm} mm (Bahl; Harper; Archambeault)."
+msgstr "#{n} R4: a cerca de vias ({fence}) deixa {gap_mm} mm da sua linha sem via de GND, {lambdas} λ em f_max, em ({x_mm}, {y_mm}) mm, acima de λ/20 = {l_mm} mm (Bahl; Harper; Archambeault)."
+
 #. E_INTERNAL
 #, python-brace-format
 msgid "Internal error: {detail}. Please report it."
@@ -2779,6 +2784,10 @@ msgstr "o capacitor mais próximo entre as duas redes"
 #. T_EMC_RETURN_VIA
 msgid "the nearest via joining the two layers"
 msgstr "a via mais próxima que une as duas camadas"
+
+#. T_EMC_BOARD_EDGE
+msgid "board edge"
+msgstr "borda da placa"
 
 #~ msgid "Cells: {board} M in the board, {air} M of air and {pml} M of PML; the time counts a PML cell as {weight} cells and runs this model at {ratio} × the calibrated speed (gate P3-A)."
 #~ msgstr "Células: {board} M na placa, {air} M de ar e {pml} M de PML; o tempo conta uma célula de PML como {weight} células e executa este modelo a {ratio} × a velocidade calibrada (checagem prévia P3-A)."
