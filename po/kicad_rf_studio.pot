@@ -716,7 +716,7 @@ msgstr ""
 
 #. I_SI_COST_SPEED
 #, python-brace-format
-msgid "This signal-integrity model's speed is taken as {ratio} × the calibration's per-job speed, the gates' measured ratio of SI models to the calibration's uniform one, until any run, of any kind, with this many jobs at once measures that level. With two jobs at once the gates measured SI models at 1.229 × it, so such a run is priced about 1.9 times long, on the safe side."
+msgid "This signal-integrity model's speed is taken as {ratio} × the calibration's per-job speed, the gates' measured ratio of SI models to the calibration's uniform one, until a matching chain's run or a lossless signal-integrity run with this many jobs at once measures that level (an antenna's run, or one with the Debye dielectric, measures none). With two jobs at once the gates measured SI models at 1.229 × it, so such a run is priced about 1.9 times long, on the safe side."
 msgstr ""
 
 #. I_SI_COST_RING

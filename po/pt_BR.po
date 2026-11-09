@@ -718,8 +718,8 @@ msgstr "Células: {mcells} M no dielétrico de Debye, {poles} polos em cada uma;
 
 #. I_SI_COST_SPEED
 #, python-brace-format
-msgid "This signal-integrity model's speed is taken as {ratio} × the calibration's per-job speed, the gates' measured ratio of SI models to the calibration's uniform one, until any run, of any kind, with this many jobs at once measures that level. With two jobs at once the gates measured SI models at 1.229 × it, so such a run is priced about 1.9 times long, on the safe side."
-msgstr "A velocidade deste modelo de integridade de sinal é tomada como {ratio} × a velocidade por tarefa da calibração, a razão medida pelas checagens entre modelos de SI e o modelo uniforme da calibração, até que qualquer execução, de qualquer tipo, com esse número de tarefas simultâneas meça esse nível. Com duas tarefas simultâneas, as checagens mediram os modelos de SI a 1.229 × ele, então uma execução assim é estimada cerca de 1.9 vezes mais longa, por segurança."
+msgid "This signal-integrity model's speed is taken as {ratio} × the calibration's per-job speed, the gates' measured ratio of SI models to the calibration's uniform one, until a matching chain's run or a lossless signal-integrity run with this many jobs at once measures that level (an antenna's run, or one with the Debye dielectric, measures none). With two jobs at once the gates measured SI models at 1.229 × it, so such a run is priced about 1.9 times long, on the safe side."
+msgstr "A velocidade deste modelo de integridade de sinal é tomada como {ratio} × a velocidade por tarefa da calibração, a razão medida pelas checagens entre modelos de SI e o modelo uniforme da calibração, até que uma execução de cadeia de casamento ou de integridade de sinal sem perdas com esse número de tarefas simultâneas meça esse nível (uma execução de antena, ou com o dielétrico de Debye, não mede nenhum). Com duas tarefas simultâneas, as checagens mediram os modelos de SI a 1.229 × ele, então uma execução assim é estimada cerca de 1.9 vezes mais longa, por segurança."
 
 #. I_SI_COST_RING
 #, python-brace-format
@@ -2846,4 +2846,7 @@ msgstr "uma ilha, um ponto, um plano (o nome da camada de cobre dele) ou null"
 
 #~ msgid "{count} IC or connector pads lie on the line through {net} ({pads}). Pick the start and end pads here, or select the line's two end pads in KiCad with one of its tracks and press the button again."
 #~ msgstr "Ilhas de CI ou de conector na linha que passa por {net}: {count} ({pads}). Escolha aqui as ilhas inicial e final, ou selecione no KiCad as duas ilhas das pontas da linha com uma das trilhas dela e pressione o botão de novo."
+
+#~ msgid "This signal-integrity model's speed is taken as {ratio} × the calibration's per-job speed, the gates' measured ratio of SI models to the calibration's uniform one, until any run, of any kind, with this many jobs at once measures that level. With two jobs at once the gates measured SI models at 1.229 × it, so such a run is priced about 1.9 times long, on the safe side."
+#~ msgstr "A velocidade deste modelo de integridade de sinal é tomada como {ratio} × a velocidade por tarefa da calibração, a razão medida pelas checagens entre modelos de SI e o modelo uniforme da calibração, até que qualquer execução, de qualquer tipo, com esse número de tarefas simultâneas meça esse nível. Com duas tarefas simultâneas, as checagens mediram os modelos de SI a 1.229 × ele, então uma execução assim é estimada cerca de 1.9 vezes mais longa, por segurança."
 

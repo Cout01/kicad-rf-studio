@@ -156,7 +156,7 @@ CATALOG: dict[str, str] = {
     "I_COST_TIME": "Worst case: {time} for {runs} runs to T_max {t_max_ns} ns, {pool} at once with {threads} threads each.",
     "I_SI_COST_JOBS": "Runs: {lines} for the measured lines' ends, {victims} for the victims' ends, {parts} for the part ports.",
     "I_SI_COST_DEBYE": "Cells: {mcells} M in the Debye dielectric, {poles} poles each; the time counts each such cell as {weight} cells.",
-    "I_SI_COST_SPEED": "This signal-integrity model's speed is taken as {ratio} × the calibration's per-job speed, the gates' measured ratio of SI models to the calibration's uniform one, until any run, of any kind, with this many jobs at once measures that level. With two jobs at once the gates measured SI models at 1.229 × it, so such a run is priced about 1.9 times long, on the safe side.",
+    "I_SI_COST_SPEED": "This signal-integrity model's speed is taken as {ratio} × the calibration's per-job speed, the gates' measured ratio of SI models to the calibration's uniform one, until a matching chain's run or a lossless signal-integrity run with this many jobs at once measures that level (an antenna's run, or one with the Debye dielectric, measures none). With two jobs at once the gates measured SI models at 1.229 × it, so such a run is priced about 1.9 times long, on the safe side.",
     "I_SI_COST_RING": "A job whose port residual still falls by 0.3 dB/ns or more at T_max, fast enough over its last 3 ns to reach the preset's level by {ceiling_ns} ns, runs on while it keeps doing so, until it converges: up to {time}.",
     "W_SI_LONG_RUN": "The worst case is {time}, over two hours: the draft preset, or a shorter route between nearer pads, cuts it.",
     "I_COST_PREDICTED": "Predicted from the last run's stop times: {time}.",
