@@ -2272,7 +2272,7 @@ msgid "Simulates the RF parts of a KiCad board with openEMS."
 msgstr ""
 
 #. G_BUTTON_ACTION
-msgid "Opens kicad-rf-studio on this board and pre-fills New from a board with the selected pads, or with a selected antenna and its radio pin."
+msgid "Opens kicad-rf-studio on this board and pre-fills New from a board with the selected pads, with a selected antenna and its radio pin, or with a selected track, arc or via of a signal-integrity line."
 msgstr ""
 
 #. I_PLUGIN_INSTALLED
@@ -2315,7 +2315,7 @@ msgstr ""
 
 #. G_HANDOFF_UNSAVED
 #, python-brace-format
-msgid "{board} as saved lacks a pad or a part selected in KiCad, which holds edits not yet saved: save the board in KiCad and press the button again."
+msgid "{board} as saved lacks a pad, a part, a track or a via selected in KiCad, which holds edits not yet saved: save the board in KiCad and press the button again."
 msgstr ""
 
 #. G_HANDOFF_PADS
@@ -2331,6 +2331,21 @@ msgstr ""
 #. G_HANDOFF_START
 #, python-brace-format
 msgid "{count} pads besides the antenna's are selected in KiCad. Select the antenna with the one pad that feeds it, the radio pin, and press the button again, or pick the start pad here."
+msgstr ""
+
+#. G_HANDOFF_SI_ENDS
+#, python-brace-format
+msgid "{count} IC or connector pads lie on the line through {net} ({pads}). Pick the start and end pads here, or select the line's two end pads in KiCad with one of its tracks and press the button again."
+msgstr ""
+
+#. G_HANDOFF_NETS
+#, python-brace-format
+msgid "Tracks or pads of {count} lines are selected in KiCad ({nets}). Select one line's tracks, or its pair's, and press the button again, or pick its pads here."
+msgstr ""
+
+#. G_HANDOFF_SI_NET
+#, python-brace-format
+msgid "The tracks and vias selected in KiCad are on {net}, a ground, power or netless net, which is no signal line. Select a track of the line to measure and press the button again."
 msgstr ""
 
 #. G_REFILL

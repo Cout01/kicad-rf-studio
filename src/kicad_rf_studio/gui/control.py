@@ -25,7 +25,8 @@ import numpy as np
 from kicad_rf_studio import __version__, pipeline, runs
 from kicad_rf_studio.core.geometry.region import air_gap
 from kicad_rf_studio.core.kicad import classify, load_board
-from kicad_rf_studio.core.kicad.tracer import antenna_kinds
+from kicad_rf_studio.core.kicad.board import Board, Pad
+from kicad_rf_studio.core.kicad.tracer import antenna_kinds, p_side, partner_ends, partner_net, si_candidates
 from kicad_rf_studio.core.kicad.values import bypass, part_kind, port_value, snap, value_text
 from kicad_rf_studio.core.messages import KrsError, detail, render
 from kicad_rf_studio.core.model import spec
@@ -487,11 +488,12 @@ BANDS = (("868 MHz (863–870 MHz)", 863e6, 870e6), ("915 MHz (902–928 MHz)", 
 
 @dataclass(frozen=True)
 class Handed:
-    """A button press as New shows it (Stage 2 design 5.3, 5.5; Stage 3 design 5.10): the board KiCad has open and its
-    API's `socket` and `token`; the pickers' `pads`, the `start` and `end` pads it pre-fills ("" for none) and New's
-    status line (`problem`, as (code, params); None for none); the project's `kind` ("chain" or "antenna"), the
-    `antenna` footprint it pre-fills ("" for none) and the board's antenna footprints by reference (`kinds`, as
-    board_choices gives them), which New's Antenna combo lists."""
+    """A button press as New shows it (Stage 2 design 5.3, 5.5; Stage 3 and Stage 4 design 5.10): the board KiCad has
+    open and its API's `socket` and `token`; the pickers' `pads`, the `start` and `end` pads it pre-fills ("" for none)
+    and New's status line (`problem`, as (code, params); None for none); the project's `kind` ("chain", "antenna" or
+    "si"), the `antenna` footprint it pre-fills ("" for none), the board's antenna footprints by reference (`kinds`, as
+    board_choices gives them), which New's Antenna combo lists, and an SI line's P net (`net`) and its pair's partner
+    (`partner`), "" for none, which New's Interface and Pair rows are fitted to."""
     board: Path
     socket: str
     token: str
@@ -502,13 +504,16 @@ class Handed:
     kind: str = "chain"
     antenna: str = ""
     kinds: dict[str, str] = field(default_factory=dict)
+    net: str = ""
+    partner: str = ""
 
 
 def handed(path: Path) -> Handed:
     """The button press in the handoff file `path` (button.write_handoff), read off the GUI thread (Stage 2 design 5.5,
-    Stage 3 design 5.10): its selection joined to the pads of its board as saved (load_board), the pads by their KIIDs
-    (Pad.uuid) and the footprints by reference, with the board's antenna footprints (`kinds`, _antennas). The first of
-    these that holds decides, the chain kind unless said:
+    Stage 3 and Stage 4 design 5.10): its selection joined to its board as saved (load_board), the pads by their KIIDs
+    (Pad.uuid), the footprints by reference and the tracks, arcs and vias by their KIIDs (Track.uuid, Via.uuid), with
+    the board's antenna footprints (`kinds`, _antennas). The first of these that holds decides, the chain kind unless
+    said:
     - load_board's refusal: no pads and no kinds, and the refusal as `problem`.
     - a selected KIID or reference the file lacks (KiCad holds edits not yet saved): every pad with copper, nothing
       pre-filled and G_HANDOFF_UNSAVED.
@@ -518,6 +523,12 @@ def handed(path: Path) -> Handed:
       its ground pad with E_START_ON_GND); two antennas or more pre-fill neither antenna nor start, with
       G_HANDOFF_ANTENNAS; else the one is the antenna and, of the selected pads with copper off it, by name, one is the
       start, while two or more pre-fill no start, with G_HANDOFF_START. Never an end.
+    - tracks, arcs or vias selected (Stage 4 design 5.10 as A-66 amends it): the SI kind, the pickers every pad with
+      copper; their nets and the selected pads', ground, power and netless ones dropped (none left: G_HANDOFF_SI_NET),
+      each taken on its pair's P side (p_side) and walked through its two-pad parts (si_candidates); two lines or more:
+      G_HANDOFF_NETS; else `net` and its `partner`, and as its end pads the selected pads on the line (an N leg's two
+      taken to the P side by partner_ends), else its IC or connector pads: exactly two pre-fill start and end, the
+      connector's side the start, any other count G_HANDOFF_SI_ENDS, no ESD rule.
     - else v1's rules: the pickers list the selected footprints' pads and the selected pads, or every pad with copper
       when no footprint is selected (_names); of the selected pads with copper, by name, one is the start; two are the
       start and the end, swapped when only the first is a connector's (classify), so that the connector's side is the
@@ -533,7 +544,10 @@ def handed(path: Path) -> Handed:
         return Handed(board, socket, token, [], "", "", (e.code, e.params))
     kinds = _antennas(b)
     by_kiid = {p.uuid: p for p in b.all_pads()}
-    if any(k not in by_kiid for k in data["pads"]) or any(r not in b.footprints for r in data["footprints"]):
+    tracks = data.get("tracks", [])  # a handoff written before plan 5's helper has none
+    nets_of = {t.uuid: t.net for t in b.tracks} | {v.uuid: v.net for v in b.vias}  # an arc is a Track with mid
+    if (any(k not in by_kiid for k in data["pads"]) or any(r not in b.footprints for r in data["footprints"])
+            or any(k not in nets_of for k in tracks)):
         return Handed(board, socket, token, _names(b.all_pads()), "", "", ("G_HANDOFF_UNSAVED", {"board": str(board)}),
                       kinds=kinds)
     selected = [by_kiid[k] for k in data["pads"]]
@@ -548,6 +562,10 @@ def handed(path: Path) -> Handed:
             return Handed(board, socket, token, pickers, "", "", ("G_HANDOFF_START", {"count": len(others)}), "antenna",
                           ants[0], kinds)
         return Handed(board, socket, token, pickers, (others + [""])[0], "", None, "antenna", ants[0], kinds)
+    if tracks:
+        net, partner, ends, problem = _si_handed(b, [nets_of[k] for k in tracks], selected)
+        return Handed(board, socket, token, _names(b.all_pads()), *(ends or ["", ""]), problem, "si", kinds=kinds,
+                      net=net, partner=partner)
     pickers = _names([p for r in data["footprints"] for p in b.footprints[r].pads] + selected if data["footprints"]
                      else b.all_pads())
     ends = list({p.name: p for p in selected if p.layers}.values())  # by name, each once, in the order they came in
@@ -565,6 +583,46 @@ def handed(path: Path) -> Handed:
             return Handed(board, socket, token, pickers, start, end, (
                 "E_ANTENNA_MODULE" if kinds[r] == "module" else "E_ANTENNA_CHIP", {"ref": r}), kinds=kinds)
     return Handed(board, socket, token, pickers, start, end, None, kinds=kinds)
+
+
+def _si_handed(b: Board, track_nets: list[str], selected: list[Pad]) -> tuple[str, str, list[str],
+                                                                              tuple[str, dict] | None]:
+    """A press's SI line on the board `b` (handed's SI rule), from the nets of its tracks, arcs and vias (`track_nets`,
+    as they came in) and its selected pads (`selected`), a pad counting with copper: (net, partner, ends, problem), the
+    line's P net, its partner ("" for none), its [start, end] pads ([] for none) and New's status line (None for none).
+    The nets are the tracks' then the pads', each once, but ground, power and netless ones; the nets whose walks from
+    their P sides reach the same nets are one line, named by the first one's P net. The ends are the selected pads on
+    the line, by name, each once, as they came in; with none there and exactly two selected, the first two that
+    partner_ends gives (an N leg's ends, taken to the P side), unless it refuses them; else the line's candidates."""
+    classes = classify(b)
+    copper = [p for p in selected if p.layers]
+    drop = classes.gnd | classes.power | {""}
+    nets = [n for n in dict.fromkeys(track_nets + [p.net for p in copper]) if n not in drop]
+    if not nets:
+        return "", "", [], ("G_HANDOFF_SI_NET", {"net": track_nets[0] or "T_NONE"})
+    lines = {}  # a walk's nets -> the first P net that reached them and its candidates
+    for p in (p_side(n, b.nets) for n in nets):
+        walked, candidates = si_candidates(b, classes, p)
+        lines.setdefault(frozenset(walked), (p, candidates))
+    if len(lines) > 1:
+        return "", "", [], ("G_HANDOFF_NETS", {"count": len(lines), "nets": ", ".join(p for p, _ in lines.values())})
+    [(walked, (net, candidates))] = lines.items()
+    partner = (partner_net(net, b.nets) or ("",))[0]
+    ends = list(dict.fromkeys(p.name for p in copper if p.net in walked))
+    picked = list(dict.fromkeys(p.name for p in copper))
+    if not ends and len(picked) == 2:
+        with contextlib.suppress(KrsError):  # not an N leg's two ends: the candidates follow
+            ends = list(partner_ends(b, classes, *picked)[:2])
+    ends = ends or _names(candidates)
+    if len(ends) != 2:
+        return net, partner, [], ("G_HANDOFF_SI_ENDS", {"net": net, "count": len(ends),
+                                                         "pads": ", ".join(ends) or "T_NONE"})
+    # the connector's side is the start, v1's order reversed: every SI project of the repo runs J1.3 -> U1.3 (si_args,
+    # the tutorial, P4-F), the MCU at the far end (design 5.11)
+    connector = {p.name for p in b.all_pads() if p.ref in classes.connectors}
+    if ends[1] in connector and ends[0] not in connector:
+        ends.reverse()
+    return net, partner, ends, None
 
 
 COMPARE_FOLDER = "compare"  # Compare's folder, in the base project's folder (Stage 3 design 5.10)

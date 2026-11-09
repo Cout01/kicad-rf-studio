@@ -37,7 +37,7 @@ from test_cli_antenna import antenna_project
 from test_cli_cost import FIX, fail, new_project
 from test_cli_si import si_project
 from test_compare import edited, twin
-from test_gui_control import FAKE_PREFIX, press, until
+from test_gui_control import FAKE_PREFIX, press, track_of, until
 from test_match_antenna import pi_run, result_lines
 from test_post_chain import M0402
 from test_run import lpf_loads, lpf_project, lpf_run
@@ -816,6 +816,33 @@ def test_a_press_on_an_antenna_pre_fills_new_and_a_modules_shows_its_refusal(win
     w.pads_read.result(timeout=60)
     w.tick()
     assert (f.kind.currentData(), f.status.text()) == ("chain", render("G_ANTENNA_MODULE", ref="U2"))
+    assert "openEMS" not in sys.modules and "CSXCAD" not in sys.modules
+
+
+def test_a_press_on_a_track_pre_fills_new_with_the_si_kind_its_interface_its_pair_and_its_ends(window, tmp_path):
+    qspi, usb = tmp_path / "qspi_clk.kicad_pcb", tmp_path / "usb2_hs.kicad_pcb"  # 5.10; ruling 9; RF 3
+    for board in (qspi, usb):
+        board.write_bytes((FIX / board.name).read_bytes())
+    w = window()
+    f = w.new_form
+    w.take_handoff(press(qspi, tracks=[track_of(qspi, "FLASH_CLK")]))
+    w.pads_read.result(timeout=60)
+    w.tick()
+    assert (f.kind.currentData(), f.interface.currentData(), f.pair.currentData(), f.start.currentText(),
+            f.end.currentText(), f.status.text()) == ("si", "se50", None, "U1.11", "U2.6", "")  # a single net
+    assert f.form.isRowVisible(f.pair_row) and not f.form.isRowVisible(f.f0)
+    f.create_button.click()  # the pre-fill creates as it stands
+    path, _ = w.creating.result(timeout=120)
+    w.tick()
+    assert load_project(path) == load_project(cli.new_si(qspi, "U1.11", "U2.6", "se50", output=tmp_path / "cli")[0])
+    w.take_handoff(press(usb, tracks=[track_of(usb, "MCU_D-")]))
+    w.pads_read.result(timeout=60)
+    w.tick()
+    assert (f.kind.currentData(), f.interface.currentData(), f.pair.currentData(), f.start.currentText(),
+            f.status.text()) == ("si", "usb2-hs", "rule", "", render("G_HANDOFF_SI_ENDS", net="MCU_D+", count=4,
+                                                                    pads="J1.3, U1.3, U2.3, U2.4"))
+    assert [f.victims[0][0].itemText(k) for k in range(f.victims[0][0].count())] == control.pads(usb)
+    grab(w, "handoff-si")
     assert "openEMS" not in sys.modules and "CSXCAD" not in sys.modules
 
 

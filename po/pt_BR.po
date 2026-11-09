@@ -2282,8 +2282,8 @@ msgid "Simulates the RF parts of a KiCad board with openEMS."
 msgstr "Simula as partes de RF de uma placa do KiCad com o openEMS."
 
 #. G_BUTTON_ACTION
-msgid "Opens kicad-rf-studio on this board and pre-fills New from a board with the selected pads, or with a selected antenna and its radio pin."
-msgstr "Abre o kicad-rf-studio nesta placa e preenche Novo projeto a partir de uma placa com as ilhas selecionadas, ou com uma antena selecionada e o pino do rádio dela."
+msgid "Opens kicad-rf-studio on this board and pre-fills New from a board with the selected pads, with a selected antenna and its radio pin, or with a selected track, arc or via of a signal-integrity line."
+msgstr "Abre o kicad-rf-studio nesta placa e preenche Novo projeto a partir de uma placa com as ilhas selecionadas, com uma antena selecionada e o pino do rádio dela, ou com uma trilha, um arco ou uma via selecionada de uma linha de integridade de sinal."
 
 #. I_PLUGIN_INSTALLED
 #, python-brace-format
@@ -2325,8 +2325,8 @@ msgstr "Trocar início e fim"
 
 #. G_HANDOFF_UNSAVED
 #, python-brace-format
-msgid "{board} as saved lacks a pad or a part selected in KiCad, which holds edits not yet saved: save the board in KiCad and press the button again."
-msgstr "A versão salva de {board} não tem uma ilha ou um componente selecionado no KiCad, que guarda edições ainda não salvas: salve a placa no KiCad e pressione o botão de novo."
+msgid "{board} as saved lacks a pad, a part, a track or a via selected in KiCad, which holds edits not yet saved: save the board in KiCad and press the button again."
+msgstr "A versão salva de {board} não tem uma ilha, um componente, uma trilha ou uma via selecionada no KiCad, que guarda edições ainda não salvas: salve a placa no KiCad e pressione o botão de novo."
 
 #. G_HANDOFF_PADS
 #, python-brace-format
@@ -2342,6 +2342,21 @@ msgstr "Antenas impressas selecionadas no KiCad: {count} ({refs}). Selecione uma
 #, python-brace-format
 msgid "{count} pads besides the antenna's are selected in KiCad. Select the antenna with the one pad that feeds it, the radio pin, and press the button again, or pick the start pad here."
 msgstr "Ilhas selecionadas no KiCad além das da antena: {count}. Selecione a antena com a única ilha que a alimenta, o pino do rádio, e pressione o botão de novo, ou escolha a ilha inicial aqui."
+
+#. G_HANDOFF_SI_ENDS
+#, python-brace-format
+msgid "{count} IC or connector pads lie on the line through {net} ({pads}). Pick the start and end pads here, or select the line's two end pads in KiCad with one of its tracks and press the button again."
+msgstr "Ilhas de CI ou de conector na linha que passa por {net}: {count} ({pads}). Escolha aqui as ilhas inicial e final, ou selecione no KiCad as duas ilhas das pontas da linha com uma das trilhas dela e pressione o botão de novo."
+
+#. G_HANDOFF_NETS
+#, python-brace-format
+msgid "Tracks or pads of {count} lines are selected in KiCad ({nets}). Select one line's tracks, or its pair's, and press the button again, or pick its pads here."
+msgstr "Trilhas ou ilhas de linhas selecionadas no KiCad: {count} ({nets}). Selecione as trilhas de uma linha, ou do par dela, e pressione o botão de novo, ou escolha as ilhas dela aqui."
+
+#. G_HANDOFF_SI_NET
+#, python-brace-format
+msgid "The tracks and vias selected in KiCad are on {net}, a ground, power or netless net, which is no signal line. Select a track of the line to measure and press the button again."
+msgstr "As trilhas e vias selecionadas no KiCad estão em {net}, uma rede de terra, de alimentação ou sem rede, que não é uma linha de sinal. Selecione uma trilha da linha a medir e pressione o botão de novo."
 
 #. G_REFILL
 msgid "Refill zones and save in KiCad"
@@ -2822,4 +2837,10 @@ msgstr "uma ilha, um ponto, um plano (o nome da camada de cobre dele) ou null"
 
 #~ msgid "{path} has no result that Compare the projects can use: a run of its current model, made by this version, with no part on the chain, or, with part ports, a verify of that run at the values project.json holds. Run it (a board re-saved since its run needs one), then press Verify for a project with part ports."
 #~ msgstr "{path} não tem resultado que o botão Comparar os projetos possa usar: uma execução do modelo atual dele, feita por esta versão, sem componente na cadeia ou, com portas de componentes, uma verificação dessa execução com os valores que o project.json guarda. Execute-o (uma placa salva de novo desde a execução precisa de uma) e depois pressione Verificar num projeto com portas de componentes."
+
+#~ msgid "Opens kicad-rf-studio on this board and pre-fills New from a board with the selected pads, or with a selected antenna and its radio pin."
+#~ msgstr "Abre o kicad-rf-studio nesta placa e preenche Novo projeto a partir de uma placa com as ilhas selecionadas, ou com uma antena selecionada e o pino do rádio dela."
+
+#~ msgid "{board} as saved lacks a pad or a part selected in KiCad, which holds edits not yet saved: save the board in KiCad and press the button again."
+#~ msgstr "A versão salva de {board} não tem uma ilha ou um componente selecionado no KiCad, que guarda edições ainda não salvas: salve a placa no KiCad e pressione o botão de novo."
 

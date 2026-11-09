@@ -190,12 +190,20 @@ def test_new_reads_a_boards_pads_and_antennas_once_but_its_connectors(mini_board
         ("2.4 GHz (2400–2483.5 MHz)", 2.4e9, 2.4835e9)]  # design 5.10, 7's presets
 
 
-def press(board, pads=(), footprints=(), socket="ipc://s", token="T"):
+def press(board, pads=(), footprints=(), socket="ipc://s", token="T", tracks=()):
     """A button press's handoff file (button.write_handoff) for `board`: the pads named REF.PAD by their KIIDs in
-    the file (a name the file lacks passes as it is, as a KIID) and the footprints by reference."""
+    the file (a name the file lacks passes as it is, as a KIID), the footprints by reference and the tracks, arcs and
+    vias by their KIIDs (track_of)."""
     kiid = {p.name: p.uuid for p in load_board(board).all_pads()}
     return button.write_handoff({"board": str(board), "pads": [kiid.get(n, n) for n in pads],
-                                 "footprints": list(footprints), "kicad": "9.0.7", "socket": socket, "token": token})
+                                 "footprints": list(footprints), "tracks": list(tracks), "kicad": "9.0.7",
+                                 "socket": socket, "token": token})
+
+
+def track_of(board, net, via=False):
+    """The KIID of the first track, or via, of `net` in the saved `board`."""
+    b = load_board(board)
+    return next(t.uuid for t in (b.vias if via else b.tracks) if t.net == net)
 
 
 def test_a_handoff_joins_the_selection_to_the_saved_boards_pads(fake, tmp_path):  # design 5.5; Review Focus 2
@@ -259,6 +267,43 @@ def test_a_press_on_two_antennas_or_on_a_module_or_a_chip_antenna_says_so(fake, 
         h = read([ref])
         assert (h.kind, h.antenna, h.problem) == ("chain", "", (code, {"ref": ref}))  # v1's chain still applies
     assert read(["R1"]).problem is None and read(["AE1", "U2"]).kind == "antenna"  # a printed one wins
+
+
+def test_a_press_on_a_track_arc_or_via_pre_fills_its_line(fake):  # design 5.10 as A-66 amends it; RF 3
+    usb, qspi, arc = (FIX / f"{name}.kicad_pcb" for name in ("usb2_hs", "qspi_clk", "coupon_gcpw_arc"))
+
+    def read(board, tracks, pads=(), footprints=()):
+        return control.handed(press(board, pads, footprints, tracks=tracks))
+
+    q = read(qspi, [track_of(qspi, "FLASH_CLK")])
+    assert (q.kind, q.net, q.partner, q.start, q.end, q.problem) == ("si", "FLASH_CLK", "", "U1.11", "U2.6", None)
+    assert q.pads == control.pads(qspi)
+    v = read(qspi, [track_of(qspi, "FLASH_CLK", via=True)])  # a via alone: the same line through R1
+    assert (v.start, v.end) == ("U1.11", "U2.6")
+    four = ("G_HANDOFF_SI_ENDS", {"net": "USB_D+", "count": 4, "pads": "J1.3, U1.3, U2.3, U2.4"})
+    p = read(usb, [track_of(usb, "USB_D+")])
+    assert (p.kind, p.net, p.partner, p.start, p.end, p.problem) == ("si", "USB_D+", "USB_D-", "", "", four)
+    n = read(usb, [track_of(usb, "MCU_D-")])  # the N side: the P net and its partner
+    assert (n.net, n.partner, n.problem) == ("MCU_D+", "MCU_D-", (four[0], {**four[1], "net": "MCU_D+"}))
+    assert read(usb, [track_of(usb, x) for x in ("USB_D+", "USB_D-", "MCU_D+")]).problem == four  # one line
+    box = read(usb, [track_of(usb, "USB_D+")], (), ["R1", "R2"])  # a box selection's parts narrow no picker
+    assert (box.pads, box.problem) == (control.pads(usb), four)
+    ends = read(usb, [track_of(usb, "USB_D+")], ["U1.3", "J1.3"])  # its ends selected: the connector's first
+    assert (ends.start, ends.end, ends.problem) == ("J1.3", "U1.3", None)
+    legs = read(usb, [track_of(usb, "USB_D-")], ["J1.2", "U1.2"])  # the N leg's own ends, taken to the P side
+    assert (legs.net, legs.start, legs.end, legs.problem) == ("USB_D+", "J1.3", "U1.3", None)
+    nets = read(usb, [track_of(usb, "AUX"), track_of(usb, "USB_D+")])
+    assert (nets.kind, nets.start, nets.problem) == ("si", "", ("G_HANDOFF_NETS", {"count": 2, "nets": "AUX, USB_D+"}))
+    assert read(usb, [track_of(usb, "AUX")]).problem == ("G_HANDOFF_SI_ENDS", {"net": "AUX", "count": 0,
+                                                                                "pads": "T_NONE"})
+    gnd = read(usb, [track_of(usb, "GND", via=True)])
+    assert (gnd.kind, gnd.problem) == ("si", ("G_HANDOFF_SI_NET", {"net": "GND"}))
+    curve = read(arc, [next(t.uuid for t in load_board(arc).tracks if t.mid is not None)])
+    assert (curve.net, curve.problem) == ("LINE", ("G_HANDOFF_SI_ENDS", {"net": "LINE", "count": 0, "pads": "T_NONE"}))
+    assert read(usb, ["00000000-0000-0000-0000-000000000001"]).problem == ("G_HANDOFF_UNSAVED", {"board": str(usb)})
+    ifa = FIX / "ifa2g4_pi.kicad_pcb"
+    assert read(ifa, [track_of(ifa, "RF_A")], (), ["AE1"]).kind == "antenna"  # the antenna's rules first
+    assert (read(usb, [], ["J1.3", "U1.3"]).kind, read(usb, [], ["J1.3", "U1.3"]).end) == ("chain", "J1.3")  # v1's
 
 
 def test_every_gui_wording_keeps_its_cli_params_and_drops_terminal_syntax():  # design 5.3, 5.7
