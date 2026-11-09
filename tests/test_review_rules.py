@@ -1,4 +1,5 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
+import math
 from dataclasses import replace
 from pathlib import Path
 
@@ -9,10 +10,10 @@ from shapely.geometry import Point, box
 from kicad_rf_studio.core.geometry.region import coarse_cell
 from kicad_rf_studio.core.geometry.zstack import zstack
 from kicad_rf_studio.core.kicad import classify, load_board
-from kicad_rf_studio.core.kicad.board import CopperArea, Footprint, Pad, Via
+from kicad_rf_studio.core.kicad.board import CopperArea, Footprint, Pad, Track, Via
 from kicad_rf_studio.core.kicad.tracer import antenna_kind
 from kicad_rf_studio.core.review.planes import Ref, plane_map, plane_nets
-from kicad_rf_studio.core.review.rules import exclusions, groups, r1
+from kicad_rf_studio.core.review.rules import exclusions, groups, r1, r3, return_share
 from kicad_rf_studio.core.review.tags import tag
 
 FIX = Path(__file__).parent / "fixtures"
@@ -92,6 +93,29 @@ def test_exclusions_hold_connectors_keepout_footprints_and_printed_antennas():  
     assert r1(b, pm, kept, L5) == []
 
 
+def test_r3_fires_on_a_track_within_2h_of_the_outline_with_its_share_past_the_edge():  # design 5.2 R3, 5.14
+    b, c, pm, tags, gs = setup("emc_review")
+    (f,) = r3(b, gs, 2.0)
+    assert (f.net, f.layer, f.ref, f.code, f.limit) == ("CLK_EDGE", "F.Cu", Ref("In1.Cu", "GND", 0.2, None),
+                                                        "W_EMC_EDGE", 0.4)
+    assert f.measured == {"d_mm": 0.35, "h_mm": 0.2, "k": 2.0, "share_pct": 16.5}
+    b, c, pm, tags, gs = setup("usb2_hs")
+    assert r3(b, gs, 2.0) == []  # the pair about 5 mm in
+
+
+def test_r3_leaves_out_a_connectors_launch():  # design 5.14 R3 negative; 5.1's exclusions; D-3
+    b, c, pm, tags, gs = setup("lpf915", flags=["RF_*"])
+    assert r3(b, gs, 2.0) == r3(b, gs, 5.0) == []  # RF_SMA ends 2.24 mm in; J2's hull grown by 3h leaves it 5.7
+    b, c, pm, tags, gs = setup("lpf915", flags=["RF_*"], connectors=[])
+    assert [(f.net, f.measured["d_mm"]) for f in r3(b, gs, 5.0)] == [("RF_SMA", 2.24)]
+
+
+def test_the_share_of_return_current_past_the_edge():  # design 5.2 R3: Johnson and Graham; r5
+    assert round(100 * return_share(0.4, 0.2, None), 1) == 14.8  # microstrip at 2h
+    assert round(100 * return_share(0.4, 0.2, 0.4), 1) == 2.7  # stripline at 2h, b = 2h
+    assert return_share(0.0, 0.2, None) == pytest.approx(0.5)
+
+
 # --- beyond the brief's tests ----------------------------------------------------------------------------------------
 
 
@@ -107,3 +131,27 @@ def test_a_skipped_layer_as_near_as_the_reference_leaves_a_track_out_and_a_track
     assert [grouped(s) for s in ((), ("F.Cu",), ("In2.Cu",), ("In1.Cu",))] == [(4, []), (4, []), (4, []), (0, [])]
     assert grouped((), {}) == (0, ["MCU_D+", "MCU_D-", "USB_D+", "USB_D-"])
     assert grouped(("B.Cu",), {}) == (0, [])  # a skipped layer might have been their reference
+
+
+def test_r3_merges_the_flagged_entries_that_meet_and_places_a_part_its_band_misses():  # AR-4
+    def clk_edge(*ends, outline=None):  # CLK_EDGE as these 0.5 mm tracks, on this outline
+        def edit(b):
+            b.tracks = [t for t in b.tracks if t.net != "CLK_EDGE"] + [
+                Track("F.Cu", "CLK_EDGE", 0.5, s, e, None, str(i)) for i, (s, e) in enumerate(ends)]
+            if outline is not None:
+                b.outline = outline
+        return edit
+
+    # a T whose three tracks run 0.35 mm from the top edge where they meet, and a track apart
+    tee = ((103, -100.6), (113, -100.6)), ((113, -100.6), (123, -100.6)), ((110, -100.7), (113, -100.6))
+    b, c, pm, tags, gs = setup("emc_review", clk_edge(*tee, ((130, -100.6), (135, -100.6))))
+    assert sorted((f.kiids["tracks"], f.measured["d_mm"]) for f in r3(b, gs, 2.0)) == [(["0", "1", "2"], 0.35),
+                                                                                       (["3"], 0.35)]
+    # a concave corner at (105, -105), and a track 0.6493 mm from it (d 0.399 mm) where the band's round join, 16
+    # chords a quadrant of radius k·h + w/2 = 0.65 mm, reaches 0.6492 mm: the middle of its fifth chord
+    a = math.radians(180 + 4.5 * 90 / 16)
+    s, e = ((105 + r * math.cos(a), -105 + r * math.sin(a)) for r in (0.6493, 2.6493))
+    b, c, pm, tags, gs = setup("emc_review", clk_edge((s, e), outline=box(100, -150, 150, -100).difference(
+        box(105, -105, 151, -99))))
+    (f,) = r3(b, gs, 2.0)
+    assert f.measured["d_mm"] == 0.399 and f.at == pytest.approx(s, abs=1e-3)

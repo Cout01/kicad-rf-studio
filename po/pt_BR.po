@@ -1516,6 +1516,11 @@ msgstr "Resolvido significa maior que o limiar de significância: {ohm} Ω num n
 msgid "#{n} R1: {net} on {layer} runs {run_mm} mm over a void in its {ref_net} reference ({ref_layer}, h {h_mm} mm), {extent_mm} mm across, at ({x_mm}, {y_mm}) mm; λ/20 at f_max is {l_mm} mm. Crossing a split or void in the reference is a known return-path fault (LearnEMC; Ansys SIwave's Net Crossing Split; HyperLynx DRC); a run counts from 1 mm, a cut measured on three public boards."
 msgstr "#{n} R1: {net} em {layer} passa {run_mm} mm sobre um vazio na sua referência {ref_net} ({ref_layer}, h {h_mm} mm), com {extent_mm} mm de largura, em ({x_mm}, {y_mm}) mm; λ/20 em f_max é {l_mm} mm. Cruzar uma divisão ou um vazio da referência é uma falha conhecida do caminho de retorno (LearnEMC; Net Crossing Split do Ansys SIwave; HyperLynx DRC); um trecho conta a partir de 1 mm, um corte medido em três placas públicas."
 
+#. W_EMC_EDGE
+#, python-brace-format
+msgid "#{n} R3: {net} on {layer} runs {d_mm} mm from the board edge at ({x_mm}, {y_mm}) mm, under {k}·h = {kh_mm} mm (h {h_mm} mm to {ref_layer}): about {share_pct} % of its ideal return current would lie past the edge. Critical nets belong at least 2h from the board edge (LearnEMC)."
+msgstr "#{n} R3: {net} em {layer} passa a {d_mm} mm da borda da placa em ({x_mm}, {y_mm}) mm, abaixo de {k}·h = {kh_mm} mm (h {h_mm} mm até {ref_layer}): cerca de {share_pct} % da sua corrente de retorno ideal ficaria além da borda. Redes críticas ficam a pelo menos 2h da borda da placa (LearnEMC)."
+
 #. E_INTERNAL
 #, python-brace-format
 msgid "Internal error: {detail}. Please report it."

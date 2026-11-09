@@ -1,8 +1,9 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """The review's rules (Stage 5 design 5.2), each finding measured against its threshold and the threshold's public
-source: R1, a tagged run over a void of its reference net. A rule reads the tagged tracks in groups, a net's tracks on
-one layer with one reference, less the exclusions (5.1): the hulls of the connectors, the footprints with a keep-out
-and the printed antennas, grown by EXCLUDE_H·h. Every mm value is rounded to 1e-3 before it is compared or stored."""
+source: R1, a tagged run over a void of its reference net; R3, a tagged track near the board edge. A rule reads the
+tagged tracks in groups, a net's tracks on one layer with one reference, less the exclusions (5.1): the hulls of the
+connectors, the footprints with a keep-out and the printed antennas, grown by EXCLUDE_H·h. Every mm value is rounded to
+1e-3 before it is compared or stored."""
 from __future__ import annotations
 
 import math
@@ -156,4 +157,52 @@ def r1(board: Board, pm: PlaneMap, groups: list[Group], l_mm: float) -> list[Fin
                 g.net, g.layer, ref, (round(mid.x, 3), round(mid.y, 3)), tuple(round(v, 3) for v in run.bounds),
                 {"run_mm": run_mm, "extent_mm": extent, "l_mm": l_mm}, RUN_MIN,
                 {"tracks": sorted(tracks), "vias": [], "zones": sorted(zones), "pads": [], "footprints": []}))
+    return found
+
+
+def return_share(d: float, h: float, b: float | None) -> float:
+    """The share of a track's ideal return current that lies past a plane edge `d` from its copper (design 5.2 R3):
+    over one plane `h` below, ½ − atan(d/h)/π, from Johnson and Graham's 1/(1 + (x/h)²); between planes `b` apart,
+    (2/π)·atan(e^(−π·d/b)) (r5)."""
+    if b is None:
+        return 0.5 - math.atan(d / h) / math.pi
+    return 2 / math.pi * math.atan(math.exp(-math.pi * d / b))
+
+
+def r3(board: Board, groups: list[Group], edge_k: float) -> list[Finding]:
+    """R3, a tagged track near the board edge (design 5.2; AR-4). A track's d is the distance from its entry in its
+    group's lines to the outline's boundary, less half its width, so the exclusions apply and an empty entry is not
+    measured; it is flagged when 0 < d < k·h. A group's flagged entries that meet merge into parts, one finding each,
+    with d the least of its tracks'. A finding's place is the midpoint of its part's stretch within k·h + w/2 of the
+    boundary, and its bounds are its tracks' copper. With no outline, R3 finds nothing."""
+    if board.outline is None:
+        return []
+    edge, found = board.outline.boundary, []
+    for g in groups:
+        ref, h = g.ref, round(g.ref.h, 3)
+        limit = round(edge_k * h, 3)
+        flagged = [(t, line, d) for t, line in zip(g.tracks, g.lines)
+                   if not line.is_empty and 0 < (d := round(line.distance(edge) - t.width / 2, 3)) < limit]
+        parts: list[list] = []
+        for item in flagged:  # an entry joins every part it meets, and those parts merge with it
+            meets = [any(round(item[1].distance(o[1]), 3) == 0 for o in p) for p in parts]
+            joined = [o for p, m in zip(parts, meets) if m for o in p]
+            parts = [p for p, m in zip(parts, meets) if not m] + [[item, *joined]]
+        for part in parts:
+            tracks, d = [t for t, _, _ in part], min(d for _, _, d in part)
+            stretch = shapely.line_merge(shapely.union_all(
+                [line.intersection(edge.buffer(limit + t.width / 2)) for t, line, _ in part]))
+            # a buffer's round join is chords, 16 a quadrant, up to 0.12 % inside its arc: a part whose nearest point
+            # faces a concave corner of the outline that close to k·h + w/2 misses the band, and is placed there
+            mid = stretch.interpolate(0.5, normalized=True) if not stretch.is_empty else shapely.get_point(
+                shapely.shortest_line(shapely.union_all([line for _, line, _ in part]), edge), 0)
+            share = round(100 * return_share(d, h, ref.b), 1)
+            found.append(Finding(
+                "R3", "W_EMC_EDGE",
+                {"net": g.net, "layer": g.layer, "d_mm": f"{d:.3f}", "k": f"{edge_k:g}", "kh_mm": f"{limit:.3f}",
+                 "h_mm": f"{h:.3f}", "ref_layer": ref.layer, "share_pct": f"{share:.1f}"},
+                g.net, g.layer, ref, (round(mid.x, 3), round(mid.y, 3)),
+                tuple(round(float(v), 3) for v in shapely.total_bounds([t.polygon() for t in tracks])),
+                {"d_mm": d, "h_mm": h, "k": edge_k, "share_pct": share}, limit,
+                {"tracks": sorted({t.uuid for t in tracks}), "vias": [], "zones": [], "pads": [], "footprints": []}))
     return found
