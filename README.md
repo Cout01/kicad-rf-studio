@@ -289,12 +289,32 @@ In the GUI, New's kind Antenna takes the antenna footprint, the start pad and a 
 
 This takes `usb2_hs`, the synthetic four-layer USB 2.0 high-speed board in `tests/fixtures`: a micro-B connector J1, the pads of a six-pin ESD array U2 on the pair, a 22 Ω 0402 series resistor on each leg (R1 and R2) and an MCU-like QFN U1 at the far end, with a neighbour net, AUX, running beside part of the route between the test points TP1 and TP2. It goes through `new --interface`, `cost`, `run`, `retune` and `verify`, then compares it with `usb2_hs_gap`, the same board with a slot in the plane under the pair. Run the commands as in the Tutorial above.
 
-The times were measured on the development PC (Windows 11, 16 CPUs) at the Normal preset, `new`'s default, by the run through the GUI that closed Stage 4 (`docs/validation/<date>-stage4-exit.md`). That run compared with the plane-gap board that gate P4-F had run (`docs/validation/2026-11-08-p4-f.md`), retuned and verified for it, so the gap's run time is P4-F's and its verify time that preparation's. `cost` prints your own machine's estimate before every run, and no runtime is promised. The excerpts are real output of that run; `<run folder>` stands for a run's folder in the per-user data folder, and `usb2_hs`, `usb2_hs_gap` and `compare` for the projects' and the compare's folders.
+The times were measured on the development PC (Windows 11, 16 CPUs) at the Normal preset, `new`'s default, by the run through the GUI that closed Stage 4 (`docs/validation/2026-11-09-stage4-exit.md`). That run compared with the plane-gap board that gate P4-F had run (`docs/validation/2026-11-08-p4-f.md`), retuned and verified for it, so the gap's run time is P4-F's and its verify time that preparation's. `cost` prints your own machine's estimate before every run, and no runtime is promised. The excerpts are real output of that run; `<run folder>` stands for a run's folder in the per-user data folder, and `usb2_hs`, `usb2_hs_gap` and `compare` for the projects' and the compare's folders.
 
 **`new --interface`** traces the measured line from the connector's pin J1.3 through R1 to the MCU's pin U1.3, takes its partner by KiCad's pair rule (`--pair`: USB_D+ with USB_D-, ending at J1.2 and U1.2) and AUX between TP1.1 and TP2.1 as a victim, and writes a signal-integrity project for the `usb2-hs` interface: 90 Ω differential ± 10 %, the link's 500 ps edge and a 240 MHz marker, simulated to 10 GHz. R1 and R2 are part ports, so their values can be retuned.
 
 ```
 <venv>\Scripts\kicad-rf-studio new tests/fixtures/usb2_hs.kicad_pcb --start J1.3 --end U1.3 --interface usb2-hs --pair --victim TP1.1:TP2.1 -o usb2_hs
+```
+
+It took 10 s. It prints the stackup, the nets, the interface, the pair, both chains, the victim, each port and every default it wrote:
+
+```
+Stackup: board, dielectric 1.44 mm, εr 4.3; mask 0.01 mm, εr 3.3.
+GND nets: GND. Power nets: +3V3, VBUS. Connectors: J1. Shields: none.
+Interface usb2-hs: target 90 Ω differential ± 10 %, the link's rise time 500 ps, marker 240 MHz, simulated to 10 GHz, where the localising TDR's rise time is 125 ps.
+Pair: USB_D+ with USB_D-, by KiCad's pair rule.
+Chain J1.3 → U1.3: series R1; shunt none.
+Chain J1.2 → U1.2: series R2; shunt none.
+Victim TP1.1 → TP2.1 on net AUX: its two ends are ports, so the waves coupled into it end in 50 Ω.
+Port P1: signal J1.3, vertical to the plane on In1.Cu.
+Port P2: signal J1.2, vertical to the plane on In1.Cu.
+Port P3: signal U1.3, reference U1.17 (ic).
+Port P4: signal U1.2, reference U1.17 (ic).
+Port P5: signal TP1.1, vertical to the plane on In1.Cu.
+Port P6: signal TP2.1, vertical to the plane on In1.Cu.
+Preset normal (provisional default), T_max 9 ns, stop window 2 ns, mesh n 2 with the cell d throughout the protected extent (gate P4-C), dielectric lossless, timestep floor 0.6, region and protected reach 6 substrate heights (1.2 mm).
+Wrote usb2_hs\project.json.
 ```
 
 **`cost`** first lists the 2D table, every straight section's impedance against the target band, in seconds and before any run; then the cells, the runs broken down into the lines' ends, the victim's and the part ports, the worst case, and the time a job whose planes ring may take past T_max.
@@ -303,10 +323,65 @@ The times were measured on the development PC (Windows 11, 16 CPUs) at the Norma
 <venv>\Scripts\kicad-rf-studio cost usb2_hs
 ```
 
+It took 72 s, including the measurement of the machine's speed that `cost` makes once on a machine with no calibration yet:
+
+```
+2D table against the target 90 Ω ± 10 % (a pair's Zdiff, a net's Z0), mask included; bends, vias, pads and parts not included: a screening before the run, not its result.
+USB_D+ on F.Cu, coupled: width 0.300 mm, gap 0.253 mm, length 2.038 mm — Zdiff 90.87 Ω (Zodd 45.44 Ω, Zeven 59.18 Ω), εeff odd 3.054, even 3.493, delay 11.9 ps: in the target band.
+USB_D+ on F.Cu: width 0.300 mm, length 0.675 mm, its partner not alongside — Z0 52.51 Ω, so Zdiff 105.01 Ω uncoupled, εeff 3.312, delay 4.1 ps: outside the target band.
+USB_D+ on F.Cu, coupled: width 0.600 mm, gap 1.300 mm, length 5.000 mm — Zdiff 70.25 Ω (Zodd 35.12 Ω, Zeven 35.73 Ω), εeff odd 3.419, even 3.496, delay 30.8 ps: outside the target band.
+USB_D+ on F.Cu: width 0.300 mm, length 0.675 mm, its partner not alongside — Z0 52.59 Ω, so Zdiff 105.18 Ω uncoupled, εeff 3.311, delay 4.1 ps: outside the target band.
+USB_D+ on F.Cu, coupled: width 0.300 mm, gap 0.250 mm, length 17.490 mm — Zdiff 90.21 Ω (Zodd 45.10 Ω, Zeven 58.90 Ω), εeff odd 3.061, even 3.493, delay 102.1 ps: in the target band.
+MCU_D+ on F.Cu, coupled: width 0.300 mm, gap 0.250 mm, length 4.527 mm — Zdiff 90.34 Ω (Zodd 45.17 Ω, Zeven 59.03 Ω), εeff odd 3.061, even 3.500, delay 26.4 ps: in the target band.
+USB_D- on F.Cu, coupled: width 0.300 mm, gap 0.251 mm, length 2.038 mm — Zdiff 90.32 Ω (Zodd 45.16 Ω, Zeven 58.96 Ω), εeff odd 3.063, even 3.501, delay 11.9 ps: in the target band.
+USB_D- on F.Cu: width 0.300 mm, length 0.675 mm, its partner not alongside — Z0 52.51 Ω, so Zdiff 105.01 Ω uncoupled, εeff 3.312, delay 4.1 ps: outside the target band.
+USB_D- on F.Cu, coupled: width 0.600 mm, gap 1.300 mm, length 5.000 mm — Zdiff 70.25 Ω (Zodd 35.12 Ω, Zeven 35.73 Ω), εeff odd 3.419, even 3.496, delay 30.8 ps: outside the target band.
+USB_D- on F.Cu: width 0.300 mm, length 0.675 mm, its partner not alongside — Z0 52.59 Ω, so Zdiff 105.18 Ω uncoupled, εeff 3.311, delay 4.1 ps: outside the target band.
+USB_D- on F.Cu, coupled: width 0.300 mm, gap 0.250 mm, length 17.490 mm — Zdiff 90.21 Ω (Zodd 45.10 Ω, Zeven 58.90 Ω), εeff odd 3.061, even 3.493, delay 102.1 ps: in the target band.
+MCU_D- on F.Cu, coupled: width 0.300 mm, gap 0.250 mm, length 4.527 mm — Zdiff 90.24 Ω (Zodd 45.12 Ω, Zeven 58.99 Ω), εeff odd 3.063, even 3.502, delay 26.4 ps: in the target band.
+AUX on F.Cu: width 0.200 mm, gap 0.625, length 12.000 mm — Z0 62.94 Ω, εeff 3.240, delay 72.0 ps: a victim, no target.
+Cells: 402 × 121 × 77 = 3.75 M (mesh n 2, cell d 0.1000 mm).
+dt 8.0779e-14 s (floor 0.6 × 7.4439e-14 s), set by the z edge at (96.588, 100.925, 1.580) mm.
+Worst case: 1 h 51 min for 8 runs to T_max 9 ns, 4 at once with 4 threads each.
+Runs: 4 for the measured lines' ends, 2 for the victims' ends, 2 for the part ports.
+A job whose port residual still falls by 0.3 dB/ns or more at T_max, fast enough over its last 3 ns to reach the preset's level by 36 ns, runs on while it keeps doing so, until it converges: up to 7 h 24 min.
+RAM: about 2.7 GB (4 jobs at once).
+Main cost: 8 runs, one per port, 2 of them part ports.
+```
+
 **`run`** runs one job per port: the pair's four ends, the victim's two and the part ports R1 and R2. It gives the TDR along the route against the target band, the mixed-mode S (Sdd21, Sdd11, Scc21 and Scd21), the skew and the crosstalk into AUX, for any values of R1 and R2.
 
 ```
 <venv>\Scripts\kicad-rf-studio run usb2_hs
+```
+
+It took 2351 s (39 min), 0.35 of that worst case, and all eight jobs converged. These results are at the board's own values, 22 Ω on R1 and R2:
+
+```
+P1: converged at 3.06 ns (residual -60.9 dB).
+P2: converged at 3.06 ns (residual -60.7 dB).
+P3: converged at 3.04 ns (residual -62.5 dB).
+P4: converged at 3.04 ns (residual -62.4 dB).
+P5: converged at 2.74 ns (residual -60.4 dB).
+P6: converged at 2.76 ns (residual -62.1 dB).
+R1: converged at 2.99 ns (residual -61.4 dB).
+R2: converged at 2.99 ns (residual -61.2 dB).
+8 of 8 jobs kept S, in 38 min; results recorded in usb2_hs\project.json.
+Results of the run in <run folder> at preset normal: 8 jobs converged, 0 flat, 0 at T_max.
+Passivity: σ_max 1.0083 at worst, at 10000.0 MHz (|a| -19.6 dB); flagged above 1.02.
+Reciprocity: |Sij − Sji| 1.53e-02 at worst, at 10000.0 MHz (|a| -19.6 dB); flagged above 0.02.
+Relative: these signal-integrity results compare variants of one board under identical settings; they do not predict measured performance.
+Sdd21 -1.912 dB at the marker (240 MHz) and -2.900 dB at f_max (10 GHz).
+The worst Sdd11 up to f_max: -7.43 dB at 4815 MHz.
+The worst Scd21 up to f_max: -45.56 dB at 10000 MHz.
+Scc21, the common mode's transmission: -1.90 dB at the marker (240 MHz).
+The differential TDR: the localising rise time 125 ps resolves 10.3 mm and the link's 500 ps 41.4 mm, at the route's 2D εeff 3.28; the first resolution length at each port is the port's own launch.
+The lowest TDR level between the launches, 84.97 Ω at 131.2 ps (10.9 mm), lies on a feature shorter than two resolution lengths (20.7 mm), so it is not that feature's impedance.
+The highest TDR level between the launches, 96.10 Ω at 256.2 ps (21.2 mm), lies on a feature shorter than two resolution lengths (20.7 mm), so it is not that feature's impedance.
+Intra-pair skew -0.01 ps: the N leg's TDT arrives at 199.9 ps and the P leg's at 199.9 ps, each at half its peak.
+Crosstalk into AUX from the pair driven differentially at its start: NEXT at TP1.1 peaks at -25.72 dB (9170 MHz) and FEXT at TP2.1 at -28.92 dB (9360 MHz).
+Not in S: the copper's loss over the route's 30.4 mm, by Hammerstad's formula for smooth copper, about 0.050 dB at the marker (240 MHz) and 0.321 dB at f_max (10 GHz).
+Not in S either, the dielectric being lossless: its loss over the same length, about 0.022 dB at the marker and 0.907 dB at f_max.
 ```
 
 **`retune`** closes the part ports at new values, with no new run: 24 Ω, the value the GUI's E24 snapping gives a typed 25 Ω. `0R` replaces a series part with a short.
@@ -315,10 +390,38 @@ The times were measured on the development PC (Windows 11, 16 CPUs) at the Norma
 <venv>\Scripts\kicad-rf-studio retune usb2_hs R1=24 R2=24
 ```
 
+It took 7 s:
+
+```
+Relative: these signal-integrity results compare variants of one board under identical settings; they do not predict measured performance.
+Sdd21 -2.067 dB at the marker (240 MHz) and -3.092 dB at f_max (10 GHz).
+The worst Sdd11 up to f_max: -7.20 dB at 4805 MHz.
+The worst Scd21 up to f_max: -45.70 dB at 10000 MHz.
+Scc21, the common mode's transmission: -2.06 dB at the marker (240 MHz).
+The differential TDR: the localising rise time 125 ps resolves 10.3 mm and the link's 500 ps 41.4 mm, at the route's 2D εeff 3.28; the first resolution length at each port is the port's own launch.
+The lowest TDR level between the launches, 84.97 Ω at 131.2 ps (10.9 mm), lies on a feature shorter than two resolution lengths (20.7 mm), so it is not that feature's impedance.
+The highest TDR level between the launches, 96.38 Ω at 256.2 ps (21.2 mm), lies on a feature shorter than two resolution lengths (20.7 mm), so it is not that feature's impedance.
+Intra-pair skew -0.01 ps: the N leg's TDT arrives at 199.8 ps and the P leg's at 199.9 ps, each at half its peak.
+Crosstalk into AUX from the pair driven differentially at its start: NEXT at TP1.1 peaks at -25.67 dB (9160 MHz) and FEXT at TP2.1 at -28.80 dB (9340 MHz).
+Not in S: the copper's loss over the route's 30.4 mm, by Hammerstad's formula for smooth copper, about 0.050 dB at the marker (240 MHz) and 0.321 dB at f_max (10 GHz).
+Not in S either, the dielectric being lossless: its loss over the same length, about 0.022 dB at the marker and 0.907 dB at f_max.
+Relative / what-if: the instant retune is not yet validated against a full simulation of a real board (spec 7.6), so read these chain results as relative. Check the final values with `kicad-rf-studio verify usb2_hs\project.json`.
+```
+
 **`verify`** runs one job per external port with R1 and R2 in the grid at their values, as ideal parts, and compares the result with the retune's.
 
 ```
 <venv>\Scripts\kicad-rf-studio verify usb2_hs
+```
+
+It took 1815 s (30 min), and all six jobs converged. This excerpt keeps the comparison with the retune:
+
+```
+6 verify jobs kept S, in 29 min; the comparison is stored in usb2_hs\project.json.
+verify against the retune at the same ideal values: max |ΔS| 0.0292 from the first point above DC to f_max, at 9920 MHz (|a| -19.2 dB).
+The lowest TDR level between the launches, verify against the retune: 84.97 Ω against 84.97 Ω; one of them lies on a feature shorter than two resolution lengths, so it is not that feature's impedance.
+The highest TDR level between the launches, verify against the retune: 92.67 Ω against 93.06 Ω; one of them lies on a feature shorter than two resolution lengths, so it is not that feature's impedance.
+verify checks the layout reduction, not the vendor part data: each part sat in the grid at its value as an ideal part, without the package ESL, ESR and Cp or the S2P data the retune applies, a 0 Ω part as copper and an open part left out, against a retune at the same ideal values, whose loads hold at DC their value at the grid's first point above DC.
 ```
 
 **`compare`** reads both projects' verified results, which must share every setting, and marks each difference resolved or not. First the same steps on the plane-gap board, then the compare, which writes `compare.csv` and `compare.png` into `compare`:
@@ -329,6 +432,22 @@ The times were measured on the development PC (Windows 11, 16 CPUs) at the Norma
 <venv>\Scripts\kicad-rf-studio retune usb2_hs_gap R1=24 R2=24
 <venv>\Scripts\kicad-rf-studio verify usb2_hs_gap
 <venv>\Scripts\kicad-rf-studio compare usb2_hs usb2_hs_gap -o compare
+```
+
+On the plane-gap board, `new` and `retune` take seconds, `run` took 4 h 25 min in gate P4-F (`docs/validation/2026-11-08-p4-f.md`), and `verify` 3 h 35 min in the preparation for the run through the GUI. The compare took 9 s:
+
+```
+The lowest TDR level between the launches: 84.97 Ω against 85.31 Ω, +0.34 Ω: not resolved; one of them lies on a feature shorter than two resolution lengths, so it is not that feature's impedance, and the delta compares two levels filtered alike.
+The highest TDR level between the launches: 92.67 Ω against 94.89 Ω, +2.22 Ω: resolved; one of them lies on a feature shorter than two resolution lengths, so it is not that feature's impedance, and the delta compares two levels filtered alike.
+Sdd21 at 240 MHz: -2.068 dB against -2.067 dB, +0.001 dB: not resolved.
+Sdd21 at 10000 MHz: -2.829 dB against -3.051 dB, -0.222 dB: resolved.
+The worst Sdd11 up to f_max: -6.97 dB against -7.23 dB, -0.26 dB: not resolved.
+The worst Scd21 up to f_max: -47.18 dB against -28.19 dB, +19.00 dB: resolved.
+The intra-pair skew: -0.00 ps against +0.40 ps, +0.40 ps: not resolved.
+NEXT into AUX, its peak: -25.87 dB against -20.98 dB, +4.89 dB: resolved.
+FEXT into AUX, its peak: -29.42 dB against -23.58 dB, +5.84 dB: resolved.
+Resolved means larger than the significance threshold: 2.2 Ω on a TDR level, 0.05 dB on Sdd21 or S21, 0.5 dB on Sdd11, S11, NEXT and FEXT where the higher of the two levels stands above -50 dB and on Scd21 where it stands above -37.7 dB, and 1 ps on the skew: the values gate P4-E set from the model's measured noise.
+Wrote compare.csv, compare.png in compare.
 ```
 
 In the GUI, New's kind Signal integrity takes the start and end pads, the interface, the pair (none, KiCad's rule or its two end pads picked) and up to two victims; the Cost tab lists the 2D table before the estimate; Results shows the TDR with the target band, the mixed-mode S and the crosstalk, and retunes R1 and R2 with E24 snapping; the Compare tab compares the open project with a variant. The KiCad button pre-fills New with the signal-integrity kind, the pair and an interface that fits it from a selected track, arc or via, and with the line's two end pads, the connector's first, when it has exactly two IC or connector pads: on `usb2_hs` the ESD array's pads make four, so pick J1.3 and U1.3, or select them in KiCad with a track of the pair.
