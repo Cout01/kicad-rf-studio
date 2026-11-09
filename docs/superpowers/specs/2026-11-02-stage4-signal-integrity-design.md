@@ -6,7 +6,7 @@ Status: written on 2026-11-02 by the controller, right after Stage 3 closed (mai
 - r3, the engine;
 - r4, the references and the gates.
 
-An independent builder read the design before the commit. Its four questions are settled in §5.1 (the TDR's two rise times, the presets' band and their marker frequency), §5.3 (the Debye default's rule) and §5.3 again (SI's timestep floor). Amended on 2026-11-08 by plan 4 with the gates' results (P4-B to P4-F, `docs/validation/2026-11-06-p4-b.md` to `2026-11-08-p4-f.md`).
+An independent builder read the design before the commit. Its four questions are settled in §5.1 (the TDR's two rise times, the presets' band and their marker frequency), §5.3 (the Debye default's rule) and §5.3 again (SI's timestep floor). Amended on 2026-11-08 by plan 4 with the gates' results (P4-B to P4-F, `docs/validation/2026-11-06-p4-b.md` to `2026-11-08-p4-f.md`). Stage 4 closed on 2026-11-09 with plan 5's GUI, button and docs (exit record `docs/validation/2026-11-09-stage4-exit.md`).
 
 References: "Stage 1 §x" names a section of the Stage 1 spec (`docs/superpowers/specs/2026-10-16-stage1-validated-engine-design.md`), and so does every § in a list or heading that names that spec; "Stage 3 §x" names one of `docs/superpowers/specs/2026-10-29-stage3-antenna-placement-design.md`; a bare § names a section of this design.
 
