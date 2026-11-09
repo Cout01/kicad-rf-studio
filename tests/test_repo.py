@@ -1,4 +1,5 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
+import json
 import re
 import subprocess
 import tomllib
@@ -30,6 +31,21 @@ def test_the_lgpl_text_ships_with_the_lgpl_code():
     assert "COPYING.LESSER" in next(e for e in entries if "SmoothMeshLines" in e)
     licence = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))["project"]["license"]
     assert licence == "GPL-3.0-or-later AND LGPL-3.0-or-later"
+
+def test_notice_names_each_kicad_calculator_file_the_tests_port():  # ruling 13; P4-A's c_microstrip.cpp
+    ported = set(re.findall(r"pcb_calculator/transline/(\w+\.(?:cpp|h))",
+                            (ROOT / "tests" / "kicad_lines.py").read_text(encoding="utf-8")))
+    entry = next(e for e in (ROOT / "NOTICE").read_text(encoding="utf-8").split("\n\n\n")
+                 if e.startswith("KiCad line-calculator formulas"))
+    assert ported == {"microstrip.cpp", "c_microstrip.cpp", "coplanar.cpp", "transline.cpp", "units.h"}
+    assert ported <= set(re.findall(r"\b\w+\.(?:cpp|h)\b", entry))
+
+def test_every_golden_pin_names_a_clean_product_tree():  # ruling 13: golden_antenna's +dirty stamp (plan 4's R-11)
+    stamps = {p.name: json.loads(p.read_text(encoding="utf-8"))["code"]
+              for p in sorted((ROOT / "tests" / "fixtures").glob("golden_*.json"))}
+    assert sorted(stamps) == ["golden_antenna.json", "golden_si.json", "golden_v1.json"]
+    assert [name for name, code in stamps.items() if not re.fullmatch(r"[0-9a-f]{40}", code)] == []
+    assert stamps["golden_antenna.json"] == "e5469200427c76d82e9d2893363696ead16cf351"  # R-11's src tree, at 8faa7d6
 
 def test_ci_tests_the_declared_python_floor_with_read_only_permissions():
     ci = (ROOT / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")

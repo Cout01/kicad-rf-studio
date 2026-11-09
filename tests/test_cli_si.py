@@ -72,6 +72,12 @@ def test_the_partner_given_by_pair_with(tmp_path):  # design 5.1
     assert d["pair"]["by"] == "given" and [p["signal"] for p in d["ports"]] == ["J1.3", "J1.2", "U1.3", "U1.2"]
 
 
+def test_a_bad_pair_of_ends_is_named_by_its_form(capsys):  # plan 2's minor; ruling 13
+    with pytest.raises(SystemExit) as e:
+        main(["new", str(USB), "--start", "J1.3", "--end", "U1.3", "--interface", "usb2-hs", "--victim", "TP1.1"])
+    assert e.value.code == 2 and "invalid REF.PAD:REF.PAD value: 'TP1.1'" in capsys.readouterr().err
+
+
 def test_a_line_on_a_net_another_line_holds_is_refused(tmp_path):  # the lines ruling: no third end on a line
     for kw in ({"pair_with": ("J1.3", "U1.3")}, {"pair": True, "victims": [("J1.2", "U1.2")]}):
         with pytest.raises(KrsError) as e:

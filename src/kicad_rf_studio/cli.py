@@ -60,6 +60,9 @@ def _ends(text: str) -> tuple[str, str]:
     return ends
 
 
+_ends.__name__ = "REF.PAD:REF.PAD"  # argparse names a type in its error: invalid REF.PAD:REF.PAD value
+
+
 def _list(names) -> str:
     return ", ".join(names) or "T_NONE"
 

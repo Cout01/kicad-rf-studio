@@ -14,12 +14,12 @@ CSXCAD SmoothMeshLines
 
 KiCad line-calculator formulas
   Upstream:  KiCad 9.0 (https://gitlab.com/kicad/code/kicad, branch 9.0), files pcb_calculator/transline/microstrip.cpp,
-             coplanar.cpp, transline.cpp and units.h
+             c_microstrip.cpp, coplanar.cpp, transline.cpp and units.h
   Copyright: (C) 2001 Gopal Narayanan, 2002 Claudio Girardi, 2005-2006 Stefan Jahn, 2008 Michael Margraf; modified
              for KiCad by Jean-Pierre Charras; the KiCad Developers
   Licence:   GNU General Public License v2.0 or later (GPL-2.0-or-later), used here under GPL-3.0-or-later
-  Here:      tests/kicad_lines.py, the microstrip and grounded coplanar waveguide formulas ported to Python, for the
-             tests only (not installed with the package)
+  Here:      tests/kicad_lines.py, the microstrip, edge-coupled microstrip and grounded coplanar waveguide formulas
+             ported to Python, for the tests only (not installed with the package)
 
 
 KiCad footprint library
