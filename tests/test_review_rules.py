@@ -337,3 +337,21 @@ def test_r4_reads_a_one_via_fence_as_one_gap_the_frames_covered_length():  # A7;
     b.vias = [v for v in b.vias if v not in fence[1:]]
     (f,) = r4(b, c, L5, False)
     assert (f.params["fence"], f.measured["gap_mm"], f.kiids["vias"]) == ("SH1", 47.2, [fence[0].uuid])
+
+
+def test_r2_reads_a_side_track_s_reference_from_its_piece_of_route():  # AR-1, AR-2 (plan 1's close)
+    def stub(b):  # CLK_MID's F.Cu track ends in a 0.5 mm stub inside a 1 mm hole in In1.Cu's ground round its via
+        (t,) = [t for t in b.tracks if (t.net, t.layer) == ("CLK_MID", "F.Cu")]
+        b.tracks = [u for u in b.tracks if u is not t] + [replace(t, end=(112.5, -140.0), uuid="long"),
+                                                         replace(t, start=(112.5, -140.0), uuid="stub")]
+        hole = Point(113.0, -140.0).buffer(1.0)
+        b.areas = [replace(a, polygon=a.polygon.difference(hole))
+                   if (a.source, a.layer, a.net) == ("zone", "In1.Cu", "GND") else a for a in b.areas]
+        b.footprints["C1"] = replace(b.footprints["C1"], dnp=True)
+
+    b, c, pm, tags, gs = setup("emc_review", stub)
+    (f,) = r2(b, c, pm, tags, L5)  # the stub alone reads In2.Cu's +3V3, as the B.Cu side does, and R2 is quiet
+    assert (f.at, f.ref, f.measured["return_mm"]) == ((113.0, -140.0), Ref("In1.Cu", "GND", 0.2, None), None)
+    assert f.params == {"net": "CLK_MID", "from_net": "GND", "from_layer": "In1.Cu", "to_net": "+3V3",
+                        "to_layer": "In2.Cu", "path": "T_EMC_RETURN_CAP", "nearest": "T_NONE", "limit_mm": "2.000"}
+    assert "stub" in f.kiids["tracks"] and "long" not in f.kiids["tracks"]

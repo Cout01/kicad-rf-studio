@@ -1,8 +1,7 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
+import math
 from dataclasses import replace
 from pathlib import Path
-
-import math
 
 from shapely.geometry import LineString, box
 
