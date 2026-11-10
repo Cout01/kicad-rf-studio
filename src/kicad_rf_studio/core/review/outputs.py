@@ -38,10 +38,11 @@ def _down(g: BaseGeometry) -> BaseGeometry:
 
 def review_json(r: Review, path: str, sha256: str) -> bytes:
     """review.json, schema 1 (design 5.3): the board's `path` as given and its `sha256`, r.settings, the notes (r.notes,
-    then REVIEW_LIMITS), the findings, and `cavities`, which plan 2's cavity modes fill: [] in plan 1. A finding's
-    ref_layer, ref_net and h_mm come from its reference, None without one; at_mm and bbox_mm, [x0, y0, x1, y1], are in
-    KiCad's frame; limit and h_mm are rounded to 1e-3. limit_source, SOURCES[rule], is an English record for the file's
-    readers: a GUI shows the finding's message, which names the source in the user's language, never limit_source."""
+    then REVIEW_LIMITS), the findings, and `cavities`, last: r.cavities as review_board fills them, each plane pair's
+    cavity with its grid's h_mm, narrow_slot and modes (design 5.4; AR-2). A finding's ref_layer, ref_net and h_mm come
+    from its reference, None without one; at_mm and bbox_mm, [x0, y0, x1, y1], are in KiCad's frame; limit and h_mm are
+    rounded to 1e-3. limit_source, SOURCES[rule], is an English record for the file's readers: a GUI shows the finding's
+    message, which names the source in the user's language, never limit_source."""
     findings = []
     for f in r.findings:
         x0, y0, x1, y1 = f.bounds
@@ -53,7 +54,8 @@ def review_json(r: Review, path: str, sha256: str) -> bytes:
             "tag_source": f.tag_source, "kiids": f.kiids})
     notes = [*r.notes, *((code, {}) for code in REVIEW_LIMITS)]
     data = {"schema": 1, "board": {"path": path, "sha256": sha256}, "settings": r.settings,
-            "notes": [{"code": code, "params": params} for code, params in notes], "findings": findings, "cavities": []}
+            "notes": [{"code": code, "params": params} for code, params in notes], "findings": findings,
+            "cavities": r.cavities}
     return json.dumps(data, indent=2, ensure_ascii=False).encode("utf-8") + b"\n"
 
 

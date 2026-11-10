@@ -174,5 +174,44 @@
       }
     }
   ],
-  "cavities": []
+  "cavities": [
+    {
+      "layers": [
+        "In1.Cu",
+        "In2.Cu"
+      ],
+      "nets": [
+        [
+          "GND"
+        ],
+        [
+          "+3V3"
+        ]
+      ],
+      "at_mm": [
+        109.156,
+        100.0
+      ],
+      "d_mm": 1.04,
+      "eps_r": 4.5,
+      "area_mm2": 407.54,
+      "posts": 0,
+      "h_mm": 0.25,
+      "narrow_slot": false,
+      "modes": [
+        {
+          "f_hz": 0.0,
+          "marks": []
+        },
+        {
+          "f_hz": 1676774000.0,
+          "marks": []
+        },
+        {
+          "f_hz": 3647541000.0,
+          "marks": []
+        }
+      ]
+    }
+  ]
 }

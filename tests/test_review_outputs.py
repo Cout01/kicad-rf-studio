@@ -22,7 +22,7 @@ def test_review_json_holds_schema_1s_keys_in_kicads_frame():  # design 5.3; ruli
     text = review_json(r, "b.kicad_pcb", SHA)
     data = json.loads(text)
     assert text.endswith(b"}\n") and list(data) == ["schema", "board", "settings", "notes", "findings", "cavities"]
-    assert (data["schema"], data["board"], data["cavities"]) == (1, {"path": "b.kicad_pcb", "sha256": SHA}, [])
+    assert (data["schema"], data["board"], data["cavities"]) == (1, {"path": "b.kicad_pcb", "sha256": SHA}, r.cavities)
     assert data["settings"] == r.settings and data["notes"][1] == {"code": "I_REVIEW_RELATIVE", "params": {}}
     assert data["notes"][-1] == {"code": "I_LIMIT_REVIEW_KEEPOUT", "params": {}}  # design 5.1: the output says so
     f = data["findings"][1]
