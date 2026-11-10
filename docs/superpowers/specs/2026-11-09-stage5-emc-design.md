@@ -1,6 +1,6 @@
 # kicad-rf-studio — Stage 5 design: EMC, a first slice
 
-Status: written on 2026-11-09 by the controller, right after Stage 4 closed (main at `d3b036f`), and revised the same day with four critics' findings (fidelity, builder, codebase and scope). The owner is unavailable and asked not to be stopped for questions. Every decision below that the Stage 1 spec, the Stage 2 to Stage 4 designs and the pt-BR design did not already make is therefore a controller recommendation, owner unavailable.
+Status: written on 2026-11-09 by the controller, right after Stage 4 closed (main at `d3b036f`), and revised the same day with four critics' findings (fidelity, builder, codebase and scope). The owner is unavailable and asked not to be stopped for questions. Every decision below that the Stage 1 spec, the Stage 2 to Stage 4 designs and the pt-BR design did not already make is therefore a controller recommendation, owner unavailable. On 2026-11-10, plan 1's close amended §5.1's deny-list word and §5.2's reference (a track's piece of route), as controller recommendations while the owner was unavailable.
 
 The binding input is the controller's decision record, A1 to A13 (part A) and B1 to B12 (part B), in `.superpowers/sdd/stage5-research/controller-decisions.md`. Where a decision says less than the research it adopts, that research's recommendation fills it in. Where this design goes past a decision, the text says so and calls it a controller ruling. The research behind the decisions is git-ignored:
 - `.superpowers/sdd/stage5-scoping/` explains why Stage 5 is EMC, and what is deferred: the GPU engine and the installer.
@@ -138,7 +138,7 @@ Anti-goals:
 - `project`: the chain or the lines of the project given with `--project`, or of the project open in the GUI (`core/geometry/__init__.py`'s `chain_of`).
 - `pattern`: two conditions must both hold:
   - the name after its last "/" fullmatches r1's regular expression for one of A8's families: CLK, SCK, XTAL, SW, SPI, I2S or USB (r1 §3). SWDIO fails the switch regex, so it is not a switch node.
-  - its last "_"-separated word, with trailing digits stripped, is not one of CTRL, NSS, DIO, BUSY, RST, IRQ, EN or CS. So SPI_CS is not tagged, and CLK_GEN is.
+  - its last word of letters and digits, with trailing digits stripped, is not one of CTRL, NSS, DIO, BUSY, RST, IRQ, EN or CS. So SPI_CS is not tagged, nor are KiCad's spellings of that pin, Net-(U1-SPI_CS), ~{SPI_CS} and SPI_~{CS}, and CLK_GEN is. (Plan 1's close, 2026-11-10: the word was the last "_"-separated one; controller ruling, owner unavailable.)
 
   Extending r1's RF deny list to every family is a controller reading of A8. A8 lists that deny list but not r1's rf family.
 - `walk`: a net reached from a tagged net through two-pad series parts (`tracer._walk`), or as its differential partner (`tracer.partner_net`), as r1 recommends. The patterns miss MCU_D± behind a series resistor.
@@ -192,8 +192,8 @@ Board-level keep-out rule areas leave no geometry in the import, and the review'
 Each rule states what it measured, the threshold, the threshold's source and the tag's source. No rule says pass or fail.
 
 **The reference**, shared by R1, R2 and R3:
-- **The reference layer** of a tagged track is the copper layer nearest to it by dielectric distance, above or below, on which plane copper of any GND or power net covers at least one point of the track's centre line. For stripline it is the nearer of the two, and a tie goes to the layer below.
-- **The reference net** is the net whose planes cover the most of the centre line's length on that layer. A tie goes to a GND net, and then to the first net name in sort order.
+- **The reference layer** of a tagged track is the copper layer nearest to it by dielectric distance, above or below, on which plane copper of any GND or power net covers at least one point of the centre line of the track's piece of route: the tracks of its net on its layer whose centre lines meet, so a route split into segments, or jogging inside a void, reads as one line. (Plan 1's close, 2026-11-10: it was the track's own centre line; controller ruling, owner unavailable.) For stripline it is the nearer of the two, and a tie goes to the layer below.
+- **The reference net** is the net whose planes cover the most of the piece's centre line on that layer. A tie goes to a GND net, and then to the first net name in sort order.
 - **h** is the dielectric thickness between the track's copper and the reference layer, summed over the slabs between them.
 
 **R1, a tagged net over a void or split in its reference** (A4; W_EMC_GAP_CROSSING).
