@@ -2,8 +2,8 @@
 """The plane pairs' cavity modes (Stage 5 design 5.4; r2 2), in mm: a cell-centred finite-volume Laplacian with cut
 cells on a raster anchored at the outline's minimum corner, which keeps mirror and rotation symmetry exact. Cell area
 fractions are the mass and face open fractions the conductances; faces leaving the region carry no flux, so the edges
-are Neumann (PMC). eigsh solves it in shift-invert with Weyl's mode count. numpy, scipy and shapely only: the GUI
-process imports this module (Stage 1 3.1)."""
+are Neumann (PMC), and via posts are Dirichlet. eigsh solves it in shift-invert with Weyl's mode count. numpy, scipy
+and shapely only: the GUI process imports this module (Stage 1 3.1)."""
 from __future__ import annotations
 
 import math
@@ -27,23 +27,25 @@ ISLAND_MM2 = 1.0  # a component of the link graph under this area is dropped: it
 SIGMA = -1e-3  # mm⁻², eigsh's shift, just under the static mode, so that K − σM is positive definite
 DC_HZ = 1e6  # gate E-E's "under 1 MHz": a mode below it is the static mode
 C_MM = c * 1e3  # mm/s
+PEACEMAN = 0.1985  # a lone node held at 0 is a post of radius PEACEMAN·h, Peaceman's well-block radius (r2 measured it)
 
 
 @dataclass(frozen=True)
 class Modes:
-    """A region's modes up to f_max, its static modes first (one per component)."""
+    """A region's modes up to f_max, its static modes first (one per component without a post)."""
     f: np.ndarray  # Hz, sorted, every eigenfrequency ≤ f_max; a static mode 0.0
     h: float  # the grid used, in mm
-    v: np.ndarray  # the free cells × f's modes
+    v: np.ndarray  # the free cells × f's modes; a post's held cells are not free
     xy: np.ndarray  # the free cells' centres, mm
 
 
 def solve(region: BaseGeometry, eps_r: float, f_max: float, posts: Sequence[tuple[XY, float]] = (),
           h: float = H) -> Modes:
     """The modes of `region` between two plates with `eps_r` between them, up to `f_max` (Hz), on a raster of `h` mm.
-    `posts`, a via's centre and barrel radius in mm, are accepted and not held yet. The static mode's eigenvalue is
-    round-off, about 1e-15 mm⁻² or about 1 kHz: every mode under DC_HZ is stored as 0.0, so that no golden pins BLAS
-    noise."""
+    `posts` are vias, each its centre and barrel radius r in mm, held at 0 (design 5.4, r2's option (c)): for r < h
+    the nearest cell, its links scaled by α = ln(1/PEACEMAN)/ln(h/r); for r ≥ h the cells whose centres lie within r,
+    or the nearest when none does. The static mode's eigenvalue is round-off, about 1e-15 mm⁻² or about 1 kHz: every
+    mode under DC_HZ is stored as 0.0, so that no golden pins BLAS noise."""
     x0, y0, x1, y1 = region.bounds
     nx, ny = math.ceil((x1 - x0) / h - 1e-9), math.ceil((y1 - y0) / h - 1e-9)
     i, j = np.divmod(np.arange(nx * ny), ny)  # cell i·ny + j is [x0 + i·h, x0 + (i+1)·h] × [y0 + j·h, …]
@@ -74,10 +76,28 @@ def solve(region: BaseGeometry, eps_r: float, f_max: float, posts: Sequence[tupl
     n = int(free.sum())
     if n == 0:
         return Modes(np.zeros(0), h, np.zeros((0, 0)), np.zeros((0, 2)))
+
+    centre = corner + h / 2
+    held = np.zeros(nx * ny, bool)  # the posts' cells, at 0
+    # ponytail: each post scans every cell, about 23 ms a post at 1.5 M cells; a ±r/h window if stitched boards drag
+    for xy, r in posts:
+        d2 = np.where(free, ((centre - xy) ** 2).sum(axis=1), np.inf)
+        disc = (d2 <= r * r) & (r >= h)  # r ≥ h: the cells whose centres lie within r, and no α
+        if not disc.any():
+            disc[np.argmin(d2)] = True  # the nearest cell, the first index on a tie
+        disc &= ~held  # a node already held takes nothing more
+        if r < h:  # alone the node is a post of radius PEACEMAN·h: α makes it r
+            ell[disc[p] | disc[q]] *= math.log(1 / PEACEMAN) / math.log(h / r)
+        held |= disc
+
     row = np.cumsum(free) - 1  # a free cell's row in K
     inside = free[p]  # a link's two cells share their component
     pa, qa, w = row[p[inside]], row[q[inside]], ell[inside] / h**2
     K = coo_matrix((np.r_[w, w, -w, -w], (np.r_[pa, qa, pa, qa], np.r_[pa, qa, qa, pa])), shape=(n, n)).tocsr()
+    out = ~held[free]  # the held nodes leave K and M: their links stay on their neighbours' diagonals
+    K = K[out][:, out]
+    free &= ~held
+    n = int(free.sum())
     M = diags(a[free], format="csr")
 
     kk = 2 * math.pi * f_max * math.sqrt(eps_r) / C_MM  # mm⁻¹
@@ -95,4 +115,4 @@ def solve(region: BaseGeometry, eps_r: float, f_max: float, posts: Sequence[tupl
     f = C_MM * np.sqrt(np.maximum(lam[order], 0)) / (2 * math.pi * math.sqrt(eps_r))
     f[f < DC_HZ] = 0.0
     up_to = f <= f_max
-    return Modes(f[up_to], h, v[:, order[up_to]], corner[free] + h / 2)
+    return Modes(f[up_to], h, v[:, order[up_to]], centre[free])

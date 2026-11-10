@@ -5,7 +5,8 @@ import numpy as np
 import pytest
 import shapely
 from scipy.constants import c
-from scipy.special import jnp_zeros
+from scipy.optimize import brentq
+from scipy.special import j0, j1, jnp_zeros, y0, y1
 from shapely.geometry import Point, Polygon, box
 
 from kicad_rf_studio.core.cavity import solve
@@ -63,3 +64,53 @@ def test_islands_under_1_mm2_are_dropped(side, dc):  # design 5.4 guards
 
 def test_two_solves_give_the_same_bits():  # ARPACK's start vector is fixed
     assert np.array_equal(solve(box(0, 0, 50, 30), EPS, 6e9).f, solve(box(0, 0, 50, 30), EPS, 6e9).f)
+
+
+def shorted_circle(r, big=25.0):  # Hz: the root of J0'(kR)·Y0(kr) − Y0'(kR)·J0(kr), k in 1/mm
+    def g(k):
+        return -j1(k * big) * y0(k * r) + y1(k * big) * j0(k * r)
+
+    k = brentq(g, 1e-6 / big, jnp_zeros(0, 1)[0] / big)  # the post mode lies under the first m = 0 Neumann root
+    return k * 1e3 * c / (2 * math.pi * math.sqrt(EPS))
+
+
+@pytest.mark.parametrize("r", [0.1, 0.15, 0.2])
+def test_e_e3_a_centre_post_matches_the_shorted_circle_and_leaves_no_dc_mode(r):  # design 5.12 E-E (3)
+    # (0.125, 0.125) is a cell centre: (0, 0) is a cell corner, four cells tied; 0.18 mm off the axis moves the
+    # post mode by O((k·0.18)²), far under the tolerance
+    f = solve(Point(0, 0).buffer(25.0, quad_segs=256), EPS, 2e9, posts=[((0.125, 0.125), r)]).f
+    assert f[0] > 1e6 and f[0] == pytest.approx(shorted_circle(r), rel=1e-2)
+
+
+@pytest.mark.parametrize("at", [(0.125, 0.125), (0.0, 0.0)])  # a cell centre; a cell corner
+@pytest.mark.parametrize("r", [0.25, 0.3, 0.5, 1.0])
+def test_a_post_of_r_at_or_over_h_is_its_discs_cells_within_7_percent(r, at):  # design 5.4: r >= h, the disc
+    f = solve(Point(0, 0).buffer(25.0, quad_segs=256), EPS, 2e9, posts=[(at, r)]).f
+    assert f[0] > 1e6 and abs(f[0] / shorted_circle(r) - 1) <= 0.07  # probed down to -6.2 %: I_LIMIT_CAVITY states it
+
+
+SHAPE = Polygon([(0, 0), (40, 0), (40, 10), (25, 10), (25, 30), (0, 30)])  # vertices on the grid's lines
+POSTS = [((5.1, 4.3), 0.15), ((30.2, 5.6), 0.15), ((12.7, 22.1), 0.2)]  # no centre tie
+
+
+@pytest.mark.parametrize("move", [lambda xy: xy * (-1, 1), lambda xy: xy[:, ::-1] * (-1, 1)])  # mirror; quarter turn
+def test_e_e4_the_mirror_and_the_quarter_turn_give_identical_lists(move):  # design 5.12 E-E (4), with posts
+    f = solve(SHAPE, EPS, 6e9, posts=POSTS).f
+    moved = [(tuple(move(np.array([xy]))[0]), r) for xy, r in POSTS]
+    g = solve(shapely.transform(SHAPE, move), EPS, 6e9, posts=moved).f
+    assert f[0] > 1e6  # the posts hold: no DC mode
+    assert len(g) == len(f) and np.allclose(g, f, rtol=1e-9, atol=0)
+
+
+H5 = 50 / 201  # x = 25 is a cell centre, so (1,0)'s nodal line holds the post
+
+
+def post_at(x):
+    return solve(box(0, 0, 50, 30), EPS, 3e9, posts=[((x, 15.0), 0.15)], h=H5).f
+
+
+def test_e_e5_the_post_on_the_nodal_line_mirrored_posts_and_the_post_mode_toward_the_antinode():  # E-E (5)
+    assert np.min(np.abs(post_at(25.0) / (UNIT / 0.05) - 1)) <= 1e-3  # f10 kept within 0.1 %
+    for x in (20.0, 12.5):
+        assert np.allclose(post_at(50 - x), post_at(x), rtol=1e-9, atol=0)
+    assert post_at(25.0)[0] > post_at(20.0)[0] > post_at(12.5)[0]  # strictly lower toward x = 0
