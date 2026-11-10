@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 import shapely
-from shapely.geometry import Point, box
+from shapely.geometry import MultiLineString, Point, box
 
 from kicad_rf_studio.core.geometry.region import coarse_cell
 from kicad_rf_studio.core.geometry.zstack import zstack
@@ -13,7 +13,7 @@ from kicad_rf_studio.core.kicad import classify, load_board
 from kicad_rf_studio.core.kicad.board import CopperArea, Footprint, Pad, Track, Via
 from kicad_rf_studio.core.kicad.tracer import antenna_kind
 from kicad_rf_studio.core.review.planes import Ref, plane_map, plane_nets
-from kicad_rf_studio.core.review.rules import exclusions, groups, r1, r2, r3, r4, return_share
+from kicad_rf_studio.core.review.rules import Group, exclusions, groups, r1, r2, r3, r4, return_share
 from kicad_rf_studio.core.review.tags import tag
 
 FIX = Path(__file__).parent / "fixtures"
@@ -316,3 +316,13 @@ def test_r2_takes_a_via_s_tracks_only_on_the_layers_it_spans():  # AR-1 (plan 1'
 
     b, c, pm, tags, gs = setup("qspi_clk", blind)
     assert [(f.at, f.measured["return_mm"]) for f in r2(b, c, pm, tags, L5)] == [((117.0, -99.79), 9.773)]
+
+
+def test_r3_places_a_part_whose_entry_grazes_the_band():  # AR-4 (plan 1's close)
+    b = load_board(FIX / "emc_review.kicad_pcb")  # its outline's top edge is y = -100
+    (track,) = [t for t in b.tracks if t.net == "CLK_EDGE"]  # 0.5 mm wide: w/2 = 0.25, so with k·h = 0.5 the band
+    # is 0.75; the first part lies 0.3 mm from the edge (d 0.05), the second touches the band at its start alone
+    entry = MultiLineString([[(110, -100.3), (120, -100.3)], [(130, -100.75), (130, -105)]])
+    g = Group("CLK_EDGE", "F.Cu", Ref("In1.Cu", "GND", 0.25, None), (track,), (entry,))
+    (f,) = r3(b, [g], 2.0)
+    assert (f.at, f.measured["d_mm"]) == ((115.0, -100.3), 0.05)
