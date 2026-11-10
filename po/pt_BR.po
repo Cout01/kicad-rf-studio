@@ -1588,6 +1588,54 @@ msgstr "Limite: as áreas de exclusão da placa não deixam geometria na importa
 msgid "Findings: {count}."
 msgstr "Achados: {count}."
 
+#. I_CAVITY
+#, python-brace-format
+msgid "Cavity {k}: {layers}, nets {nets}, at ({x_mm}, {y_mm}) mm: d {d_mm} mm, εr {eps_r}, area {area_mm2} mm², via posts {posts}."
+msgstr "Cavidade {k}: {layers}, redes {nets}, em ({x_mm}, {y_mm}) mm: d {d_mm} mm, εr {eps_r}, área {area_mm2} mm², postes de via {posts}."
+
+#. I_CAVITY_MODES
+#, python-brace-format
+msgid "Cavity {k}'s modes up to f_max, in MHz: {modes}."
+msgstr "Modos da cavidade {k} até f_max, em MHz: {modes}."
+
+#. I_CAVITY_NONE
+#, python-brace-format
+msgid "Cavity {k} has no mode up to f_max."
+msgstr "A cavidade {k} não tem modo até f_max."
+
+#. I_CAVITY_NEAR_CARRIER
+#, python-brace-format
+msgid "Cavity {k}'s mode at {f_mhz} MHz lies within ±5 % of {n} × the carrier, {of_mhz} MHz."
+msgstr "O modo da cavidade {k} em {f_mhz} MHz fica a até ±5 % de {n} × a portadora, {of_mhz} MHz."
+
+#. I_CAVITY_NEAR_CLOCK
+#, python-brace-format
+msgid "Cavity {k}'s mode at {f_mhz} MHz lies within ±5 % of {n} × the {of_mhz} MHz clock."
+msgstr "O modo da cavidade {k} em {f_mhz} MHz fica a até ±5 % de {n} × o clock de {of_mhz} MHz."
+
+#. I_CAVITY_CLOCK_STOP
+#, python-brace-format
+msgid "Marks near the {clock_mhz} MHz clock stop before its harmonic {n}: from there its harmonics lie closer than twice the ±5 % window, so every mode would be near one."
+msgstr "As marcas perto do clock de {clock_mhz} MHz param antes do seu harmônico {n}: dali em diante os harmônicos ficam mais próximos que o dobro da janela de ±5 %, então todo modo ficaria perto de um."
+
+#. W_CAVITY_COARSE
+#, python-brace-format
+msgid "Cavity {k} is too large for the 0.25 mm grid: it was solved at {h_mm} mm, so slots narrower than twice that are not resolved."
+msgstr "A cavidade {k} é grande demais para a grade de 0.25 mm: foi resolvida em {h_mm} mm, então fendas mais estreitas que o dobro disso não são resolvidas."
+
+#. W_CAVITY_SLOT
+#, python-brace-format
+msgid "Cavity {k} has a slot or gap narrower than 0.5 mm, which the grid may not see at all: a mode the slot brings can be missing from the list."
+msgstr "A cavidade {k} tem uma fenda ou folga mais estreita que 0.5 mm, que a grade pode não enxergar: um modo que a fenda traz pode faltar na lista."
+
+#. I_CAVITY_NO_PAIRS
+msgid "No two copper layers have pours facing each other over 20 mm² or more, so there is no plane-pair cavity to solve."
+msgstr "Nenhum par de camadas de cobre tem preenchimentos frente a frente em 20 mm² ou mais, então não há cavidade de par de planos para resolver."
+
+#. I_LIMIT_CAVITY
+msgid "Limits of the cavity modes: lossless, so the list says where a resonance may sit, never how high it rises; decoupling capacitors excluded; vias as posts only, snapped to the grid, and a post of drill 0.5 mm or more, a disc of held cells, puts the mode it makes up to about 6 % low; TM0 modes only; no fringing, so frequencies read high by about 2Δ/a, Δ about 0.4 to 0.5 d (about 0.3 % for d 0.2 mm on 50 mm, 2 % for 1 mm); εr uniform; the fills as saved; slots under 0.5 mm unresolved; cavities uncoupled across splits."
+msgstr "Limites dos modos de cavidade: sem perdas, então a lista diz onde uma ressonância pode ficar, nunca quão alta ela sobe; capacitores de desacoplamento excluídos; vias apenas como postes, ajustados à grade, e um poste de furo de 0.5 mm ou mais, um disco de células fixadas, deixa o modo que ele cria até cerca de 6 % baixo; apenas modos TM0; sem efeito de borda, então as frequências saem altas em cerca de 2Δ/a, Δ cerca de 0.4 a 0.5 d (cerca de 0.3 % para d 0.2 mm em 50 mm, 2 % para 1 mm); εr uniforme; os preenchimentos como foram salvos; fendas abaixo de 0.5 mm não resolvidas; cavidades sem acoplamento entre divisões."
+
 #. E_INTERNAL
 #, python-brace-format
 msgid "Internal error: {detail}. Please report it."

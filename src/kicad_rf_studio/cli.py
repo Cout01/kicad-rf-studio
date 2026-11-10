@@ -413,15 +413,16 @@ def review(board: str | Path, *, nets=(), project: str | None = None, f0=None, c
     E_NO_STACKUP and the stackup's refusals raise, before anything is written), the project at `project` when given
     (read_project), review_board, then review.csv, review.png and review.json written to `output`, the working folder
     when None (write, REVIEW_OUTPUTS, E_RESULTS_WRITE advising this command with -o). Then `emit(code, params)` for
-    each line, which prints it by default, in AR-12's order: the review's notes, the findings, I_REVIEW_FINDINGS,
-    I_OUTPUTS (a refused write's E_ line in its place, the other lines still printed) and REVIEW_LIMITS. 2 when a line
-    is an E_ line, else 0, with findings or without. Frequencies are in Hz and `stackup` names a stackup preset (None:
-    the board's own). It reads only: no model, no worker, nothing written outside the folder."""
+    each line, which prints it by default, in AR-12's order: the review's notes, the findings, the cavities' lines
+    (cavity_lines), I_REVIEW_FINDINGS, I_OUTPUTS (a refused write's E_ line in its place, the other lines still
+    printed) and REVIEW_LIMITS. 2 when a line is an E_ line, else 0, with findings or without. Frequencies are in Hz
+    and `stackup` names a stackup preset (None: the board's own). It reads only: no model, no worker, nothing written
+    outside the folder."""
     # imported here, as in `cost`: the CLI adds no work at import time
     from kicad_rf_studio import pipeline
     from kicad_rf_studio.core.post.outputs import write
     from kicad_rf_studio.core.project import read_project
-    from kicad_rf_studio.core.review import REVIEW_LIMITS, review_board
+    from kicad_rf_studio.core.review import REVIEW_LIMITS, cavity_lines, review_board
     from kicad_rf_studio.core.review.outputs import REVIEW_OUTPUTS, review_csv, review_json, review_png
 
     board = str(board)  # the path as given (design 5.3), whether the GUI passes a Path or not
@@ -441,7 +442,8 @@ def review(board: str | Path, *, nets=(), project: str | None = None, f0=None, c
     given += ["--edge-k", str(edge_k)] if edge_k is not None else []
     given += ["--edge-fence"] if edge_fence else []
     given += ["--stackup", stackup] if stackup is not None else []
-    lines = [*r.notes, *((f.code, f.params) for f in r.findings), ("I_REVIEW_FINDINGS", {"count": len(r.findings)})]
+    lines = [*r.notes, *((f.code, f.params) for f in r.findings), *cavity_lines(r),
+             ("I_REVIEW_FINDINGS", {"count": len(r.findings)})]
     try:
         write(folder, files, REVIEW_OUTPUTS,
               pipeline.command_line("kicad-rf-studio", "review", board, *given, "-o", str(folder)))

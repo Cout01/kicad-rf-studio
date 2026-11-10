@@ -6,11 +6,12 @@ import hashlib
 import json
 from collections import Counter
 from collections.abc import Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 import shapely
 from shapely.geometry.base import BaseGeometry
 
+from kicad_rf_studio.core.cavity import CLOCK_N_MAX, H, cavities, marks, narrow_slot, solve
 from kicad_rf_studio.core.geometry import chain_of
 from kicad_rf_studio.core.geometry.region import coarse_cell
 from kicad_rf_studio.core.geometry.zstack import Slab
@@ -32,14 +33,15 @@ REVIEW_LIMITS = ("I_LIMIT_REVIEW_KEEPOUT",)  # printed last and written at the e
 @dataclass
 class Review:
     """A board's review: its settings and notes as review.json writes them, its findings, numbered, and `cover`, the
-    union of every plane of the plane map, which review.png draws. The carrier and the clocks are kept for plan 2's
-    cavity marks; plan 1 writes them nowhere."""
+    union of every plane of the plane map, which review.png draws. `cavities` holds each plane pair's cavity as a
+    JSON-ready entry (design 5.4), its modes marked near the carrier's and the clocks' harmonics."""
     settings: dict
     notes: list[tuple[str, dict]]
     findings: list[Finding]
     cover: BaseGeometry
     carrier: float | None
     clocks: tuple[float, ...]
+    cavities: list[dict] = field(default_factory=list)
 
 
 def resolve_f_max(f_max: float | None, f0: float | None, project: dict | None) -> tuple[float, str, float | None]:
@@ -91,7 +93,10 @@ def review_board(board: Board, stackup: Stackup, zs: tuple[Slab, ...], classes: 
     with its id, its tag's source and the params n, x_mm and y_mm in KiCad's frame. The notes run in AR-12's order:
     the board's warnings, W_FILLS_AS_SAVED, I_REVIEW_RELATIVE, I_REVIEW_BASIS, one I_REVIEW_TAGS_ line per source in
     BC2's order (I_REVIEW_NO_TAGS with no tag), then W_REVIEW_NET_UNMATCHED per unmatched flag, W_EMC_LAYER_SKIPPED
-    per skipped layer and I_EMC_NO_REFERENCE for the nets with a track no plane lies under."""
+    per skipped layer and I_EMC_NO_REFERENCE for the nets with a track no plane lies under. Each cavity of `cavities`,
+    in its order, is solved up to f_max (design 5.4; AR-4): its entry holds its layers, nets, place in KiCad's frame,
+    d, εr, area, post count, the grid's h, narrow_slot, and its modes in Hz to 1 kHz, the static one 0.0, each with
+    its marks on the carrier and the clocks."""
     never, pm = plane_nets(board, classes), plane_map(board, classes, zs)
     f_hz, source, carrier = resolve_f_max(f_max, f0, project)
     eps_r = max(layer.epsilon_r for layer in stackup.layers if layer.kind == "dielectric")
@@ -104,6 +109,14 @@ def review_board(board: Board, stackup: Stackup, zs: tuple[Slab, ...], classes: 
         x, y = _kicad(f.at)
         f.n, f.id, f.tag_source = n, fid, tags.get(f.net)
         f.params.update(n=str(n), x_mm=f"{x:.3f}", y_mm=f"{y:.3f}")
+    entries = []
+    for c in cavities(board, zs):
+        m = solve(c.region, c.eps_r, f_hz, c.posts)
+        entries.append({"layers": list(c.layers), "nets": [list(side) for side in c.nets],
+                        "at_mm": [round(v, 3) + 0.0 for v in _kicad(c.region.representative_point().coords[0])],
+                        "d_mm": round(c.d, 3), "eps_r": round(c.eps_r, 3), "area_mm2": round(c.region.area, 2),
+                        "posts": len(c.posts), "h_mm": m.h, "narrow_slot": narrow_slot(c.region),
+                        "modes": [{"f_hz": round(f, -3), "marks": marks(f, carrier, clocks)} for f in m.f.tolist()]})
     by_source: dict[str, list[str]] = {}
     for net, s in tags.items():  # tags is sorted by net, so each line's nets are too
         by_source.setdefault(s.split(":")[0], []).append(net)
@@ -119,4 +132,35 @@ def review_board(board: Board, stackup: Stackup, zs: tuple[Slab, ...], classes: 
     settings = {"f_max_hz": f_hz, "f_max_source": source, "eps_r": eps_r, "l_mm": round(l_mm, 3), "edge_k": float(k),
                 "edge_fence": edge_fence, "tags": [{"net": net, "source": s} for net, s in tags.items()]}
     cover = shapely.union_all([g for by_net in pm.planes.values() for g in by_net.values()])
-    return Review(settings, notes, findings, cover, carrier, tuple(clocks))
+    return Review(settings, notes, findings, cover, carrier, tuple(clocks), entries)
+
+
+def cavity_lines(r: Review) -> list[tuple[str, dict]]:
+    """The lines that word `r.cavities` (design 5.4 outputs; AR-2, AR-3), params as text. Per cavity k from 1:
+    I_CAVITY, then I_CAVITY_MODES over its modes above the static one (I_CAVITY_NONE with none), an
+    I_CAVITY_NEAR_CARRIER or I_CAVITY_NEAR_CLOCK per mark, W_CAVITY_COARSE when its grid is coarser than H and
+    W_CAVITY_SLOT when it has a narrow slot. Then I_CAVITY_NO_PAIRS with no cavity, else I_CAVITY_CLOCK_STOP for each
+    clock whose harmonic CLOCK_N_MAX + 1 lies at or under f_max, the only place the clock's suppression acts; and
+    I_LIMIT_CAVITY last."""
+    lines = []
+    for i, c in enumerate(r.cavities, 1):
+        k, (x, y) = str(i), c["at_mm"]
+        lines.append(("I_CAVITY", {"k": k, "layers": "/".join(c["layers"]),
+                                   "nets": " / ".join(", ".join(side) for side in c["nets"]),
+                                   "x_mm": f"{x:.3f}", "y_mm": f"{y:.3f}", "d_mm": f"{c['d_mm']:.3f}",
+                                   "eps_r": f"{c['eps_r']:g}", "area_mm2": f"{c['area_mm2']:.1f}",
+                                   "posts": str(c["posts"])}))
+        modes = [m for m in c["modes"] if m["f_hz"] > 0]
+        lines.append(("I_CAVITY_MODES", {"k": k, "modes": ", ".join(f"{m['f_hz'] / 1e6:.1f}" for m in modes)})
+                     if modes else ("I_CAVITY_NONE", {"k": k}))
+        lines += [(f"I_CAVITY_NEAR_{mark['of'].upper()}", {"k": k, "f_mhz": f"{m['f_hz'] / 1e6:.1f}",
+                                                           "n": str(mark["n"]), "of_mhz": f"{mark['f_hz'] / 1e6:g}"})
+                  for m in modes for mark in m["marks"]]
+        if c["h_mm"] > H:
+            lines.append(("W_CAVITY_COARSE", {"k": k, "h_mm": f"{c['h_mm']:g}"}))
+        if c["narrow_slot"]:
+            lines.append(("W_CAVITY_SLOT", {"k": k}))
+    n = CLOCK_N_MAX + 1
+    stops = [("I_CAVITY_CLOCK_STOP", {"clock_mhz": f"{s / 1e6:g}", "n": str(n)})
+             for s in r.clocks if n * s <= r.settings["f_max_hz"]]
+    return [*lines, *(stops if r.cavities else [("I_CAVITY_NO_PAIRS", {})]), ("I_LIMIT_CAVITY", {})]

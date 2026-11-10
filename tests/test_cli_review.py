@@ -32,6 +32,14 @@ def test_review_writes_its_three_files_and_prints_its_lines_in_seconds(tmp_path,
     assert "openEMS" not in sys.modules and "CSXCAD" not in sys.modules
 
 
+def test_review_prints_its_cavity_lines_before_the_count(tmp_path, capsys):  # design 5.4
+    assert main(["review", str(EMC), "-o", str(tmp_path)]) == 0
+    out = capsys.readouterr().out.splitlines()
+    k = out.index(render("I_REVIEW_FINDINGS", count=2))
+    assert out[k - 1] == render("I_LIMIT_CAVITY")
+    assert any(line.startswith(render("I_CAVITY_MODES", k="1", modes="")[:12]) for line in out[:k])
+
+
 def test_review_writes_to_the_working_folder_and_a_held_file_is_an_e_line(tmp_path, monkeypatch):  # design 5.1
     monkeypatch.chdir(tmp_path)
     assert main(["review", str(EMC)]) == 0 and (tmp_path / "review.json").is_file()
@@ -87,7 +95,8 @@ def test_the_parser_holds_the_designs_synopsis_and_no_run_dir():  # design 5.1; 
 
 
 def test_the_cli_with_the_review_imports_neither_openems_nor_matplotlib():  # Stage 1 3.1; ruling 5
-    probe = ("import sys, kicad_rf_studio.cli, kicad_rf_studio.core.review, kicad_rf_studio.core.review.outputs; "
+    probe = ("import sys, kicad_rf_studio.cli, kicad_rf_studio.core.review, kicad_rf_studio.core.review.outputs, "
+             "kicad_rf_studio.core.cavity; "
              "print(sorted(m for m in ('openEMS', 'CSXCAD', 'matplotlib') if m in sys.modules))")
     out = subprocess.run([sys.executable, "-I", "-c", probe], capture_output=True, text=True)
     assert out.stdout.strip() == "[]", out.stderr

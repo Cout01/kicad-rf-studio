@@ -8,7 +8,8 @@ import pytest
 
 from kicad_rf_studio.core.geometry.zstack import zstack
 from kicad_rf_studio.core.kicad import classify, load_board
-from kicad_rf_studio.core.review import finding_ids, resolve_f_max, review_board
+from kicad_rf_studio.core.messages import render
+from kicad_rf_studio.core.review import cavity_lines, finding_ids, resolve_f_max, review_board
 
 FIX = Path(__file__).parent / "fixtures"
 CLKS = ("CLK_EDGE", "CLK_GAP", "CLK_LOOK", "CLK_MID")
@@ -80,3 +81,46 @@ def test_the_notes_name_unmatched_flags_skipped_layers_and_nets_with_no_plane():
     r = run("usb2_hs", bare)
     assert ("I_REVIEW_TAGS_WALK", {"nets": "MCU_D+, MCU_D-"}) in r.notes
     assert r.notes[-1] == ("I_EMC_NO_REFERENCE", {"nets": "MCU_D+, MCU_D-, USB_D+, USB_D-"})
+
+
+def test_the_review_of_emc_review_lists_its_cavities_with_their_marks():  # design 5.3, 5.4
+    plain = run().cavities
+    main = next(c for c in plain if c["nets"] == [["GND"], ["+3V3"]])
+    assert (main["layers"], main["posts"], main["d_mm"], main["eps_r"], main["h_mm"]) == (
+        ["In1.Cu", "In2.Cu"], 0, 1.04, 4.5, 0.25)
+    assert main["modes"][0] == {"f_hz": 0.0, "marks": []} and main["modes"][-1]["f_hz"] <= 5e9
+    first = main["modes"][1]["f_hz"]
+    carried = next(c for c in run(f0=first / 2 * 1.02).cavities if c["nets"] == main["nets"])
+    assert {"of": "carrier", "f_hz": first / 2 * 1.02, "n": 2} in carried["modes"][1]["marks"]
+
+
+def test_cavity_lines_word_each_cavity_its_modes_marks_warnings_clocks_and_the_limit():  # design 5.4 outputs
+    r = run(clocks=(40e6,))
+    lines = cavity_lines(r)
+    k1 = r.cavities[0]
+    assert lines[0] == ("I_CAVITY", {"k": "1", "layers": "/".join(k1["layers"]),
+                                     "nets": " / ".join(", ".join(side) for side in k1["nets"]),
+                                     "x_mm": f"{k1['at_mm'][0]:.3f}", "y_mm": f"{k1['at_mm'][1]:.3f}",
+                                     "d_mm": f"{k1['d_mm']:.3f}", "eps_r": f"{k1['eps_r']:g}",
+                                     "area_mm2": f"{k1['area_mm2']:.1f}", "posts": str(k1["posts"])})
+    assert lines[1] == ("I_CAVITY_MODES", {"k": "1", "modes": ", ".join(f"{m['f_hz'] / 1e6:.1f}"
+                                                                          for m in k1["modes"] if m["f_hz"] > 0)})
+    assert lines[-2:] == [("I_CAVITY_CLOCK_STOP", {"clock_mhz": "40", "n": "11"}), ("I_LIMIT_CAVITY", {})]
+    assert cavity_lines(replace(r, cavities=[])) == [("I_CAVITY_NO_PAIRS", {}), ("I_LIMIT_CAVITY", {})]
+    assert all(code != "I_CAVITY_CLOCK_STOP" for code, _ in cavity_lines(run(clocks=(1e9,))))  # 11 GHz > f_max
+
+
+def test_cavity_lines_word_marks_a_coarse_grid_a_slot_and_a_cavity_with_no_mode():  # design 5.4 outputs; AR-3
+    r = run()
+    marked = {**r.cavities[0], "h_mm": 0.5, "narrow_slot": True,
+              "modes": [{"f_hz": 0.0, "marks": []},
+                        {"f_hz": 1830e6, "marks": [{"of": "carrier", "f_hz": 915e6, "n": 2},
+                                                   {"of": "clock", "f_hz": 300e6, "n": 6}]}]}
+    lines = cavity_lines(replace(r, cavities=[marked, {**marked, "h_mm": 0.25, "narrow_slot": False, "modes": []}]))
+    assert [line for line in lines if line[0] != "I_CAVITY"] == [
+        ("I_CAVITY_MODES", {"k": "1", "modes": "1830.0"}),
+        ("I_CAVITY_NEAR_CARRIER", {"k": "1", "f_mhz": "1830.0", "n": "2", "of_mhz": "915"}),
+        ("I_CAVITY_NEAR_CLOCK", {"k": "1", "f_mhz": "1830.0", "n": "6", "of_mhz": "300"}),
+        ("W_CAVITY_COARSE", {"k": "1", "h_mm": "0.5"}), ("W_CAVITY_SLOT", {"k": "1"}),
+        ("I_CAVITY_NONE", {"k": "2"}), ("I_LIMIT_CAVITY", {})]
+    assert all(render(code, **params) for code, params in lines)  # each template finds its params
