@@ -175,9 +175,14 @@ def predict(s: dict, mcs: float) -> dict:
 
 def _run(s: dict) -> dict:
     """The step's work: run_model's job phase on the spec `s` at PRESET, port 1, plus "peaks_hz": peaks of Re z_in on
-    F_GRID from the job's whole waves.npz."""
+    F_GRID from the job's whole waves.npz; [] when the job kept none (a crash: unclassified) or kept its non-finite
+    samples (diverged), on which s_matrix raises, so that the step is still recorded and measure judges it
+    incomplete."""
     run = p0.run_model(p0.model_of(s), PRESET, STEP, [1])
-    with np.load(p0.run_path(run["run_dir"]) / run["jobs"][0]["job"] / "waves.npz") as w:
+    (done,) = run["jobs"]
+    if not done["waves"] or done["verdict"] == "diverged":
+        return {**run, "peaks_hz": []}
+    with np.load(p0.run_path(run["run_dir"]) / done["waves"]) as w:
         z = z_in(w["t_u"], w["u"][0], w["t_i"], w["i"][0], F_GRID)
     return {**run, "peaks_hz": peaks(F_GRID, z.real)}
 

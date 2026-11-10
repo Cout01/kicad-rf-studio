@@ -108,3 +108,15 @@ def test_the_ee_step_runs_through_the_harness_with_the_fake_worker(p0_out, monke
     assert d["verdict"] in ("pass", "fail", "incomplete")
     assert "/" not in result["run"]["run_dir"] and "\\" not in result["run"]["run_dir"]  # a name, never a path
     assert (p0_out / "ee" / "ee.md").read_text(encoding="utf-8").startswith("## EE-1")
+
+
+@pytest.mark.parametrize("kind, verdict", [("crash", "unclassified"), ("nan", "diverged")])
+def test_a_job_with_no_waves_or_non_finite_ones_is_recorded_incomplete(p0_out, monkeypatch, kind, verdict):
+    # measure's KEPT rule, never a step lost to a rerun: a crash exits 7 with no waves.npz, and a divergence keeps
+    # its NaN in waves.npz, on which s_matrix raises E_S_SINGULAR
+    monkeypatch.setattr(p0, "command_lines", lambda: [])
+    monkeypatch.setenv("KRS_FAKE", kind)
+    assert ee.main(["--out", str(p0_out)]) == 0
+    result = json.loads((p0_out / "ee" / "ee.json").read_text(encoding="utf-8"))
+    assert (result["run"]["verdict"], result["run"]["peaks_hz"]) == (verdict, [])
+    assert (result["decision"]["verdict"], result["decision"]["offset_pct"]) == ("incomplete", None)
