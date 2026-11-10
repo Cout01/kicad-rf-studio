@@ -546,6 +546,7 @@ CATALOG: dict[str, str] = {
     "G_REFILLING": "KiCad is refilling the zones and saving the board…",
     "G_REFILLED": "KiCad refilled the zones and saved {board}.",
     "E_KICAD_OTHER_BOARD": "KiCad has {open} open, not {board}, so nothing was refilled or saved. Open {board} in KiCad and press the kicad-rf-studio button again.",
+    "E_KICAD_SELECT_OTHER_BOARD": "KiCad has {open} open, not {board}, so nothing was selected. Open {board} in KiCad and press the kicad-rf-studio button again.",
     # T_: a word a message takes as a parameter, rendered with it (pt-BR design 5.1); no T_ template has a field
     "T_FILE_NOT_FOUND": "file not found",
     "T_NOT_A_FILE": "not a file",

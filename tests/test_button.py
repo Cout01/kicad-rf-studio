@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """The KiCad button (Stage 2 design 5.5, 5.8): the helper KiCad runs, its handoff and its quiet contract, a run
-outliving KiCad's job, the plugin that install-kicad-plugin writes, and refill and save. KiCad is
-tests/fake_kicad.py."""
+outliving KiCad's job, the plugin that install-kicad-plugin writes, refill and save, and select (Stage 5 design 5.5).
+KiCad is tests/fake_kicad.py."""
 import contextlib
 import ctypes
 import json
@@ -26,6 +26,7 @@ from test_gui_control import recorder, until
 import release_check
 
 LPF = FIX / "lpf915.kicad_pcb"
+EMC = FIX / "emc_review.kicad_pcb"
 KIID = {p.name: p.uuid for p in load_board(LPF).all_pads()}  # J1.2 is two pads: never selected here
 HELPER_CODES = ("E_KICAD_UNREACHABLE", "E_KICAD_BUSY", "E_KICAD_UNSUPPORTED", "E_KICAD_VERSION", "E_KICAD_NO_BOARD",
                 "E_HANDOFF_WRITE", "E_GUI_START", "E_INTERNAL")
@@ -374,3 +375,23 @@ def test_refill_refills_then_saves_only_the_board_the_button_sent(kicad, tmp_pat
     with pytest.raises(KrsError) as e:
         button.refill(k.url, "another KiCad's", board)
     assert e.value.code == "E_KICAD_UNREACHABLE"
+
+
+def test_select_clears_then_adds_objects_carrying_only_their_kiid_and_counts_kiCads_answer(kicad):  # 5.5; A13
+    k = kicad(EMC, known={"a", "b"})  # kipy 0.8's add_to_selection reads only .id: this pins the duck typing
+    assert button.select(k.url, k.token, EMC, ["a", "b", "c"]) == 2  # KiCad skips an unknown KIID
+    assert k.seen == ["GetOpenDocuments", "ClearSelection", "AddToSelection"] and k.chosen == ["a", "b"]
+    assert k.tokens == [k.token] * 3
+
+
+def test_select_refuses_another_board_and_sends_nothing_else(kicad, tmp_path):  # design 5.5 Select
+    other = kicad(tmp_path / "other.kicad_pcb")
+    with pytest.raises(KrsError) as e:
+        button.select(other.url, other.token, EMC, ["a"])
+    assert (e.value.code, e.value.params) == ("E_KICAD_SELECT_OTHER_BOARD", {
+        "board": str(EMC), "open": str(tmp_path / "other.kicad_pcb")})
+    assert other.seen == ["GetOpenDocuments"]
+    busy = kicad(EMC, errors={"AddToSelection": ["AS_BUSY"] * 9})
+    with pytest.raises(KrsError) as e:
+        button.select(busy.url, busy.token, EMC, ["a"])
+    assert e.value.code == "E_KICAD_BUSY"

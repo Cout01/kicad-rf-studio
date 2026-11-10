@@ -22,18 +22,21 @@ class FakeKiCad:
     its folder and file name) with the pads `pads` (KIIDs), the footprints `footprints` (references) and the tracks
     `tracks`, arcs `arcs` and vias `vias` (KIIDs) selected (GetSelection, which answers only the types the request
     asks for); GetVersion answers `version`; RefillZones and Ping answer Empty; SaveDocument writes `save` into
-    `board` when given, as KiCad's save writes the edits it holds, and answers Empty. `errors` maps a request's type
-    name to what it answers first, one per request: an AS_ status name, or "SLOW", its usual answer SLOW_S late, as
-    KiCad answers once its main thread is free of a zone fill or a large save. `seen` lists the requests' type names
-    in order, and `tokens` the tokens they carried."""
+    `board` when given, as KiCad's save writes the edits it holds, and answers Empty. ClearSelection empties `chosen`
+    and answers Empty; AddToSelection appends to `chosen` each KIID it carries that `known` holds (every one when
+    `known` is None), as KiCad skips a KIID its board does not hold, and answers `chosen`, as tracks. `errors` maps a
+    request's type name to what it answers first, one per request: an AS_ status name, or "SLOW", its usual answer
+    SLOW_S late, as KiCad answers once its main thread is free of a zone fill or a large save. `seen` lists the
+    requests' type names in order, and `tokens` the tokens they carried."""
 
     def __init__(self, url: str, board: Path, *, pads=(), footprints=(), tracks=(), arcs=(), vias=(),
-                 version=(9, 0, 7), token="K", errors: dict | None = None, save: bytes | None = None):
+                 version=(9, 0, 7), token="K", errors: dict | None = None, save: bytes | None = None,
+                 known: set[str] | None = None):
         self.url, self.board, self.pads, self.footprints = url, Path(board), list(pads), list(footprints)
         self.tracks, self.arcs, self.vias = list(tracks), list(arcs), list(vias)
-        self.version, self.token, self.save = version, token, save
+        self.version, self.token, self.save, self.known = version, token, save, known
         self.errors = {kind: list(names) for kind, names in (errors or {}).items()}
-        self.seen, self.tokens = [], []
+        self.seen, self.tokens, self.chosen = [], [], []
         self.socket = pynng.Rep0(listen=url)
         self.thread = threading.Thread(target=self.serve, daemon=True)
         self.thread.start()
@@ -93,9 +96,17 @@ class FakeKiCad:
                         item.id.value = name  # the rest by KIID
                     items.append(pack_any(item))
             return editor_commands_pb2.SelectionResponse(items=items)
+        if kind == "AddToSelection":
+            added = editor_commands_pb2.AddToSelection()
+            request.message.Unpack(added)
+            self.chosen += [kiid.value for kiid in added.items if self.known is None or kiid.value in self.known]
+            return editor_commands_pb2.SelectionResponse(items=[
+                pack_any(board_types_pb2.Track(id=base_types_pb2.KIID(value=v))) for v in self.chosen])
+        if kind == "ClearSelection":
+            self.chosen.clear()
         if kind == "SaveDocument" and self.save is not None:
             self.board.write_bytes(self.save)
-        return Empty()  # Ping, RefillZones and SaveDocument
+        return Empty()  # Ping, RefillZones, SaveDocument and ClearSelection
 
     def close(self) -> None:
         self.socket.close()

@@ -1,8 +1,9 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """The KiCad toolbar button (Stage 2 design 5.5): the helper KiCad's exec action runs (main), which reads the board and
-the selection through kicad-python and hands them to the GUI; the GUI's Refill zones and save in KiCad (refill); and
-its installer (install), which writes the exec plugin into KiCad's plugin folders. Qt-free; kicad-python is imported
-only inside the functions that call KiCad, so importing this module loads none."""
+the selection through kicad-python and hands them to the GUI; the GUI's Refill zones and save in KiCad (refill) and
+Select in KiCad (select, Stage 5 design 5.5); and its installer (install), which writes the exec plugin into KiCad's
+plugin folders. Qt-free; kicad-python is imported only inside the functions that call KiCad, so importing this module
+loads none."""
 import contextlib
 import ctypes
 import json
@@ -16,7 +17,9 @@ import sysconfig
 import time
 import warnings
 import zlib
+from collections.abc import Sequence
 from pathlib import Path
+from types import SimpleNamespace
 
 from kicad_rf_studio import runs
 from kicad_rf_studio.core.messages import KrsError, detail, english, reason, render
@@ -158,6 +161,31 @@ def refill(socket: str, token: str, board: Path) -> Path:
     time.sleep(BUSY_WAIT_S)  # KiCad only queues the fill
     _call(pcb.save, time.monotonic() + FILL_WAIT_S)
     return board
+
+
+def select(socket: str, token: str, board: Path, kiids: Sequence[str]) -> int:
+    """Select in KiCad (Stage 5 design 5.5): in the KiCad at `socket` with `token`, the selection cleared, then the
+    items of `board` whose KIIDs are `kiids` added to it; returns the count KiCad reports selected. KiCad skips a KIID
+    its board does not hold, so a count under the KIIDs sent means the board it has open holds edits not yet saved.
+    The board KiCad's PCB editor has open is read first, as refill reads it, and a board other than `board` is
+    E_KICAD_SELECT_OTHER_BOARD, with nothing sent further. It never zooms: run_action is documented as an unstable
+    API. Raises the errors of _call and _board_path too."""
+    # ponytail: kipy 0.8's add_to_selection reads only each item's .id, so objects carrying only a KIID stand for the
+    # board's items; should a kipy bump move the method, the fallback is the public getters filtered by id (design 5.5)
+    from kipy.proto.common.types.base_types_pb2 import KIID
+    kicad = _kicad(socket, token)
+    until = time.monotonic() + BUSY_S
+    try:
+        pcb = _call(kicad.get_board, until)
+    except KrsError as e:
+        if e.code == "E_KICAD_UNSUPPORTED":
+            raise KrsError("E_KICAD_NO_BOARD") from None
+        raise
+    if (path := _board_path(pcb)) != board:
+        raise KrsError("E_KICAD_SELECT_OTHER_BOARD", board=str(board), open=str(path))
+    _call(pcb.clear_selection, until)
+    items = [SimpleNamespace(id=KIID(value=k)) for k in dict.fromkeys(kiids)]  # each KIID once, in order
+    return len(_call(lambda: pcb.add_to_selection(items), until))
 
 
 def main() -> int:

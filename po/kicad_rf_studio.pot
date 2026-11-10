@@ -2496,6 +2496,11 @@ msgstr ""
 msgid "KiCad has {open} open, not {board}, so nothing was refilled or saved. Open {board} in KiCad and press the kicad-rf-studio button again."
 msgstr ""
 
+#. E_KICAD_SELECT_OTHER_BOARD
+#, python-brace-format
+msgid "KiCad has {open} open, not {board}, so nothing was selected. Open {board} in KiCad and press the kicad-rf-studio button again."
+msgstr ""
+
 #. T_FILE_NOT_FOUND
 msgid "file not found"
 msgstr ""

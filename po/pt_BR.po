@@ -2506,6 +2506,11 @@ msgstr "O KiCad preencheu as zonas novamente e salvou {board}."
 msgid "KiCad has {open} open, not {board}, so nothing was refilled or saved. Open {board} in KiCad and press the kicad-rf-studio button again."
 msgstr "O KiCad está com {open} aberto, não {board}, então nada foi preenchido novamente nem salvo. Abra {board} no KiCad e pressione o botão do kicad-rf-studio de novo."
 
+#. E_KICAD_SELECT_OTHER_BOARD
+#, python-brace-format
+msgid "KiCad has {open} open, not {board}, so nothing was selected. Open {board} in KiCad and press the kicad-rf-studio button again."
+msgstr "O KiCad está com {open} aberto, não {board}, então nada foi selecionado. Abra {board} no KiCad e pressione o botão do kicad-rf-studio de novo."
+
 #. T_FILE_NOT_FOUND
 msgid "file not found"
 msgstr "arquivo não encontrado"
