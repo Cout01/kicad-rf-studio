@@ -1,0 +1,128 @@
+{
+  "source": "tools/ee.py --references, before any E-E run: cavity.solve on the outline buffered by Hammerstad's delta and on the plain one",
+  "delta_mm": 0.3740028971511347,
+  "tol": 0.02,
+  "prominence_db": 3.0,
+  "min_peak": 0.01,
+  "nodal": 0.1,
+  "rule": "each peak takes its nearest non-nodal mode; a mode two peaks claim keeps the nearer, the other peak is recorded unmatched",
+  "modes": [
+    {
+      "mn": [
+        1,
+        0
+      ],
+      "f_hz": 1408124494.971651,
+      "plain_hz": 1429189772.8312228,
+      "nodal": false
+    },
+    {
+      "mn": [
+        0,
+        1
+      ],
+      "f_hz": 2323997225.785771,
+      "plain_hz": 2381939419.1677785,
+      "nodal": false
+    },
+    {
+      "mn": [
+        1,
+        1
+      ],
+      "f_hz": 2717310747.55864,
+      "plain_hz": 2777808273.324368,
+      "nodal": false
+    },
+    {
+      "mn": [
+        2,
+        0
+      ],
+      "f_hz": 2816164658.9292555,
+      "plain_hz": 2858291386.50446,
+      "nodal": false
+    },
+    {
+      "mn": [
+        2,
+        1
+      ],
+      "f_hz": 3651266422.990897,
+      "plain_hz": 3720680723.5705695,
+      "nodal": false
+    },
+    {
+      "mn": [
+        3,
+        0
+      ],
+      "f_hz": 4224036165.9199767,
+      "plain_hz": 4287216687.3013897,
+      "nodal": false
+    },
+    {
+      "mn": [
+        0,
+        2
+      ],
+      "f_hz": 4647615288.979707,
+      "plain_hz": 4763470705.277916,
+      "nodal": false
+    },
+    {
+      "mn": [
+        3,
+        1
+      ],
+      "f_hz": 4821145573.041586,
+      "plain_hz": 4904473704.7372875,
+      "nodal": false
+    },
+    {
+      "mn": [
+        1,
+        2
+      ],
+      "f_hz": 4856247776.596213,
+      "plain_hz": 4973252111.727796,
+      "nodal": false
+    },
+    {
+      "mn": [
+        2,
+        2
+      ],
+      "f_hz": 5434253514.5646925,
+      "plain_hz": 5555221220.636065,
+      "nodal": false
+    },
+    {
+      "mn": [
+        4,
+        0
+      ],
+      "f_hz": 5631654700.108554,
+      "plain_hz": 5715877532.378495,
+      "nodal": false
+    },
+    {
+      "mn": [
+        4,
+        1
+      ],
+      "f_hz": 6092331061.811512,
+      "plain_hz": 6192325198.318738,
+      "nodal": false
+    },
+    {
+      "mn": [
+        3,
+        2
+      ],
+      "f_hz": 6280351057.493234,
+      "plain_hz": 6408656652.05393,
+      "nodal": false
+    }
+  ]
+}
