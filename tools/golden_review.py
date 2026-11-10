@@ -20,7 +20,8 @@ CASES = {"emc_review": [], "usb2_hs": [], "usb2_hs_gap": [], "qspi_clk": [],
 def golden_bytes(name: str) -> bytes:
     """The review.json `review` writes into the folder `name` on the fixture `name`, its board copied into the working
     folder (_board), with CASES[name]'s options. Run it in an empty working folder."""
-    assert cli.main(["review", _board(name), *CASES[name], "-o", name]) == 0
+    code = cli.main(["review", _board(name), *CASES[name], "-o", name])  # outside the assert, which python -O drops
+    assert code == 0, code
     return Path(name, "review.json").read_bytes()
 
 

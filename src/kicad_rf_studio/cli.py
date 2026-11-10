@@ -434,7 +434,7 @@ def review(board: str | Path, *, nets=(), project: str | None = None, f0=None, c
     files = {"review.csv": review_csv(r), "review.png": review_png(r, loaded),
              "review.json": review_json(r, board, board_hash(board))}
     given = [x for net in nets for x in ("--net", net)]  # each given option again, in the parser's order
-    given += ["--project", project] if project is not None else []
+    given += ["--project", str(project)] if project is not None else []
     given += ["--f0", str(f0)] if f0 is not None else []
     given += [x for clock in clocks for x in ("--clock", str(clock))]
     given += ["--f-max", str(f_max)] if f_max is not None else []

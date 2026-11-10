@@ -66,6 +66,12 @@ def test_review_tags_a_projects_chain_takes_its_carrier_and_the_flags_win(tmp_pa
     assert (settings(tmp_path / "c")["f_max_hz"], settings(tmp_path / "c")["edge_k"]) == (3e9, 3.0)
 
 
+def test_review_takes_a_path_project_as_the_gui_passes_it(tmp_path):  # design 5.3 (plan 1's close)
+    cli.new(LPF, "U1.1", "J1.1", 915e6, output=tmp_path / "p")
+    assert cli.review(LPF, project=tmp_path / "p", output=tmp_path / "a", emit=lambda code, params: None) == 0
+    assert (tmp_path / "a" / "review.json").is_file()
+
+
 def test_a_board_with_no_stackup_is_refused_and_a_preset_reviews_it(mini_board_file, tmp_path, capsys):  # design 5.1
     board = mini_board_file()
     assert main(["review", str(board), "-o", str(tmp_path / "o")]) == 2
