@@ -1,0 +1,115 @@
+{
+  "schema": 1,
+  "board": {
+    "path": "lpf915.kicad_pcb",
+    "sha256": "769370093f86a10a67ef08c09f1c76bbc2b193b38c0073d743a3cf4b7656dd36"
+  },
+  "settings": {
+    "f_max_hz": 4575000000.0,
+    "f_max_source": "carrier",
+    "eps_r": 4.5,
+    "l_mm": 1.545,
+    "edge_k": 2.0,
+    "edge_fence": false,
+    "tags": [
+      {
+        "net": "RF_A",
+        "source": "flag"
+      },
+      {
+        "net": "RF_B",
+        "source": "flag"
+      },
+      {
+        "net": "RF_C",
+        "source": "flag"
+      },
+      {
+        "net": "RF_OUT",
+        "source": "flag"
+      },
+      {
+        "net": "RF_SMA",
+        "source": "flag"
+      }
+    ]
+  },
+  "notes": [
+    {
+      "code": "W_FILLS_AS_SAVED",
+      "params": {}
+    },
+    {
+      "code": "I_REVIEW_RELATIVE",
+      "params": {}
+    },
+    {
+      "code": "I_REVIEW_BASIS",
+      "params": {
+        "f_max_ghz": "4.575",
+        "source": "T_FMAX_CARRIER",
+        "eps_r": "4.5",
+        "l_mm": "1.545",
+        "edge_k": "2"
+      }
+    },
+    {
+      "code": "I_REVIEW_TAGS_FLAG",
+      "params": {
+        "nets": "RF_A, RF_B, RF_C, RF_OUT, RF_SMA"
+      }
+    },
+    {
+      "code": "I_LIMIT_REVIEW_KEEPOUT",
+      "params": {}
+    }
+  ],
+  "findings": [
+    {
+      "id": "R4-f2d8f589",
+      "rule": "R4",
+      "code": "W_EMC_FENCE_PITCH",
+      "params": {
+        "fence": "SH1",
+        "gap_mm": "47.200",
+        "lambdas": "1.53",
+        "l_mm": "1.545",
+        "n": "1",
+        "x_mm": "117.325",
+        "y_mm": "89.250"
+      },
+      "net": null,
+      "layer": "F.Cu",
+      "ref_layer": null,
+      "ref_net": null,
+      "h_mm": null,
+      "at_mm": [
+        117.325,
+        89.25
+      ],
+      "bbox_mm": [
+        95.825,
+        89.25,
+        117.325,
+        110.75
+      ],
+      "measured": {
+        "gap_mm": 47.2,
+        "lambdas": 1.53
+      },
+      "limit": 1.545,
+      "limit_source": "lambda/20 at f_max: Bahl; Harper; Archambeault",
+      "tag_source": null,
+      "kiids": {
+        "tracks": [],
+        "vias": [],
+        "zones": [],
+        "pads": [],
+        "footprints": [
+          "18d6aeaf-cf38-4b74-aed5-807a2fbd3b6d"
+        ]
+      }
+    }
+  ],
+  "cavities": []
+}

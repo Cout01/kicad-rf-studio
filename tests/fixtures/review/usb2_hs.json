@@ -1,0 +1,71 @@
+{
+  "schema": 1,
+  "board": {
+    "path": "usb2_hs.kicad_pcb",
+    "sha256": "d8da1a61c66c56c6b601e30ba8fdcb1407cbdd8afc2d18cc4b31ae0848dd18d5"
+  },
+  "settings": {
+    "f_max_hz": 5000000000.0,
+    "f_max_source": "default",
+    "eps_r": 4.5,
+    "l_mm": 1.413,
+    "edge_k": 2.0,
+    "edge_fence": false,
+    "tags": [
+      {
+        "net": "MCU_D+",
+        "source": "walk"
+      },
+      {
+        "net": "MCU_D-",
+        "source": "walk"
+      },
+      {
+        "net": "USB_D+",
+        "source": "pattern:USB"
+      },
+      {
+        "net": "USB_D-",
+        "source": "pattern:USB"
+      }
+    ]
+  },
+  "notes": [
+    {
+      "code": "W_FILLS_AS_SAVED",
+      "params": {}
+    },
+    {
+      "code": "I_REVIEW_RELATIVE",
+      "params": {}
+    },
+    {
+      "code": "I_REVIEW_BASIS",
+      "params": {
+        "f_max_ghz": "5",
+        "source": "T_FMAX_DEFAULT",
+        "eps_r": "4.5",
+        "l_mm": "1.413",
+        "edge_k": "2"
+      }
+    },
+    {
+      "code": "I_REVIEW_TAGS_PATTERN",
+      "params": {
+        "nets": "USB_D+, USB_D-"
+      }
+    },
+    {
+      "code": "I_REVIEW_TAGS_WALK",
+      "params": {
+        "nets": "MCU_D+, MCU_D-"
+      }
+    },
+    {
+      "code": "I_LIMIT_REVIEW_KEEPOUT",
+      "params": {}
+    }
+  ],
+  "findings": [],
+  "cavities": []
+}

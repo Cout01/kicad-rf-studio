@@ -1,0 +1,178 @@
+{
+  "schema": 1,
+  "board": {
+    "path": "usb2_hs_gap.kicad_pcb",
+    "sha256": "ad66d6205ee440afde760d82b8ab47723fe42be2c57b4e6273c40df6cb5e7f64"
+  },
+  "settings": {
+    "f_max_hz": 5000000000.0,
+    "f_max_source": "default",
+    "eps_r": 4.5,
+    "l_mm": 1.413,
+    "edge_k": 2.0,
+    "edge_fence": false,
+    "tags": [
+      {
+        "net": "MCU_D+",
+        "source": "walk"
+      },
+      {
+        "net": "MCU_D-",
+        "source": "walk"
+      },
+      {
+        "net": "USB_D+",
+        "source": "pattern:USB"
+      },
+      {
+        "net": "USB_D-",
+        "source": "pattern:USB"
+      }
+    ]
+  },
+  "notes": [
+    {
+      "code": "W_FILLS_AS_SAVED",
+      "params": {}
+    },
+    {
+      "code": "I_REVIEW_RELATIVE",
+      "params": {}
+    },
+    {
+      "code": "I_REVIEW_BASIS",
+      "params": {
+        "f_max_ghz": "5",
+        "source": "T_FMAX_DEFAULT",
+        "eps_r": "4.5",
+        "l_mm": "1.413",
+        "edge_k": "2"
+      }
+    },
+    {
+      "code": "I_REVIEW_TAGS_PATTERN",
+      "params": {
+        "nets": "USB_D+, USB_D-"
+      }
+    },
+    {
+      "code": "I_REVIEW_TAGS_WALK",
+      "params": {
+        "nets": "MCU_D+, MCU_D-"
+      }
+    },
+    {
+      "code": "I_LIMIT_REVIEW_KEEPOUT",
+      "params": {}
+    }
+  ],
+  "findings": [
+    {
+      "id": "R1-4ee93cad",
+      "rule": "R1",
+      "code": "W_EMC_GAP_CROSSING",
+      "params": {
+        "net": "USB_D-",
+        "layer": "F.Cu",
+        "run_mm": "1.000",
+        "ref_net": "GND",
+        "ref_layer": "In1.Cu",
+        "h_mm": "0.200",
+        "extent_mm": "6.000",
+        "l_mm": "1.413",
+        "n": "1",
+        "x_mm": "116.500",
+        "y_mm": "99.725"
+      },
+      "net": "USB_D-",
+      "layer": "F.Cu",
+      "ref_layer": "In1.Cu",
+      "ref_net": "GND",
+      "h_mm": 0.2,
+      "at_mm": [
+        116.5,
+        99.725
+      ],
+      "bbox_mm": [
+        116.0,
+        99.725,
+        117.0,
+        99.725
+      ],
+      "measured": {
+        "run_mm": 1.0,
+        "extent_mm": 6.0,
+        "l_mm": 1.413
+      },
+      "limit": 1.0,
+      "limit_source": "LearnEMC: splitting or gapping a ground plane is almost always a bad idea; Ansys SIwave's Net Crossing Split; HyperLynx DRC's signal traces crossing plane splits; a run of 1 mm or more, measured on three public boards",
+      "tag_source": "pattern:USB",
+      "kiids": {
+        "tracks": [
+          "deed666e-e490-44ff-b84b-98059c703c0e"
+        ],
+        "vias": [],
+        "zones": [
+          "3a8a61fb-0140-421c-91d2-8a60d41e0f5b",
+          "f80df893-4555-4bd0-a5c8-1af2d4155362"
+        ],
+        "pads": [],
+        "footprints": []
+      }
+    },
+    {
+      "id": "R1-8b514811",
+      "rule": "R1",
+      "code": "W_EMC_GAP_CROSSING",
+      "params": {
+        "net": "USB_D+",
+        "layer": "F.Cu",
+        "run_mm": "1.000",
+        "ref_net": "GND",
+        "ref_layer": "In1.Cu",
+        "h_mm": "0.200",
+        "extent_mm": "6.000",
+        "l_mm": "1.413",
+        "n": "2",
+        "x_mm": "116.500",
+        "y_mm": "100.275"
+      },
+      "net": "USB_D+",
+      "layer": "F.Cu",
+      "ref_layer": "In1.Cu",
+      "ref_net": "GND",
+      "h_mm": 0.2,
+      "at_mm": [
+        116.5,
+        100.275
+      ],
+      "bbox_mm": [
+        116.0,
+        100.275,
+        117.0,
+        100.275
+      ],
+      "measured": {
+        "run_mm": 1.0,
+        "extent_mm": 6.0,
+        "l_mm": 1.413
+      },
+      "limit": 1.0,
+      "limit_source": "LearnEMC: splitting or gapping a ground plane is almost always a bad idea; Ansys SIwave's Net Crossing Split; HyperLynx DRC's signal traces crossing plane splits; a run of 1 mm or more, measured on three public boards",
+      "tag_source": "pattern:USB",
+      "kiids": {
+        "tracks": [
+          "521b02b7-778f-4eda-9ad1-afa689679509"
+        ],
+        "vias": [],
+        "zones": [
+          "3a8a61fb-0140-421c-91d2-8a60d41e0f5b",
+          "f80df893-4555-4bd0-a5c8-1af2d4155362"
+        ],
+        "pads": [],
+        "footprints": []
+      }
+    }
+  ],
+  "cavities": []
+}

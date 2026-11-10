@@ -1,0 +1,164 @@
+{
+  "schema": 1,
+  "board": {
+    "path": "qspi_clk.kicad_pcb",
+    "sha256": "0c70d5e17e1d71635d24d19c112f8cfe1f8af9963aa1cff700d025762d4e2c20"
+  },
+  "settings": {
+    "f_max_hz": 5000000000.0,
+    "f_max_source": "default",
+    "eps_r": 4.5,
+    "l_mm": 1.413,
+    "edge_k": 2.0,
+    "edge_fence": false,
+    "tags": [
+      {
+        "net": "FLASH_CLK",
+        "source": "pattern:CLK"
+      },
+      {
+        "net": "QSPI_CLK",
+        "source": "pattern:CLK"
+      }
+    ]
+  },
+  "notes": [
+    {
+      "code": "W_FILLS_AS_SAVED",
+      "params": {}
+    },
+    {
+      "code": "I_REVIEW_RELATIVE",
+      "params": {}
+    },
+    {
+      "code": "I_REVIEW_BASIS",
+      "params": {
+        "f_max_ghz": "5",
+        "source": "T_FMAX_DEFAULT",
+        "eps_r": "4.5",
+        "l_mm": "1.413",
+        "edge_k": "2"
+      }
+    },
+    {
+      "code": "I_REVIEW_TAGS_PATTERN",
+      "params": {
+        "nets": "FLASH_CLK, QSPI_CLK"
+      }
+    },
+    {
+      "code": "I_LIMIT_REVIEW_KEEPOUT",
+      "params": {}
+    }
+  ],
+  "findings": [
+    {
+      "id": "R2-33ae24fc",
+      "rule": "R2",
+      "code": "I_EMC_REF_CHANGE",
+      "params": {
+        "net": "FLASH_CLK",
+        "from_net": "GND",
+        "from_layer": "In1.Cu",
+        "to_net": "+3V3",
+        "to_layer": "In2.Cu",
+        "path": "T_EMC_RETURN_CAP",
+        "nearest": "2.262 mm",
+        "limit_mm": "2.000",
+        "n": "1",
+        "x_mm": "107.000",
+        "y_mm": "99.790"
+      },
+      "net": "FLASH_CLK",
+      "layer": "F.Cu",
+      "ref_layer": "In1.Cu",
+      "ref_net": "GND",
+      "h_mm": 0.2,
+      "at_mm": [
+        107.0,
+        99.79
+      ],
+      "bbox_mm": [
+        106.7,
+        99.49,
+        107.3,
+        100.09
+      ],
+      "measured": {
+        "return_mm": 2.262
+      },
+      "limit": 2.0,
+      "limit_source": "TI SLLA656: stitching vias within 200 mils, closer is better; Siemens: manage reference plane changes",
+      "tag_source": "pattern:CLK",
+      "kiids": {
+        "tracks": [
+          "6d247666-63c8-4d2b-a07a-1c3e73898ba8",
+          "e9158935-29d8-46f6-a362-ea0b9a9b3aaa"
+        ],
+        "vias": [
+          "336e89c9-93a2-4ca1-b823-08b105eccc8e"
+        ],
+        "zones": [],
+        "pads": [],
+        "footprints": [
+          "9b1100ee-9048-4cf2-a84e-34c134e1fb8a"
+        ]
+      }
+    },
+    {
+      "id": "R2-97d6fa7e",
+      "rule": "R2",
+      "code": "I_EMC_REF_CHANGE",
+      "params": {
+        "net": "FLASH_CLK",
+        "from_net": "GND",
+        "from_layer": "In1.Cu",
+        "to_net": "+3V3",
+        "to_layer": "In2.Cu",
+        "path": "T_EMC_RETURN_CAP",
+        "nearest": "9.773 mm",
+        "limit_mm": "2.000",
+        "n": "2",
+        "x_mm": "117.000",
+        "y_mm": "99.790"
+      },
+      "net": "FLASH_CLK",
+      "layer": "F.Cu",
+      "ref_layer": "In1.Cu",
+      "ref_net": "GND",
+      "h_mm": 0.2,
+      "at_mm": [
+        117.0,
+        99.79
+      ],
+      "bbox_mm": [
+        116.7,
+        99.49,
+        117.3,
+        100.09
+      ],
+      "measured": {
+        "return_mm": 9.773
+      },
+      "limit": 2.0,
+      "limit_source": "TI SLLA656: stitching vias within 200 mils, closer is better; Siemens: manage reference plane changes",
+      "tag_source": "pattern:CLK",
+      "kiids": {
+        "tracks": [
+          "6d247666-63c8-4d2b-a07a-1c3e73898ba8",
+          "f46b4aa1-dda2-4e68-a47a-5657879a9548"
+        ],
+        "vias": [
+          "83deeba8-1c7d-4a6f-8d59-6d2e1b043a07"
+        ],
+        "zones": [],
+        "pads": [],
+        "footprints": [
+          "9b1100ee-9048-4cf2-a84e-34c134e1fb8a"
+        ]
+      }
+    }
+  ],
+  "cavities": []
+}

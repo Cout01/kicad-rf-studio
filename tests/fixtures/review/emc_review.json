@@ -1,0 +1,170 @@
+{
+  "schema": 1,
+  "board": {
+    "path": "emc_review.kicad_pcb",
+    "sha256": "dc40414e72c0abd1b2bf1903da85d218dd464e9555871d77a0cce0e76f9b8f60"
+  },
+  "settings": {
+    "f_max_hz": 5000000000.0,
+    "f_max_source": "default",
+    "eps_r": 4.5,
+    "l_mm": 1.413,
+    "edge_k": 2.0,
+    "edge_fence": false,
+    "tags": [
+      {
+        "net": "CLK_EDGE",
+        "source": "pattern:CLK"
+      },
+      {
+        "net": "CLK_GAP",
+        "source": "pattern:CLK"
+      },
+      {
+        "net": "CLK_LOOK",
+        "source": "pattern:CLK"
+      },
+      {
+        "net": "CLK_MID",
+        "source": "pattern:CLK"
+      }
+    ]
+  },
+  "notes": [
+    {
+      "code": "W_FILLS_AS_SAVED",
+      "params": {}
+    },
+    {
+      "code": "I_REVIEW_RELATIVE",
+      "params": {}
+    },
+    {
+      "code": "I_REVIEW_BASIS",
+      "params": {
+        "f_max_ghz": "5",
+        "source": "T_FMAX_DEFAULT",
+        "eps_r": "4.5",
+        "l_mm": "1.413",
+        "edge_k": "2"
+      }
+    },
+    {
+      "code": "I_REVIEW_TAGS_PATTERN",
+      "params": {
+        "nets": "CLK_EDGE, CLK_GAP, CLK_LOOK, CLK_MID"
+      }
+    },
+    {
+      "code": "I_LIMIT_REVIEW_KEEPOUT",
+      "params": {}
+    }
+  ],
+  "findings": [
+    {
+      "id": "R1-e61f6075",
+      "rule": "R1",
+      "code": "W_EMC_GAP_CROSSING",
+      "params": {
+        "net": "CLK_GAP",
+        "layer": "F.Cu",
+        "run_mm": "6.000",
+        "ref_net": "GND",
+        "ref_layer": "In1.Cu",
+        "h_mm": "0.200",
+        "extent_mm": "10.000",
+        "l_mm": "1.413",
+        "n": "1",
+        "x_mm": "113.000",
+        "y_mm": "110.000"
+      },
+      "net": "CLK_GAP",
+      "layer": "F.Cu",
+      "ref_layer": "In1.Cu",
+      "ref_net": "GND",
+      "h_mm": 0.2,
+      "at_mm": [
+        113.0,
+        110.0
+      ],
+      "bbox_mm": [
+        110.0,
+        110.0,
+        116.0,
+        110.0
+      ],
+      "measured": {
+        "run_mm": 6.0,
+        "extent_mm": 10.0,
+        "l_mm": 1.413
+      },
+      "limit": 1.0,
+      "limit_source": "LearnEMC: splitting or gapping a ground plane is almost always a bad idea; Ansys SIwave's Net Crossing Split; HyperLynx DRC's signal traces crossing plane splits; a run of 1 mm or more, measured on three public boards",
+      "tag_source": "pattern:CLK",
+      "kiids": {
+        "tracks": [
+          "1fca0715-6d4a-47fa-9712-01432f892e84"
+        ],
+        "vias": [],
+        "zones": [
+          "91986577-5451-4060-bbab-b8a3bcd1a744",
+          "c277d72f-6510-4afd-b661-52e758979062"
+        ],
+        "pads": [],
+        "footprints": []
+      }
+    },
+    {
+      "id": "R3-c4521549",
+      "rule": "R3",
+      "code": "W_EMC_EDGE",
+      "params": {
+        "net": "CLK_EDGE",
+        "layer": "F.Cu",
+        "d_mm": "0.350",
+        "k": "2",
+        "kh_mm": "0.400",
+        "h_mm": "0.200",
+        "ref_layer": "In1.Cu",
+        "share_pct": "16.5",
+        "n": "2",
+        "x_mm": "113.000",
+        "y_mm": "100.600"
+      },
+      "net": "CLK_EDGE",
+      "layer": "F.Cu",
+      "ref_layer": "In1.Cu",
+      "ref_net": "GND",
+      "h_mm": 0.2,
+      "at_mm": [
+        113.0,
+        100.6
+      ],
+      "bbox_mm": [
+        102.75,
+        100.35,
+        123.25,
+        100.85
+      ],
+      "measured": {
+        "d_mm": 0.35,
+        "h_mm": 0.2,
+        "k": 2.0,
+        "share_pct": 16.5
+      },
+      "limit": 0.4,
+      "limit_source": "LearnEMC: route critical nets at least 2X from the board edge",
+      "tag_source": "pattern:CLK",
+      "kiids": {
+        "tracks": [
+          "998ca62d-f0fe-4374-865e-347c644a808d"
+        ],
+        "vias": [],
+        "zones": [],
+        "pads": [],
+        "footprints": []
+      }
+    }
+  ],
+  "cavities": []
+}
