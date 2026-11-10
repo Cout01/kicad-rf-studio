@@ -1,5 +1,7 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 import math
+from dataclasses import replace
+from pathlib import Path
 
 import numpy as np
 import pytest
@@ -10,7 +12,10 @@ from scipy.special import j0, j1, jnp_zeros, y0, y1
 from shapely.geometry import Point, Polygon, box
 
 from kicad_rf_studio.core import cavity
-from kicad_rf_studio.core.cavity import marks, narrow_slot, solve
+from kicad_rf_studio.core.cavity import cavities, marks, narrow_slot, solve
+from kicad_rf_studio.core.geometry.zstack import zstack
+from kicad_rf_studio.core.kicad import load_board
+from kicad_rf_studio.core.kicad.board import CopperArea
 
 EPS = 4.4
 UNIT = c / (2 * math.sqrt(EPS))  # Hz·m: f_mn = UNIT·√((m/a)² + (n/b)²)
@@ -142,3 +147,61 @@ def test_marks_hold_the_window_the_fundamental_a_clocks_tenth_harmonic_and_never
     assert marks(440e6, None, (40e6,)) == []  # n 11: adjacent windows overlap
     assert marks(0.0, 915e6, (40e6,)) == []
     assert marks(1.83e9, 915e6, (61e6,)) == [{"of": "carrier", "f_hz": 915e6, "n": 2}]  # 61 MHz: n 30, suppressed
+
+
+FIX = Path(__file__).parent / "fixtures"
+
+
+def board(name):
+    return load_board(FIX / f"{name}.kicad_pcb")
+
+
+def pairs(b):
+    return cavities(b, zstack(b.stackup, b.copper_layers))
+
+
+def test_usb2_hs_holds_one_gnd_3v3_cavity_between_in1_and_in2_with_no_post():  # design 5.4; r2 §3's table
+    (cav,) = pairs(board("usb2_hs"))
+    assert (cav.layers, cav.nets, cav.posts) == (("In1.Cu", "In2.Cu"), (("GND",), ("+3V3",)), ())
+    assert (cav.d, cav.eps_r) == (pytest.approx(1.04), pytest.approx(4.5))
+    assert cav.region.area == pytest.approx(413.5, rel=0.02)
+
+
+def test_lpf915s_stitched_gnd_pair_gets_a_post_at_each_via_and_plated_pad_joining_its_layers():  # design 5.4
+    cav = max((c for c in pairs(board("lpf915")) if c.layers == ("F.Cu", "B.Cu")), key=lambda c: c.region.area)
+    assert cav.nets == (("GND",), ("GND",)) and len(cav.posts) == 36
+    assert cav.region.area == pytest.approx(582.7, rel=0.02)
+
+
+def test_emc_reviews_in1_in2_pair_is_a_postless_gnd_3v3_cavity_and_a_gnd_rim_with_one_post():  # ruling 3
+    b = board("emc_review")
+    inner = [c for c in pairs(b) if c.layers == ("In1.Cu", "In2.Cu")]
+    assert [c.nets for c in inner] == [(("GND",), ("+3V3",)), (("GND",), ("GND",))]  # nothing else: no third region
+    main, rim = inner
+    assert main.posts == () and main.region.area == pytest.approx(1697.5, rel=0.02)  # fence vias pass antipads
+    assert not main.region.contains(Point(137, -137))  # SH1's ring: In2.Cu bare inside it (plan 1's carried minor)
+    tie = next(v for v in b.vias if v.at == (109.0, -119.0))  # the island's tie (make_fixtures.emc_review)
+    assert rim.posts == ((tie.at, tie.drill / 2),) and rim.region.area == pytest.approx(80.0, rel=0.02)
+
+
+def test_a_pair_faces_only_where_no_layer_between_has_copper_and_takes_the_series_eps():  # design 5.4
+    b = board("usb2_hs")
+    full = [CopperArea(layer, "GND", b.outline, "zone", layer) for layer in ("F.Cu", "B.Cu")]
+    found = pairs(replace(b, areas=b.areas + full))
+    assert [c.layers for c in found] == [("F.Cu", "In1.Cu"), ("F.Cu", "B.Cu"), ("In1.Cu", "In2.Cu"),
+                                         ("In2.Cu", "B.Cu")]
+    between = shapely.union_all([a.polygon for a in b.areas if a.layer in ("In1.Cu", "In2.Cu")])
+    ring = b.outline.area - between.intersection(b.outline).area  # F faces B only where In1 and In2 stop short
+    assert found[1].region.area == pytest.approx(ring, rel=0.02)  # about 51 mm²
+    (outer,) = pairs(replace(b, areas=full))  # In1 and In2 bare: F.Cu faces B.Cu through both dielectrics
+    slabs = [s for s in zstack(b.stackup, b.copper_layers) if s.kind == "dielectric"]
+    d = sum(s.z1 - s.z0 for s in slabs)
+    assert outer.d == pytest.approx(d) and outer.eps_r == pytest.approx(d / sum((s.z1 - s.z0) / s.eps_r for s in slabs))
+
+
+@pytest.mark.parametrize(("side", "count"), [(4.0, 0), (5.0, 1)])  # 16 and 25 mm²
+def test_cavities_under_20_mm2_are_dropped(side, count):  # design 5.4
+    b = board("usb2_hs")
+    x, y = b.outline.centroid.coords[0]
+    patch = CopperArea("F.Cu", "GND", box(x, y, x + side, y + side), "zone", "p")
+    assert sum(c.layers == ("F.Cu", "In1.Cu") for c in pairs(replace(b, areas=b.areas + [patch]))) == count

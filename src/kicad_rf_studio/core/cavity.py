@@ -3,13 +3,15 @@
 cells on a raster anchored at the outline's minimum corner, which keeps mirror and rotation symmetry exact. Cell area
 fractions are the mass and face open fractions the conductances; faces leaving the region carry no flux, so the edges
 are Neumann (PMC), and via posts are Dirichlet. eigsh solves it in shift-invert with Weyl's mode count. Its guards
-coarsen the raster and name the slots it may miss, and marks names the harmonics a mode lies near. numpy, scipy and
-shapely only: the GUI process imports this module (Stage 1 3.1)."""
+coarsen the raster and name the slots it may miss, marks names the harmonics a mode lies near, and cavities finds the
+plane pairs with their posts. numpy, scipy and shapely only: the GUI process imports this module (Stage 1 3.1)."""
 from __future__ import annotations
 
 import math
+from collections import defaultdict
 from collections.abc import Sequence
 from dataclasses import dataclass
+from itertools import combinations
 
 import numpy as np
 import shapely
@@ -18,8 +20,12 @@ from scipy.linalg import eigh
 from scipy.sparse import coo_matrix, diags
 from scipy.sparse.csgraph import connected_components
 from scipy.sparse.linalg import eigsh
+from shapely.geometry import MultiPolygon, Point, Polygon
 from shapely.geometry.base import BaseGeometry
 
+from kicad_rf_studio.core.geometry.copper import clean
+from kicad_rf_studio.core.geometry.zstack import Slab
+from kicad_rf_studio.core.kicad.board import Board
 from kicad_rf_studio.core.kicad.shapes import XY
 
 H = 0.25  # mm, the raster's cell: slots of 2·H or more resolve (r2)
@@ -35,6 +41,7 @@ SLOT_MIN = 0.5  # mm: a slot or gap narrower than this is named (W_CAVITY_SLOT)
 SLOT_AREA = 0.01  # mm²: a part that narrow_slot's closing fills counts from this area up
 WINDOW = 0.05  # a mark's ±5 % window around a source's harmonic
 CLOCK_N_MAX = 10  # a clock's last harmonic marked: past it, its harmonics lie closer than twice the ±5 % window
+CAVITY_MM2 = 20.0  # mm²: a facing area under this is no cavity (design 5.4)
 
 
 @dataclass(frozen=True)
@@ -153,3 +160,61 @@ def marks(f: float, carrier: float | None, clocks: Sequence[float]) -> list[dict
         if f > 0 and abs(f - n * s) <= WINDOW * n * s and (of == "carrier" or n <= CLOCK_N_MAX):
             out.append({"of": of, "f_hz": s, "n": n})
     return out
+
+
+@dataclass(frozen=True)
+class Cavity:
+    """A plane pair's cavity (design 5.4; r2 3), in mm."""
+    layers: tuple[str, str]  # the top layer first
+    nets: tuple[tuple[str, ...], tuple[str, ...]]  # each side's nets facing it, sorted: one unless two pours touch
+    region: Polygon  # in the importer's frame
+    d: float  # the dielectric between the two layers
+    eps_r: float  # its series value through the slabs
+    posts: tuple[tuple[XY, float], ...]  # each via or plated pad's centre and drill radius
+
+
+def cavities(board: Board, zs: tuple[Slab, ...]) -> list[Cavity]:
+    """The cavities of `board`, whose stackup is `zs` (design 5.4; r2 3; ruling 3). The pours are its zone fills of any
+    net, netless included, cleaned per (layer, net) to the outline, or to the fills' bounding box with no outline;
+    copper graphics and tracks are not pours. Layers i < j face each other where both have a pour and no layer between
+    them has one: each part of that area of CAVITY_MM2 or more is a cavity. d is the dielectric slabs between them and
+    εr their series value. A side's nets are those whose pour meets the cavity over more than 1e-6 mm². A via whose
+    span covers both layers, or a plated pad on both, is a post when its copper meets its own net's pour on each layer
+    and the cavity, so a GND/power cavity has none. Sorted by the layers, then by area descending, then by the
+    representative point."""
+    fills = [a for a in board.areas if a.source == "zone"]
+    crop = board.outline if board.outline is not None else MultiPolygon([a.polygon for a in fills]).envelope
+    groups = defaultdict(list)
+    for a in fills:
+        groups[a.layer, a.net].append(a.polygon)
+    pours: dict[str, dict[str, MultiPolygon]] = defaultdict(dict)  # layer → net → its pour
+    for (layer, net), polygons in groups.items():
+        pours[layer][net] = g = clean(MultiPolygon(polygons), crop)
+        shapely.prepare(g)  # the post tests meet it once per via and pad
+    layers, empty = board.copper_layers, Polygon()
+    on = {layer: shapely.union_all(list(pours[layer].values())) for layer in layers}
+    cu = {s.copper: s for s in zs if s.kind == "copper"}
+    found = []
+    for i, j in combinations(range(len(layers)), 2):
+        top, bottom = layers[i], layers[j]
+        facing = on[top].intersection(on[bottom]).difference(shapely.union_all([on[x] for x in layers[i + 1:j]]))
+        slabs = [s for s in zs if s.kind == "dielectric" and cu[bottom].z1 <= s.z0 and s.z1 <= cu[top].z0]
+        d = sum(s.z1 - s.z0 for s in slabs)
+        eps_r = d / sum((s.z1 - s.z0) / s.eps_r for s in slabs)
+        candidates = []  # (centre, drill, net, copper): a via whose span covers both layers, a plated pad on both
+        for v in board.vias:
+            span = [layers.index(x) for x in v.layers]
+            if min(span) <= i and j <= max(span):
+                candidates.append((v.at, v.drill, v.net, Point(v.at).buffer(v.diameter / 2)))
+        candidates += [(p.at, p.drill, p.net, p.polygon) for p in board.all_pads()
+                       if p.kind == "thru_hole" and p.drill > 0 and {top, bottom} <= set(p.layers)]
+        for region in sorted((r for r in shapely.get_parts(facing) if r.area >= CAVITY_MM2),
+                             key=lambda r: (-r.area, *r.representative_point().coords[0])):
+            shapely.prepare(region)
+            nets = tuple(tuple(sorted(n for n, g in pours[side].items() if g.intersection(region).area > 1e-6))
+                         for side in (top, bottom))
+            posts = tuple((at, drill / 2) for at, drill, net, copper in candidates
+                          if all(g.intersects(copper) for g in
+                                 (region, pours[top].get(net, empty), pours[bottom].get(net, empty))))
+            found.append(Cavity((top, bottom), nets, region, d, eps_r, posts))
+    return found
