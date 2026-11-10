@@ -24,9 +24,11 @@ DENY = frozenset({"CTRL", "NSS", "DIO", "BUSY", "RST", "IRQ", "EN", "CS"})
 
 def family(net: str) -> str | None:
     """The first family whose expression fullmatches the net's own name, `_base(net)`; None when none does, or when
-    the name's last "_" word, upper-cased with its trailing digits stripped, is in DENY (SPI_CS, CLK_EN)."""
+    the name's last word, its last run of letters and digits (none: the empty word), upper-cased with its trailing
+    digits stripped, is in DENY: SPI_CS and CLK_EN, and KiCad's spellings of such a pin, Net-(U1-SPI_CS), ~{SPI_CS},
+    SPI_~{CS} and CLK_EN#."""
     name = _base(net)
-    if name.rsplit("_", 1)[-1].upper().rstrip("0123456789") in DENY:
+    if ([""] + re.findall(r"[0-9A-Za-z]+", name))[-1].upper().rstrip("0123456789") in DENY:
         return None
     return next((f for f, expr in FAMILIES.items() if expr.fullmatch(name)), None)
 

@@ -19,6 +19,14 @@ def test_the_name_patterns_tag_a8s_families_past_the_deny_list():  # design 5.1,
         "I2S_BCLK": "CLK", "SPI_MOSI": "SPI", "/MCU/SCK": "SCK", "CLK_EN": None, "SW1": "SW", "spi_cs2": None}
 
 
+def test_the_deny_list_reads_kicads_spellings_of_a_pin():  # design 5.1 (plan 1's close): the last word of letters
+    # and digits, so KiCad's Net-(...) and overbar spellings of a denied pin are not tagged
+    denied = ["Net-(U1-SPI_CS)", "Net-(U1-CLK_EN)", "~{SPI_CS}", "SPI_~{CS}", "CLK_EN#", "SPI_CS"]
+    assert {n: family(n) for n in denied} == dict.fromkeys(denied)
+    assert {n: family(n) for n in ("USB_D+", "USB_D-", "CLK_GEN", "/MCU/CLK_P")} == {
+        "USB_D+": "USB", "USB_D-": "USB", "CLK_GEN": "CLK", "/MCU/CLK_P": "CLK"}
+
+
 def usb(edit=lambda b: None):
     b = load_board(FIX / "usb2_hs.kicad_pcb")
     edit(b)
