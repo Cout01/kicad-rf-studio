@@ -9,7 +9,8 @@ from scipy.optimize import brentq
 from scipy.special import j0, j1, jnp_zeros, y0, y1
 from shapely.geometry import Point, Polygon, box
 
-from kicad_rf_studio.core.cavity import solve
+from kicad_rf_studio.core import cavity
+from kicad_rf_studio.core.cavity import marks, narrow_slot, solve
 
 EPS = 4.4
 UNIT = c / (2 * math.sqrt(EPS))  # Hz·m: f_mn = UNIT·√((m/a)² + (n/b)²)
@@ -114,3 +115,30 @@ def test_e_e5_the_post_on_the_nodal_line_mirrored_posts_and_the_post_mode_toward
     for x in (20.0, 12.5):
         assert np.allclose(post_at(50 - x), post_at(x), rtol=1e-9, atol=0)
     assert post_at(25.0)[0] > post_at(20.0)[0] > post_at(12.5)[0]  # strictly lower toward x = 0
+
+
+def test_past_cells_max_or_mem_max_the_grid_coarsens(monkeypatch):  # design 5.4: past about 1.5 M cells
+    monkeypatch.setattr(cavity, "CELLS_MAX", 10_000)  # 50 × 30 mm: 24 000 cells at 0.25 mm, 6 000 at 0.5 mm
+    assert solve(box(0, 0, 50, 30), EPS, 3e9).h == 0.5 and solve(box(0, 0, 20, 20), EPS, 3e9).h == 0.25
+    monkeypatch.setattr(cavity, "CELLS_MAX", 1_500_000)
+    monkeypatch.setattr(cavity, "MEM_MAX", 2e6)  # 24 000 cells × (2k + 1) Lanczos vectors × 8 B; k about 13
+    assert solve(box(0, 0, 50, 30), EPS, 3e9).h == 0.5
+
+
+def test_a_slot_under_0_5_mm_is_named_and_holes_and_corners_are_not():  # design 5.4 guards
+    plane = box(0, 0, 50, 30)
+    assert narrow_slot(plane.difference(box(20, 10, 30, 10.3)))
+    assert not narrow_slot(plane.difference(box(20, 10, 30, 10.6)))
+    assert not narrow_slot(plane.difference(box(5, 5, 7, 7)).difference(Point(20, 20).buffer(0.4)))
+    assert not narrow_slot(Polygon([(0, 0), (50, 0), (50, 25), (25, 25), (25, 50), (0, 50)]))
+
+
+def test_marks_hold_the_window_the_fundamental_a_clocks_tenth_harmonic_and_never_dc():  # design 5.4
+    assert marks(1.83e9 * 1.04, 915e6, ()) == [{"of": "carrier", "f_hz": 915e6, "n": 2}]
+    assert marks(1.83e9 * 1.06, 915e6, ()) == []
+    assert marks(950e6, 915e6, ()) == [{"of": "carrier", "f_hz": 915e6, "n": 1}]
+    assert marks(30e9, 1e9, ()) == [{"of": "carrier", "f_hz": 1e9, "n": 30}]  # the carrier is never suppressed
+    assert marks(400e6, None, (40e6,)) == [{"of": "clock", "f_hz": 40e6, "n": 10}]
+    assert marks(440e6, None, (40e6,)) == []  # n 11: adjacent windows overlap
+    assert marks(0.0, 915e6, (40e6,)) == []
+    assert marks(1.83e9, 915e6, (61e6,)) == [{"of": "carrier", "f_hz": 915e6, "n": 2}]  # 61 MHz: n 30, suppressed

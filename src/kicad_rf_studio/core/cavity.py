@@ -2,8 +2,9 @@
 """The plane pairs' cavity modes (Stage 5 design 5.4; r2 2), in mm: a cell-centred finite-volume Laplacian with cut
 cells on a raster anchored at the outline's minimum corner, which keeps mirror and rotation symmetry exact. Cell area
 fractions are the mass and face open fractions the conductances; faces leaving the region carry no flux, so the edges
-are Neumann (PMC), and via posts are Dirichlet. eigsh solves it in shift-invert with Weyl's mode count. numpy, scipy
-and shapely only: the GUI process imports this module (Stage 1 3.1)."""
+are Neumann (PMC), and via posts are Dirichlet. eigsh solves it in shift-invert with Weyl's mode count. Its guards
+coarsen the raster and name the slots it may miss, and marks names the harmonics a mode lies near. numpy, scipy and
+shapely only: the GUI process imports this module (Stage 1 3.1)."""
 from __future__ import annotations
 
 import math
@@ -28,6 +29,12 @@ SIGMA = -1e-3  # mm⁻², eigsh's shift, just under the static mode, so that K �
 DC_HZ = 1e6  # gate E-E's "under 1 MHz": a mode below it is the static mode
 C_MM = c * 1e3  # mm/s
 PEACEMAN = 0.1985  # a lone node held at 0 is a post of radius PEACEMAN·h, Peaceman's well-block radius (r2 measured it)
+CELLS_MAX = 1_500_000  # the raster's cells: past them h doubles (design 5.4 guards)
+MEM_MAX = 1e9  # bytes of ARPACK's 2k + 1 Lanczos vectors: past them h doubles too (AR-8)
+SLOT_MIN = 0.5  # mm: a slot or gap narrower than this is named (W_CAVITY_SLOT)
+SLOT_AREA = 0.01  # mm²: a part that narrow_slot's closing fills counts from this area up
+WINDOW = 0.05  # a mark's ±5 % window around a source's harmonic
+CLOCK_N_MAX = 10  # a clock's last harmonic marked: past it, its harmonics lie closer than twice the ±5 % window
 
 
 @dataclass(frozen=True)
@@ -45,9 +52,19 @@ def solve(region: BaseGeometry, eps_r: float, f_max: float, posts: Sequence[tupl
     `posts` are vias, each its centre and barrel radius r in mm, held at 0 (design 5.4, r2's option (c)): for r < h
     the nearest cell, its links scaled by α = ln(1/PEACEMAN)/ln(h/r); for r ≥ h the cells whose centres lie within r,
     or the nearest when none does. The static mode's eigenvalue is round-off, about 1e-15 mm⁻² or about 1 kHz: every
-    mode under DC_HZ is stored as 0.0, so that no golden pins BLAS noise."""
+    mode under DC_HZ is stored as 0.0, so that no golden pins BLAS noise. h doubles while the raster passes CELLS_MAX
+    cells or its Lanczos vectors MEM_MAX bytes (design 5.4 guards; AR-8): Modes.h is the h used."""
+    kk = 2 * math.pi * f_max * math.sqrt(eps_r) / C_MM  # mm⁻¹
+    k = math.ceil(1.3 * (region.area * kk**2 + region.length * kk) / (4 * math.pi)) + 8  # Weyl, with the edges' term
     x0, y0, x1, y1 = region.bounds
     nx, ny = math.ceil((x1 - x0) / h - 1e-9), math.ceil((y1 - y0) / h - 1e-9)
+    # ponytail: doubling is the coarsening step (design 6 leaves it to the builder), so a board just past a limit
+    # solves on a quarter of the cells it could. MEM_MAX bounds ARPACK's 2k + 1 Lanczos vectors, but not the
+    # shift-invert LU, nor a k that the eigen-solve doubles later; without it a 300 × 300 mm plane at 5 GHz needs
+    # about 11 to 12 GB of them (εr 4.4 to 4.8) while under CELLS_MAX
+    while nx * ny > CELLS_MAX or nx * ny * (2 * k + 1) * 8 > MEM_MAX:
+        h *= 2
+        nx, ny = math.ceil((x1 - x0) / h - 1e-9), math.ceil((y1 - y0) / h - 1e-9)
     i, j = np.divmod(np.arange(nx * ny), ny)  # cell i·ny + j is [x0 + i·h, x0 + (i+1)·h] × [y0 + j·h, …]
     corner = np.column_stack([x0 + i * h, y0 + j * h])
     cells = shapely.box(corner[:, 0], corner[:, 1], corner[:, 0] + h, corner[:, 1] + h)
@@ -100,8 +117,6 @@ def solve(region: BaseGeometry, eps_r: float, f_max: float, posts: Sequence[tupl
     n = int(free.sum())
     M = diags(a[free], format="csr")
 
-    kk = 2 * math.pi * f_max * math.sqrt(eps_r) / C_MM  # mm⁻¹
-    k = math.ceil(1.3 * (region.area * kk**2 + region.length * kk) / (4 * math.pi)) + 8  # Weyl, with the edges' term
     if k >= n - 1:
         lam, v = eigh(K.toarray(), M.toarray())
     else:
@@ -116,3 +131,25 @@ def solve(region: BaseGeometry, eps_r: float, f_max: float, posts: Sequence[tupl
     f[f < DC_HZ] = 0.0
     up_to = f <= f_max
     return Modes(f[up_to], h, v[:, order[up_to]], centre[free])
+
+
+def narrow_slot(region: BaseGeometry) -> bool:
+    """Whether `region` has a slot or gap narrower than SLOT_MIN (design 5.4 guards): a closing by SLOT_MIN/2 fills
+    only those, since its mitred joins give polygonal holes and corners back exactly. A lone hole under SLOT_MIN is
+    named too (the controller's open issue 7)."""
+    closed = region.buffer(SLOT_MIN / 2, join_style="mitre").buffer(-SLOT_MIN / 2, join_style="mitre")
+    return bool((shapely.area(shapely.get_parts(closed.difference(region))) >= SLOT_AREA).any())
+
+
+def marks(f: float, carrier: float | None, clocks: Sequence[float]) -> list[dict]:
+    """The sources that a mode at `f` Hz lies near (design 5.4; AR-3), the carrier first, then the clocks in their
+    order: each source s at most once, at its nearest harmonic n = max(1, round(f/s)), when |f − n·s| ≤ WINDOW·n·s.
+    A clock is marked up to CLOCK_N_MAX only, the carrier at any n; the static mode, f 0, never."""
+    out = []
+    for of, s in [("carrier", carrier), *(("clock", s) for s in clocks)]:
+        if s is None:
+            continue
+        n = max(1, round(f / s))
+        if f > 0 and abs(f - n * s) <= WINDOW * n * s and (of == "carrier" or n <= CLOCK_N_MAX):
+            out.append({"of": of, "f_hz": s, "n": n})
+    return out
