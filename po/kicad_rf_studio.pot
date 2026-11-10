@@ -1581,6 +1581,11 @@ msgstr ""
 msgid "Limit: board-level keep-out areas leave no geometry in the import, so the review sees only the fills they shape; a footprint's keep-out, a connector or a printed antenna takes its copper out of R1 and R3."
 msgstr ""
 
+#. I_REVIEW_FINDINGS
+#, python-brace-format
+msgid "Findings: {count}."
+msgstr ""
+
 #. E_INTERNAL
 #, python-brace-format
 msgid "Internal error: {detail}. Please report it."

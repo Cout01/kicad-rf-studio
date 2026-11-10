@@ -1583,6 +1583,11 @@ msgstr "Nenhum plano fica sob {nets} em nenhuma camada, então R1 a R3 não as m
 msgid "Limit: board-level keep-out areas leave no geometry in the import, so the review sees only the fills they shape; a footprint's keep-out, a connector or a printed antenna takes its copper out of R1 and R3."
 msgstr "Limite: as áreas de exclusão da placa não deixam geometria na importação, então a revisão vê só os preenchimentos que elas moldam; a exclusão de um footprint, um conector ou uma antena impressa tira o seu cobre de R1 e R3."
 
+#. I_REVIEW_FINDINGS
+#, python-brace-format
+msgid "Findings: {count}."
+msgstr "Achados: {count}."
+
 #. E_INTERNAL
 #, python-brace-format
 msgid "Internal error: {detail}. Please report it."

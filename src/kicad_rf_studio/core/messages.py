@@ -339,6 +339,7 @@ CATALOG: dict[str, str] = {
     "W_EMC_LAYER_SKIPPED": "A zone on {layer} is unfilled or hatched, so the layer would read as a void everywhere: R1 and R3 skip the tracks it would reference. Refill (B) in KiCad, save, and review again.",
     "I_EMC_NO_REFERENCE": "No plane lies under {nets} on any layer, so R1 to R3 do not measure them.",
     "I_LIMIT_REVIEW_KEEPOUT": "Limit: board-level keep-out areas leave no geometry in the import, so the review sees only the fills they shape; a footprint's keep-out, a connector or a printed antenna takes its copper out of R1 and R3.",
+    "I_REVIEW_FINDINGS": "Findings: {count}.",
     "E_INTERNAL": "Internal error: {detail}. Please report it.",
     "G_APP": "kicad-rf-studio",
     "G_RUNNING": "Running in {folder}…",

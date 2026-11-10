@@ -11,7 +11,9 @@ AppCSXCAD (pipeline.preview).
 antenna's feed (new_antenna, Stage 3). `compare BASE VARIANT` compares two antenna projects' or two signal-integrity
 projects' full simulations (pipeline.compare_projects, Stage 3 and Stage 4). `new --interface NAME` writes a
 signal-integrity project, schema 3: the line from the start pad to the end pad, a differential pair's partner and up to
-two victims (new_si, Stage 4).
+two victims (new_si, Stage 4). `review BOARD` measures the board's tagged nets and shield fences against four geometry
+rules, with no solver, and writes review.json, review.csv and review.png (review, Stage 5); like `compare`, it starts
+no worker.
 `setup-openems` installs openEMS from the official Windows package into this Python, and `calibrate` measures this
 machine's simulation speed. `install-kicad-plugin` writes the KiCad toolbar button (button.install) into KiCad's
 plugin folders, or removes it. `cost`, `run` and `verify` take `--run-dir DIR`, the run folder to use instead of a new
@@ -405,6 +407,54 @@ def new_si(board: str | Path, start: str, end: str, interface: str, *, pair: boo
     return path, notes
 
 
+def review(board: str | Path, *, nets=(), project: str | None = None, f0=None, clocks=(), f_max=None, edge_k=None,
+           edge_fence=False, stackup=None, output=None, emit=None) -> int:
+    """`review BOARD` (Stage 5 design 5.1, 5.3), returning its exit code: the board as `new` loads it (_load: its
+    E_NO_STACKUP and the stackup's refusals raise, before anything is written), the project at `project` when given
+    (read_project), review_board, then review.csv, review.png and review.json written to `output`, the working folder
+    when None (write, REVIEW_OUTPUTS, E_RESULTS_WRITE advising this command with -o). Then `emit(code, params)` for
+    each line, which prints it by default, in AR-12's order: the review's notes, the findings, I_REVIEW_FINDINGS,
+    I_OUTPUTS (a refused write's E_ line in its place, the other lines still printed) and REVIEW_LIMITS. 2 when a line
+    is an E_ line, else 0, with findings or without. Frequencies are in Hz and `stackup` names a stackup preset (None:
+    the board's own). It reads only: no model, no worker, nothing written outside the folder."""
+    # imported here, as in `cost`: the CLI adds no work at import time
+    from kicad_rf_studio import pipeline
+    from kicad_rf_studio.core.post.outputs import write
+    from kicad_rf_studio.core.project import read_project
+    from kicad_rf_studio.core.review import REVIEW_LIMITS, review_board
+    from kicad_rf_studio.core.review.outputs import REVIEW_OUTPUTS, review_csv, review_json, review_png
+
+    board = str(board)  # the path as given (design 5.3), whether the GUI passes a Path or not
+    loaded, stack, zs, classes = _load(board, stackup)
+    data = None if project is None else read_project(pipeline.project_path(project))
+    r = review_board(loaded, stack, zs, classes, nets=nets, project=data, f0=f0, clocks=clocks, f_max=f_max,
+                     edge_k=edge_k, edge_fence=edge_fence)
+    folder = Path(output) if output else Path.cwd()
+    # review.json, the file the GUI reads, goes last: a held file refuses before it changes
+    files = {"review.csv": review_csv(r), "review.png": review_png(r, loaded),
+             "review.json": review_json(r, board, board_hash(board))}
+    given = [x for net in nets for x in ("--net", net)]  # each given option again, in the parser's order
+    given += ["--project", project] if project is not None else []
+    given += ["--f0", str(f0)] if f0 is not None else []
+    given += [x for clock in clocks for x in ("--clock", str(clock))]
+    given += ["--f-max", str(f_max)] if f_max is not None else []
+    given += ["--edge-k", str(edge_k)] if edge_k is not None else []
+    given += ["--edge-fence"] if edge_fence else []
+    given += ["--stackup", stackup] if stackup is not None else []
+    lines = [*r.notes, *((f.code, f.params) for f in r.findings), ("I_REVIEW_FINDINGS", {"count": len(r.findings)})]
+    try:
+        write(folder, files, REVIEW_OUTPUTS,
+              pipeline.command_line("kicad-rf-studio", "review", board, *given, "-o", str(folder)))
+    except KrsError as err:  # E_RESULTS_WRITE: a viewer holds review.png, say
+        lines.append((err.code, err.params))
+    else:
+        lines.append(("I_OUTPUTS", {"files": ", ".join(sorted(files)), "folder": str(folder)}))
+    emit = emit or (lambda code, params: print(render(code, **params)))
+    for code, params in [*lines, *((code, {}) for code in REVIEW_LIMITS)]:
+        emit(code, params)
+    return 2 if any(code.startswith("E_") for code, _ in lines) else 0
+
+
 def _new(a: argparse.Namespace) -> None:
     """`new` with --end and --f0, new_antenna with --antenna and --band, or new_si with --end and --interface;
     E_NEW_KIND for any other mix, --harmonics without --f0 and an SI option without --interface too."""
@@ -455,6 +505,11 @@ def _compare(a: argparse.Namespace) -> int:
 
     return pipeline.compare_projects(pipeline.project_path(a.base), pipeline.project_path(a.variant),
                                      a.output and Path(a.output))
+
+
+def _review(a: argparse.Namespace) -> int:
+    return review(a.board, nets=a.net, project=a.project, f0=a.f0, clocks=a.clock, f_max=a.f_max, edge_k=a.edge_k,
+                  edge_fence=a.edge_fence, stackup=a.stackup, output=a.output)
 
 
 def _preview(a: argparse.Namespace) -> int:
@@ -528,6 +583,18 @@ def _parser() -> argparse.ArgumentParser:
     compare.add_argument("variant")
     compare.add_argument("-o", dest="output", metavar="PATH")
     compare.set_defaults(func=_compare)
+    review = commands.add_parser("review")  # no --run-dir either: it starts no worker, so main writes it no end event
+    review.add_argument("board")
+    review.add_argument("--net", action="append", default=[], metavar="PATTERN")
+    review.add_argument("--project", metavar="PROJECT")
+    review.add_argument("--f0", type=parse_frequency, metavar="F")
+    review.add_argument("--clock", type=parse_frequency, action="append", default=[], metavar="F")
+    review.add_argument("--f-max", type=parse_frequency, metavar="F")
+    review.add_argument("--edge-k", type=_positive(float), metavar="K")  # None: EDGE_K
+    review.add_argument("--edge-fence", action="store_true")
+    review.add_argument("--stackup", metavar="NAME")
+    review.add_argument("-o", dest="output", metavar="PATH")
+    review.set_defaults(func=_review)
     preview = commands.add_parser("preview")
     preview.add_argument("project")
     preview.set_defaults(func=_preview)
