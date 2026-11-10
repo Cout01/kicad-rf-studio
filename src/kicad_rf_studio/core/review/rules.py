@@ -82,21 +82,49 @@ def exclusions(board: Board, classes: Classes) -> list[BaseGeometry]:
     return hulls
 
 
+def _parts(items: list, line_of) -> list[list]:
+    """`items` merged into parts: an entry joins every part with an entry whose line it meets (round(distance, 3) ==
+    0), and those parts merge with it."""
+    parts: list[list] = []
+    for item in items:
+        meets = [any(round(line_of(item).distance(line_of(o)), 3) == 0 for o in p) for p in parts]
+        joined = [o for p, m in zip(parts, meets) if m for o in p]
+        parts = [p for p, m in zip(parts, meets) if not m] + [[item, *joined]]
+    return parts
+
+
+def references(board: Board, pm: PlaneMap, tags: Collection[str]) -> list[Ref | None]:
+    """Each track's reference, aligned with board.tracks, None for an untagged one: that of its piece of route, the
+    tracks of its net on its layer whose centre lines meet, transitively, so a route split into segments, or jogging
+    inside a void, reads as one line (design 5.2; AR-2, AR-5). A zero-length track joins the pieces it meets."""
+    lines, refs = [centre_line(t) for t in board.tracks], [None] * len(board.tracks)
+    by: dict[tuple[str, str], list[int]] = {}
+    for i, t in enumerate(board.tracks):
+        if t.net in tags:
+            by.setdefault((t.net, t.layer), []).append(i)
+    for (_, layer), at in by.items():
+        for part in _parts(at, lambda i: lines[i]):
+            ref = reference(pm, layer, shapely.union_all([lines[i] for i in part]))
+            for i in part:
+                refs[i] = ref
+    return refs
+
+
 def groups(board: Board, pm: PlaneMap, tags: Collection[str],
            hulls: list[BaseGeometry]) -> tuple[list[Group], list[str]]:
-    """The tagged tracks of nonzero length grouped by (net, layer, reference), each reference taken from the track's
-    whole centre line, and the sorted nets with a track that has no reference (AR-5). A track with another layer of
-    pm.skipped at most ref.h away is left out, as is one with no reference when any layer is skipped: that layer might
-    have been its reference, which W_EMC_LAYER_SKIPPED says, so its net is not named."""
+    """The tagged tracks of nonzero length grouped by (net, layer, reference), in board order, each reference its
+    piece of route's (references()), and the sorted nets with a track that has no reference (AR-5). A track with
+    another layer of pm.skipped at most ref.h away is left out, as is one with no reference when a layer other than
+    its own is skipped: that layer might have been its reference, which W_EMC_LAYER_SKIPPED says, so its net is not
+    named. Its own layer is never its reference."""
     by: dict[tuple[str, str, Ref], list] = {}
     lost = set()
-    for t in board.tracks:
+    for t, ref in zip(board.tracks, references(board, pm, tags)):
         line = centre_line(t)
         if t.net not in tags or round(line.length, 3) == 0:
             continue
-        ref = reference(pm, t.layer, line)
         if ref is None:
-            if not pm.skipped:
+            if not any(s != t.layer for s in pm.skipped):
                 lost.add(t.net)
         elif not any(s != t.layer and pm.h[(t.layer, s)] <= ref.h for s in pm.skipped):
             by.setdefault((t.net, t.layer, ref), []).append((t, line))
@@ -166,11 +194,11 @@ def r1(board: Board, pm: PlaneMap, groups: list[Group], l_mm: float) -> list[Fin
 
 def r2(board: Board, classes: Classes, pm: PlaneMap, tags: Collection[str], l_mm: float) -> list[Finding]:
     """R2, a tagged via that changes its reference, for information (design 5.2; AR-1), in board.vias order. The
-    via's tracks are its net's with an end within its radius (+1 µm) and a reference, top to bottom: `from` is the
-    first one's reference and `to` the last one's. Between two nets, a return is a capacitor (letters "C") whose two
-    netted copper pads sit on exactly those nets, as far as its nearer pad centre; between two layers of one net, a via
-    of that net whose span holds both. It fires when no return lies within d = max(L, R2_FLOOR). `classes` is not
-    read."""
+    via's tracks are its net's with an end within its radius (+1 µm) and a reference, its piece of route's
+    (references()), top to bottom: `from` is the first one's reference and `to` the last one's. Between two nets, a
+    return is a capacitor (letters "C") whose two netted copper pads sit on exactly those nets, as far as its nearer
+    pad centre; between two layers of one net, a via of that net whose span holds both. It fires when no return lies
+    within d = max(L, R2_FLOOR). `classes` is not read."""
     d = max(round(l_mm, 3), R2_FLOOR)
     caps = [(fp.uuid, _netted(fp)) for ref, fp in board.footprints.items() if _prefix(ref) == "C"]
 
@@ -178,13 +206,13 @@ def r2(board: Board, classes: Classes, pm: PlaneMap, tags: Collection[str], l_mm
         at = [pm.layers.index(layer) for layer in v.layers]
         return set(pm.layers[min(at):max(at) + 1])
 
-    found = []
+    found, refs = [], references(board, pm, tags)
     for v in board.vias:
         if v.net not in tags:
             continue
-        sides = sorted([(t, ref) for t in board.tracks if t.net == v.net
-                        and round(min(math.dist(t.start, v.at), math.dist(t.end, v.at)) - v.diameter / 2, 3) <= 1e-3
-                        and (ref := reference(pm, t.layer, centre_line(t)))], key=lambda s: pm.layers.index(s[0].layer))
+        sides = sorted([(t, ref) for t, ref in zip(board.tracks, refs) if t.net == v.net and ref
+                        and round(min(math.dist(t.start, v.at), math.dist(t.end, v.at)) - v.diameter / 2, 3) <= 1e-3],
+                       key=lambda s: pm.layers.index(s[0].layer))
         if not sides:
             continue
         frm, to = sides[0][1], sides[-1][1]
@@ -239,12 +267,7 @@ def r3(board: Board, groups: list[Group], edge_k: float) -> list[Finding]:
         limit = round(edge_k * h, 3)
         flagged = [(t, line, d) for t, line in zip(g.tracks, g.lines)
                    if not line.is_empty and 0 < (d := round(line.distance(edge) - t.width / 2, 3)) < limit]
-        parts: list[list] = []
-        for item in flagged:  # an entry joins every part it meets, and those parts merge with it
-            meets = [any(round(item[1].distance(o[1]), 3) == 0 for o in p) for p in parts]
-            joined = [o for p, m in zip(parts, meets) if m for o in p]
-            parts = [p for p, m in zip(parts, meets) if not m] + [[item, *joined]]
-        for part in parts:
+        for part in _parts(flagged, lambda item: item[1]):
             tracks, d = [t for t, _, _ in part], min(d for _, _, d in part)
             stretch = shapely.line_merge(shapely.union_all(
                 [line.intersection(edge.buffer(limit + t.width / 2)) for t, line, _ in part]))

@@ -278,3 +278,23 @@ def test_r4_measures_the_board_edges_fence_along_an_outline_that_covers_itself()
     # max(10, 10 - 0.5 - 0.5), then the rest of the 104.43 mm outline less both insets
     assert [(f.measured["gap_mm"], f.at, f.kiids["vias"], f.kiids["footprints"]) for f in edge] == [
         (10.0, (123.04, -100.0), ["e0", "e1"], []), (93.43, (94.825, -100.5), ["e0", "e1"], [])]
+
+
+def test_a_route_split_into_segments_reads_as_one_line():  # AR-2, AR-5: a track's piece of route (plan 1's close)
+    def split(b):
+        (t,) = [t for t in b.tracks if t.net == "CLK_GAP"]
+        b.tracks = [u for u in b.tracks if u is not t] + [
+            replace(t, start=(103 + 2.5 * k, -110.0), end=(105.5 + 2.5 * k, -110.0), uuid=f"g{k}") for k in range(8)]
+
+    b, c, pm, tags, gs = setup("emc_review", split)
+    (f,) = [f for f in r1(b, pm, gs, L5) if f.net == "CLK_GAP"]
+    assert (f.measured["run_mm"], f.measured["extent_mm"]) == (6.0, 10.0)
+
+
+def test_a_track_whose_only_skipped_layer_is_its_own_names_its_net():  # AR-5 (plan 1's close)
+    def bare(b):
+        b.areas = [a for a in b.areas if a.source != "zone"]
+        b.warnings.append(("W_ZONE_NOT_FILLED", {"layer": "F.Cu"}))
+
+    b, c, pm, tags, gs = setup("emc_review", bare)
+    assert pm.skipped == ("F.Cu",) and "CLK_GAP" in groups(b, pm, tags, exclusions(b, c))[1]
