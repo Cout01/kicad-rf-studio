@@ -326,3 +326,14 @@ def test_r3_places_a_part_whose_entry_grazes_the_band():  # AR-4 (plan 1's close
     g = Group("CLK_EDGE", "F.Cu", Ref("In1.Cu", "GND", 0.25, None), (track,), (entry,))
     (f,) = r3(b, [g], 2.0)
     assert (f.at, f.measured["d_mm"]) == ((115.0, -100.3), 0.05)
+
+
+def test_r4_reads_a_one_via_fence_as_one_gap_the_frames_covered_length():  # A7; D-1 (plan 1's close)
+    b, c, *_ = setup("emc_review")
+    sh1 = b.footprints["SH1"]
+    ring = shapely.union_all([p.polygon for p in sh1.pads if sh1.layer in p.layers]).convex_hull.exterior
+    fence = [v for v in b.vias if v.net == "GND" and round(ring.distance(Point(v.at)), 3) <= 1.0]
+    assert len(fence) == 84
+    b.vias = [v for v in b.vias if v not in fence[1:]]
+    (f,) = r4(b, c, L5, False)
+    assert (f.params["fence"], f.measured["gap_mm"], f.kiids["vias"]) == ("SH1", 47.2, [fence[0].uuid])

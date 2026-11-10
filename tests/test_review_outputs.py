@@ -43,7 +43,8 @@ def test_review_csv_has_a_row_per_finding_with_its_measures_kiids_and_english_me
     assert (row["id"], row["rule"], row["x_mm"], row["y_mm"], row["limit"]) == (edge.id, "R3", "113.000", "100.600",
                                                                                 "0.400")
     assert row["measured"] == "d_mm=0.350;h_mm=0.200;k=2.000;share_pct=16.500"
-    assert row["kiids"] == f"tracks:{edge.kiids['tracks'][0]}" and row["message"] == english("W_EMC_EDGE", **edge.params)
+    assert row["kiids"] == f"tracks:{edge.kiids['tracks'][0]}"
+    assert row["message"] == english("W_EMC_EDGE", **edge.params)
 
 
 def test_review_png_numbers_each_finding_and_draws_the_reviews_cover_whatever_the_stackup(mini_board):  # design 5.3

@@ -179,7 +179,7 @@ def r1(board: Board, pm: PlaneMap, groups: list[Group], l_mm: float) -> list[Fin
             # normal if such a loop turns up
             across = shapely.get_coordinates(void) @ (y0 - y1, x1 - x0) / (math.hypot(x1 - x0, y1 - y0) or 1.0)
             extent = round(float(np.ptp(across)), 3)
-            tracks ={t.uuid for t, line in zip(g.tracks, g.lines) if round(line.distance(run), 3) == 0}
+            tracks = {t.uuid for t, line in zip(g.tracks, g.lines) if round(line.distance(run), 3) == 0}
             zones = {a.uuid for a in board.areas if (a.source, a.layer, a.net) == ("zone", ref.layer, ref.net)
                      and round(a.polygon.distance(run), 3) <= l_mm}
             found.append(Finding(
@@ -307,17 +307,17 @@ def r4(board: Board, classes: Classes, l_mm: float, edge_fence: bool) -> list[Fi
         fences.append(("T_EMC_BOARD_EDGE", None, (), board.outline.exterior, board.outline))
     found = []
     for fence, layer, footprints, ring, copper in fences:
-        cover, n = copper.buffer(1e-6), ring.length
+        near, n = copper.buffer(1e-6), ring.length
         vias = sorted((v for v in board.vias
                        if v.net in classes.gnd and round(ring.distance(Point(v.at)), 3) <= FENCE_REACH),
                       key=lambda v: ring.project(Point(v.at)))
         if len(vias) < 2:
-            gaps = [(ring.intersection(cover).length, [ring], n / 2, vias)]
+            gaps = [(ring.intersection(near).length, [ring], n / 2, vias)]
         else:
             s, gaps = [ring.project(Point(v.at)) for v in vias], []
             for a, b, s0, s1 in zip(vias, vias[1:] + vias[:1], s, s[1:] + [s[0] + n]):  # the last pair wraps round
                 stretch = [substring(ring, s0, min(s1, n))] + ([substring(ring, 0, s1 - n)] if s1 > n else [])
-                covered = sum(part.intersection(cover).length for part in stretch)
+                covered = sum(part.intersection(near).length for part in stretch)
                 inner = s1 - s0 - ring.distance(Point(a.at)) - ring.distance(Point(b.at))  # along − dA − dB
                 gaps.append((min(covered, max(math.dist(a.at, b.at), inner)), stretch, ((s0 + s1) / 2) % n, [a, b]))
         for gap, stretch, mid, pair in gaps:

@@ -2,14 +2,16 @@
 from dataclasses import replace
 from pathlib import Path
 
+import math
+
 from shapely.geometry import LineString, box
 
 from kicad_rf_studio.core.geometry.zstack import zstack
 from kicad_rf_studio.core.kicad import classify, load_board
-from kicad_rf_studio.core.kicad.board import CopperArea
+from kicad_rf_studio.core.kicad.board import CopperArea, Track
 from kicad_rf_studio.core.kicad.tracer import is_power
-from kicad_rf_studio.core.review.planes import (DOTTED_POWER, PlaneMap, Ref, centre_line, plane_map, plane_nets,
-                                                reference)
+from kicad_rf_studio.core.review.planes import (DOTTED_POWER, PlaneMap, Ref, centre_line, cover, plane_map,
+                                                plane_nets, reference)
 
 FIX = Path(__file__).parent / "fixtures"
 LAYERS = ("F.Cu", "In1.Cu", "In2.Cu", "B.Cu")
@@ -33,7 +35,8 @@ def dotted(b):  # usb2_hs's +3V3 named as KiCad's +3.3V power symbol names it
 
 def test_the_plane_map_is_each_ground_or_power_nets_zone_fills_by_layer():  # design 5.1
     b, _, pm = mapped("usb2_hs_gap")
-    assert {(layer, net) for layer, nets in pm.planes.items() for net in nets} == {("In1.Cu", "GND"), ("In2.Cu", "+3V3")}
+    assert {(layer, net) for layer, nets in pm.planes.items() for net in nets} == {("In1.Cu", "GND"),
+                                                                                   ("In2.Cu", "+3V3")}
     gnd = pm.planes["In1.Cu"]["GND"]
     assert gnd.covers(LineString([(110, -100), (115, -100)])) and not gnd.intersects(LineString([(116.2, -100),
                                                                                                  (116.8, -100)]))
@@ -82,3 +85,14 @@ def test_the_majority_net_wins_then_ties_go_below_then_to_ground_then_to_the_fir
     assert net_of({"VDD": box(0, -1, 7, 1), "GND": box(7, -1, 10, 1)}) == "VDD"  # 6 mm of VDD against 2 of GND
     assert net_of({"VDD": box(0, -1, 5, 1), "GND": box(5, -1, 10, 1)}) == "GND"
     assert net_of({"VDD": box(0, -1, 5, 1), "AVDD": box(5, -1, 10, 1)}) == "AVDD"
+
+
+def test_an_arc_tracks_centre_line_is_its_arc_as_a_polyline():  # design 5.2 (plan 1's close)
+    line = centre_line(Track("F.Cu", "CLK", 0.2, (0.0, 0.0), (2.0, 0.0), (1.0, 1.0), "a"))  # a half circle, radius 1
+    assert (line.coords[0], line.coords[-1]) == ((0.0, 0.0), (2.0, 0.0))
+    assert abs(line.length - math.pi) < 1e-2
+
+
+def test_a_net_with_no_planes_covers_nothing():  # design 5.2 (plan 1's close)
+    _, _, pm = mapped("usb2_hs")
+    assert cover(pm, "NO_SUCH_NET").is_empty
