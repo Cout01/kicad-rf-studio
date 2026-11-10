@@ -298,3 +298,21 @@ def test_a_track_whose_only_skipped_layer_is_its_own_names_its_net():  # AR-5 (p
 
     b, c, pm, tags, gs = setup("emc_review", bare)
     assert pm.skipped == ("F.Cu",) and "CLK_GAP" in groups(b, pm, tags, exclusions(b, c))[1]
+
+
+def test_r2_leaves_a_dnp_capacitor_out_of_its_returns():  # AR-1 (plan 1's close): tracer._links' rule
+    def dnp(b):
+        b.footprints["C1"] = replace(b.footprints["C1"], dnp=True)
+
+    b, c, pm, tags, gs = setup("emc_review", dnp)
+    (f,) = r2(b, c, pm, tags, L5)  # CLK_MID's via, whose C1 at 0.890 mm kept R2 quiet
+    assert (f.net, f.at, f.measured["return_mm"], f.params["nearest"]) == ("CLK_MID", (113.0, -140.0), None, "T_NONE")
+    assert b.footprints["C1"].uuid not in f.kiids["footprints"]
+
+
+def test_r2_takes_a_via_s_tracks_only_on_the_layers_it_spans():  # AR-1 (plan 1's close)
+    def blind(b):
+        b.vias = [replace(v, layers=("F.Cu", "In1.Cu")) if v.at == (107.0, -99.79) else v for v in b.vias]
+
+    b, c, pm, tags, gs = setup("qspi_clk", blind)
+    assert [(f.at, f.measured["return_mm"]) for f in r2(b, c, pm, tags, L5)] == [((117.0, -99.79), 9.773)]

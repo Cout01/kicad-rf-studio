@@ -194,13 +194,13 @@ def r1(board: Board, pm: PlaneMap, groups: list[Group], l_mm: float) -> list[Fin
 
 def r2(board: Board, classes: Classes, pm: PlaneMap, tags: Collection[str], l_mm: float) -> list[Finding]:
     """R2, a tagged via that changes its reference, for information (design 5.2; AR-1), in board.vias order. The
-    via's tracks are its net's with an end within its radius (+1 µm) and a reference, its piece of route's
-    (references()), top to bottom: `from` is the first one's reference and `to` the last one's. Between two nets, a
-    return is a capacitor (letters "C") whose two netted copper pads sit on exactly those nets, as far as its nearer
-    pad centre; between two layers of one net, a via of that net whose span holds both. It fires when no return lies
-    within d = max(L, R2_FLOOR). `classes` is not read."""
+    via's tracks are its net's on a layer of its span with an end within its radius (+1 µm) and a reference, its
+    piece of route's (references()), top to bottom: `from` is the first one's reference and `to` the last one's.
+    Between two nets, a return is a fitted capacitor (letters "C", not DNP) whose two netted copper pads sit on exactly
+    those nets, as far as its nearer pad centre; between two layers of one net, a via of that net whose span holds
+    both. It fires when no return lies within d = max(L, R2_FLOOR). `classes` is not read."""
     d = max(round(l_mm, 3), R2_FLOOR)
-    caps = [(fp.uuid, _netted(fp)) for ref, fp in board.footprints.items() if _prefix(ref) == "C"]
+    caps = [(fp.uuid, _netted(fp)) for ref, fp in board.footprints.items() if _prefix(ref) == "C" and not fp.dnp]
 
     def span(v: Via) -> set[str]:  # the copper layers between a via's two
         at = [pm.layers.index(layer) for layer in v.layers]
@@ -210,7 +210,7 @@ def r2(board: Board, classes: Classes, pm: PlaneMap, tags: Collection[str], l_mm
     for v in board.vias:
         if v.net not in tags:
             continue
-        sides = sorted([(t, ref) for t, ref in zip(board.tracks, refs) if t.net == v.net and ref
+        sides = sorted([(t, ref) for t, ref in zip(board.tracks, refs) if t.net == v.net and ref and t.layer in span(v)
                         and round(min(math.dist(t.start, v.at), math.dist(t.end, v.at)) - v.diameter / 2, 3) <= 1e-3],
                        key=lambda s: pm.layers.index(s[0].layer))
         if not sides:
