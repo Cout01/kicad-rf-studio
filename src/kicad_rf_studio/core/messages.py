@@ -328,6 +328,17 @@ CATALOG: dict[str, str] = {
     "W_EMC_EDGE": "#{n} R3: {net} on {layer} runs {d_mm} mm from the board edge at ({x_mm}, {y_mm}) mm, under {k}·h = {kh_mm} mm (h {h_mm} mm to {ref_layer}): about {share_pct} % of its ideal return current would lie past the edge. Critical nets belong at least 2h from the board edge (LearnEMC).",
     "I_EMC_REF_CHANGE": "#{n} R2: {net}'s via at ({x_mm}, {y_mm}) mm moves its reference from {from_net} on {from_layer} to {to_net} on {to_layer}; {path}: {nearest}, against {limit_mm} mm (TI SLLA656: within 200 mils, closer is better; Siemens: manage reference plane changes). For information.",
     "W_EMC_FENCE_PITCH": "#{n} R4: the via fence ({fence}) leaves {gap_mm} mm of its line with no GND via, {lambdas} λ at f_max, at ({x_mm}, {y_mm}) mm, over λ/20 = {l_mm} mm (Bahl; Harper; Archambeault).",
+    "I_REVIEW_RELATIVE": "Geometry rules, not a compliance verdict: each finding measures the board as saved against a published rule of thumb, named with its source; nothing here predicts a pass or a fail.",
+    "I_REVIEW_BASIS": "Review at f_max {f_max_ghz} GHz ({source}) and εr {eps_r}: λ/20 is {l_mm} mm; the edge rule's k is {edge_k}.",
+    "I_REVIEW_TAGS_FLAG": "Nets you named: {nets}.",
+    "I_REVIEW_TAGS_PROJECT": "Nets of the project's chain or lines: {nets}.",
+    "I_REVIEW_TAGS_PATTERN": "Nets tagged by their names' patterns: {nets}.",
+    "I_REVIEW_TAGS_WALK": "Nets reached through series parts and pair partners: {nets}.",
+    "I_REVIEW_NO_TAGS": "No net is tagged, so R1 to R3 measure nothing; R4 still looks at the shields.",
+    "W_REVIEW_NET_UNMATCHED": "No net the review can tag matches {pattern}; ground and power nets are never tagged.",
+    "W_EMC_LAYER_SKIPPED": "A zone on {layer} is unfilled or hatched, so the layer would read as a void everywhere: R1 and R3 skip the tracks it would reference. Refill (B) in KiCad, save, and review again.",
+    "I_EMC_NO_REFERENCE": "No plane lies under {nets} on any layer, so R1 to R3 do not measure them.",
+    "I_LIMIT_REVIEW_KEEPOUT": "Limit: board-level keep-out areas leave no geometry in the import, so the review sees only the fills they shape; a footprint's keep-out, a connector or a printed antenna takes its copper out of R1 and R3.",
     "E_INTERNAL": "Internal error: {detail}. Please report it.",
     "G_APP": "kicad-rf-studio",
     "G_RUNNING": "Running in {folder}…",
@@ -622,6 +633,10 @@ CATALOG: dict[str, str] = {
     "T_EMC_RETURN_CAP": "the nearest capacitor between the two nets",
     "T_EMC_RETURN_VIA": "the nearest via joining the two layers",
     "T_EMC_BOARD_EDGE": "board edge",
+    "T_FMAX_CLI": "the value given",
+    "T_FMAX_CARRIER": "5 times the carrier, at most 6 GHz",
+    "T_FMAX_SI": "the signal-integrity project's f_max, at most 6 GHz",
+    "T_FMAX_DEFAULT": "the default: FCC 15.33(b)(1)'s upper measurement frequency for a device whose highest frequency is 500 to 1000 MHz",
 }
 
 

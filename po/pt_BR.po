@@ -1531,6 +1531,58 @@ msgstr "#{n} R2: a via de {net} em ({x_mm}, {y_mm}) mm muda a referência de {fr
 msgid "#{n} R4: the via fence ({fence}) leaves {gap_mm} mm of its line with no GND via, {lambdas} λ at f_max, at ({x_mm}, {y_mm}) mm, over λ/20 = {l_mm} mm (Bahl; Harper; Archambeault)."
 msgstr "#{n} R4: a cerca de vias ({fence}) deixa {gap_mm} mm da sua linha sem via de GND, {lambdas} λ em f_max, em ({x_mm}, {y_mm}) mm, acima de λ/20 = {l_mm} mm (Bahl; Harper; Archambeault)."
 
+#. I_REVIEW_RELATIVE
+msgid "Geometry rules, not a compliance verdict: each finding measures the board as saved against a published rule of thumb, named with its source; nothing here predicts a pass or a fail."
+msgstr "Regras de geometria, não um veredito de conformidade: cada achado mede a placa como foi salva contra uma regra prática publicada, citada com a sua fonte; nada aqui prevê aprovação ou reprovação."
+
+#. I_REVIEW_BASIS
+#, python-brace-format
+msgid "Review at f_max {f_max_ghz} GHz ({source}) and εr {eps_r}: λ/20 is {l_mm} mm; the edge rule's k is {edge_k}."
+msgstr "Revisão em f_max {f_max_ghz} GHz ({source}) e εr {eps_r}: λ/20 é {l_mm} mm; o k da regra da borda é {edge_k}."
+
+#. I_REVIEW_TAGS_FLAG
+#, python-brace-format
+msgid "Nets you named: {nets}."
+msgstr "Redes que você indicou: {nets}."
+
+#. I_REVIEW_TAGS_PROJECT
+#, python-brace-format
+msgid "Nets of the project's chain or lines: {nets}."
+msgstr "Redes da cadeia ou das linhas do projeto: {nets}."
+
+#. I_REVIEW_TAGS_PATTERN
+#, python-brace-format
+msgid "Nets tagged by their names' patterns: {nets}."
+msgstr "Redes marcadas pelos padrões dos seus nomes: {nets}."
+
+#. I_REVIEW_TAGS_WALK
+#, python-brace-format
+msgid "Nets reached through series parts and pair partners: {nets}."
+msgstr "Redes alcançadas pelos componentes em série e pelos pares diferenciais: {nets}."
+
+#. I_REVIEW_NO_TAGS
+msgid "No net is tagged, so R1 to R3 measure nothing; R4 still looks at the shields."
+msgstr "Nenhuma rede está marcada, então R1 a R3 não medem nada; R4 ainda examina as blindagens."
+
+#. W_REVIEW_NET_UNMATCHED
+#, python-brace-format
+msgid "No net the review can tag matches {pattern}; ground and power nets are never tagged."
+msgstr "Nenhuma rede que a revisão pode marcar corresponde a {pattern}; redes de terra e de alimentação nunca são marcadas."
+
+#. W_EMC_LAYER_SKIPPED
+#, python-brace-format
+msgid "A zone on {layer} is unfilled or hatched, so the layer would read as a void everywhere: R1 and R3 skip the tracks it would reference. Refill (B) in KiCad, save, and review again."
+msgstr "Uma zona em {layer} está sem preenchimento ou hachurada, então a camada pareceria um vazio em toda parte: R1 e R3 ignoram as trilhas que a teriam como referência. Use Preencher todas as zonas (B) no KiCad, salve e revise de novo."
+
+#. I_EMC_NO_REFERENCE
+#, python-brace-format
+msgid "No plane lies under {nets} on any layer, so R1 to R3 do not measure them."
+msgstr "Nenhum plano fica sob {nets} em nenhuma camada, então R1 a R3 não as medem."
+
+#. I_LIMIT_REVIEW_KEEPOUT
+msgid "Limit: board-level keep-out areas leave no geometry in the import, so the review sees only the fills they shape; a footprint's keep-out, a connector or a printed antenna takes its copper out of R1 and R3."
+msgstr "Limite: as áreas de exclusão da placa não deixam geometria na importação, então a revisão vê só os preenchimentos que elas moldam; a exclusão de um footprint, um conector ou uma antena impressa tira o seu cobre de R1 e R3."
+
 #. E_INTERNAL
 #, python-brace-format
 msgid "Internal error: {detail}. Please report it."
@@ -2788,6 +2840,22 @@ msgstr "a via mais próxima que une as duas camadas"
 #. T_EMC_BOARD_EDGE
 msgid "board edge"
 msgstr "borda da placa"
+
+#. T_FMAX_CLI
+msgid "the value given"
+msgstr "o valor informado"
+
+#. T_FMAX_CARRIER
+msgid "5 times the carrier, at most 6 GHz"
+msgstr "5 vezes a portadora, no máximo 6 GHz"
+
+#. T_FMAX_SI
+msgid "the signal-integrity project's f_max, at most 6 GHz"
+msgstr "o f_max do projeto de integridade de sinal, no máximo 6 GHz"
+
+#. T_FMAX_DEFAULT
+msgid "the default: FCC 15.33(b)(1)'s upper measurement frequency for a device whose highest frequency is 500 to 1000 MHz"
+msgstr "o padrão: a frequência máxima de medição da FCC 15.33(b)(1) para um dispositivo cuja frequência mais alta é de 500 a 1000 MHz"
 
 #~ msgid "Cells: {board} M in the board, {air} M of air and {pml} M of PML; the time counts a PML cell as {weight} cells and runs this model at {ratio} × the calibrated speed (gate P3-A)."
 #~ msgstr "Células: {board} M na placa, {air} M de ar e {pml} M de PML; o tempo conta uma célula de PML como {weight} células e executa este modelo a {ratio} × a velocidade calibrada (checagem prévia P3-A)."
