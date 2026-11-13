@@ -2305,6 +2305,54 @@ msgstr ""
 msgid "The review counts {net} as a power plane by its name; the signal-integrity project does not, so its reference may differ."
 msgstr ""
 
+#. G_TAB_REVIEW
+msgid "Review"
+msgstr ""
+
+#. G_REVIEW
+msgid "Review the board"
+msgstr ""
+
+#. G_REVIEWING
+msgid "Reviewing…"
+msgstr ""
+
+#. G_REVIEW_NETS
+msgid "Tagged nets"
+msgstr ""
+
+#. G_REVIEW_NETS_HINT
+msgid "names or patterns, comma-separated; empty: the name patterns"
+msgstr ""
+
+#. G_COL_NUMBER
+msgid "No."
+msgstr ""
+
+#. G_COL_RULE
+msgid "Rule"
+msgstr ""
+
+#. G_COL_NET
+msgid "Net"
+msgstr ""
+
+#. G_COL_LAYER
+msgid "Layer"
+msgstr ""
+
+#. G_COL_PLACE
+msgid "Place (mm)"
+msgstr ""
+
+#. G_COL_CAVITY
+msgid "Cavity"
+msgstr ""
+
+#. G_COL_NEAR
+msgid "Near"
+msgstr ""
+
 #. G_SAVE
 msgid "Save"
 msgstr ""

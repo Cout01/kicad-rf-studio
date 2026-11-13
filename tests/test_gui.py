@@ -228,6 +228,7 @@ def test_every_list_of_sentences_wraps_at_its_width(window, qapp):  # Task 6 Ste
 
 def test_the_window_fits_1200_by_800_and_its_tabs_need_no_scrolling(window):  # pt-BR design 3; ruling 6
     w = window()
+    assert w.tabs.count() == 7 and w.tabs.indexOf(w.review) == 1 and w.tabs.tabText(1) == render("G_TAB_REVIEW")
     for kind in ("chain", "antenna", "si"):  # only the active kind's rows show
         w.new_form.kind.setCurrentIndex(w.new_form.kind.findData(kind))
         assert w.new_form.kind.currentData() == kind
@@ -363,7 +364,7 @@ def test_a_killed_run_reads_lost_and_its_stale_lock_does_not_block_the_next(wind
     monkeypatch.delenv("KRS_FAKE")
     again.cost_button.click()  # a cost meanwhile keeps its tab: a dead lock is attached only on open
     until(lambda: again.tick() or again.cost_status.text() == render("G_END_DONE", exit_code=0))
-    assert again.command == "cost" and again.tabs.currentIndex() == 1
+    assert again.command == "cost" and again.tabs.currentIndex() == again.tabs.indexOf(again.cost_page)
     monkeypatch.setattr(again, "ask", lambda text: True)
     opened(again)
     again.run_button.click()
@@ -751,11 +752,11 @@ def test_a_button_press_pre_fills_new_and_swap_swaps_start_and_end(window, tmp_p
     f.board.setText(str(tmp_path / "other.kicad_pcb"))
     w.board_chosen()  # a pad list read in flight when the press comes
     stale = w.pads_read
-    w.tabs.setCurrentIndex(3)
+    w.tabs.setCurrentIndex(w.tabs.indexOf(w.results))
     f.status.setText(render("G_HANDOFF_PADS", count=3))  # the last press's line
     handoff = press(board, ["J1.1", "U1.1"])
     w.take_handoff(handoff)
-    assert (w.tabs.currentIndex(), w.handoff, f.status.text()) == (0, handoff, "")
+    assert (w.tabs.currentWidget(), w.handoff, f.status.text()) == (w.project_page, handoff, "")
     assert w.pads_read not in (None, stale)  # the press is New's read now: the slower read of another board loses
     w.pads_read.result(timeout=60)
     w.tick()
@@ -881,7 +882,7 @@ def test_the_gui_entry_takes_a_handoff_and_a_second_start_forwards_its_own_and_e
         assert second.returncode == 0, log.read_text(encoding="utf-8", errors="replace")  # no window of its own
         until(lambda: qapp.processEvents() or [f.start.itemText(i) for i in range(f.start.count())] == ["C1.1",
                                                                                                          "C1.2"])
-        assert not w.isMinimized() and w.tabs.currentIndex() == 0  # brought to the front, on New
+        assert not w.isMinimized() and w.tabs.currentWidget() is w.project_page  # brought to the front, on New
     finally:
         if second is not None and second.poll() is None:
             second.kill()
@@ -978,7 +979,7 @@ def test_the_retune_table_snaps_takes_s2p_parts_and_draws_under_the_what_if_labe
     stored = ["100pF", "15nH", "3.3pF", "3.3pF"]
     assert column(r.parts, PART) == ["C1", "L1", "C2", "C3"] and column(r.parts, VALUE) == stored
     assert [r.parts.cellWidget(k, SNAP).currentData() for k in range(4)] == ["E24"] * 4  # design 7: E24 for L and C
-    assert w.tabs.tabText(3) == render("G_TAB_RESULTS") and not r.retune_box.isHidden()
+    assert w.tabs.tabText(w.tabs.indexOf(w.results)) == render("G_TAB_RESULTS") and not r.retune_box.isHidden()
     r.parts.item(2, VALUE).setText("5pF")  # typed, then snapped to E24
     res = control.retuned(pj, w.opened.project, w.opened.results, r.rows())
     assert r.parts.item(2, VALUE).text() == "5.1pF"
@@ -1509,7 +1510,8 @@ def test_compare_runs_on_the_pool_into_the_bases_folder_and_never_the_variants(w
     w.open_project(a)
     opened(w)
     c = w.comparison
-    assert w.tabs.tabText(4) == render("G_TAB_COMPARE") and c.status.text() == render("G_COMPARE_NONE")
+    assert w.tabs.tabText(w.tabs.indexOf(w.comparison)) == render("G_TAB_COMPARE") and c.status.text() == render(
+        "G_COMPARE_NONE")
     assert not c.compare_button.isEnabled()
 
     def choose(project):  # Variant…, then the tick that enables Compare
@@ -1601,6 +1603,42 @@ def test_compare_two_si_projects_in_the_window_into_the_bases_folder(window, qap
         w.tick()
         assert (c.status.text(), c.lines.count(), c.table.rowCount()) == (shown, 0, 0)
     assert "openEMS" not in sys.modules and "CSXCAD" not in sys.modules
+
+
+def test_the_review_leaves_the_gui_thread_in_under_50_ms_and_fills_its_tables_and_picture(window):  # 5.5; A13
+    w = window()
+    v = w.review
+    v.board.setText(str(FIX / "emc_review.kicad_pcb"))
+    start = time.perf_counter()
+    v.review_button.click()
+    assert time.perf_counter() - start < 0.05 and isinstance(w.reviewing, Future)
+    assert v.status.text() == render("G_REVIEWING") and not v.review_button.isEnabled()
+    w.reviewing.result(timeout=120)
+    w.tick()
+    r = w.reviewed
+    assert v.findings.rowCount() == 2 and v.findings.item(0, 1).text() == "R1"
+    assert v.modes.rowCount() == len(control.mode_cells(r.cavities)) > 0 and not v.picture.pixmap().isNull()
+    assert v.lines.item(0).text() == control.text(*r.lines[0]) and v.status.text() == ""
+    w.tabs.setCurrentWidget(v)  # the grab's tab
+    grab(w, "review")
+
+
+def test_a_refused_review_empties_the_view_and_says_why(window, tmp_path):  # design 5.5
+    w = window()
+    w.review.board.setText(str(FIX / "emc_review.kicad_pcb"))
+    w.review.review_button.click()
+    w.reviewing.result(timeout=120)
+    w.tick()
+    w.review.board.setText(str(tmp_path / "missing.kicad_pcb"))
+    w.review.review_button.click()
+    w.reviewing.exception(timeout=60)
+    w.tick()
+    assert w.review.findings.rowCount() == w.review.modes.rowCount() == 0 and w.reviewed is None
+    assert w.review.status.text().startswith(render("E_BOARD_UNREADABLE", path=str(tmp_path / "missing.kicad_pcb"),
+                                                    reason="T_FILE_NOT_FOUND")[:20])
+    w.review.f0.setText("lots")
+    w.review.review_button.click()  # f0 is read on the GUI thread
+    assert w.reviewing is None and w.review.status.text() != render("G_REVIEWING")
 
 
 def test_the_help_menu_shows_about_and_qts_about(window, monkeypatch):  # design 5.3 About

@@ -2307,6 +2307,54 @@ msgstr "A integridade de sinal mede a linha, não a radiação da borda da placa
 msgid "The review counts {net} as a power plane by its name; the signal-integrity project does not, so its reference may differ."
 msgstr "A revisão conta {net} como plano de alimentação pelo nome; o projeto de integridade de sinal não, então a sua referência pode ser outra."
 
+#. G_TAB_REVIEW
+msgid "Review"
+msgstr "Revisão"
+
+#. G_REVIEW
+msgid "Review the board"
+msgstr "Revisar a placa"
+
+#. G_REVIEWING
+msgid "Reviewing…"
+msgstr "Revisando…"
+
+#. G_REVIEW_NETS
+msgid "Tagged nets"
+msgstr "Redes marcadas"
+
+#. G_REVIEW_NETS_HINT
+msgid "names or patterns, comma-separated; empty: the name patterns"
+msgstr "nomes ou padrões, separados por vírgula; vazio: os padrões de nome"
+
+#. G_COL_NUMBER
+msgid "No."
+msgstr "Nº"
+
+#. G_COL_RULE
+msgid "Rule"
+msgstr "Regra"
+
+#. G_COL_NET
+msgid "Net"
+msgstr "Rede"
+
+#. G_COL_LAYER
+msgid "Layer"
+msgstr "Camada"
+
+#. G_COL_PLACE
+msgid "Place (mm)"
+msgstr "Local (mm)"
+
+#. G_COL_CAVITY
+msgid "Cavity"
+msgstr "Cavidade"
+
+#. G_COL_NEAR
+msgid "Near"
+msgstr "Perto de"
+
 #. G_SAVE
 msgid "Save"
 msgstr "Salvar"

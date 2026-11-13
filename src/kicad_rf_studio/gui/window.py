@@ -2,14 +2,16 @@
 """The main window (Stage 2 design 5.1, 5.3, 5.4): it creates a project from a board (NewForm) or opens one, shows its
 cost, starts, follows and stops a run, its own or one it re-attaches through the project lock, replays the project's
 last run and shows its results, which its parts' rows retune in this process (ResultsView), Apply stores through the
-CLI's retune and Verify checks; Compare compares an antenna or an SI project with a variant of its kind (CompareView);
-Advanced edits project.json's fields and saves them under the project lock (AdvancedView); all driven by one 500 ms
-timer (`tick`). The project is read, a board's pads and antennas listed, a KiCad button press read, the board refilled
-and saved in KiCad, new run, retune and compare waited for on a pool thread (control.open_project,
-control.board_choices, control.handed, button.refill, cli.new, cli.new_antenna or cli.new_si, control.apply,
-control.compare); an SI project's retune (Stage 4 design 5.10) runs on a thread of its own (control.retuned on
-`tuner`), polled every TUNE_MS (take_retune); cost, run and verify start as a detached orchestrator (control.start),
-so this process never reaches runs.run_jobs. Its Help menu shows About (control.about) and Qt's About."""
+CLI's retune and Verify checks; Review reviews a board, with or without a project, and shows its findings, its cavity
+modes and review.png (ReviewView, Stage 5 design 5.5); Compare compares an antenna or an SI project with a variant of
+its kind (CompareView); Advanced edits project.json's fields and saves them under the project lock (AdvancedView); all
+driven by one 500 ms timer (`tick`). The project is read, a board's pads and antennas listed, a KiCad button press
+read, the board refilled and saved in KiCad, a board reviewed, new run, retune and compare waited for on a pool thread
+(control.open_project, control.board_choices, control.handed, button.refill, control.review, cli.new, cli.new_antenna
+or cli.new_si, control.apply, control.compare); an SI project's retune (Stage 4 design 5.10) runs on a thread of its
+own (control.retuned on `tuner`), polled every TUNE_MS (take_retune); cost, run and verify start as a detached
+orchestrator (control.start), so this process never reaches runs.run_jobs. Its Help menu shows About (control.about)
+and Qt's About."""
 import html
 import json
 import subprocess
@@ -21,7 +23,7 @@ from PySide6.QtGui import QCloseEvent, QPixmap
 from PySide6.QtNetwork import QLocalServer
 from PySide6.QtWidgets import (QAbstractScrollArea, QComboBox, QDoubleSpinBox, QFileDialog, QFormLayout, QGroupBox,
                                QHBoxLayout, QHeaderView, QLabel, QLineEdit, QListView, QListWidget, QMainWindow,
-                               QMessageBox, QPushButton, QScrollArea, QSizePolicy, QSpinBox, QTableWidget,
+                               QMessageBox, QPushButton, QScrollArea, QSizePolicy, QSpinBox, QSplitter, QTableWidget,
                                QTableWidgetItem, QTabWidget, QVBoxLayout, QWidget)
 # after PySide6: matplotlib's Qt backend then wraps the binding already loaded, never another one installed beside it
 from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg
@@ -51,6 +53,9 @@ DEFAULT_COLUMN_MAX = 320  # Advanced's Default column's width at most, in px
 # Compare's table: compare.csv's DELTA_COLUMNS, as control.compare gives them
 COMPARE_COLUMNS = ("G_COL_QUANTITY", "G_COL_MARKER", "G_COL_F_MHZ", "T_BASE", "T_VARIANT", "G_COL_UNIT", "G_COL_DELTA",
                    "G_COL_DELTA_UNIT", "G_COL_THRESHOLD", "G_COL_RESOLVED")
+# Review's tables (Stage 5 design 5.5): control.finding_cells' columns, then control.mode_cells'
+FINDING_COLUMNS = ("G_COL_NUMBER", "G_COL_RULE", "G_COL_NET", "G_COL_LAYER", "G_COL_PLACE")
+MODE_COLUMNS = ("G_COL_CAVITY", "G_COL_F_MHZ", "G_COL_NEAR")
 SNAPPING = tuple(zip(control.SERIES, ("G_SNAP_OFF", "G_SNAP_E12", "G_SNAP_E24")))  # a Snapping combo's (data, code)
 FIXTURES = tuple(control.FIXTURE_LABELS.items())  # an S2P fixture combo's (data, code)
 
@@ -505,6 +510,71 @@ class CompareView(QWidget):
         self.picture.setPixmap(QPixmap() if picture is None else QPixmap(str(picture)))
 
 
+class ReviewView(QWidget):
+    """The Review tab (Stage 5 design 5.5): the board (`board`) with its Browse… (`browse`), the tagged nets (`nets`,
+    names or patterns, comma-separated, empty for the name patterns) and the carrier (`f0`); Review the board
+    (`review_button`, which the window enables) and its status line (`status`); the review's lines (`lines`); then, in
+    a horizontal splitter, its findings (`findings`, control.finding_cells under FINDING_COLUMNS, read-only, selected by
+    whole rows, several at once) over its cavity modes (`modes`, control.mode_cells under MODE_COLUMNS, read-only), and
+    review.png (`picture`), whose numbers are the findings', at its own size in a scroll area, as Compare shows
+    compare.png."""
+
+    def __init__(self):
+        super().__init__()
+        self.board, self.browse = QLineEdit(), QPushButton(render("G_BROWSE"))
+        self.nets, self.f0 = QLineEdit(placeholderText=render("G_REVIEW_NETS_HINT")), QLineEdit()
+        self.review_button, self.status, self.lines = QPushButton(render("G_REVIEW")), QLabel(), sentences()
+        self.findings, self.modes = QTableWidget(0, len(FINDING_COLUMNS)), QTableWidget(0, len(MODE_COLUMNS))
+        self.picture = QLabel()
+        self.status.setWordWrap(True)  # a refusal names a path, which would otherwise widen the window
+        for table, columns in ((self.findings, FINDING_COLUMNS), (self.modes, MODE_COLUMNS)):
+            table.setHorizontalHeaderLabels([render(code) for code in columns])
+            table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
+            table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.ResizeToContents)
+            table.verticalHeader().hide()  # a row's number would stand beside the finding's own
+        self.findings.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
+        self.findings.setSelectionMode(QTableWidget.SelectionMode.ExtendedSelection)
+        scroll = QScrollArea(widgetResizable=True)  # resizable, as Compare's (CompareView)
+        scroll.setWidget(self.picture)
+        tables = page(self.findings, self.modes)
+        tables.layout().setContentsMargins(0, 0, 0, 0)  # aligned with the tab's other widgets
+        split = QSplitter()  # horizontal: the tables on the left, review.png on the right
+        split.addWidget(tables)
+        split.addWidget(scroll)
+        # ponytail: a third of the width for the tables, two for review.png (800 px wide), which the empty scroll area's
+        # hint left some 70 px; weights over each side's minimum width, which setSizes takes in place of a smaller one
+        # (probed: [1, 2] split about 1:1); the sizes kept per user if they ask
+        split.setSizes([400, 800])
+        form = QFormLayout()
+        for code, field in (("G_NEW_BOARD", beside(self.board, self.browse)), ("G_REVIEW_NETS", self.nets),
+                            ("G_NEW_F0", self.f0)):
+            form.addRow(render(code), field)
+        row = beside(self.review_button, self.status)
+        row.setStretch(1, 1)  # the status line takes the row's width, and the button keeps its own
+        layout = QVBoxLayout(self)
+        layout.addLayout(form)
+        layout.addLayout(row)
+        layout.addWidget(self.lines)
+        layout.addWidget(split)
+
+    def display(self, lines: list[str], findings: list[list[str]], modes: list[list[str]],
+                picture: Path | None) -> None:
+        """The review's `lines`, the cells of its `findings` and of its `modes`, a table row per list, each cell its
+        text, and the image file `picture` (None for none, an empty pixmap)."""
+        self.lines.clear()
+        self.lines.addItems(lines)
+        for table, cells in ((self.findings, findings), (self.modes, modes)):
+            table.setRowCount(len(cells))
+            for k, row in enumerate(cells):
+                for j, text in enumerate(row):
+                    table.setItem(k, j, QTableWidgetItem(text))
+        self.picture.setPixmap(QPixmap() if picture is None else QPixmap(str(picture)))
+
+    def rows(self) -> list[int]:
+        """The findings' selected rows, sorted."""
+        return sorted(index.row() for index in self.findings.selectionModel().selectedRows())
+
+
 class AdvancedView(QWidget):
     """The Advanced tab (Stage 2 design 5.3): project.json's fields (control.fields) in `table`, a row each with its
     name, its value as JSON, the one cell that can be edited, its default and its unit; then the row of Save
@@ -569,6 +639,10 @@ class MainWindow(QMainWindow):
     which polls it every TUNE_MS while one goes on (take_retune); `cost`, the folder of this model's last cost, which
     Run… confirms on; the Compare tab (`comparison`, a CompareView), with `variant`, the resolved project file it
     compares the project with (None until Variant… picks one), and `comparing`, its compare going on (a Future); the
+    Review tab (`review`, a ReviewView, at index 1, after Project: Stage 5 design 5.5), with `reviewing`, its review
+    going on (a Future), and `reviewed`, the last review shown (control.Reviewed), None before the first, after a
+    refusal and after a review that exited non-zero; the pages of the Project, Cost and Run tabs (`project_page`,
+    `cost_page`, `run_page`), which the window selects through indexOf, never a fixed index, but Project's 0; the
     watch: `command`, `run_dir`, its events' `tail`, its `end` event and `proc`, only a
     process this window started; `live`, whether the watched process goes on; `mtime`, project.json's and the board
     file's st_mtime_ns at the last read (stamp); `started`, every process this window started, polled every tick, so
@@ -589,7 +663,7 @@ class MainWindow(QMainWindow):
         self.path = self.opened = self.loading = self.applying = self.cost = self.mtime = None
         self.pads_read = self.creating = self.handoff = self.handed = self.refilling = self.server = self.lock = None
         self.command = self.run_dir = self.tail = self.end = self.proc = None
-        self.variant = self.comparing = None
+        self.variant = self.comparing = self.reviewing = self.reviewed = None
         self.live, self.started, self.verify_next = False, [], False
         self.pool = ThreadPoolExecutor(1)
         self.tuner, self.retuning = ThreadPoolExecutor(1), None
@@ -605,14 +679,18 @@ class MainWindow(QMainWindow):
         self.jobs.setHorizontalHeaderLabels([render(code) for code in COLUMNS])
         self.jobs.horizontalHeader().setStretchLastSection(True)  # the verdict, the longest cell
         self.tabs = QTabWidget()
-        for code, widgets in (("G_TAB_PROJECT", (self.open_button, self.project_status, self.new_form)),
-                              ("G_TAB_COST", (self.cost_lines, self.cost_status, self.cost_button, self.run_button)),
-                              ("G_TAB_RUN", (self.banner, self.jobs, self.log, self.run_status, self.stop_button))):
-            self.tabs.addTab(page(*widgets), render(code))
+        self.project_page = page(self.open_button, self.project_status, self.new_form)
+        self.cost_page = page(self.cost_lines, self.cost_status, self.cost_button, self.run_button)
+        self.run_page = page(self.banner, self.jobs, self.log, self.run_status, self.stop_button)
+        for code, tab in (("G_TAB_PROJECT", self.project_page), ("G_TAB_COST", self.cost_page),
+                          ("G_TAB_RUN", self.run_page)):
+            self.tabs.addTab(tab, render(code))
         self.results, self.comparison, self.advanced = ResultsView(), CompareView(), AdvancedView()
         self.tabs.addTab(self.results, render("G_TAB_RESULTS"))
         self.tabs.addTab(self.comparison, render("G_TAB_COMPARE"))
         self.tabs.addTab(self.advanced, render("G_TAB_ADVANCED"))
+        self.review = ReviewView()
+        self.tabs.insertTab(1, self.review, render("G_TAB_REVIEW"))  # after Project (Stage 5 design 5.5)
         self.setCentralWidget(self.tabs)
         menu = self.menuBar().addMenu(render("G_MENU_HELP"))
         self.about_action = menu.addAction(render("G_ABOUT"))
@@ -628,7 +706,8 @@ class MainWindow(QMainWindow):
                              (self.results.apply_button, self.apply), (self.results.verify_button, self.verify),
                              (self.comparison.variant_button, self.pick_variant),
                              (self.comparison.compare_button, self.compare_variant),
-                             (self.advanced.save_button, self.save)):
+                             (self.review.browse, self.pick_review_board),
+                             (self.review.review_button, self.start_review), (self.advanced.save_button, self.save)):
             widget.clicked.connect(slot)
         self.results.edited.connect(self.retune)
         form.board.editingFinished.connect(self.board_chosen)
@@ -703,8 +782,9 @@ class MainWindow(QMainWindow):
         and nothing is watched (on open), so a cost meanwhile keeps its tab. Before all that, with or without a
         project, New's board read, new itself and Refill when done (show_pads; created, which opens the project new
         wrote, whose own tick runs inside this one; refilled), then Refill enabled while a press gave a KiCad to ask
-        (`handed`) and no refill goes on; and, with a project, a compare that ended (compared), then Compare the
-        projects enabled while a variant is picked (`variant`) and no compare goes on."""
+        (`handed`) and no refill goes on; a review that ended (show_review), since a review needs no project (Stage 5
+        design 5.5), then Review the board enabled while no review goes on; and, with a project, a compare that ended
+        (compared), then Compare the projects enabled while a variant is picked (`variant`) and no compare goes on."""
         self.started = [p for p in self.started if p.poll() is None]  # poll() reaps one that ended
         if self.pads_read is not None and self.pads_read.done():
             done, self.pads_read = self.pads_read, None
@@ -716,6 +796,10 @@ class MainWindow(QMainWindow):
             done, self.refilling = self.refilling, None
             self.refilled(done)
         self.new_form.refill_button.setEnabled(self.handed is not None and self.refilling is None)
+        if self.reviewing is not None and self.reviewing.done():
+            done, self.reviewing = self.reviewing, None
+            self.show_review(done)
+        self.review.review_button.setEnabled(self.reviewing is None)
         if self.path is None:
             return
         if self.comparing is not None and self.comparing.done():
@@ -819,7 +903,7 @@ class MainWindow(QMainWindow):
         else:
             self.jobs.setRowCount(0)
             self.log.clear()
-        self.tabs.setCurrentIndex(1 if command == "cost" else 2)
+        self.tabs.setCurrentIndex(self.tabs.indexOf(self.cost_page if command == "cost" else self.run_page))
 
     def start(self, command: str) -> None:
         """Starts `command` (cost, run or verify) on the project as a detached orchestrator in a new run folder and
@@ -1038,6 +1122,48 @@ class MainWindow(QMainWindow):
         view.status.clear()
         view.display([control.text(c, p) for c, p in lines], cells,
                      self.path.parent / control.COMPARE_FOLDER / "compare.png" if code == 0 else None)
+
+    def start_review(self) -> None:
+        """Review the board (Stage 5 design 5.5): f0 read here, on the GUI thread, when its field is not blank, then
+        the review on the pool (control.review, as `reviewing`) of the board, stripped, with the tagged nets, each
+        comma-separated name stripped and the empty ones dropped, and the open project (`path`, None without one);
+        G_REVIEWING in Review's status line, then a tick, which disables the button until it ends (show_review). A
+        frequency that does not read goes to the status line, and nothing starts."""
+        v = self.review
+        try:
+            f0 = parse_frequency(v.f0.text()) if v.f0.text().strip() else None
+        except KrsError as e:
+            v.status.setText(control.message(e))
+            return
+        nets = [name.strip() for name in v.nets.text().split(",") if name.strip()]
+        self.reviewing = self.pool.submit(control.review, Path(v.board.text().strip()), nets, f0, self.path)
+        v.status.setText(render("G_REVIEWING"))
+        self.tick()
+
+    def pick_review_board(self) -> None:
+        """Review's board Browse…: the board file picked in the dialog, as New's (pick_board); nothing on Cancel."""
+        name, _ = QFileDialog.getOpenFileName(self, render("G_NEW_BOARD"), "", render("G_BOARD_FILTER"))
+        if name:
+            self.review.board.setText(name)
+
+    def show_review(self, done: Future) -> None:
+        """The review's end (`done`, control.review): a refusal (cli.review's, else E_INTERNAL) in Review's status line
+        in the window's words (control.message), the view emptied, `reviewed` None and the exception taken as show_pads
+        takes it; else the status line cleared, the review's lines in the window's words (control.text), the cells of
+        its findings and of its modes (control.finding_cells, control.mode_cells) and its review.png, and `reviewed`
+        the review on exit code 0, else None. On 2, a file it could not write, there are no cells and no picture
+        (control.review), so no stale table or picture shows."""
+        view, error = self.review, done.exception()
+        if error is not None:
+            view.status.setText(control.message(error))
+            view.display([], [], [], None)
+            self.reviewed = None
+            return
+        r = done.result()
+        self.reviewed = r if r.code == 0 else None
+        view.status.clear()
+        view.display([control.text(c, p) for c, p in r.lines], control.finding_cells(r.findings),
+                     control.mode_cells(r.cavities), r.png)
 
     def save(self) -> None:
         """Advanced's Save: under the project lock, results/ its run folder as a retune's, project.json read afresh
@@ -1292,10 +1418,10 @@ class MainWindow(QMainWindow):
     def closeEvent(self, event: QCloseEvent) -> None:
         """Closing the window first closes its server and unlocks gui.lock (serve), so that a later start serves itself
         instead of waiting on a closing window whose pool may still run; it then stops its timers and drops the work
-        not yet begun of its pool (project reads, a pad list, a New, an Apply, a compare, a refill) and of its tuner (an
-        SI retune); what it started goes on (design 5.1: a run outlives its window, and the next window re-attaches it),
-        an Apply's retune included, and so does a refill already begun, which ends when KiCad answers, within
-        FILL_WAIT_S, as an Apply's retune does."""
+        not yet begun of its pool (project reads, a pad list, a New, an Apply, a compare, a review, a refill) and of its
+        tuner (an SI retune); what it started goes on (design 5.1: a run outlives its window, and the next window
+        re-attaches it), an Apply's retune included, and so does a refill already begun, which ends when KiCad answers,
+        within FILL_WAIT_S, as an Apply's retune does."""
         if self.server is not None:  # serve keeps both
             self.server.close()
             self.lock.unlock()
