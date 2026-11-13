@@ -2281,6 +2281,30 @@ msgstr ""
 msgid "Unit"
 msgstr ""
 
+#. G_NEAR_CARRIER
+#, python-brace-format
+msgid "{n} × carrier ({f_mhz} MHz)"
+msgstr ""
+
+#. G_NEAR_CLOCK
+#, python-brace-format
+msgid "{n} × clock ({f_mhz} MHz)"
+msgstr ""
+
+#. G_SIMULATE_SI
+#, python-brace-format
+msgid "New from a board is set to the kind Signal integrity on {net}: one relative result. A comparison needs a twin board drawn in KiCad, with the copper fixed or the trace moved, and a project of each."
+msgstr ""
+
+#. G_SIMULATE_EDGE
+msgid "Signal integrity measures the line, not the radiation from the board edge."
+msgstr ""
+
+#. G_SIMULATE_REFERENCE
+#, python-brace-format
+msgid "The review counts {net} as a power plane by its name; the signal-integrity project does not, so its reference may differ."
+msgstr ""
+
 #. G_SAVE
 msgid "Save"
 msgstr ""

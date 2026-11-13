@@ -3,8 +3,9 @@
 tail, re-attach through the lock and the end events, the project read off the GUI thread, the retune session (an update
 of a project read's chain from the parts' rows), Verify's stale indicator and comparison, New's read of a board (its
 pads and antennas), its band presets and a button press's pre-fill, Compare's run into the base project's folder and
-its table, Advanced's fields of project.json and their edit, and About's text. Never imports Qt, and matplotlib only
-when compare draws compare.png (compare_png)."""
+its table, the Review tab's review into the data folder and its tables, and "simulate this"'s pre-fill (Stage 5 design
+5.5), Advanced's fields of project.json and their edit, and About's text. Never imports Qt, and matplotlib only when
+compare draws compare.png (compare_png) or review draws review.png (review_png)."""
 import contextlib
 import copy
 import csv
@@ -15,6 +16,7 @@ import os
 import re
 import subprocess
 import sys
+from collections.abc import Sequence
 from dataclasses import dataclass, field, replace
 from functools import partial, reduce
 from importlib import metadata
@@ -22,11 +24,12 @@ from pathlib import Path
 
 import numpy as np
 
-from kicad_rf_studio import __version__, pipeline, runs
+from kicad_rf_studio import __version__, cli, pipeline, runs
 from kicad_rf_studio.core.geometry.region import air_gap
 from kicad_rf_studio.core.kicad import classify, load_board
 from kicad_rf_studio.core.kicad.board import Board, Pad
-from kicad_rf_studio.core.kicad.tracer import antenna_kinds, p_side, partner_ends, partner_net, si_candidates
+from kicad_rf_studio.core.kicad.tracer import (_base, antenna_kinds, is_power, p_side, partner_ends, partner_net,
+                                               si_candidates)
 from kicad_rf_studio.core.kicad.values import bypass, part_kind, port_value, snap, value_text
 from kicad_rf_studio.core.messages import KrsError, detail, render
 from kicad_rf_studio.core.model import spec
@@ -36,6 +39,7 @@ from kicad_rf_studio.core.project import (ANTENNA_BOUNDARY, BAND_FACTOR, DEFAULT
                                           GATES_SI, HARMONICS, INTERFACES, MARGIN_SCALE, MESH_N, REACH_H, SI_DIELECTRIC,
                                           SI_F_MAX, SI_TOLERANCE, T_MAX_S, antenna, board_file, far_field_hz,
                                           load_project, parts, si)
+from kicad_rf_studio.core.review.planes import DOTTED_POWER
 
 END = {0: "G_END_DONE", 2: "G_END_REFUSED", 3: "G_END_BLOCKED", 4: "G_END_NOT_KEPT", 130: "G_END_STOPPED"}
 # the CLI's lines that the GUI words its own way, with the same params (design 5.3)
@@ -493,7 +497,9 @@ class Handed:
     and New's status line (`problem`, as (code, params); None for none); the project's `kind` ("chain", "antenna" or
     "si"), the `antenna` footprint it pre-fills ("" for none), the board's antenna footprints by reference (`kinds`, as
     board_choices gives them), which New's Antenna combo lists, and an SI line's P net (`net`) and its pair's partner
-    (`partner`), "" for none, which New's Interface and Pair rows are fitted to."""
+    (`partner`), "" for none, which New's Interface and Pair rows are fitted to; and New's status lines after a
+    "simulate this" handoff (`notes`, as (code, params); none for a press), shown after `problem` (Stage 5 design 5.5;
+    AR-5)."""
     board: Path
     socket: str
     token: str
@@ -506,6 +512,7 @@ class Handed:
     kinds: dict[str, str] = field(default_factory=dict)
     net: str = ""
     partner: str = ""
+    notes: tuple[tuple[str, dict], ...] = ()
 
 
 def handed(path: Path) -> Handed:
@@ -681,6 +688,97 @@ def compare(base: Path, variant: Path) -> tuple[int, list[tuple[str, dict]], lis
         return code, lines, []
     with open(folder / "compare.csv", encoding="utf-8", newline="") as f:
         return code, lines, cells(list(csv.DictReader(f)))
+
+
+REVIEW_FOLDER = "review"  # the Review tab's folder, in the data folder (Stage 5 design 5.5)
+NEAR = {"carrier": "G_NEAR_CARRIER", "clock": "G_NEAR_CLOCK"}  # a mode's marks in the window's words, by their source
+
+
+@dataclass(frozen=True)
+class Reviewed:
+    """A review as the Review tab shows it (Stage 5 design 5.5): the CLI's exit `code` and its `lines`, as (code,
+    params); review.json's `findings` and `cavities`; the `board` file reviewed; and review.png (`png`). No findings,
+    no cavities and no png when the review exited non-zero."""
+    code: int
+    lines: list[tuple[str, dict]]
+    findings: list[dict]
+    cavities: list[dict]
+    board: Path
+    png: Path | None
+
+
+def review(board: Path, nets: list[str], f0: float | None, project: Path | None) -> Reviewed:
+    """The Review tab's review (Stage 5 design 5.5), off the GUI thread: cli.review of the board file `board` with the
+    tagged `nets` (none: the name patterns), the carrier `f0` in Hz and the project file `project` (None for either:
+    none), into the data folder's review/ (REVIEW_FOLDER), its lines collected; then, when it exited 0, review.json read
+    back. Raises cli.review's refusals (load_board's, E_NO_STACKUP, the stackup's and the project's)."""
+    # ponytail: review/ is replaced on each review, as compare/ is; one folder per board if users keep several
+    # ponytail: the pool's one thread waits for the review, seconds and about 20 s at 100 × 80 mm (design 5.4), so a
+    # press's read queued meanwhile waits too; a pool of two if that matters
+    # ponytail: review_png draws on this pool thread, as compare's note says: separate Figures; a lock around both if
+    # a crash ever shows
+    folder, lines = runs.data_dir() / REVIEW_FOLDER, []
+    code = cli.review(str(board), nets=nets, project=None if project is None else str(project), f0=f0, output=folder,
+                      emit=lambda c, p: lines.append((c, p)))
+    if code != 0:  # a refused write (E_RESULTS_WRITE): review.json may be the last review's
+        return Reviewed(code, lines, [], [], board, None)
+    data = json.loads((folder / "review.json").read_text(encoding="utf-8"))
+    return Reviewed(code, lines, data["findings"], data["cavities"], board, folder / "review.png")
+
+
+def finding_cells(findings: list[dict]) -> list[list[str]]:
+    """review.json's `findings` as the Review tab's findings table shows them (Stage 5 design 5.5), a list of texts per
+    finding: its number, as its line prints it (#n); its rule; its net and its layer, "" for None; and its place in
+    KiCad's frame, "(x, y)" in mm to 3 decimals."""
+    return [[f["params"]["n"], f["rule"], f["net"] or "", f["layer"] or "", "({:.3f}, {:.3f})".format(*f["at_mm"])]
+            for f in findings]
+
+
+def mode_cells(cavities: list[dict]) -> list[list[str]]:
+    """review.json's `cavities` as the Review tab's modes table shows them (Stage 5 design 5.5), a list of texts per
+    mode but the static one (f_hz 0): its cavity as "k: LAYERS (NETS)", k from 1, with the layers and nets as
+    I_CAVITY joins them; its frequency in MHz to 1 decimal; and its marks in the window's words (NEAR), joined by "; ",
+    "" for none."""
+    shown = []
+    for k, c in enumerate(cavities, 1):
+        cavity = f"{k}: {'/'.join(c['layers'])} ({' / '.join(', '.join(side) for side in c['nets'])})"
+        shown += [[cavity, f"{m['f_hz'] / 1e6:.1f}", "; ".join(
+            render(NEAR[mark["of"]], n=mark["n"], f_mhz=f"{mark['f_hz'] / 1e6:g}") for mark in m["marks"])]
+            for m in c["modes"] if m["f_hz"] > 0]
+    return shown
+
+
+def kiids(findings: list[dict], rows) -> list[str]:
+    """The KIIDs of review.json's `findings` at the indices `rows`, of every kind (tracks, vias, zones, pads,
+    footprints), each once, in order: what Select in KiCad sends (button.select)."""
+    return list(dict.fromkeys(k for row in rows for ids in findings[row]["kiids"].values() for k in ids))
+
+
+def simulate_notes(finding: dict) -> list[tuple[str, dict]]:
+    """New's status lines when "simulate this" hands review.json's `finding` to New's SI kind (Stage 5 design 5.5):
+    G_SIMULATE_SI on its net; G_SIMULATE_EDGE for R3, since SI measures no edge radiation; and G_SIMULATE_REFERENCE
+    when its reference net is a dotted power name (+3.3V), a plane to the review (DOTTED_POWER) that SI's classifier
+    (is_power) does not take as power."""
+    notes = [("G_SIMULATE_SI", {"net": finding["net"]})]
+    if finding["rule"] == "R3":
+        notes.append(("G_SIMULATE_EDGE", {}))
+    ref = finding["ref_net"]
+    if ref is not None and DOTTED_POWER.fullmatch(_base(ref)) and not is_power(ref):
+        notes.append(("G_SIMULATE_REFERENCE", {"net": ref}))
+    return notes
+
+
+def simulated(board: Path, net: str, handoff: Path | None, notes: Sequence[tuple[str, dict]]) -> Handed:
+    """"Simulate this" (Stage 5 design 5.5), off the GUI thread: New's SI pre-fill of the line through `net` on the
+    board file `board`, as a press on one of its tracks gives it (_si_handed, no pad selected), with the KiCad of the
+    last press, the socket and token of its handoff file `handoff` ("" for both with none), and `notes`, New's status
+    lines after the pre-fill's problem (AR-5). Raises load_board's refusals and the handoff file's read errors."""
+    # read here, on the pool, behind any press's read still in flight, so the socket is never a stale one (AR-6)
+    data = json.loads(handoff.read_text(encoding="utf-8")) if handoff else {}
+    b = load_board(board)
+    net, partner, ends, problem = _si_handed(b, [net], [])
+    return Handed(board, data.get("socket", ""), data.get("token", ""), _names(b.all_pads()), *(ends or ["", ""]),
+                  problem, "si", kinds=_antennas(b), net=net, partner=partner, notes=tuple(notes))
 
 
 def message(error: Exception) -> str:

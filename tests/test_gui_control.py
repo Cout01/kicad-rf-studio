@@ -753,6 +753,47 @@ def test_compare_gives_two_si_projects_table_in_the_windows_words(tmp_path, cali
     assert sorted(p.name for p in (a.parent / control.COMPARE_FOLDER).iterdir()) == ["compare.csv", "compare.png"]
 
 
+EMC, QSPI = FIX / "emc_review.kicad_pcb", FIX / "qspi_clk.kicad_pcb"
+
+
+def test_control_reviews_into_the_data_folder_as_the_cli_writes_and_reads_it_back(fake):  # design 5.5; A9
+    r = control.review(EMC, [], None, None)
+    folder = runs.data_dir() / control.REVIEW_FOLDER
+    data = json.loads((folder / "review.json").read_text(encoding="utf-8"))
+    golden = json.loads((FIX / "review" / "emc_review.json").read_text(encoding="utf-8"))
+    assert {k: v for k, v in data.items() if k != "board"} == {k: v for k, v in golden.items() if k != "board"}
+    assert (r.code, r.findings, r.cavities, r.png) == (0, data["findings"], data["cavities"], folder / "review.png")
+    assert control.finding_cells(r.findings)[0] == ["1", "R1", "CLK_GAP", "F.Cu",
+                                                   "({:.3f}, {:.3f})".format(*data["findings"][0]["at_mm"])]
+    cells = control.mode_cells(r.cavities)
+    assert len(cells) == sum(m["f_hz"] > 0 for c in r.cavities for m in c["modes"])  # the static mode is no row
+    assert cells[0][0] == "1: In1.Cu/In2.Cu (GND / +3V3)"
+    assert control.kiids(r.findings, [0]) == list(dict.fromkeys(k for ids in r.findings[0]["kiids"].values()
+                                                                 for k in ids))
+    lpf = control.review(FIX / "lpf915.kicad_pcb", ["RF_*"], 915e6, None)  # the folder is replaced
+    marked = [m for c in lpf.cavities for m in c["modes"] if m["marks"]]
+    near = [row[2] for row in control.mode_cells(lpf.cavities) if row[2]]
+    assert near == ["; ".join(render("G_NEAR_CARRIER", n=k["n"], f_mhz=f"{k['f_hz'] / 1e6:g}") for k in m["marks"])
+                    for m in marked]
+    with pytest.raises(KrsError) as e:
+        control.review(FIX / "missing.kicad_pcb", [], None, None)
+    assert e.value.code == "E_BOARD_UNREADABLE"
+
+
+def test_simulate_this_pre_fills_the_si_kind_with_the_presss_kicad_and_its_notes(fake):  # design 5.5
+    si = [("G_SIMULATE_SI", {"net": "FLASH_CLK"})]
+    h = control.simulated(QSPI, "FLASH_CLK", press(QSPI), si)  # the press's socket and token, read from its file
+    assert (h.kind, h.net, h.socket, h.token, h.problem, {h.start, h.end}, h.notes) == (
+        "si", "FLASH_CLK", "ipc://s", "T", None, {"U1.11", "U2.6"}, tuple(si))
+    gap = control.simulated(EMC, "CLK_GAP", None, [])
+    assert gap.problem == ("G_HANDOFF_SI_ENDS", {"net": "CLK_GAP", "count": 0, "pads": "T_NONE"})
+    assert (gap.socket, gap.token) == ("", "")  # no press: no KiCad
+    assert control.simulate_notes({"rule": "R3", "net": "CLK_EDGE", "ref_net": "+3.3V"}) == [
+        ("G_SIMULATE_SI", {"net": "CLK_EDGE"}), ("G_SIMULATE_EDGE", {}), ("G_SIMULATE_REFERENCE", {"net": "+3.3V"})]
+    assert control.simulate_notes({"rule": "R1", "net": "CLK_GAP", "ref_net": "+3V3"}) == [
+        ("G_SIMULATE_SI", {"net": "CLK_GAP"})]  # +3V3 is power for both
+
+
 def test_about_names_the_version_the_licence_notices_and_each_runtime_dependency(monkeypatch):  # design 5.3 About
     real = metadata.version
 
