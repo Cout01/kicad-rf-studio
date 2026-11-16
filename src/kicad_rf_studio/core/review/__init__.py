@@ -96,7 +96,8 @@ def review_board(board: Board, stackup: Stackup, zs: tuple[Slab, ...], classes: 
     per skipped layer and I_EMC_NO_REFERENCE for the nets with a track no plane lies under. Each cavity of `cavities`,
     in its order, is solved up to f_max (design 5.4; AR-4): its entry holds its layers, nets, place in KiCad's frame,
     d, εr, area, post count, the grid's h, narrow_slot, and its modes in Hz to 1 kHz, the static one 0.0, each with
-    its marks on the carrier and the clocks."""
+    its marks on the carrier and the clocks, a clock given twice counted once, in the order given."""
+    clocks = tuple(dict.fromkeys(clocks))  # --clock 40MHz --clock 40e6: one clock, one stop note and one mark
     never, pm = plane_nets(board, classes), plane_map(board, classes, zs)
     f_hz, source, carrier = resolve_f_max(f_max, f0, project)
     eps_r = max(layer.epsilon_r for layer in stackup.layers if layer.kind == "dielectric")
@@ -132,7 +133,7 @@ def review_board(board: Board, stackup: Stackup, zs: tuple[Slab, ...], classes: 
     settings = {"f_max_hz": f_hz, "f_max_source": source, "eps_r": eps_r, "l_mm": round(l_mm, 3), "edge_k": float(k),
                 "edge_fence": edge_fence, "tags": [{"net": net, "source": s} for net, s in tags.items()]}
     cover = shapely.union_all([g for by_net in pm.planes.values() for g in by_net.values()])
-    return Review(settings, notes, findings, cover, carrier, tuple(clocks), entries)
+    return Review(settings, notes, findings, cover, carrier, clocks, entries)
 
 
 def cavity_lines(r: Review) -> list[tuple[str, dict]]:

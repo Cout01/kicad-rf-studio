@@ -110,6 +110,14 @@ def test_cavity_lines_word_each_cavity_its_modes_marks_warnings_clocks_and_the_l
     assert all(code != "I_CAVITY_CLOCK_STOP" for code, _ in cavity_lines(run(clocks=(1e9,))))  # 11 GHz > f_max
 
 
+def test_a_clock_given_twice_is_one_clock():  # design 5.4: --clock 100MHz --clock 100e6
+    r = run(clocks=(100e6, 100e6))
+    assert [line for line in cavity_lines(r) if line[0] in ("I_CAVITY_NEAR_CLOCK", "I_CAVITY_CLOCK_STOP")] == [
+        ("I_CAVITY_NEAR_CLOCK", {"k": "1", "f_mhz": "971.1", "n": "10", "of_mhz": "100"}),  # its first mode
+        ("I_CAVITY_CLOCK_STOP", {"clock_mhz": "100", "n": "11"})]
+    assert r.cavities[0]["modes"][1]["marks"] == [{"of": "clock", "f_hz": 100e6, "n": 10}] and r.clocks == (100e6,)
+
+
 def test_cavity_lines_word_marks_a_coarse_grid_a_slot_and_a_cavity_with_no_mode():  # design 5.4 outputs; AR-3
     r = run()
     marked = {**r.cavities[0], "h_mm": 0.5, "narrow_slot": True,
