@@ -43,7 +43,7 @@ def test_notice_names_each_kicad_calculator_file_the_tests_port():  # ruling 13;
 def test_every_golden_pin_names_a_clean_product_tree():  # ruling 13: golden_antenna's +dirty stamp (plan 4's R-11)
     stamps = {p.name: json.loads(p.read_text(encoding="utf-8"))["code"]
               for p in sorted((ROOT / "tests" / "fixtures").glob("golden_*.json"))}
-    assert sorted(stamps) == ["golden_antenna.json", "golden_si.json", "golden_v1.json"]
+    assert sorted(stamps) == ["golden_antenna.json", "golden_s5.json", "golden_si.json", "golden_v1.json"]
     assert [name for name, code in stamps.items() if not re.fullmatch(r"[0-9a-f]{40}", code)] == []
     assert stamps["golden_antenna.json"] == "e5469200427c76d82e9d2893363696ead16cf351"  # R-11's src tree, at 8faa7d6
 

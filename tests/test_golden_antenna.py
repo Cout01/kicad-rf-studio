@@ -3,10 +3,12 @@ import json
 import os
 
 import golden_antenna
+import golden_s5
 import golden_v1
 import pytest
 
 GOLDEN = json.loads(golden_antenna.GOLDEN.read_text(encoding="utf-8"))
+SHARED = json.loads(golden_s5.GOLDEN.read_text(encoding="utf-8"))
 
 
 @pytest.fixture(scope="module")
@@ -15,6 +17,16 @@ def now(tmp_path_factory):
     os.chdir(tmp_path_factory.mktemp("golden_antenna"))  # relative paths only, so no byte holds this machine's folders
     try:
         return golden_antenna.digests()
+    finally:
+        os.chdir(home)
+
+
+@pytest.fixture(scope="module")
+def shared(tmp_path_factory):
+    home = os.getcwd()
+    os.chdir(tmp_path_factory.mktemp("shared"))  # relative paths only, as `now`
+    try:
+        return golden_s5.shared_antenna()
     finally:
         os.chdir(home)
 
@@ -38,3 +50,15 @@ def test_the_antennas_outputs_and_the_2d_readouts_are_byte_for_byte_what_they_we
     if golden_v1.env() != GOLDEN["env"]:
         pytest.skip("the antenna output pins compare only on the env that recorded them (golden_v1.env())")
     assert now["outputs"] == GOLDEN["outputs"]  # a results/ file, a result line or a 2D readout moved
+
+
+def test_the_antennas_shared_outputs_stand_as_they_were_at_a87bcc1(shared):  # plan 3 ruling 2
+    pins = SHARED["antenna"]
+    assert set(shared["cases"]) == set(golden_antenna.BANDS) and set(shared["run"]) == {"ifa2g4"}
+    assert all({"load", "cost", "csx", "fingerprint"} <= set(c) for c in shared["cases"].values())
+    assert "csx_verify" in shared["cases"]["ifa2g4_pi"]
+    assert sum(name.startswith("job-0-nf2ff") for name in shared["run"]["ifa2g4"]["run"]["jobs"]) == 1  # the transform
+    assert shared["cases"] == pins["cases"]
+    if golden_v1.env() != SHARED["env"]:
+        pytest.skip("the run pins compare only on the env that recorded them (golden_v1.env())")
+    assert shared["run"] == pins["run"]
