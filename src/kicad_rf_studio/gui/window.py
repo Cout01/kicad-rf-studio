@@ -2,16 +2,17 @@
 """The main window (Stage 2 design 5.1, 5.3, 5.4): it creates a project from a board (NewForm) or opens one, shows its
 cost, starts, follows and stops a run, its own or one it re-attaches through the project lock, replays the project's
 last run and shows its results, which its parts' rows retune in this process (ResultsView), Apply stores through the
-CLI's retune and Verify checks; Review reviews a board, with or without a project, and shows its findings, its cavity
-modes and review.png (ReviewView, Stage 5 design 5.5); Compare compares an antenna or an SI project with a variant of
-its kind (CompareView); Advanced edits project.json's fields and saves them under the project lock (AdvancedView); all
-driven by one 500 ms timer (`tick`). The project is read, a board's pads and antennas listed, a KiCad button press
-read, the board refilled and saved in KiCad, a board reviewed, new run, retune and compare waited for on a pool thread
-(control.open_project, control.board_choices, control.handed, button.refill, control.review, cli.new, cli.new_antenna
-or cli.new_si, control.apply, control.compare); an SI project's retune (Stage 4 design 5.10) runs on a thread of its
-own (control.retuned on `tuner`), polled every TUNE_MS (take_retune); cost, run and verify start as a detached
-orchestrator (control.start), so this process never reaches runs.run_jobs. Its Help menu shows About (control.about)
-and Qt's About."""
+CLI's retune and Verify checks; Review reviews a board, with or without a project, shows its findings, its cavity
+modes and review.png, selects findings in KiCad and hands one to New's SI kind ("simulate this") (ReviewView, Stage 5
+design 5.5); Compare compares an antenna or an SI project with a variant of its kind (CompareView); Advanced edits
+project.json's fields and saves them under the project lock (AdvancedView); all driven by one 500 ms timer (`tick`).
+The project is read, a board's pads and antennas listed, a KiCad button press read, the board refilled and saved in
+KiCad, a board reviewed, its findings selected in KiCad, a finding's line pre-filled, new run, retune and compare
+waited for on a pool thread (control.open_project, control.board_choices, control.handed, button.refill,
+control.review, button.select, control.simulated, cli.new, cli.new_antenna or cli.new_si, control.apply,
+control.compare); an SI project's retune (Stage 4 design 5.10) runs on a thread of its own (control.retuned on
+`tuner`), polled every TUNE_MS (take_retune); cost, run and verify start as a detached orchestrator (control.start), so
+this process never reaches runs.run_jobs. Its Help menu shows About (control.about) and Qt's About."""
 import html
 import json
 import subprocess
@@ -515,17 +516,22 @@ class ReviewView(QWidget):
     names or patterns, comma-separated, empty for the name patterns) and the carrier (`f0`); Review the board
     (`review_button`, which the window enables) and its status line (`status`); the review's lines (`lines`); then, in
     a horizontal splitter, its findings (`findings`, control.finding_cells under FINDING_COLUMNS, read-only, selected by
-    whole rows, several at once) over its cavity modes (`modes`, control.mode_cells under MODE_COLUMNS, read-only), and
-    review.png (`picture`), whose numbers are the findings', at its own size in a scroll area, as Compare shows
-    compare.png."""
+    whole rows, several at once), the row of Select in KiCad (`select_button`) and Simulate this (`simulate_button`),
+    which act on the findings selected and which the window enables, and its cavity modes (`modes`, control.mode_cells
+    under MODE_COLUMNS, read-only), one over the other, and review.png (`picture`), whose numbers are the findings', at
+    its own size in a scroll area, as Compare shows compare.png."""
 
     def __init__(self):
         super().__init__()
         self.board, self.browse = QLineEdit(), QPushButton(render("G_BROWSE"))
         self.nets, self.f0 = QLineEdit(placeholderText=render("G_REVIEW_NETS_HINT")), QLineEdit()
         self.review_button, self.status, self.lines = QPushButton(render("G_REVIEW")), QLabel(), sentences()
+        self.select_button = QPushButton(render("G_REVIEW_SELECT"))
+        self.simulate_button = QPushButton(render("G_REVIEW_SIMULATE"))
         self.findings, self.modes = QTableWidget(0, len(FINDING_COLUMNS)), QTableWidget(0, len(MODE_COLUMNS))
         self.picture = QLabel()
+        for widget in (self.select_button, self.simulate_button):
+            widget.setEnabled(False)  # until the window has a review with a finding selected
         self.status.setWordWrap(True)  # a refusal names a path, which would otherwise widen the window
         for table, columns in ((self.findings, FINDING_COLUMNS), (self.modes, MODE_COLUMNS)):
             table.setHorizontalHeaderLabels([render(code) for code in columns])
@@ -538,6 +544,9 @@ class ReviewView(QWidget):
         scroll.setWidget(self.picture)
         tables = page(self.findings, self.modes)
         tables.layout().setContentsMargins(0, 0, 0, 0)  # aligned with the tab's other widgets
+        actions = beside(self.select_button, self.simulate_button)
+        actions.addStretch()  # the buttons keep their own width
+        tables.layout().insertLayout(1, actions)  # under the findings, which they act on
         split = QSplitter()  # horizontal: the tables on the left, review.png on the right
         split.addWidget(tables)
         split.addWidget(scroll)
@@ -641,14 +650,16 @@ class MainWindow(QMainWindow):
     compares the project with (None until Variant… picks one), and `comparing`, its compare going on (a Future); the
     Review tab (`review`, a ReviewView, at index 1, after Project: Stage 5 design 5.5), with `reviewing`, its review
     going on (a Future), and `reviewed`, the last review shown (control.Reviewed), None before the first, after a
-    refusal and after a review that exited non-zero; the pages of the Project, Cost and Run tabs (`project_page`,
-    `cost_page`, `run_page`), which the window selects through indexOf, never a fixed index, but Project's 0; the
-    watch: `command`, `run_dir`, its events' `tail`, its `end` event and `proc`, only a
+    refusal and after a review that exited non-zero, then `selecting`, its Select in KiCad going on (a Future), and
+    `select_total`, the count of KIIDs the last Select sent; the pages of the Project, Cost and Run tabs
+    (`project_page`, `cost_page`, `run_page`), which the window selects through indexOf, never a fixed index, but
+    Project's 0; the watch: `command`, `run_dir`, its events' `tail`, its `end` event and `proc`, only a
     process this window started; `live`, whether the watched process goes on; `mtime`, project.json's and the board
     file's st_mtime_ns at the last read (stamp); `started`, every process this window started, polled every tick, so
     that none is left a zombie on Linux; the New form's work going on (Futures): `pads_read`, the chosen board's
-    pads and antennas, or a press (take_handoff), and `creating`, new; and the KiCad button's presses: `handoff`, the
-    handoff file of the last press taken, and `handed`, the last press shown (control.Handed), each None before the
+    pads and antennas, a press (take_handoff) or "simulate this"'s pre-fill (simulate_this), and `creating`, new; and
+    the KiCad button's presses: `handoff`, the handoff file of the last press taken, and `handed`, the last pre-fill
+    shown (control.Handed), a press's or "simulate this"'s, which carries the last press's KiCad, each None before the
     first, and `refilling`, Refill's refill and save in KiCad going on (a Future); one window per user (gui.main,
     serve): `server`, the local server that takes a second start's request, and `lock`, gui.lock, both None in a
     window main did not make.
@@ -663,8 +674,8 @@ class MainWindow(QMainWindow):
         self.path = self.opened = self.loading = self.applying = self.cost = self.mtime = None
         self.pads_read = self.creating = self.handoff = self.handed = self.refilling = self.server = self.lock = None
         self.command = self.run_dir = self.tail = self.end = self.proc = None
-        self.variant = self.comparing = self.reviewing = self.reviewed = None
-        self.live, self.started, self.verify_next = False, [], False
+        self.variant = self.comparing = self.reviewing = self.reviewed = self.selecting = None
+        self.live, self.started, self.verify_next, self.select_total = False, [], False, 0
         self.pool = ThreadPoolExecutor(1)
         self.tuner, self.retuning = ThreadPoolExecutor(1), None
         self.open_button, self.project_status, self.new_form = QPushButton(render("G_OPEN")), QLabel(), NewForm()
@@ -707,7 +718,9 @@ class MainWindow(QMainWindow):
                              (self.comparison.variant_button, self.pick_variant),
                              (self.comparison.compare_button, self.compare_variant),
                              (self.review.browse, self.pick_review_board),
-                             (self.review.review_button, self.start_review), (self.advanced.save_button, self.save)):
+                             (self.review.review_button, self.start_review),
+                             (self.review.select_button, self.select_in_kicad),
+                             (self.review.simulate_button, self.simulate_this), (self.advanced.save_button, self.save)):
             widget.clicked.connect(slot)
         self.results.edited.connect(self.retune)
         form.board.editingFinished.connect(self.board_chosen)
@@ -781,10 +794,14 @@ class MainWindow(QMainWindow):
         window's own process was not running at the last tick (`live`) and the holder lives, or when the holder is dead
         and nothing is watched (on open), so a cost meanwhile keeps its tab. Before all that, with or without a
         project, New's board read, new itself and Refill when done (show_pads; created, which opens the project new
-        wrote, whose own tick runs inside this one; refilled), then Refill enabled while a press gave a KiCad to ask
-        (`handed`) and no refill goes on; a review that ended (show_review), since a review needs no project (Stage 5
-        design 5.5), then Review the board enabled while no review goes on; and, with a project, a compare that ended
-        (compared), then Compare the projects enabled while a variant is picked (`variant`) and no compare goes on."""
+        wrote, whose own tick runs inside this one; refilled), then Refill enabled while the pre-fill shown (`handed`)
+        holds a KiCad socket and no refill goes on: only a press gives a KiCad, and a press's handoff always holds a
+        socket, while "simulate this" carries the last press's, "" before any (AR-6); a review and a Select in KiCad
+        that ended (show_review, selected), since a review needs no project (Stage 5 design 5.5), then Review the board
+        enabled while no review goes on, Select in KiCad while that socket is held, a review is shown (`reviewed`), rows
+        of its findings are selected and no Select goes on, and Simulate this while a review is shown and exactly one of
+        its findings is selected, an R1, R2 or R3 one; and, with a project, a compare that ended (compared), then
+        Compare the projects enabled while a variant is picked (`variant`) and no compare goes on."""
         self.started = [p for p in self.started if p.poll() is None]  # poll() reaps one that ended
         if self.pads_read is not None and self.pads_read.done():
             done, self.pads_read = self.pads_read, None
@@ -795,11 +812,22 @@ class MainWindow(QMainWindow):
         if self.refilling is not None and self.refilling.done():
             done, self.refilling = self.refilling, None
             self.refilled(done)
-        self.new_form.refill_button.setEnabled(self.handed is not None and self.refilling is None)
+        kicad = self.handed is not None and bool(self.handed.socket)
+        self.new_form.refill_button.setEnabled(kicad and self.refilling is None)
         if self.reviewing is not None and self.reviewing.done():
             done, self.reviewing = self.reviewing, None
             self.show_review(done)
-        self.review.review_button.setEnabled(self.reviewing is None)
+        if self.selecting is not None and self.selecting.done():
+            done, self.selecting = self.selecting, None
+            self.selected(done)
+        # ponytail: Select and Simulate follow the findings' selection at the next tick, 500 ms at most, and their
+        # slots read the rows at the click; the findings' itemSelectionChanged connected to tick if that gap bites
+        v, r = self.review, self.reviewed
+        rows = v.rows()
+        v.review_button.setEnabled(self.reviewing is None)
+        v.select_button.setEnabled(kicad and r is not None and bool(rows) and self.selecting is None)
+        v.simulate_button.setEnabled(r is not None and len(rows) == 1
+                                     and r.findings[rows[0]]["rule"] in ("R1", "R2", "R3"))
         if self.path is None:
             return
         if self.comparing is not None and self.comparing.done():
@@ -1165,6 +1193,46 @@ class MainWindow(QMainWindow):
         view.display([control.text(c, p) for c, p in r.lines], control.finding_cells(r.findings),
                      control.mode_cells(r.cavities), r.png)
 
+    def select_in_kicad(self) -> None:
+        """Select in KiCad (Stage 5 design 5.5): the KIIDs of the findings selected, each once (control.kiids), their
+        count kept as `select_total`, selected on the pool (button.select, as `selecting`) in the KiCad of the pre-fill
+        shown (`handed`), its socket and token the last press's, on the board reviewed, which button.select refuses
+        when KiCad has another board open; G_SELECTING in Review's status line, then a tick, which disables the button
+        until it ends (selected)."""
+        h, kiids = self.handed, control.kiids(self.reviewed.findings, self.review.rows())
+        self.select_total = len(kiids)
+        self.selecting = self.pool.submit(button.select, h.socket, h.token, self.reviewed.board, kiids)
+        self.review.status.setText(render("G_SELECTING"))
+        self.tick()
+
+    def selected(self, done: Future) -> None:
+        """Select in KiCad's end (`done`, button.select): a refusal (button.select's, else E_INTERNAL) in Review's
+        status line in the window's words (control.message), the exception taken as show_pads takes it; else
+        G_SELECTED with the count KiCad selected when it reaches the count sent (`select_total`), or G_SELECT_MISSING
+        with both when it does not: KiCad skips a KIID its board does not hold, so the board it has open holds edits
+        not yet saved."""
+        status, error = self.review.status, done.exception()
+        if error is not None:
+            status.setText(control.message(error))
+            return
+        count = done.result()
+        status.setText(render("G_SELECTED", count=count) if count >= self.select_total else
+                       render("G_SELECT_MISSING", count=count, total=self.select_total))
+
+    def simulate_this(self) -> None:
+        """Simulate this (Stage 5 design 5.5): the one finding selected, an R1, R2 or R3 one, pre-fills New's SI kind
+        with the line through its net on the board reviewed, on the pool (control.simulated, as New's read,
+        `pads_read`, which show_pads shows), with the KiCad of the last press, read there from its handoff file
+        (`handoff`), behind any press's read still going, so that Refill and Select never reach a stale KiCad (AR-6);
+        its status lines (control.simulate_notes) in New's status line at once, joined by a space, which show_pads
+        shows again after the pre-fill's problem (AR-5); then the Project tab. It replaces a read in flight, as a press
+        does (take_handoff)."""
+        finding = self.reviewed.findings[self.review.rows()[0]]
+        notes = control.simulate_notes(finding)
+        self.new_form.status.setText(" ".join(control.text(code, params) for code, params in notes))
+        self.pads_read = self.pool.submit(control.simulated, self.reviewed.board, finding["net"], self.handoff, notes)
+        self.tabs.setCurrentIndex(self.tabs.indexOf(self.project_page))
+
     def save(self) -> None:
         """Advanced's Save: under the project lock, results/ its run folder as a retune's, project.json read afresh
         (load_project), as run, verify and retune read it, so a save never writes back a stale snapshot and no engine
@@ -1207,14 +1275,16 @@ class MainWindow(QMainWindow):
 
     def take_handoff(self, path: Path) -> None:
         """A press of the KiCad button, in the handoff file `path` (Stage 2 design 5.3, 5.5; Stage 3 and Stage 4 design
-        5.10): kept as `handoff`, the Project tab shown and New's status line cleared, unless a refill goes on
+        5.10): kept as `handoff`, the Project tab shown unless the Review tab is, which the press keeps current and
+        whose board it fills (show_pads; Stage 5 design 5.5), and New's status line cleared, unless a refill goes on
         (`refilling`), whose G_REFILLING stays; then the press read on the pool (control.handed) as New's read,
         `pads_read`, which show_pads shows: a matching chain's start and end; for a selected printed antenna, the
         antenna kind with that antenna and its start; or, for a selected track, arc or via, the SI kind with an
         interface that fits its line, its pair's mode and its two end pads. It replaces a read in flight, so a slower
         read of another board never overwrites it, and a board picked after the press wins over it."""
         self.handoff = path
-        self.tabs.setCurrentIndex(0)  # the Project tab, New's
+        if self.tabs.currentWidget() is not self.review:
+            self.tabs.setCurrentIndex(0)  # the Project tab, New's
         if self.refilling is None:
             self.new_form.status.clear()
         self.pads_read = self.pool.submit(control.handed, path)
@@ -1288,14 +1358,16 @@ class MainWindow(QMainWindow):
     def show_pads(self, done: Future) -> None:
         """New's read (`done`): the board's pads and antennas (control.board_choices), the pads in every pad picker
         (start, end, the partner's two and the victims' four), none picked for the user, and the antennas in the
-        footprint combo (NewForm.show_antennas); or a press (control.handed), kept as `handed`: its kind in New's Kind;
-        for an SI press that names a line (`net`), the Interface fitted to it, se50, the one single-ended preset, for a
-        net with no partner under a pair's preset, usb2-hs, New's default, for a pair under se50, Custom kept, then the
-        Pair's mode by KiCad's rule with a partner, else none (one that names no line leaves both); its board's antennas
-        in the footprint combo with its antenna picked, its board in the board field and as `chosen` ("" when the press
-        has no pads, a refusal, so that the board, fixed and picked again, is read again), the project folder beside it
-        as board_chosen sets it, and kept, as there, when the board is `chosen` already, its pads in the pickers with
-        its start and end picked and none other, and its problem in the status line, which is otherwise left as it is.
+        footprint combo (NewForm.show_antennas); or a press (control.handed), or "simulate this"'s pre-fill
+        (control.simulated), kept as `handed`: its kind in New's Kind; for an SI press that names a line (`net`), the
+        Interface fitted to it, se50, the one single-ended preset, for a net with no partner under a pair's preset,
+        usb2-hs, New's default, for a pair under se50, Custom kept, then the Pair's mode by KiCad's rule with a
+        partner, else none (one that names no line leaves both); its board's antennas in the footprint combo with its
+        antenna picked, its board in the board field, in Review's too (Stage 5 design 5.5), and as `chosen` ("" when
+        the press has no pads, a refusal, so that the board, fixed and picked again, is read again), the project folder
+        beside it as board_chosen sets it, and kept, as there, when the board is `chosen` already, its pads in the
+        pickers with its start and end picked and none other, and its problem, then its notes ("simulate this"'s, none
+        for a press: AR-5), joined by a space, in the status line, which is otherwise left as it is.
         On a refusal (load_board's, else E_INTERNAL), the pickers and the footprint combo left empty, the refusal in the
         status line and `chosen` cleared, so that the same board, fixed and picked again, is read again. The exception
         is taken, never raised again: its traceback would then hold this frame, and so the window, in a cycle with the
@@ -1316,11 +1388,12 @@ class MainWindow(QMainWindow):
                 f.pair.setCurrentIndex(f.pair.findData("rule" if read.partner else None))
             f.show_antennas(read.kinds, read.antenna)
             f.board.setText(str(read.board))
+            self.review.board.setText(str(read.board))
             if str(read.board) != f.chosen:
                 f.folder.setText(str(read.board.with_suffix("")))
             f.chosen = str(read.board) if read.pads else ""
-            if read.problem:
-                f.status.setText(control.text(*read.problem))
+            if lines := [control.text(*line) for line in (read.problem, *read.notes) if line]:
+                f.status.setText(" ".join(lines))
         else:
             names, kinds = read
             f.show_antennas(kinds)
@@ -1331,11 +1404,12 @@ class MainWindow(QMainWindow):
             box.setCurrentIndex(box.findText(pick))  # -1, none picked, for "": no pad's name is empty
 
     def refill(self) -> None:
-        """Refill zones and save in KiCad (design 5.5 Refill, 7): asks G_REFILL_CONFIRM on the board of the last press
-        shown (`handed`), under the title G_REFILL. That press is bound before the question: the box is modal, but its
-        event loop runs the tick and the local server, so a press can land while it is open and change `handed`, never
-        the board confirmed. No sends nothing to KiCad. Yes: button.refill in that press's KiCad on the pool
-        (`refilling`), G_REFILLING in New's status line and Refill disabled at once, until its end (refilled)."""
+        """Refill zones and save in KiCad (design 5.5 Refill, 7): asks G_REFILL_CONFIRM on the board of the last
+        pre-fill shown (`handed`, a press's or "simulate this"'s, in the last press's KiCad), under the title G_REFILL.
+        That pre-fill is bound before the question: the box is modal, but its event loop runs the tick and the local
+        server, so a press can land while it is open and change `handed`, never the board confirmed. No sends nothing
+        to KiCad. Yes: button.refill in that pre-fill's KiCad on the pool (`refilling`), G_REFILLING in New's status
+        line and Refill disabled at once, until its end (refilled)."""
         # ponytail: the pool's one thread waits for the refill (seconds; FILL_WAIT_S at most), so a press or a project
         # read meanwhile waits too; a second executor for KiCad's calls if users meet it
         h = self.handed
@@ -1418,10 +1492,10 @@ class MainWindow(QMainWindow):
     def closeEvent(self, event: QCloseEvent) -> None:
         """Closing the window first closes its server and unlocks gui.lock (serve), so that a later start serves itself
         instead of waiting on a closing window whose pool may still run; it then stops its timers and drops the work
-        not yet begun of its pool (project reads, a pad list, a New, an Apply, a compare, a review, a refill) and of its
-        tuner (an SI retune); what it started goes on (design 5.1: a run outlives its window, and the next window
-        re-attaches it), an Apply's retune included, and so does a refill already begun, which ends when KiCad answers,
-        within FILL_WAIT_S, as an Apply's retune does."""
+        not yet begun of its pool (project reads, a pad list, a New, an Apply, a compare, a review, a Select, a refill)
+        and of its tuner (an SI retune); what it started goes on (design 5.1: a run outlives its window, and the next
+        window re-attaches it), an Apply's retune included, and so do a refill and a Select already begun, which end
+        when KiCad answers, within FILL_WAIT_S, as an Apply's retune does."""
         if self.server is not None:  # serve keeps both
             self.server.close()
             self.lock.unlock()

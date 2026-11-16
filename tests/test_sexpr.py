@@ -295,7 +295,7 @@ QUOTED = {  # a G_ message that names a widget, and that widget's label codes (d
     "G_BUTTON_ACTION": ("G_NEW",), "G_SI_NEEDS_PAIR": ("G_NEW_PAIR", "G_NEW_INTERFACE", "G_INTERFACE_CUSTOM"),
     "G_SI_NOT_PAIR": ("G_NEW_PAIR", "G_INTERFACE_CUSTOM"), "G_SI_PARTNER": ("G_NEW_PAIR",),
     "G_SI_LONG_PORT": ("G_INTERFACE_CUSTOM",), "G_SI_ENDS_HALF": ("G_NEW_PAIR",),
-    "G_SIMULATE_SI": ("G_NEW", "G_KIND_SI")}
+    "G_SIMULATE_SI": ("G_NEW", "G_KIND_SI"), "G_SELECT_MISSING": ("G_REVIEW",)}
 # what a msgstr keeps of its msgid (design 3, 6.2 rule 3): a command in backticks, quoted JSON, an option, a file-dialog
 # filter, a dotted number, and a file, field or variable name (project.json, mesh.n, ports[].reference, t_max_s, STOP)
 KEEP = re.compile(r'`[^`]+`|"[^"]*"|--[a-z][\w-]*|\(\*\.\w+\)|\d+(?:\.\d+)+|\w+(?:\[\])?(?:\.\w+)+|\w*_\w+|\bSTOP\b')

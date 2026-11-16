@@ -1641,6 +1641,78 @@ def test_a_refused_review_empties_the_view_and_says_why(window, tmp_path):  # de
     assert w.reviewing is None and w.review.status.text() != render("G_REVIEWING")
 
 
+def joined(*codes):
+    return " ".join(control.text(code, params) for code, params in codes)
+
+
+def test_simulate_this_pre_fills_new_and_keeps_the_presss_kicad(window):  # design 5.5 "simulate this"
+    w = window()
+    w.review.board.setText(str(FIX / "qspi_clk.kicad_pcb"))
+    w.review.review_button.click()
+    w.reviewing.result(timeout=120)
+    w.tick()
+    v, f = w.review, w.new_form
+    assert not v.select_button.isEnabled() and not v.simulate_button.isEnabled()  # no press, no row
+    v.findings.selectRow(0)  # R2 on FLASH_CLK
+    w.tick()
+    assert v.simulate_button.isEnabled() and not v.select_button.isEnabled()  # Select: only after a press
+    v.simulate_button.click()
+    note = joined(("G_SIMULATE_SI", {"net": "FLASH_CLK"}))
+    assert w.tabs.currentWidget() is w.project_page and f.status.text() == note
+    w.pads_read.result(timeout=60)
+    w.tick()
+    assert (f.kind.currentData(), {f.start.currentText(), f.end.currentText()}) == ("si", {"U1.11", "U2.6"})
+    assert w.handed.socket == "" and not f.refill_button.isEnabled()  # no press: no KiCad to ask
+    assert f.status.text() == note  # the note outlives the handoff (design 5.5)
+
+
+def test_one_review_through_the_window_on_emc_review_select_and_simulate_this(window, kicad, tmp_path):  # 5.17 item 4
+    board = tmp_path / "emc_review.kicad_pcb"
+    board.write_bytes((FIX / "emc_review.kicad_pcb").read_bytes())
+    k = kicad(board)
+    w = window()
+    v, f = w.review, w.new_form
+    w.tabs.setCurrentWidget(v)
+    w.take_handoff(press(board, socket=k.url, token=k.token))  # Review open: the press keeps it and fills its board
+    assert w.tabs.currentWidget() is v
+    w.pads_read.result(timeout=60)
+    w.tick()
+    assert v.board.text() == str(board) and f.refill_button.isEnabled()
+    v.review_button.click()
+    w.reviewing.result(timeout=120)
+    w.tick()
+    assert v.findings.rowCount() == 2 and v.modes.rowCount() > 0 and not v.picture.pixmap().isNull()
+    v.findings.selectRow(0)
+    w.tick()
+    v.select_button.click()
+    assert v.status.text() == render("G_SELECTING") and not v.select_button.isEnabled()
+    w.selecting.result(timeout=60)
+    w.tick()
+    sent = control.kiids(w.reviewed.findings, [0])
+    assert k.seen[-3:] == ["GetOpenDocuments", "ClearSelection", "AddToSelection"] and k.chosen == sent
+    assert v.status.text() == render("G_SELECTED", count=len(sent))
+    k.known = set()  # KiCad holds edits not yet saved: none of them is in its board
+    v.select_button.click()
+    w.selecting.result(timeout=60)
+    w.tick()
+    assert v.status.text() == render("G_SELECT_MISSING", count=0, total=len(sent))
+    w.take_handoff(press(board, socket=k.url, token=k.token))  # a press read maybe in flight when Simulate is clicked
+    v.findings.selectRow(1)  # R3 on CLK_EDGE
+    w.tick()
+    v.simulate_button.click()
+    notes = [("G_SIMULATE_SI", {"net": "CLK_EDGE"}), ("G_SIMULATE_EDGE", {})]
+    assert f.status.text() == joined(*notes)
+    w.pads_read.result(timeout=60)
+    w.tick()
+    assert w.tabs.currentWidget() is w.project_page and f.kind.currentData() == "si" and w.handed.socket == k.url
+    assert f.status.text() == joined(("G_HANDOFF_SI_ENDS", {"net": "CLK_EDGE", "count": 0, "pads": "T_NONE"}), *notes)
+    w.tabs.setCurrentWidget(w.results)
+    w.take_handoff(press(board, socket=k.url, token=k.token))  # Review not open: the press goes to Project
+    assert w.tabs.currentWidget() is w.project_page
+    w.pads_read.result(timeout=60)
+    grab(w, "review-select")
+
+
 def test_the_help_menu_shows_about_and_qts_about(window, monkeypatch):  # design 5.3 About
     seen = []
     monkeypatch.setattr(QMessageBox, "about", lambda parent, title, text: seen.append((title, text)))

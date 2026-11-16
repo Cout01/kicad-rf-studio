@@ -2353,6 +2353,28 @@ msgstr ""
 msgid "Near"
 msgstr ""
 
+#. G_REVIEW_SELECT
+msgid "Select in KiCad"
+msgstr ""
+
+#. G_SELECTING
+msgid "Selecting in KiCad…"
+msgstr ""
+
+#. G_SELECTED
+#, python-brace-format
+msgid "Items selected in KiCad: {count}."
+msgstr ""
+
+#. G_SELECT_MISSING
+#, python-brace-format
+msgid "KiCad selected {count} of {total} items: the board it has open holds edits not yet saved. Save the board in KiCad and press Review the board again."
+msgstr ""
+
+#. G_REVIEW_SIMULATE
+msgid "Simulate this"
+msgstr ""
+
 #. G_SAVE
 msgid "Save"
 msgstr ""
