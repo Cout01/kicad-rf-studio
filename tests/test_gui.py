@@ -1722,6 +1722,34 @@ def test_one_review_through_the_window_on_emc_review_select_and_simulate_this(wi
     grab(w, "review-select")
 
 
+def test_select_and_simulate_check_the_findings_selected_at_the_click(window, kicad, tmp_path):  # design 5.5
+    board = tmp_path / "emc_review.kicad_pcb"  # the tick's enables are up to 500 ms old at a click
+    board.write_bytes((FIX / "emc_review.kicad_pcb").read_bytes())
+    k = kicad(board)
+    w = window()
+    v = w.review
+    w.take_handoff(press(board, socket=k.url, token=k.token))
+    w.pads_read.result(timeout=60)
+    w.tick()
+    v.review_button.click()
+    w.reviewing.result(timeout=120)
+    w.tick()
+    v.findings.selectAll()  # R1 and R3
+    w.tick()
+    assert v.select_button.isEnabled() and not v.simulate_button.isEnabled()
+    v.findings.selectRow(0)
+    w.tick()
+    assert v.select_button.isEnabled() and v.simulate_button.isEnabled()
+    w.tabs.setCurrentWidget(v)
+    for selection in (v.findings.clearSelection, v.findings.selectAll):  # changed since the tick: none, then two
+        selection()
+        w.simulate_this()
+        assert w.tabs.currentWidget() is v and w.pads_read is None
+    v.findings.clearSelection()
+    w.select_in_kicad()
+    assert w.selecting is None and k.seen == []  # nothing sent: KiCad's own selection kept
+
+
 def test_the_help_menu_shows_about_and_qts_about(window, monkeypatch):  # design 5.3 About
     seen = []
     monkeypatch.setattr(QMessageBox, "about", lambda parent, title, text: seen.append((title, text)))

@@ -801,8 +801,9 @@ class MainWindow(QMainWindow):
         that ended (show_review, selected), since a review needs no project (Stage 5 design 5.5), then Review the board
         enabled while no review goes on, Select in KiCad while that socket is held, a review is shown (`reviewed`), rows
         of its findings are selected and no Select goes on, and Simulate this while a review is shown and exactly one of
-        its findings is selected, an R1, R2 or R3 one; and, with a project, a compare that ended (compared), then
-        Compare the projects enabled while a variant is picked (`variant`) and no compare goes on."""
+        its findings is selected, an R1, R2 or R3 one (can_select, can_simulate, which their slots check again at the
+        click); and, with a project, a compare that ended (compared), then Compare the projects enabled while a variant
+        is picked (`variant`) and no compare goes on."""
         self.started = [p for p in self.started if p.poll() is None]  # poll() reaps one that ended
         if self.pads_read is not None and self.pads_read.done():
             done, self.pads_read = self.pads_read, None
@@ -822,13 +823,12 @@ class MainWindow(QMainWindow):
             done, self.selecting = self.selecting, None
             self.selected(done)
         # ponytail: Select and Simulate follow the findings' selection at the next tick, 500 ms at most, and their
-        # slots read the rows at the click; the findings' itemSelectionChanged connected to tick if that gap bites
-        v, r = self.review, self.reviewed
-        rows = v.rows()
+        # slots check it again at the click, so a selection changed since does nothing; the findings'
+        # itemSelectionChanged connected to tick if that gap bites
+        v, rows = self.review, self.review.rows()
         v.review_button.setEnabled(self.reviewing is None)
-        v.select_button.setEnabled(kicad and r is not None and bool(rows) and self.selecting is None)
-        v.simulate_button.setEnabled(r is not None and len(rows) == 1
-                                     and r.findings[rows[0]]["rule"] in ("R1", "R2", "R3"))
+        v.select_button.setEnabled(self.can_select(rows))
+        v.simulate_button.setEnabled(self.can_simulate(rows))
         if self.path is None:
             return
         if self.comparing is not None and self.comparing.done():
@@ -1194,13 +1194,24 @@ class MainWindow(QMainWindow):
         view.display([control.text(c, p) for c, p in r.lines], control.finding_cells(r.findings),
                      control.mode_cells(r.cavities), r.png)
 
+    def can_select(self, rows: list[int]) -> bool:
+        """Whether Select in KiCad acts on the findings' selected `rows` (ReviewView.rows): a review shown
+        (`reviewed`), rows selected, a KiCad socket in the pre-fill shown (`handed`) and no Select going on
+        (`selecting`). The tick's enable, which select_in_kicad checks again."""
+        return (self.reviewed is not None and bool(rows) and self.handed is not None and bool(self.handed.socket)
+                and self.selecting is None)
+
     def select_in_kicad(self) -> None:
         """Select in KiCad (Stage 5 design 5.5): the KIIDs of the findings selected, each once (control.kiids), their
         count kept as `select_total`, selected on the pool (button.select, as `selecting`) in the KiCad of the pre-fill
         shown (`handed`), its socket and token the last press's, on the board reviewed, which button.select refuses
         when KiCad has another board open; G_SELECTING in Review's status line, then a tick, which disables the button
-        until it ends (selected)."""
-        h, kiids = self.handed, control.kiids(self.reviewed.findings, self.review.rows())
+        until it ends (selected). Nothing when the findings selected at the click do not allow it (can_select): the
+        tick's enable can be 500 ms old."""
+        rows = self.review.rows()
+        if not self.can_select(rows):
+            return
+        h, kiids = self.handed, control.kiids(self.reviewed.findings, rows)
         self.select_total = len(kiids)
         self.selecting = self.pool.submit(button.select, h.socket, h.token, self.reviewed.board, kiids)
         self.review.status.setText(render("G_SELECTING"))
@@ -1220,6 +1231,12 @@ class MainWindow(QMainWindow):
         status.setText(render("G_SELECTED", count=count) if count >= self.select_total else
                        render("G_SELECT_MISSING", count=count, total=self.select_total))
 
+    def can_simulate(self, rows: list[int]) -> bool:
+        """Whether Simulate this acts on the findings' selected `rows` (ReviewView.rows): a review shown (`reviewed`)
+        and exactly one row, an R1, R2 or R3 finding. The tick's enable, which simulate_this checks again."""
+        return (self.reviewed is not None and len(rows) == 1
+                and self.reviewed.findings[rows[0]]["rule"] in ("R1", "R2", "R3"))
+
     def simulate_this(self) -> None:
         """Simulate this (Stage 5 design 5.5): the one finding selected, an R1, R2 or R3 one, pre-fills New's SI kind
         with the line through its net on the board reviewed, on the pool (control.simulated, as New's read,
@@ -1227,8 +1244,12 @@ class MainWindow(QMainWindow):
         (`handoff`), behind any press's read still going, so that Refill and Select never reach a stale KiCad (AR-6);
         its status lines (control.simulate_notes) in New's status line at once, joined by a space, which show_pads
         shows again after the pre-fill's problem (AR-5); then the Project tab. It replaces a read in flight, as a press
-        does (take_handoff)."""
-        finding = self.reviewed.findings[self.review.rows()[0]]
+        does (take_handoff). Nothing when the findings selected at the click do not allow it (can_simulate): the
+        tick's enable can be 500 ms old."""
+        rows = self.review.rows()
+        if not self.can_simulate(rows):
+            return
+        finding = self.reviewed.findings[rows[0]]
         notes = control.simulate_notes(finding)
         self.new_form.status.setText(" ".join(control.text(code, params) for code, params in notes))
         self.pads_read = self.pool.submit(control.simulated, self.reviewed.board, finding["net"], self.handoff, notes)
