@@ -10,6 +10,7 @@ METAL_PRIORITY = 1000  # above every material's 10 + i
 PML_CELLS = 8  # PML_8's 8 outermost cells on each face (design 5.2)
 BOUNDARY = {None: "MUR", "pml_8": f"PML_{PML_CELLS}"}  # the spec's "boundary"; absent in every v1 spec
 NF2FF_MAX = 11  # the far-field frequencies a box records, at most (design 5.5)
+EMISSION_NF2FF_MAX = 64  # an emission spec's: its harmonics and the 100 MHz grid (Stage 5 design 5.8, BC3)
 
 
 def _prism(prop: object, solid: dict, priority: int, sheet: bool = False) -> None:

@@ -345,3 +345,33 @@ def test_plan_5s_words_say_where_s_ends_what_refreshes_the_si_speed_and_where_a_
     assert "1.9 times" in CATALOG["I_SI_COST_SPEED"]  # a pool-2 SI run, priced high (docs/validation/2026-11-08-p4-refit.md)
     assert all("MHz its load is read over" in CATALOG[code] for code in ("E_S2P_BAND", "G_S2P_BAND"))
     assert "−2.27 %" in CATALOG["W_STAIRCASED_SI"] and "+5.35 %" in CATALOG["W_STAIRCASED_SI"]  # gate P4-B
+
+
+# the 56 codes Stage 5's plans 1 and 2 added: git diff d3b036f a87bcc1 -- src/kicad_rf_studio/core/messages.py
+PLANS_1_2 = (
+    "E_KICAD_SELECT_OTHER_BOARD", "G_COL_CAVITY", "G_COL_LAYER", "G_COL_NEAR", "G_COL_NET", "G_COL_NUMBER",
+    "G_COL_PLACE", "G_COL_RULE", "G_NEAR_CARRIER", "G_NEAR_CLOCK", "G_REVIEW", "G_REVIEWING", "G_REVIEW_NETS",
+    "G_REVIEW_NETS_HINT", "G_REVIEW_SELECT", "G_REVIEW_SIMULATE", "G_SELECTED", "G_SELECTING", "G_SELECT_MISSING",
+    "G_SIMULATE_EDGE", "G_SIMULATE_REFERENCE", "G_SIMULATE_SI", "G_TAB_REVIEW", "I_CAVITY", "I_CAVITY_CLOCK_STOP",
+    "I_CAVITY_MODES", "I_CAVITY_NEAR_CARRIER", "I_CAVITY_NEAR_CLOCK", "I_CAVITY_NONE", "I_CAVITY_NO_PAIRS",
+    "I_EMC_NO_REFERENCE", "I_EMC_REF_CHANGE", "I_LIMIT_CAVITY", "I_LIMIT_REVIEW_KEEPOUT", "I_REVIEW_BASIS",
+    "I_REVIEW_FINDINGS", "I_REVIEW_NO_TAGS", "I_REVIEW_RELATIVE", "I_REVIEW_TAGS_FLAG", "I_REVIEW_TAGS_PATTERN",
+    "I_REVIEW_TAGS_PROJECT", "I_REVIEW_TAGS_WALK", "T_EMC_BOARD_EDGE", "T_EMC_RETURN_CAP", "T_EMC_RETURN_VIA",
+    "T_FMAX_CARRIER", "T_FMAX_CLI", "T_FMAX_DEFAULT", "T_FMAX_SI", "W_CAVITY_COARSE", "W_CAVITY_SLOT", "W_EMC_EDGE",
+    "W_EMC_FENCE_PITCH", "W_EMC_GAP_CROSSING", "W_EMC_LAYER_SKIPPED", "W_REVIEW_NET_UNMATCHED")
+
+
+def test_no_stage5_line_names_a_limit_a_standard_or_a_verdict():  # design 5.8; ruling 5 as AR-1 applies it
+    words = re.compile(r"\b(?:dBµV|dBuV|FCC|CISPR|margins?|pass(?:es|ed)?)\b", re.IGNORECASE)
+    allowed = {"I_REVIEW_RELATIVE": "predicts a pass or a fail", "T_FMAX_DEFAULT": "FCC 15.33(b)(1)"}  # released
+    ours = re.compile(r"EMISSION|OVERRIDE|CLOSURE|NF2FF|NEAR_FIELD|DRIVEN_R|T_REVIEW_|T_FMAX_|KIND_LATER")
+    codes = {*PLANS_1_2, *(c for c in CATALOG if ours.search(c))}
+    assert set(PLANS_1_2) <= set(CATALOG) and "T_FMAX_EMISSION" in codes
+    found = []
+    for code in sorted(codes):
+        text = CATALOG[code]
+        if code in allowed:
+            assert allowed[code] in text
+            text = text.replace(allowed[code], "")
+        found += [(code, w) for w in words.findall(text)]
+    assert found == []

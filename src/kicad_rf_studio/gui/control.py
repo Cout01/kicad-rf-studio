@@ -37,8 +37,8 @@ from kicad_rf_studio.core.model.spec import antenna_t_max
 from kicad_rf_studio.core.post.waves import Layout
 from kicad_rf_studio.core.project import (ANTENNA_BOUNDARY, BAND_FACTOR, DEFAULT_PRESET, EXPAND_H, FAR_FIELD_STEP, GATES,
                                           GATES_SI, HARMONICS, INTERFACES, MARGIN_SCALE, MESH_N, REACH_H, SI_DIELECTRIC,
-                                          SI_F_MAX, SI_TOLERANCE, T_MAX_S, antenna, board_file, far_field_hz,
-                                          load_project, parts, si)
+                                          SI_F_MAX, SI_TOLERANCE, T_MAX_S, antenna, board_file, emission,
+                                          far_field_hz, load_project, parts, si)
 from kicad_rf_studio.core.review.planes import DOTTED_POWER
 
 END = {0: "G_END_DONE", 2: "G_END_REFUSED", 3: "G_END_BLOCKED", 4: "G_END_NOT_KEPT", 130: "G_END_STOPPED"}
@@ -230,12 +230,16 @@ def open_project(path: Path) -> Opened:
     lines are pipeline.antenna_lines', the CLI's, kept with the far field they read, its source and its layout; the
     current verify's far field is also read when a stored part is refused, for the retune session; an SI project's
     lines and reading are pipeline.si_view's, the CLI's (Stage 4 design 5.10)), the first KrsError stopping there as
-    `problem`, any other exception E_INTERNAL; then `stored`, the project read when pipeline.load succeeded, else
+    `problem` (an emission project's, a kind the window does not open yet, is G_KIND_LATER, before pipeline.load,
+    AR-17), any other exception E_INTERNAL; then `stored`, the project read when pipeline.load succeeded, else
     load_project alone, unchecked (a project the checks refuse, or whose board fails to load, still reads), and the
     board file it names, each None when it raises, `stored` kept when only the board file does; then last_cost, the
     newest of ended() that is a run or a verify, and verify_lines. Never raises; starts nothing."""
     project = model_hash = results = problem = far = far_source = far_lay = None
     try:
+        # ponytail: plan 5 opens the emission kind; until then the window's project line reads f0 and harmonics
+        if emission(load_project(path)):
+            raise KrsError("G_KIND_LATER", path=str(path))
         project, board, geom, _ = pipeline.load(path)
         model = pipeline.build_model(project, board, geom)
         model_hash = None if model.spec is None else spec.spec_hash(model.spec)

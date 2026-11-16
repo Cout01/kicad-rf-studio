@@ -19,7 +19,7 @@ from kicad_rf_studio.core.kicad.board import Board
 from kicad_rf_studio.core.kicad.shapes import XY
 from kicad_rf_studio.core.kicad.stackup import Stackup
 from kicad_rf_studio.core.kicad.tracer import Classes
-from kicad_rf_studio.core.project import antenna, si
+from kicad_rf_studio.core.project import antenna, emission, si
 from kicad_rf_studio.core.review.planes import plane_map, plane_nets
 from kicad_rf_studio.core.review.rules import EDGE_K, Finding, exclusions, groups, r1, r2, r3, r4
 from kicad_rf_studio.core.review.tags import tag
@@ -46,9 +46,10 @@ class Review:
 
 def resolve_f_max(f_max: float | None, f0: float | None, project: dict | None) -> tuple[float, str, float | None]:
     """(f_max, its source, the carrier) in BC1's order (design 5.1): `f_max` given, "cli"; else with a carrier,
-    CARRIER_HARMONICS times it, at most F_MAX_CAP, "carrier"; else an SI project's f_max_hz, at most F_MAX_CAP, "si";
-    else F_MAX_DEFAULT, "default". The carrier is `f0`, else an antenna project's band centre, else a v1 project's
-    f0_hz, else None. A project's simulation f_max (region.f_max) is never read."""
+    CARRIER_HARMONICS times it, at most F_MAX_CAP, "carrier"; else an SI project's f_max_hz, "si", or an emission
+    project's band.f_max_hz, "emission" (AR-10), each at most F_MAX_CAP; else F_MAX_DEFAULT, "default". The carrier is
+    `f0`, else an antenna project's band centre, else a v1 or emission project's f0_hz (an emission project's is None
+    with no carrier), else None. A project's simulation f_max (region.f_max) is never read."""
     carrier = f0
     if carrier is None and project is not None:
         if antenna(project):
@@ -61,6 +62,8 @@ def resolve_f_max(f_max: float | None, f0: float | None, project: dict | None) -
         return min(F_MAX_CAP, CARRIER_HARMONICS * carrier), "carrier", carrier
     if project is not None and si(project):
         return min(project["f_max_hz"], F_MAX_CAP), "si", None
+    if project is not None and emission(project):
+        return min(project["band"]["f_max_hz"], F_MAX_CAP), "emission", None
     return F_MAX_DEFAULT, "default", None
 
 

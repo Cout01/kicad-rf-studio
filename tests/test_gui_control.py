@@ -2,6 +2,7 @@
 """The GUI's Qt-free logic (Stage 2 design 5.1, 5.3, 5.8): the detached start, the events tail, re-attach through the
 lock and the end events, the project read off the GUI thread, and the retune session. Detached runs go through
 tests/fake_cli.py."""
+import gettext
 import json
 import re
 import string
@@ -792,6 +793,17 @@ def test_simulate_this_pre_fills_the_si_kind_with_the_presss_kicad_and_its_notes
         ("G_SIMULATE_SI", {"net": "CLK_EDGE"}), ("G_SIMULATE_EDGE", {}), ("G_SIMULATE_REFERENCE", {"net": "+3.3V"})]
     assert control.simulate_notes({"rule": "R1", "net": "CLK_GAP", "ref_net": "+3V3"}) == [
         ("G_SIMULATE_SI", {"net": "CLK_GAP"})]  # +3V3 is power for both
+
+
+def test_an_emission_project_is_refused_by_the_window_and_named_by_no_kind(tmp_path, fake):  # Review Focus 2; AR-17
+    from test_project import emission_dict
+    p = tmp_path / "project.json"
+    save_project(p, emission_dict())
+    opened = control.open_project(p)
+    assert opened.project is None and opened.problem == ("G_KIND_LATER", {"path": str(p)})
+    assert opened.stored["schema"] == 4 and control.fields(opened.stored)  # Advanced still opens the file
+    pt = gettext.translation("kicad_rf_studio", messages.LOCALE, ["pt_BR"]).gettext(CATALOG["G_KIND_LATER"])
+    assert "emiss" not in CATALOG["G_KIND_LATER"].lower() and "emiss" not in pt.lower()
 
 
 def test_about_names_the_version_the_licence_notices_and_each_runtime_dependency(monkeypatch):  # design 5.3 About

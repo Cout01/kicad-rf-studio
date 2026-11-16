@@ -6,6 +6,7 @@ from pathlib import Path
 
 import pytest
 
+from kicad_rf_studio import cli
 from kicad_rf_studio.core.geometry.zstack import zstack
 from kicad_rf_studio.core.kicad import classify, load_board
 from kicad_rf_studio.core.messages import render
@@ -132,3 +133,15 @@ def test_cavity_lines_word_marks_a_coarse_grid_a_slot_and_a_cavity_with_no_mode(
         ("W_CAVITY_COARSE", {"k": "1", "h_mm": "0.5"}), ("W_CAVITY_SLOT", {"k": "1"}),
         ("I_CAVITY_NONE", {"k": "2"}), ("I_LIMIT_CAVITY", {})]
     assert all(render(code, **params) for code, params in lines)  # each template finds its params
+
+
+def test_an_emission_project_joins_the_review_f_max_order_with_its_own_source():  # design 5.1; AR-10
+    from test_project import emission_dict
+    assert resolve_f_max(None, None, emission_dict()) == (4.575e9, "carrier", 915e6)
+    assert resolve_f_max(None, None, emission_dict(None, 1e9, 3e9)) == (3e9, "emission", None)
+    assert resolve_f_max(None, None, emission_dict(None, 1e9, 8e9)) == (6e9, "emission", None)
+    assert resolve_f_max(4e9, None, emission_dict()) == (4e9, "cli", 915e6)
+    board, stack, zs, classes = cli._load(FIX / "ifa2g4.kicad_pcb", None)
+    notes = dict(review_board(board, stack, zs, classes, project=emission_dict(None, 1e9, 3e9)).notes)
+    assert notes["I_REVIEW_BASIS"]["source"] == "T_FMAX_EMISSION"
+    assert "T_FMAX" not in render("I_REVIEW_BASIS", **notes["I_REVIEW_BASIS"])  # a catalog term, never a raw code

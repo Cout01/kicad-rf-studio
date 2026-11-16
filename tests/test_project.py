@@ -8,11 +8,13 @@ import pytest
 from kicad_rf_studio.core.geometry.region import air_gap
 from kicad_rf_studio.core.kicad import classify, load_board
 from kicad_rf_studio.core.messages import KrsError, render
+from kicad_rf_studio.core.model.csx import EMISSION_NF2FF_MAX
 from kicad_rf_studio.core.model.spec import antenna_t_max
-from kicad_rf_studio.core.project import (INTERFACES, SCHEMA, SCHEMA_SI, antenna, board_file, board_hash,
-                                          check_project, copper_model, far_field_hz, load_project,
-                                          make_antenna_project, make_si_project, pulse_band, read_project,
-                                          save_project, si, si_interface)
+from kicad_rf_studio.core.project import (INTERFACES, SCHEMA, SCHEMA_EMISSION, SCHEMA_SI, antenna, board_file,
+                                          board_hash, check_project, copper_model, emission, emission_band,
+                                          emission_far_field_hz, far_field_hz, harmonics_hz, load_project,
+                                          make_antenna_project, make_emission_project, make_si_project, pulse_band,
+                                          read_project, save_project, si, si_interface)
 from test_cli_new import FIX, run_new
 
 
@@ -30,8 +32,8 @@ def test_schema_mismatch_names_the_file_and_both_versions(tmp_path):
     p = tmp_path / "project.json"; p.write_text('{"schema": 99}', encoding="utf-8")
     with pytest.raises(KrsError) as e:
         load_project(p)
-    assert e.value.params == {"path": str(p), "found": 99, "expected": SCHEMA_SI}  # the newest it reads (Stage 4)
-    assert "schema 99" in str(e.value) and "schema 3" in str(e.value)
+    assert e.value.params == {"path": str(p), "found": 99, "expected": SCHEMA_EMISSION}  # the newest it reads (Stage 5)
+    assert "schema 99" in str(e.value) and "schema 4" in str(e.value)
     p.write_text('{"schema": 3}', encoding="utf-8")
     assert load_project(p) == {"schema": 3}  # an SI project (Stage 4 design 5.1); check_project reads its fields
 
@@ -361,3 +363,79 @@ def test_an_si_field_out_of_its_range_is_named(change, field, expected):  # desi
     with pytest.raises(KrsError) as e:
         check_project({**d, **(change(d) if callable(change) else change)}, Path("p.json"))
     assert (e.value.code, e.value.params["field"], e.value.params["expected"]) == ("E_PROJECT_FIELD", field, expected)
+
+
+# --- Stage 5 plan 3, task 2: schema 4, an emission project ----------------------------------------------------
+
+
+FILL = {"kind": "fill", "layer": "In1.Cu", "net": "GND", "from": "R1-0123abcd",
+        "polygon_mm": {"exterior": [[0.0, 0.0], [1.0, 0.0], [1.0, 1.0]], "holes": []}}
+VIA = {"kind": "via", "at_mm": [1.0, 2.0], "diameter_mm": 0.6, "drill_mm": 0.3, "layers": ["F.Cu", "B.Cu"],
+       "net": "GND", "from": "R4-0123abcd", "pitch_mm": 1.0}
+
+
+def emission_dict(f0=915e6, f_lo=1.83e9, f_max=3e9):
+    b, a = load_board(FIX / "ifa2g4.kicad_pcb"), antenna_dict()
+    ports = [*a["ports"], {**a["ports"][0], "name": "P2", "signal": "AE1.1"}]
+    return make_emission_project("ifa2g4.kicad_pcb", "0" * 64, f0, f_lo, f_max, b.stackup, classify(b), a["chain"],
+                                 [], ports, t_max_s=31e-9, air_gap_mm=air_gap(f_lo))
+
+
+def test_an_emission_project_is_schema_4_with_its_band_and_far_field():  # design 5.6, 5.8
+    d = emission_dict()
+    assert (d["schema"], d["kind"], d["f0_hz"], d["band"], d["t_max_s"]) == (
+        4, "emission", 915e6, {"f_lo_hz": 1.83e9, "f_max_hz": 3e9}, 31e-9)
+    assert "harmonics" not in d and "band_factor" not in d and "overrides" not in d
+    assert (d["lid"], d["region"], d["boundary"], d["near_field"]) == (True, {"expand_h": 6.0}, "pml_8", False)
+    assert d["far_field"] == {"f_hz": emission_far_field_hz(915e6, 1.83e9, 3e9), "step_deg": 5}
+    assert emission(d) and not emission({**d, "schema": 2}) and check_project(d, Path("p.json")) is d
+    assert emission_band(d) == (1.40e9, 3e9) and SCHEMA_EMISSION == 4
+
+
+def test_the_far_field_list_is_the_harmonics_and_the_100_mhz_grid_in_the_band():  # design 5.8; BC3
+    assert emission_far_field_hz(915e6, 1.83e9, 3e9) == [1.83e9, 1.9e9, 2.0e9, 2.1e9, 2.2e9, 2.3e9, 2.4e9, 2.5e9,
+                                                        2.6e9, 2.7e9, 2.745e9, 2.8e9, 2.9e9, 3.0e9]  # the probe's 14
+    assert emission_far_field_hz(None, 1e9, 6e9) == [1e9 + 1e8 * k for k in range(51)]  # no carrier: the grid
+    assert emission_far_field_hz(1e9, 2e9, 3e9) == [2e9 + 1e8 * k for k in range(11)]  # 2·f0 on the grid, once
+    assert emission_far_field_hz(50e6, 1e8, 6e9) == [n * 50e6 for n in range(2, 66)]  # capped: harmonics first
+    assert len(emission_far_field_hz(50e6, 1e8, 6e9)) == EMISSION_NF2FF_MAX
+    assert emission_far_field_hz(None, 3e8, 9e8) == []  # new refuses it (Review Focus 1)
+    assert harmonics_hz(915e6, 4.575e9) == [1.83e9, 2.745e9, 3.66e9, 4.575e9]
+
+
+@pytest.mark.parametrize(("change", "field", "expected"), [
+    ({"kind": "antenna"}, "kind", "T_EXPECT_EMISSION"),
+    ({"f0_hz": 0}, "f0_hz", "T_EXPECT_ABOVE_0_OR_NULL"),
+    ({"band": {"f_lo_hz": 3e9, "f_max_hz": 3e9}}, "band.f_max_hz", "T_EXPECT_EMISSION_BAND"),
+    ({"far_field": {"f_hz": [1.8e9], "step_deg": 5}}, "far_field.f_hz", "T_EXPECT_EMISSION_FAR_FIELD_HZ"),
+    ({"far_field": {"f_hz": [2e9] * 65, "step_deg": 5}}, "far_field.f_hz", "T_EXPECT_EMISSION_FAR_FIELD_HZ"),
+    ({"near_field": None}, "near_field", "T_EXPECT_FLAG"),
+    ({"f0_hz": None, "near_field": True}, "near_field", "T_EXPECT_NEAR_FIELD"),
+    ({"lid": None}, "lid", "T_EXPECT_FLAG"),
+    ({"boundary": "MUR"}, "boundary", "T_EXPECT_BOUNDARY"),
+    ({"overrides": [{"kind": "via", "at_mm": [1.0, 2.0]}]}, "overrides", "T_EXPECT_OVERRIDES")])
+def test_a_schema_4_field_out_of_its_range_is_named(change, field, expected):  # design 5.6
+    with pytest.raises(KrsError) as e:
+        check_project({**emission_dict(), **change}, Path("p.json"))
+    assert (e.value.code, e.value.params["field"], e.value.params["expected"]) == ("E_PROJECT_FIELD", field, expected)
+
+
+def test_a_terminations_r_is_read_and_the_driven_ports_is_refused():  # design 5.6: the termination's R
+    d = emission_dict()
+    ok = {**d, "ports": [d["ports"][0], {**d["ports"][1], "R": 75.0}]}
+    assert check_project(ok, Path("p.json")) is ok
+    for ports, field, expected in (([d["ports"][0], {**d["ports"][1], "R": 0}], "ports[1].R", "T_EXPECT_ABOVE_0"),
+                                   ([{**d["ports"][0], "R": 75.0}, d["ports"][1]], "ports[0].R", "T_EXPECT_DRIVEN_R")):
+        with pytest.raises(KrsError) as e:
+            check_project({**d, "ports": ports}, Path("p.json"))
+        assert (e.value.params["field"], e.value.params["expected"]) == (field, expected)
+
+
+def test_overrides_belong_to_schema_4_alone(tmp_path):  # design 5.6, 5.9; Review Focus 5
+    d = {**emission_dict(), "overrides": [FILL, VIA]}
+    assert check_project(d, Path("p.json")) is d
+    _, v1 = run_new(tmp_path)
+    for other in (load_project(v1), antenna_dict(), si_dict()):
+        with pytest.raises(KrsError) as e:
+            check_project({**other, "overrides": [FILL]}, Path("p.json"))
+        assert (e.value.params["field"], e.value.params["expected"]) == ("overrides", "T_EXPECT_NO_OVERRIDES")

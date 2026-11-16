@@ -2585,6 +2585,11 @@ msgstr ""
 msgid "KiCad refilled the zones and saved {board}."
 msgstr ""
 
+#. G_KIND_LATER
+#, python-brace-format
+msgid "{path} is a project of a kind this window does not open."
+msgstr ""
+
 #. E_KICAD_OTHER_BOARD
 #, python-brace-format
 msgid "KiCad has {open} open, not {board}, so nothing was refilled or saved. Open {board} in KiCad and press the kicad-rf-studio button again."
@@ -2971,6 +2976,34 @@ msgstr ""
 msgid "a pad, a point, a plane (its copper layer's name) or null"
 msgstr ""
 
+#. T_EXPECT_EMISSION
+msgid "the text \"emission\""
+msgstr ""
+
+#. T_EXPECT_EMISSION_BAND
+msgid "a number above band.f_lo_hz"
+msgstr ""
+
+#. T_EXPECT_EMISSION_FAR_FIELD_HZ
+msgid "a list of 1 to 64 frequencies in Hz, each from band.f_lo_hz to band.f_max_hz"
+msgstr ""
+
+#. T_EXPECT_NEAR_FIELD
+msgid "false, or true with f0_hz set: the plane records the carrier's harmonics"
+msgstr ""
+
+#. T_EXPECT_DRIVEN_R
+msgid "absent: the first port is the driven one, a 50 Ω source"
+msgstr ""
+
+#. T_EXPECT_OVERRIDES
+msgid "a list of fill and via entries as `new` writes them"
+msgstr ""
+
+#. T_EXPECT_NO_OVERRIDES
+msgid "absent: only an emission project holds overrides"
+msgstr ""
+
 #. T_EMC_RETURN_CAP
 msgid "the nearest capacitor between the two nets"
 msgstr ""
@@ -2997,5 +3030,9 @@ msgstr ""
 
 #. T_FMAX_DEFAULT
 msgid "the default: FCC 15.33(b)(1)'s upper measurement frequency for a device whose highest frequency is 500 to 1000 MHz"
+msgstr ""
+
+#. T_FMAX_EMISSION
+msgid "the project band's f_max, at most 6 GHz"
 msgstr ""
 

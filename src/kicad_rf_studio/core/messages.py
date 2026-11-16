@@ -567,6 +567,7 @@ CATALOG: dict[str, str] = {
     "G_REFILL_CONFIRM": "Refill every zone of {board} in KiCad, then save the board there? The save also writes every edit not yet saved in KiCad.",
     "G_REFILLING": "KiCad is refilling the zones and saving the board…",
     "G_REFILLED": "KiCad refilled the zones and saved {board}.",
+    "G_KIND_LATER": "{path} is a project of a kind this window does not open.",
     "E_KICAD_OTHER_BOARD": "KiCad has {open} open, not {board}, so nothing was refilled or saved. Open {board} in KiCad and press the kicad-rf-studio button again.",
     "E_KICAD_SELECT_OTHER_BOARD": "KiCad has {open} open, not {board}, so nothing was selected. Open {board} in KiCad and press the kicad-rf-studio button again.",
     # T_: a word a message takes as a parameter, rendered with it (pt-BR design 5.1); no T_ template has a field
@@ -664,6 +665,13 @@ CATALOG: dict[str, str] = {
     "T_EXPECT_SI_PORTS": "a list of ports whose signals are the lines' ends in order: each measured line's start, then each one's end, then each victim's start and end",
     "T_EXPECT_SI_RULE": "connector, ic, copper, plane or null",
     "T_EXPECT_SI_REFERENCE": "a pad, a point, a plane (its copper layer's name) or null",
+    "T_EXPECT_EMISSION": 'the text "emission"',
+    "T_EXPECT_EMISSION_BAND": "a number above band.f_lo_hz",
+    "T_EXPECT_EMISSION_FAR_FIELD_HZ": "a list of 1 to 64 frequencies in Hz, each from band.f_lo_hz to band.f_max_hz",
+    "T_EXPECT_NEAR_FIELD": "false, or true with f0_hz set: the plane records the carrier's harmonics",
+    "T_EXPECT_DRIVEN_R": "absent: the first port is the driven one, a 50 Ω source",
+    "T_EXPECT_OVERRIDES": "a list of fill and via entries as `new` writes them",
+    "T_EXPECT_NO_OVERRIDES": "absent: only an emission project holds overrides",
     "T_EMC_RETURN_CAP": "the nearest capacitor between the two nets",
     "T_EMC_RETURN_VIA": "the nearest via joining the two layers",
     "T_EMC_BOARD_EDGE": "board edge",
@@ -671,6 +679,7 @@ CATALOG: dict[str, str] = {
     "T_FMAX_CARRIER": "5 times the carrier, at most 6 GHz",
     "T_FMAX_SI": "the signal-integrity project's f_max, at most 6 GHz",
     "T_FMAX_DEFAULT": "the default: FCC 15.33(b)(1)'s upper measurement frequency for a device whose highest frequency is 500 to 1000 MHz",
+    "T_FMAX_EMISSION": "the project band's f_max, at most 6 GHz",
 }
 
 

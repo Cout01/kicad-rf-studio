@@ -2595,6 +2595,11 @@ msgstr "O KiCad está preenchendo as zonas novamente e salvando a placa…"
 msgid "KiCad refilled the zones and saved {board}."
 msgstr "O KiCad preencheu as zonas novamente e salvou {board}."
 
+#. G_KIND_LATER
+#, python-brace-format
+msgid "{path} is a project of a kind this window does not open."
+msgstr "{path} é um projeto de um tipo que esta janela não abre."
+
 #. E_KICAD_OTHER_BOARD
 #, python-brace-format
 msgid "KiCad has {open} open, not {board}, so nothing was refilled or saved. Open {board} in KiCad and press the kicad-rf-studio button again."
@@ -2981,6 +2986,34 @@ msgstr "connector, ic, copper, plane ou null"
 msgid "a pad, a point, a plane (its copper layer's name) or null"
 msgstr "uma ilha, um ponto, um plano (o nome da camada de cobre dele) ou null"
 
+#. T_EXPECT_EMISSION
+msgid "the text \"emission\""
+msgstr "o texto \"emission\""
+
+#. T_EXPECT_EMISSION_BAND
+msgid "a number above band.f_lo_hz"
+msgstr "um número acima de band.f_lo_hz"
+
+#. T_EXPECT_EMISSION_FAR_FIELD_HZ
+msgid "a list of 1 to 64 frequencies in Hz, each from band.f_lo_hz to band.f_max_hz"
+msgstr "uma lista de 1 a 64 frequências em Hz, cada uma de band.f_lo_hz a band.f_max_hz"
+
+#. T_EXPECT_NEAR_FIELD
+msgid "false, or true with f0_hz set: the plane records the carrier's harmonics"
+msgstr "false, ou true com f0_hz definido: o plano registra os harmônicos da portadora"
+
+#. T_EXPECT_DRIVEN_R
+msgid "absent: the first port is the driven one, a 50 Ω source"
+msgstr "ausente: a primeira porta é a excitada, uma fonte de 50 Ω"
+
+#. T_EXPECT_OVERRIDES
+msgid "a list of fill and via entries as `new` writes them"
+msgstr "uma lista de entradas fill e via, como `new` as grava"
+
+#. T_EXPECT_NO_OVERRIDES
+msgid "absent: only an emission project holds overrides"
+msgstr "ausente: só um projeto de emissão guarda alterações"
+
 #. T_EMC_RETURN_CAP
 msgid "the nearest capacitor between the two nets"
 msgstr "o capacitor mais próximo entre as duas redes"
@@ -3008,6 +3041,10 @@ msgstr "o f_max do projeto de integridade de sinal, no máximo 6 GHz"
 #. T_FMAX_DEFAULT
 msgid "the default: FCC 15.33(b)(1)'s upper measurement frequency for a device whose highest frequency is 500 to 1000 MHz"
 msgstr "o padrão: a frequência máxima de medição da FCC 15.33(b)(1) para um dispositivo cuja frequência mais alta é de 500 a 1000 MHz"
+
+#. T_FMAX_EMISSION
+msgid "the project band's f_max, at most 6 GHz"
+msgstr "o f_max da banda do projeto, no máximo 6 GHz"
 
 #~ msgid "Cells: {board} M in the board, {air} M of air and {pml} M of PML; the time counts a PML cell as {weight} cells and runs this model at {ratio} × the calibrated speed (gate P3-A)."
 #~ msgstr "Células: {board} M na placa, {air} M de ar e {pml} M de PML; o tempo conta uma célula de PML como {weight} células e executa este modelo a {ratio} × a velocidade calibrada (checagem prévia P3-A)."
