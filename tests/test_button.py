@@ -391,6 +391,10 @@ def test_select_refuses_another_board_and_sends_nothing_else(kicad, tmp_path):  
     assert (e.value.code, e.value.params) == ("E_KICAD_SELECT_OTHER_BOARD", {
         "board": str(EMC), "open": str(tmp_path / "other.kicad_pcb")})
     assert other.seen == ["GetOpenDocuments"]
+    closed = kicad(EMC, errors={"GetOpenDocuments": ["AS_UNHANDLED"]})  # KiCad's PCB editor closed since the press
+    with pytest.raises(KrsError) as e:
+        button.select(closed.url, closed.token, EMC, ["a"])
+    assert (e.value.code, closed.seen) == ("E_KICAD_NO_BOARD", ["GetOpenDocuments"])
     busy = kicad(EMC, errors={"AddToSelection": ["AS_BUSY"] * 9})
     with pytest.raises(KrsError) as e:
         button.select(busy.url, busy.token, EMC, ["a"])

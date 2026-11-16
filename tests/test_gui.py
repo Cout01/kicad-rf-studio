@@ -217,8 +217,9 @@ def test_the_window_costs_then_runs_after_the_confirmation(window, tmp_path, mon
 def test_every_list_of_sentences_wraps_at_its_width(window, qapp):  # Task 6 Step 7, V1
     # the real run's grabs at 1200 × 800 cut long lines at a list's right edge, behind a horizontal scroll bar
     w = window()
-    lists = (w.new_form.notes, w.cost_lines, w.log, w.results.lines, w.results.verify_lines, w.comparison.lines)
-    assert [(v.wordWrap(), v.resizeMode()) for v in lists] == [(True, QListView.ResizeMode.Adjust)] * 6
+    lists = (w.new_form.notes, w.cost_lines, w.log, w.results.lines, w.results.verify_lines, w.comparison.lines,
+             w.review.lines)
+    assert [(v.wordWrap(), v.resizeMode()) for v in lists] == [(True, QListView.ResizeMode.Adjust)] * 7
     w.tabs.setCurrentWidget(w.log.parentWidget())  # the Run tab
     w.log.addItem(" ".join(["word"] * 60))
     qapp.processEvents()

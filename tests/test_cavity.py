@@ -173,6 +173,21 @@ def test_lpf915s_stitched_gnd_pair_gets_a_post_at_each_via_and_plated_pad_joinin
     assert cav.region.area == pytest.approx(582.7, rel=0.02)
 
 
+def test_a_plated_pad_of_the_pairs_net_is_a_post_and_an_smd_pad_or_another_nets_is_none():  # design 5.4
+    b = board("lpf915")
+    c4 = b.footprints["C4"]
+    (gnd,) = [p for p in c4.pads if p.net == "GND"]  # C4.2, inside the F/B cavity, whose 36 posts are all vias
+
+    def posts(**kw):  # with C4.2 changed in memory
+        fp = replace(c4, pads=tuple(replace(p, **kw) if p is gnd else p for p in c4.pads))
+        found = pairs(replace(b, footprints={**b.footprints, "C4": fp}))
+        return max((c for c in found if c.layers == ("F.Cu", "B.Cu")), key=lambda c: c.region.area).posts
+
+    tht = {"kind": "thru_hole", "drill": 0.8, "layers": b.copper_layers}
+    assert len(posts(**tht)) == 37 and set(posts(**tht)) - set(posts()) == {(gnd.at, 0.4)}
+    assert len(posts(**{**tht, "kind": "smd"})) == len(posts(**{**tht, "net": "VDD"})) == 36
+
+
 def test_emc_reviews_in1_in2_pair_is_a_postless_gnd_3v3_cavity_and_a_gnd_rim_with_one_post():  # ruling 3
     b = board("emc_review")
     inner = [c for c in pairs(b) if c.layers == ("In1.Cu", "In2.Cu")]

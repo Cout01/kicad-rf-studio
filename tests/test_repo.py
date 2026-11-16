@@ -122,6 +122,8 @@ def test_the_readme_has_a_review_tutorial():  # design 5.15 plan 2; ruling 8
     for code in ("I_REVIEW_RELATIVE", "I_LIMIT_CAVITY", "I_LIMIT_REVIEW_KEEPOUT"):
         assert CATALOG[code] in tutorial, code
     assert all(CATALOG[c] in tutorial for c in ("G_TAB_REVIEW", "G_REVIEW_SELECT", "G_REVIEW_SIMULATE"))
+    # emc_review's output, lpf915's excerpt and the limits bullet: every copy the catalog's current text
+    assert tutorial.count("Limits of the cavity modes:") == tutorial.count(CATALOG["I_LIMIT_CAVITY"]) == 3
 
 def test_the_cavity_limit_names_e_es_measured_fringing_bias():  # design 5.12: named in the cavity's limit line
     (record,) = (ROOT / "docs" / "validation").glob("*-e-e-cavity.json")
