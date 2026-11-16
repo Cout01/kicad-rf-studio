@@ -1,17 +1,18 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """The release check (Stage 2 design 5.6): run by hand before a release, from the repo root
 (`python tools/release_check.py`, with the dev venv's Python, which has jsonschema), and by
-.github/workflows/release-check.yml on a version tag or by hand. Seven steps, each printing one PASS, FAIL or SKIPPED
+.github/workflows/release-check.yml on a version tag or by hand. Eight steps, each printing one PASS, FAIL or SKIPPED
 line: build (a wheel from git archive of HEAD, the tree a release's source zip holds, inspected), install (a fresh
 venv: the wheel, pip check, kicad-python's import and both entry points), gui (the main window built, shown offscreen
 and closed, in that venv), antenna (`new --antenna` in that venv on the release's own antenna fixture, its project.json
 of schema 2), si (`new --interface` in that venv on the release's own USB 2.0 fixture, its project.json of schema 3
-with 8 ports), plugin (install-kicad-plugin in that venv, its plugin.json checked against KiCad's schemas at SCHEMA_TAGS
-and the identifier rules) and privacy (the privacy gate's generic rules over the history and the wheel; the private
-list stays the hooks'). Every file it makes is under one temporary folder, removed at the end and named with a space
-and an accent, but for pip's own cache and build folders; a folder it cannot remove is named on a last line. Every
-process of the gui, antenna, si and plugin steps gets that folder for its data, caches and KiCad folders. Exits 1 when
-a step fails. The standard library only, but for jsonschema, which kicad-python brings, imported by the plugin step.
+with 8 ports), review (`review` in that venv on the release's own review board, its review.json against the release's
+golden), plugin (install-kicad-plugin in that venv, its plugin.json checked against KiCad's schemas at SCHEMA_TAGS and
+the identifier rules) and privacy (the privacy gate's generic rules over the history and the wheel; the private list
+stays the hooks'). Every file it makes is under one temporary folder, removed at the end and named with a space and an
+accent, but for pip's own cache and build folders; a folder it cannot remove is named on a last line. Every process of
+the gui, antenna, si, review and plugin steps gets that folder for its data, caches and KiCad folders. Exits 1 when a
+step fails. The standard library only, but for jsonschema, which kicad-python brings, imported by the plugin step.
 Its lines are plain English: a release tool's output, like privacy_gate's, not the app's.
 """
 import json
@@ -188,8 +189,30 @@ def si(tmp: Path) -> tuple[str, str]:
     return "PASS", "new wrote an SI project, schema 3, 8 ports, from tests/fixtures/usb2_hs.kicad_pcb in the fresh venv"
 
 
+def review(tmp: Path) -> tuple[str, str]:
+    """(f) `review` by the fresh venv's console script on the release's own tests/fixtures/emc_review.kicad_pcb,
+    taken from tmp/source.zip with LF line ends, as git stores it and the golden's sha256 hashes it
+    (golden_antenna._board; git archive writes CRLF on a core.autocrlf checkout), and run in its folder, so that
+    review.json names it by its file name as the golden does, isolated: its review.json against the release's
+    tests/fixtures/review/emc_review.json, key by key, the installed review rules and cavity solve at no cost (no
+    openEMS runs)."""
+    board, golden = "tests/fixtures/emc_review.kicad_pcb", "tests/fixtures/review/emc_review.json"
+    path = tmp / "source" / board
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with zipfile.ZipFile(tmp / "source.zip") as z:
+        path.write_bytes(z.read(board).replace(b"\r\n", b"\n"))
+        want = json.loads(Path(z.extract(golden, tmp / "source")).read_text(encoding="utf-8"))
+    command = [program(tmp, "kicad-rf-studio"), "review", path.name, "-o", str(tmp / "review")]
+    if (done := run(command, timeout=300, cwd=path.parent, env=isolated(tmp))).returncode:
+        return failed(command, done)
+    data = json.loads((tmp / "review" / "review.json").read_text(encoding="utf-8"))
+    if differ := sorted(key for key in data.keys() | want.keys() if data.get(key) != want.get(key)):
+        return "FAIL", f"…/review/review.json differs from {golden} in: {', '.join(differ)}"
+    return "PASS", f"review wrote {golden}'s review.json from {board} in the fresh venv"
+
+
 def plugin(tmp: Path) -> tuple[str, str]:
-    """(f) install-kicad-plugin by the fresh venv's console script into tmp's KiCad 10.0 folder (9.0's files are the
+    """(g) install-kicad-plugin by the fresh venv's console script into tmp's KiCad 10.0 folder (9.0's files are the
     same), checked by kicad-python-packager, against KiCad's schema at each of SCHEMA_TAGS and the identifier rules
     (plugin_problems), and its entrypoint executable, as KiCad checks it at the click."""
     folder = tmp / "documents" / ("KiCad" if WINDOWS else "kicad") / "10.0" / "plugins" / "kicad-rf-studio"
@@ -208,7 +231,7 @@ def plugin(tmp: Path) -> tuple[str, str]:
 
 
 def privacy(tmp: Path) -> tuple[str, str]:
-    """(g) The privacy gate's generic rules, as ci.yml runs them: over the history (its script, --all --generic-only)
+    """(h) The privacy gate's generic rules, as ci.yml runs them: over the history (its script, --all --generic-only)
     and over the wheel's texts (wheel_hits). The private list stays the hooks' (spec 9.1): pre-commit and pre-push run
     it on every commit and push."""
     command = [sys.executable, "-X", "utf8", str(ROOT / "tools" / "privacy_gate.py"), "--all", "--generic-only"]
@@ -224,8 +247,9 @@ def privacy(tmp: Path) -> tuple[str, str]:
     return "PASS", f"{scanned}: clean under the generic rules (the private list is the hooks')"
 
 
-NEEDS = {"install": "build", "gui": "install", "antenna": "install", "si": "install", "plugin": "install"}
-STEPS = (build, install, gui, antenna, si, plugin, privacy)
+NEEDS = {"install": "build", "gui": "install", "antenna": "install", "si": "install", "review": "install",
+         "plugin": "install"}
+STEPS = (build, install, gui, antenna, si, review, plugin, privacy)
 
 
 def main() -> int:

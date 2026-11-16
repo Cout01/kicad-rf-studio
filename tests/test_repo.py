@@ -110,6 +110,19 @@ def test_the_readme_has_an_si_tutorial():  # Stage 4 design 5.12 item 5; ruling 
     assert f"{DIFF_OHM:g} Ω" in tutorial and f"{SE_OHM:g} Ω" in tutorial  # the short band and compare's thresholds
     assert "a track, arc or via" in readme.split("\n## Install\n", 1)[1].split("\n## ", 1)[0]
 
+def test_the_readme_has_a_review_tutorial():  # design 5.15 plan 2; ruling 8
+    readme = (ROOT / "README.md").read_text(encoding="utf-8")
+    assert readme.index("\n## Signal-integrity tutorial\n") < readme.index("\n## Review tutorial\n") < readme.index(
+        "\n## Development setup\n")
+    tutorial = readme.split("\n## Review tutorial\n", 1)[1].split("\n## ", 1)[0]
+    for command in ("review tests/fixtures/emc_review.kicad_pcb -o review",
+                    'review tests/fixtures/lpf915.kicad_pcb --net "RF_*" --f0 915MHz -o review'):
+        assert f"kicad-rf-studio {command}\n" in tutorial, command
+    assert "\n### What these results do not tell you\n" in tutorial
+    for code in ("I_REVIEW_RELATIVE", "I_LIMIT_CAVITY", "I_LIMIT_REVIEW_KEEPOUT"):
+        assert CATALOG[code] in tutorial, code
+    assert all(CATALOG[c] in tutorial for c in ("G_TAB_REVIEW", "G_REVIEW_SELECT", "G_REVIEW_SIMULATE"))
+
 def test_the_readme_installs_the_app_openems_and_the_button_with_real_commands(capsys):  # design 5.6, 7; RF 4
     readme = (ROOT / "README.md").read_text(encoding="utf-8")
     install = readme.split("\n## Install\n", 1)[1].split("\n## ", 1)[0]

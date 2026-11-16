@@ -130,8 +130,8 @@ def test_the_antenna_step_runs_new_on_the_releases_own_fixture_and_reads_schema_
     assert Path(command[2]).read_bytes() == fixture.read_bytes() and env["QT_QPA_PLATFORM"] == "offscreen"
     schema = {"schema": 1}
     assert release_check.antenna(tmp_path)[0] == "FAIL"  # no kind: read with .get, a FAIL line
-    assert [s.__name__ for s in release_check.STEPS] == ["build", "install", "gui", "antenna", "si", "plugin",
-                                                         "privacy"]
+    assert [s.__name__ for s in release_check.STEPS] == ["build", "install", "gui", "antenna", "si", "review",
+                                                         "plugin", "privacy"]
     assert release_check.NEEDS["antenna"] == "install"
 
 
@@ -159,6 +159,33 @@ def test_the_si_step_runs_new_interface_on_the_releases_own_fixture_and_reads_sc
     data = {**data, "ports": [{}] * 5}
     assert release_check.si(tmp_path)[0] == "FAIL"  # 7 ports where a run takes 8
     assert release_check.NEEDS["si"] == "install"
+
+
+def test_the_review_step_runs_review_on_the_releases_fixture_and_names_what_differs(tmp_path, monkeypatch):  # 5.17
+    fixture, golden = ROOT / "tests" / "fixtures" / "emc_review.kicad_pcb", ROOT / "tests/fixtures/review/emc_review.json"
+    lf = fixture.read_bytes().replace(b"\r\n", b"\n")
+    with zipfile.ZipFile(tmp_path / "source.zip", "w") as z:  # git archive on a core.autocrlf checkout: CRLF
+        z.writestr("tests/fixtures/emc_review.kicad_pcb", lf.replace(b"\n", b"\r\n"))
+        z.write(golden, "tests/fixtures/review/emc_review.json")
+    seen, data = [], json.loads(golden.read_text(encoding="utf-8"))
+
+    def run(command, **kw):  # the fresh venv's review: it writes review.json where -o says
+        seen.append((command, kw, (Path(kw["cwd"]) / command[2]).read_bytes()))
+        out = Path(command[command.index("-o") + 1])
+        out.mkdir(parents=True, exist_ok=True)
+        (out / "review.json").write_text(json.dumps(data), encoding="utf-8")
+        return subprocess.CompletedProcess(command, 0, "", "")
+
+    monkeypatch.setattr(release_check, "run", run)
+    assert release_check.review(tmp_path)[0] == "PASS"
+    (command, kw, board), = seen
+    assert command[:3] == [release_check.program(tmp_path, "kicad-rf-studio"), "review", "emc_review.kicad_pcb"]
+    assert board == lf  # LF, as the golden's sha256 hashes it (golden_antenna._board)
+    assert kw["env"]["QT_QPA_PLATFORM"] == "offscreen"
+    data = {**data, "cavities": []}
+    assert release_check.review(tmp_path) == ("FAIL", "…/review/review.json differs from "
+                                              "tests/fixtures/review/emc_review.json in: cavities")
+    assert release_check.NEEDS["review"] == "install"
 
 
 def test_main_skips_what_a_failed_step_holds_up_fails_a_step_that_raises_and_removes_its_folder(monkeypatch, capsys):
