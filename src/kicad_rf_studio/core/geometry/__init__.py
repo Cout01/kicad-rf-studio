@@ -10,8 +10,8 @@ import shapely
 
 from kicad_rf_studio.core.kicad.stackup import Stackup
 from kicad_rf_studio.core.kicad.tracer import Chain, ChainPart, classify
-from kicad_rf_studio.core.project import (ANTENNA_BOUNDARY, antenna, copper_model, mesh_reach_h, region_expand_h,
-                                          region_margin_scale, si)
+from kicad_rf_studio.core.project import (ANTENNA_BOUNDARY, antenna, copper_model, emission, mesh_reach_h,
+                                          region_expand_h, region_margin_scale, si)
 
 if TYPE_CHECKING:  # the types only: importing a submodule must not pull in the others
     from kicad_rf_studio.core.geometry.copper import Piece
@@ -32,11 +32,12 @@ class Geometry:
     none is absent), the measured sections, the shield lid (None without one), every warning and E_ gate entry in
     `notes`, `track_width`, the narrowest track of the measured nets, and `track_gap`, sections.staircase_gap (None
     without a staircased track), which the d rule takes with the sections' widths and gaps. `antenna`: an antenna's
-    geometry (Stage 3 design 5.3), whose mesh exempts its two-layer pairs (core.mesh._pairs) from the edge lint's third
-    test. An SI project's (Stage 4 design 5.3) has `layers`, its lines' copper layers (sections.line_layers), whose
-    thinnest dielectric sets d and the reach, `legs`, a pair's two measured lines' nets (None without a pair), and
-    `stairs`, the copper bounds (x0, y0, x1, y1) of its lines' staircased tracks (sections.off_axis), which its mesh
-    fills at d; every other geometry has none of them."""
+    geometry (Stage 3 design 5.3), or an emission project's, the same whole board (Stage 5 design 5.6), whose mesh
+    exempts its two-layer pairs (core.mesh._pairs) from the edge lint's third test. An SI project's (Stage 4 design
+    5.3) has `layers`, its lines' copper layers (sections.line_layers), whose thinnest dielectric sets d and the
+    reach, `legs`, a pair's two measured lines' nets (None without a pair), and `stairs`, the copper bounds (x0, y0,
+    x1, y1) of its lines' staircased tracks (sections.off_axis), which its mesh fills at d; every other geometry has
+    none of them."""
     region: Region
     zs: tuple[Slab, ...]
     pieces: list[Piece]
@@ -84,6 +85,9 @@ def build_geometry(board: Board, project: dict) -> Geometry:
     not named it. Every top-side shield on the board is a lid candidate, and W_LIDS_LEFT_OUT names those the one lid
     leaves out. W_AIR_BOX comes last when the air box is not the one gate P3-C tested, ANTENNA_BOUNDARY past a gap of
     λ/4 at f_lo (air_gap) or more.
+    An emission project's geometry (Stage 5 design 5.6) is an antenna's whole board: board_region, the lid over the
+    crop, `antenna` set, and the two gates as W_EMISSION_LIDS_LEFT_OUT and W_EMISSION_AIR_BOX, with the antenna's
+    params and tests; sheet copper, join pads and W_STAIRCASED stay the antenna's.
     An antenna's sheet copper (Stage 3 design 5.3) is a stack whose copper layers have no thickness.
     For an SI project (Stage 4 design 5.1-5.3) the chain is its lines merged (chain_of), so every line's copper and
     parts are measured. Its `layers`, the lines' copper layers (sections.line_layers), give the region and the
@@ -102,7 +106,8 @@ def build_geometry(board: Board, project: dict) -> Geometry:
     from kicad_rf_studio.core.mesh.protect import protected_set
 
     chain, classes = chain_of(project), classify(board, project.get("classes"))
-    ports, ant = project.get("ports", []), antenna(project)
+    ports, ant, emits = project.get("ports", []), antenna(project), emission(project)
+    whole = ant or emits  # the whole board in air (Stage 3 design 5.2; Stage 5 design 5.6)
     layers = line_layers(board, chain.nets) if si(project) else ()  # none: the top layer's substrate, as before
     stack = project["stackup"]
     if ant and copper_model(project) == "sheet":  # each copper slab collapses onto its dielectric face, the masks on it
@@ -111,7 +116,7 @@ def build_geometry(board: Board, project: dict) -> Geometry:
     zs = zstack(Stackup.from_json(stack), board.copper_layers)
     # ponytail: the antenna group is the footprint's own copper; a radiator drawn as tracks on the feed net (fit2d would
     # measure it as feed line) or as board graphics or zones outside the footprint is not in it
-    if ant:
+    if whole:
         region = board_region(board, chain, ports, zs, f_max(project), region_expand_h(project))
     else:
         region = build_region(board, chain, ports, zs, f_max(project), region_expand_h(project),
@@ -135,24 +140,26 @@ def build_geometry(board: Board, project: dict) -> Geometry:
         stairs.append(("W_STAIRCASED", {"net": feed}))
     if si(project):  # gate P4-B's 45° pairs, in an SI project's own words (A-58)
         stairs = [("W_STAIRCASED_SI", p) if c == "W_STAIRCASED" else (c, p) for c, p in stairs]
-    lid, gate = find_lid(board, classes, replace(region, roi=region.crop) if ant else region, zs, project)
+    lid, gate = find_lid(board, classes, replace(region, roi=region.crop) if whole else region, zs, project)
     width = min((t.width for t in board.tracks if t.net in chain.nets), default=math.inf)
     copper = [s.copper for s in zs if s.kind == "copper"]  # bottom to top
     masks = {layer: m for layer, side in ((copper[-1], "F"), (copper[0], "B"))
              if (m := mask_model(board, pieces, zs, region.crop, side)) is not None}
-    if ant and lid is not None:
+    if whole and lid is not None:
         left = [r for r in sorted(classes.shields)  # the other top-side shields, find_lid's candidates
                 if r != lid.ref and r in board.footprints and board.footprints[r].layer == copper[-1]]
         if left:
-            gate.append(("W_LIDS_LEFT_OUT", {"ref": lid.ref, "refs": ", ".join(left)}))
-    if ant:
+            gate.append(("W_EMISSION_LIDS_LEFT_OUT" if emits else "W_LIDS_LEFT_OUT",
+                         {"ref": lid.ref, "refs": ", ".join(left)}))
+    if whole:
         default, gap = air_gap(project["band"]["f_lo_hz"]), project["air_gap_mm"]
         if project["boundary"] != ANTENNA_BOUNDARY or gap < default:
-            gate.append(("W_AIR_BOX", {"gap_mm": f"{gap:.1f}", "quarter_mm": f"{default:.1f}",
-                                       "boundary": project["boundary"]}))  # an event before plan 4 carries these
+            gate.append(("W_EMISSION_AIR_BOX" if emits else "W_AIR_BOX",
+                         {"gap_mm": f"{gap:.1f}", "quarter_mm": f"{default:.1f}",
+                          "boundary": project["boundary"]}))  # an event before plan 4 carries these
     legs, stair_bounds = None, ()
     if si(project):
         legs = tuple(frozenset(x["chain"]["nets"]) for x in project["lines"][:2]) if project["pair"] else None
         stair_bounds = tuple(t.polygon().bounds for t in board.tracks if t.net in chain.nets and off_axis(t))
     return Geometry(region, zs, pieces, protected, rods, masks, secs, lid, notes + stairs + gate, width,
-                    staircase_gap(board, chain.nets, pieces), ant, layers, legs, stair_bounds)
+                    staircase_gap(board, chain.nets, pieces), whole, layers, legs, stair_bounds)

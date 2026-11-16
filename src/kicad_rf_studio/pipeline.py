@@ -55,7 +55,8 @@ from kicad_rf_studio.core.post.si import (SI_OUTPUTS, Reading, compare_verify, h
                                           si_delta_lines, si_deltas, si_limits, si_lines, si_png, tdr_csv)
 from kicad_rf_studio.core.post.waves import layout
 from kicad_rf_studio.core.project import (GATES, GATES_SI, antenna, board_file, board_hash, copper_model, default_gates,
-                                          load_project, mesh_n, parts, read_project, relative_path, save_project, si)
+                                          emission, load_project, mesh_n, parts, read_project, relative_path,
+                                          save_project, si)
 from kicad_rf_studio.stoprule import (KEPT, PRESETS, RING_CEILING, WINDOW_S, Records, Verdict, ceiling, residual_db,
                                       stop_rule)
 from kicad_rf_studio.worker import GRIDS, LOG
@@ -135,10 +136,11 @@ def build_model(project: dict, board: Board, geom: Geometry) -> Model:
     """The model of `project` (spec 6.1 step 2, C-42): its port ends; the mesh, finest across their nominal boxes, an
     SI project's at its mesh.max_cell_mm (Stage 4 design 5.3), with the edge lint (on E_EDGE_LINT no mesh and no spec,
     and that gate blocked); fit2d against gates.fit2d_limit (E_FIT2D, E_FIT2D_FINE or E_FIT2D_SHORT blocked, the model
-    still built); the timestep floor's reference, from the mesh before any port is placed on it; an antenna's mesh in
-    its air box (Stage 3 design 5.2); each end placed on the mesh, a grid part's through grid_entry with its entry in
-    project.json; then the model spec. Raises the refusals of ends, place and grid_entry; the caller handles stops() of
-    load()'s notes first."""
+    still built); the timestep floor's reference, from the mesh before any port is placed on it; an antenna's or an
+    emission project's mesh in its air box (Stage 3 design 5.2; Stage 5 design 5.6); each end placed on the mesh, a
+    grid part's through grid_entry with its entry in project.json, and an emission project's port whose entry in
+    project.json's ports has an "R", a termination (Stage 5 design 5.6), with that "R" as its last key; then the model
+    spec. Raises the refusals of ends, place and grid_entry; the caller handles stops() of load()'s notes first."""
     e = ends(board, project, geom.pieces)
     n = mesh_n(project)
     try:
@@ -152,14 +154,17 @@ def build_model(project: dict, board: Board, geom: Geometry) -> Model:
     except KrsError as err:  # E_FIT2D_SHORT from fit2d, E_FIT2D or E_FIT2D_FINE from check_fit2d
         blocked.append((err.code, err.params))
     dt_ref = dt_floor_reference(mesh)
-    if antenna(project):
+    if antenna(project) or emission(project):
         mesh = air_box(mesh, project["air_gap_mm"], air_cell(band(project)[1]), project["boundary"] == "pml_8")
     by_ref = parts(project)
+    terminations = {q["name"]: q["R"] for q in project["ports"] if "R" in q} if emission(project) else {}
     ports, grid = [], []
     for end in e:
         placed = place(end, mesh, geom.zs, geom.pieces)
         if end.role == GRID:
             grid.append(grid_entry(placed, by_ref[end.name]))
+        elif not placed["part"] and end.name in terminations:
+            ports.append({**placed, "R": terminations[end.name]})
         else:
             ports.append(placed)
     return Model(mesh, model_spec(project, board, geom, mesh, ports, grid), blocked, dt_ref)

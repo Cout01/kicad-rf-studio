@@ -30,7 +30,8 @@ from kicad_rf_studio.core.model.csx import PML_CELLS
 from kicad_rf_studio.core.model.parts import COPPER
 from kicad_rf_studio.core.model.ports import _pad
 from kicad_rf_studio.core.model.readers import c_box
-from kicad_rf_studio.core.project import antenna, copper_model, parts, pulse_band, si
+from kicad_rf_studio.core.project import (NEAR_FIELD_MAX, antenna, copper_model, emission, harmonics_hz, parts,
+                                          pulse_band, si)
 from kicad_rf_studio.stoprule import FLAT_S, WINDOW_S, flat_window, stop_window
 
 if TYPE_CHECKING:
@@ -110,9 +111,11 @@ def excitation(project: dict) -> dict:
     """pulse() over the band (f1, f2) of `project` (project.json), run to the project's T_max; an antenna's also holds
     its flat window "flat_s": project.json's flat_s when it sets one (gate P3-C's widened window), else flat_window() of
     its f0 (Stage 3 design 5.4). An SI project's is dc_pulse() to its f_max_hz, T_max and window_s (Stage 4 design
-    5.4)."""
+    5.4); an emission project's emission_pulse() of its band to its T_max (Stage 5 design 5.7)."""
     if si(project):
         return dc_pulse(project["f_max_hz"], project["t_max_s"], project["window_s"])
+    if emission(project):
+        return emission_pulse(project["band"]["f_lo_hz"], project["band"]["f_max_hz"], project["t_max_s"])
     exc = pulse(*band(project), project["t_max_s"])
     return {**exc, "flat_s": project.get("flat_s") or flat_window(project["f0_hz"])} if antenna(project) else exc
 
@@ -269,6 +272,24 @@ def far_field_box(project: dict, board: Board, geom: Geometry) -> dict:
     return {"f_hz": project["far_field"]["f_hz"], "center": [round(v, 6) for v in centre]}
 
 
+NEAR_FIELD_MM = 1.5  # the near-field plane's height over the highest metal (AR-9)
+
+
+def near_field_plane(project: dict, board: Board, geom: Geometry, spec: dict) -> dict:
+    """An emission project's near-field plane as the model spec's "near_field" holds it (Stage 5 design 5.8, AR-9):
+    over its outline's bounds (else geom's crop's), NEAR_FIELD_MM above the highest z of `spec`'s metal (the copper
+    solids, the lid's plate and walls, the rods), at the carrier's harmonics up to band.f_max_hz, at most
+    NEAR_FIELD_MAX; every coordinate to 1e-6 mm. check_project lets near_field be true only with an f0_hz."""
+    x0, y0, x1, y1 = (geom.region.crop if board.outline is None else board.outline).bounds
+    pec = spec["metal"]
+    tops = [max(s["z"]) for s in (*pec["copper"], *pec["lid"]["walls"], *pec["cylinders"], *pec["curves"])]
+    if (plate := pec["lid"]["plate"]) is not None:
+        tops.append(plate["z"])
+    z = max(tops) + NEAR_FIELD_MM
+    return {"start": [round(v, 6) for v in (x0, y0, z)], "stop": [round(v, 6) for v in (x1, y1, z)],
+            "f_hz": harmonics_hz(project["f0_hz"], project["band"]["f_max_hz"])[:NEAR_FIELD_MAX]}
+
+
 def model_spec(project: dict, board: Board, geom: Geometry, mesh: Mesh, ports: list[dict], grid: list[dict]) -> dict:
     """The model of `geom` on `mesh` as plain JSON (C-19): the mesh's own lines (X-6), the excitation, the materials,
     the metal, `ports` (the place() entries in job order) and `grid` (the grid_entry() entries); then the antenna keys,
@@ -291,9 +312,14 @@ def model_spec(project: dict, board: Board, geom: Geometry, mesh: Mesh, ports: l
     is dc_pulse(). It reads no f0: every material's κ is 0.0, v1's constant κ never entering it (design 3). With
     "dielectric": "debye", each substrate material whose tan δ is above 0 (a copper slab's, its neighbours' mean, a None
     read as 0) also holds "debye", debye() of its εr and tan δ to f_max_hz; the masks stay plain. Raises E_DEBYE_FIT
-    for a fit debye() refuses (_debye)."""
-    # an SI spec's κ is kappa() at 0 Hz: 0.0 on every material
-    f0, zs, crop, dz = 0.0 if si(project) else project["f0_hz"], geom.zs, geom.region.crop, mesh.dz0
+    for a fit debye() refuses (_debye).
+    An emission project's (Stage 5 design 5.6–5.8) is lossless, every κ 0.0 as an SI spec's, its excitation
+    emission_pulse(), whose "emission": true is the spec's one emission marker (AR-6); of the antenna keys it holds
+    "boundary" alone, and "near_field", near_field_plane(), when project.json's near_field is true. A port's "R" is
+    build_model's to write."""
+    # an SI or an emission spec's κ is kappa() at 0 Hz: 0.0 on every material
+    f0 = 0.0 if si(project) or emission(project) else project["f0_hz"]
+    zs, crop, dz = geom.zs, geom.region.crop, mesh.dz0
     sheet = antenna(project) and copper_model(project) == "sheet"
     fit = si(project) and project["dielectric"] == "debye"
 
@@ -348,9 +374,9 @@ def model_spec(project: dict, board: Board, geom: Geometry, mesh: Mesh, ports: l
                       "curves": [{"at": list(r.at), "z": [r.z0, r.z1]} for r in mesh.snapped_rods if not r.solid]},
             "ports": ports,
             "grid": grid}
+    if (antenna(project) or emission(project)) and project["boundary"] == "pml_8":
+        spec["boundary"] = "pml_8"
     if antenna(project):
-        if project["boundary"] == "pml_8":
-            spec["boundary"] = "pml_8"
         if sheet:
             spec["copper"] = "sheet"
         if not any(q["part"] for q in ports):
@@ -359,6 +385,8 @@ def model_spec(project: dict, board: Board, geom: Geometry, mesh: Mesh, ports: l
             d, z0, z1 = mesh.d, min(z for z, _ in cu.values()), max(z for _, z in cu.values())
             spec["join"] = [[[round(v, 6) for v in (x0 - d, y0 - d, z0)], [round(v, 6) for v in (x1 + d, y1 + d, z1)]]
                             for x0, y0, x1, y1 in boxes]
+    if emission(project) and project["near_field"]:
+        spec["near_field"] = near_field_plane(project, board, geom, spec)
     return spec
 
 

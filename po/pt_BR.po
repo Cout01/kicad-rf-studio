@@ -1646,6 +1646,16 @@ msgstr "Emissão relativa, não um veredito de conformidade: portadora {carrier}
 msgid "The emission band from {f_lo_mhz} to {f_max_mhz} MHz holds no far-field frequency: f_lo is twice the carrier, and the band must run past it and hold a carrier harmonic or a point of the 100 MHz grid from 1 to 6 GHz. Give --f-max above {f_lo_mhz} MHz, or a --band that reaches 1 GHz."
 msgstr "A banda de emissão de {f_lo_mhz} a {f_max_mhz} MHz não contém nenhuma frequência do campo distante: f_lo é o dobro da portadora, e a banda precisa ir além de f_lo e conter um harmônico da portadora ou um ponto da grade de 100 MHz de 1 a 6 GHz. Indique um --f-max acima de {f_lo_mhz} MHz, ou um --band que chegue a 1 GHz."
 
+#. W_EMISSION_AIR_BOX
+#, python-brace-format
+msgid "The emission model's air box is outside the tested setting: an air gap of {gap_mm} mm to a {boundary} absorber, where gate P3-C tested pml_8 with a gap of λ/4 at f_lo ({quarter_mm} mm) or more."
+msgstr "A caixa de ar do modelo de emissão está fora da configuração testada: espaçamento de ar de {gap_mm} mm até um absorvedor {boundary}, enquanto a checagem prévia P3-C testou pml_8 com um espaçamento de λ/4 em f_lo ({quarter_mm} mm) ou mais."
+
+#. W_EMISSION_LIDS_LEFT_OUT
+#, python-brace-format
+msgid "Shields {refs} get no lid: the emission model holds one lid, over {ref}, the shield over most of the board."
+msgstr "As blindagens {refs} ficam sem tampa: o modelo de emissão tem uma só tampa, sobre {ref}, a blindagem sobre a maior parte da placa."
+
 #. E_INTERNAL
 #, python-brace-format
 msgid "Internal error: {detail}. Please report it."
