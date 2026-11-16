@@ -1666,7 +1666,8 @@ def test_simulate_this_pre_fills_new_and_keeps_the_presss_kicad(window):  # desi
     assert f.status.text() == note  # the note outlives the handoff (design 5.5)
 
 
-def test_one_review_through_the_window_on_emc_review_select_and_simulate_this(window, kicad, tmp_path):  # 5.17 item 4
+def test_one_review_through_the_window_on_emc_review_select_and_simulate_this(window, kicad, tmp_path,
+                                                                             monkeypatch):  # 5.17 item 4
     board = tmp_path / "emc_review.kicad_pcb"
     board.write_bytes((FIX / "emc_review.kicad_pcb").read_bytes())
     k = kicad(board)
@@ -1705,6 +1706,14 @@ def test_one_review_through_the_window_on_emc_review_select_and_simulate_this(wi
     w.pads_read.result(timeout=60)
     w.tick()
     assert w.tabs.currentWidget() is w.project_page and f.kind.currentData() == "si" and w.handed.socket == k.url
+    assert f.status.text() == joined(("G_HANDOFF_SI_ENDS", {"net": "CLK_EDGE", "count": 0, "pads": "T_NONE"}), *notes)
+    monkeypatch.setattr(QMessageBox, "question", lambda *a: QMessageBox.StandardButton.Yes)  # Refill's question
+    f.refill_button.click()  # its re-read is "simulate this"'s pre-fill, never the press's (the close's review)
+    w.refilling.result(timeout=60)
+    w.tick()
+    w.pads_read.result(timeout=60)
+    w.tick()
+    assert f.kind.currentData() == "si" and w.handed.net == "CLK_EDGE"
     assert f.status.text() == joined(("G_HANDOFF_SI_ENDS", {"net": "CLK_EDGE", "count": 0, "pads": "T_NONE"}), *notes)
     w.tabs.setCurrentWidget(w.results)
     w.take_handoff(press(board, socket=k.url, token=k.token))  # Review not open: the press goes to Project

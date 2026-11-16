@@ -657,12 +657,13 @@ class MainWindow(QMainWindow):
     process this window started; `live`, whether the watched process goes on; `mtime`, project.json's and the board
     file's st_mtime_ns at the last read (stamp); `started`, every process this window started, polled every tick, so
     that none is left a zombie on Linux; the New form's work going on (Futures): `pads_read`, the chosen board's
-    pads and antennas, a press (take_handoff) or "simulate this"'s pre-fill (simulate_this), and `creating`, new; and
-    the KiCad button's presses: `handoff`, the handoff file of the last press taken, and `handed`, the last pre-fill
-    shown (control.Handed), a press's or "simulate this"'s, which carries the last press's KiCad, each None before the
-    first, and `refilling`, Refill's refill and save in KiCad going on (a Future); one window per user (gui.main,
-    serve): `server`, the local server that takes a second start's request, and `lock`, gui.lock, both None in a
-    window main did not make.
+    pads and antennas, a press (take_handoff), "simulate this"'s pre-fill (simulate_this) or Refill's re-read of the
+    pre-fill shown (refilled), and `creating`, new; and the KiCad button's presses: `handoff`, the handoff file of the
+    last press taken, and `handed`, the last pre-fill shown (control.Handed), a press's or "simulate this"'s, which
+    carries the last press's KiCad (and "simulate this"'s its finding's own net, in its G_SIMULATE_SI note) and which
+    Refill reads again (refilled), each None before the first, and `refilling`, Refill's refill and save in KiCad going
+    on (a Future); one window per user (gui.main, serve): `server`, the local server that takes a second start's
+    request, and `lock`, gui.lock, both None in a window main did not make.
     Every slot is a bound method: a lambda or partial slot would keep a closed window alive (probed on PySide6
     6.12)."""
 
@@ -1421,16 +1422,25 @@ class MainWindow(QMainWindow):
 
     def refilled(self, done: Future) -> None:
         """Refill's end (`done`, button.refill): a refusal (button.refill's, else E_INTERNAL) in New's status line, the
-        exception taken as show_pads takes it. Else G_REFILLED there, and the press read again on the pool
-        (control.handed, as `pads_read`), so that what the save wrote pre-fills New, its status line left as it is
-        unless that read has a problem. An open project of that board reads itself again through the tick's board
-        stamp."""
+        exception taken as show_pads takes it. Else G_REFILLED there, and the pre-fill shown (`handed`) read again on
+        the pool as New's read, `pads_read`, so that what the save wrote pre-fills New: a press's, control.handed of the
+        last press's handoff file (`handoff`); "simulate this"'s, the one with notes (AR-5), control.simulated on its
+        board with its notes, that handoff file and its finding's own net, which its G_SIMULATE_SI note names, since its
+        `net` is "" after G_HANDOFF_SI_NET or G_HANDOFF_NETS. No re-read while a read is in flight (`pads_read`): a
+        press, Simulate this or a board picked meanwhile is newer and wins, as a press wins over a slower read
+        (take_handoff). show_pads then puts the re-read's problem, then its notes, in the status line, which otherwise
+        keeps G_REFILLED. An open project of that board reads itself again through the tick's board stamp."""
         f, error = self.new_form, done.exception()
         if error is not None:
             f.status.setText(control.message(error))
             return
         f.status.setText(render("G_REFILLED", board=str(done.result())))
-        self.pads_read = self.pool.submit(control.handed, self.handoff)
+        if self.pads_read is not None:  # a newer read
+            return
+        h = self.handed
+        self.pads_read = (self.pool.submit(control.simulated, h.board, dict(h.notes)["G_SIMULATE_SI"]["net"],
+                                           self.handoff, h.notes) if h.notes else
+                          self.pool.submit(control.handed, self.handoff))
 
     def created(self, done: Future) -> None:
         """new's end (`done`): Create enabled again and the last New's notes cleared; on success the status line
