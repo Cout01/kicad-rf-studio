@@ -123,6 +123,16 @@ def test_the_readme_has_a_review_tutorial():  # design 5.15 plan 2; ruling 8
         assert CATALOG[code] in tutorial, code
     assert all(CATALOG[c] in tutorial for c in ("G_TAB_REVIEW", "G_REVIEW_SELECT", "G_REVIEW_SIMULATE"))
 
+def test_the_cavity_limit_names_e_es_measured_fringing_bias():  # design 5.12: named in the cavity's limit line
+    (record,) = (ROOT / "docs" / "validation").glob("*-e-e-cavity.json")
+    offset = json.loads(record.read_text(encoding="utf-8"))["decision"]["offset_pct"]
+    text = CATALOG["I_LIMIT_CAVITY"]
+    assert "(about 0.3 % for d 0.2 mm on 50 mm, 2 % for 1 mm" in text  # the scaling with d and a stays
+    if offset is None:  # no peak matched: the estimate stands alone (not a blocker)
+        assert "gate E-E" not in text
+    else:
+        assert f"; gate E-E's openEMS run measured {-offset:.1f} % on a 50 × 30 mm pair at d 0.8 mm)" in text
+
 def test_the_readme_installs_the_app_openems_and_the_button_with_real_commands(capsys):  # design 5.6, 7; RF 4
     readme = (ROOT / "README.md").read_text(encoding="utf-8")
     install = readme.split("\n## Install\n", 1)[1].split("\n## ", 1)[0]

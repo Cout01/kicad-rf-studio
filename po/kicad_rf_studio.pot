@@ -1631,7 +1631,7 @@ msgid "No two copper layers have pours facing each other over 20 mm² or more, s
 msgstr ""
 
 #. I_LIMIT_CAVITY
-msgid "Limits of the cavity modes: lossless, so the list says where a resonance may sit, never how high it rises; decoupling capacitors excluded; vias as posts only, snapped to the grid, and a post of drill 0.5 mm or more, a disc of held cells, puts the mode it makes up to about 6 % low; TM0 modes only; no fringing, so frequencies read high by about 2Δ/a, Δ about 0.4 to 0.5 d (about 0.3 % for d 0.2 mm on 50 mm, 2 % for 1 mm); εr uniform; the fills as saved; slots under 0.5 mm unresolved; cavities uncoupled across splits."
+msgid "Limits of the cavity modes: lossless, so the list says where a resonance may sit, never how high it rises; decoupling capacitors excluded; vias as posts only, snapped to the grid, and a post of drill 0.5 mm or more, a disc of held cells, puts the mode it makes up to about 6 % low; TM0 modes only; no fringing, so frequencies read high by about 2Δ/a, Δ about 0.4 to 0.5 d (about 0.3 % for d 0.2 mm on 50 mm, 2 % for 1 mm; gate E-E's openEMS run measured 1.0 % on a 50 × 30 mm pair at d 0.8 mm); εr uniform; the fills as saved; slots under 0.5 mm unresolved; cavities uncoupled across splits."
 msgstr ""
 
 #. E_INTERNAL

@@ -488,7 +488,7 @@ Cavity 1: In1.Cu/In2.Cu, nets GND / +3V3, at (134.250, 121.650) mm: d 1.040 mm, 
 Cavity 1's modes up to f_max, in MHz: 971.1, 1275.3, 1526.1, 2245.2, 2673.6, 2753.6, 2961.3, 3307.9, 3604.2, 4126.6, 4327.6, 4447.2, 4694.8, 4983.6.
 Cavity 2: In1.Cu/In2.Cu, nets GND / GND, at (109.000, 125.000) mm: d 1.040 mm, εr 4.5, area 80.0 mm², via posts 1.
 Cavity 2's modes up to f_max, in MHz: 1735.5, 3701.9.
-Limits of the cavity modes: lossless, so the list says where a resonance may sit, never how high it rises; decoupling capacitors excluded; vias as posts only, snapped to the grid, and a post of drill 0.5 mm or more, a disc of held cells, puts the mode it makes up to about 6 % low; TM0 modes only; no fringing, so frequencies read high by about 2Δ/a, Δ about 0.4 to 0.5 d (about 0.3 % for d 0.2 mm on 50 mm, 2 % for 1 mm); εr uniform; the fills as saved; slots under 0.5 mm unresolved; cavities uncoupled across splits.
+Limits of the cavity modes: lossless, so the list says where a resonance may sit, never how high it rises; decoupling capacitors excluded; vias as posts only, snapped to the grid, and a post of drill 0.5 mm or more, a disc of held cells, puts the mode it makes up to about 6 % low; TM0 modes only; no fringing, so frequencies read high by about 2Δ/a, Δ about 0.4 to 0.5 d (about 0.3 % for d 0.2 mm on 50 mm, 2 % for 1 mm; gate E-E's openEMS run measured 1.0 % on a 50 × 30 mm pair at d 0.8 mm); εr uniform; the fills as saved; slots under 0.5 mm unresolved; cavities uncoupled across splits.
 Findings: 2.
 Wrote review.csv, review.json, review.png in review.
 Limit: board-level keep-out areas leave no geometry in the import, so the review sees only the fills they shape; a footprint's keep-out, a connector or a printed antenna takes its copper out of R1 and R3.
@@ -519,7 +519,7 @@ It took 1.5 s and replaced the first review's files. Its basis line gives f_max 
 Cavity 1: F.Cu/B.Cu, nets GND / GND, at (118.782, 100.255) mm: d 0.710 mm, εr 4.5, area 582.7 mm², via posts 36.
 Cavity 1's modes up to f_max, in MHz: 2430.8, 2948.4, 3570.7, 3926.4.
 Cavity 1's mode at 3570.7 MHz lies within ±5 % of 4 × the carrier, 915 MHz.
-Limits of the cavity modes: lossless, so the list says where a resonance may sit, never how high it rises; decoupling capacitors excluded; vias as posts only, snapped to the grid, and a post of drill 0.5 mm or more, a disc of held cells, puts the mode it makes up to about 6 % low; TM0 modes only; no fringing, so frequencies read high by about 2Δ/a, Δ about 0.4 to 0.5 d (about 0.3 % for d 0.2 mm on 50 mm, 2 % for 1 mm); εr uniform; the fills as saved; slots under 0.5 mm unresolved; cavities uncoupled across splits.
+Limits of the cavity modes: lossless, so the list says where a resonance may sit, never how high it rises; decoupling capacitors excluded; vias as posts only, snapped to the grid, and a post of drill 0.5 mm or more, a disc of held cells, puts the mode it makes up to about 6 % low; TM0 modes only; no fringing, so frequencies read high by about 2Δ/a, Δ about 0.4 to 0.5 d (about 0.3 % for d 0.2 mm on 50 mm, 2 % for 1 mm; gate E-E's openEMS run measured 1.0 % on a 50 × 30 mm pair at d 0.8 mm); εr uniform; the fills as saved; slots under 0.5 mm unresolved; cavities uncoupled across splits.
 Limit: board-level keep-out areas leave no geometry in the import, so the review sees only the fills they shape; a footprint's keep-out, a connector or a printed antenna takes its copper out of R1 and R3.
 ```
 
@@ -534,7 +534,7 @@ In the GUI, the Review tab, after Project, takes the board, the Tagged nets (nam
 - R2 is for information: no source derives its distance, and those boards gave it no true positive to calibrate against.
 - R4 prints a gap against λ/20, never an attenuation. By a wire-grid estimate, a single row of vias lets through about −20 dB at a λ/20 pitch and about −10 dB at λ/10; no finding prints that figure.
 - The review ends with this line: "Limit: board-level keep-out areas leave no geometry in the import, so the review sees only the fills they shape; a footprint's keep-out, a connector or a printed antenna takes its copper out of R1 and R3."
-- Every cavity list ends with its limits: "Limits of the cavity modes: lossless, so the list says where a resonance may sit, never how high it rises; decoupling capacitors excluded; vias as posts only, snapped to the grid, and a post of drill 0.5 mm or more, a disc of held cells, puts the mode it makes up to about 6 % low; TM0 modes only; no fringing, so frequencies read high by about 2Δ/a, Δ about 0.4 to 0.5 d (about 0.3 % for d 0.2 mm on 50 mm, 2 % for 1 mm); εr uniform; the fills as saved; slots under 0.5 mm unresolved; cavities uncoupled across splits."
+- Every cavity list ends with its limits: "Limits of the cavity modes: lossless, so the list says where a resonance may sit, never how high it rises; decoupling capacitors excluded; vias as posts only, snapped to the grid, and a post of drill 0.5 mm or more, a disc of held cells, puts the mode it makes up to about 6 % low; TM0 modes only; no fringing, so frequencies read high by about 2Δ/a, Δ about 0.4 to 0.5 d (about 0.3 % for d 0.2 mm on 50 mm, 2 % for 1 mm; gate E-E's openEMS run measured 1.0 % on a 50 × 30 mm pair at d 0.8 mm); εr uniform; the fills as saved; slots under 0.5 mm unresolved; cavities uncoupled across splits."
 
 ## Development setup
 
