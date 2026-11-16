@@ -11,9 +11,10 @@ AppCSXCAD (pipeline.preview).
 antenna's feed (new_antenna, Stage 3). `compare BASE VARIANT` compares two antenna projects' or two signal-integrity
 projects' full simulations (pipeline.compare_projects, Stage 3 and Stage 4). `new --interface NAME` writes a
 signal-integrity project, schema 3: the line from the start pad to the end pad, a differential pair's partner and up to
-two victims (new_si, Stage 4). `review BOARD` measures the board's tagged nets and shield fences against four geometry
-rules, with no solver, and writes review.json, review.csv and review.png (review, Stage 5); like `compare`, it starts
-no worker.
+two victims (new_si, Stage 4). `new --emission` writes an emission project, schema 4 (new_emission, Stage 5), its
+options hidden: a parser of their own reads them (_HIDDEN), so the usage line does not show them. `review BOARD`
+measures the board's tagged nets and shield fences against four geometry rules, with no solver, and writes review.json,
+review.csv and review.png (review, Stage 5); like `compare`, it starts no worker.
 `setup-openems` installs openEMS from the official Windows package into this Python, and `calibrate` measures this
 machine's simulation speed. `install-kicad-plugin` writes the KiCad toolbar button (button.install) into KiCad's
 plugin folders, or removes it. `cost`, `run` and `verify` take `--run-dir DIR`, the run folder to use instead of a new
@@ -37,8 +38,9 @@ from kicad_rf_studio.core.kicad.tracer import (Chain, adopt, check_antenna, feed
 from kicad_rf_studio.core.kicad.values import parse_band, parse_frequency
 from kicad_rf_studio.core.messages import KrsError, detail, reason, render
 from kicad_rf_studio.core.project import (BAND_FACTOR, DEFAULT_PRESET, EXPAND_H, HARMONICS, INTERFACES, MARGIN_SCALE,
-                                          MESH_N, REACH_H, T_MAX_S, board_hash, make_antenna_project, make_project,
-                                          make_si_project, pulse_band, relative_path, save_project, si_interface)
+                                          MESH_N, REACH_H, T_MAX_S, board_hash, emission_far_field_hz,
+                                          make_antenna_project, make_emission_project, make_project, make_si_project,
+                                          pulse_band, relative_path, save_project, si_interface)
 
 PRESETS = ("draft", "normal", "strict")  # the run presets; `--stackup` names a stackup preset, which is another thing
 
@@ -407,6 +409,68 @@ def new_si(board: str | Path, start: str, end: str, interface: str, *, pair: boo
     return path, notes
 
 
+def new_emission(board: str | Path, start: str, end: str, *, f0: float | None = None, f_max: float | None = None,
+                 band: tuple[float, float] | None = None, review: str | Path | None = None, finding: str | None = None,
+                 pitch: float | None = None, preset: str = DEFAULT_PRESET, stackup: str | None = None,
+                 lid_height: float | None = None, output: str | Path | None = None
+                 ) -> tuple[Path, list[tuple[str, dict]]]:
+    """`new` for an emission project (Stage 5 design 5.6, 5.7): the whole board as an antenna's, driven at `start` (P1)
+    and ended at `end` (P2) by the emission pulse over the band (f_lo, f_max), which is `band`, or from twice the
+    carrier `f0` to `f_max` (None: CARRIER_HARMONICS times f0, at most F_MAX_CAP). E_EMISSION_BAND, before the board
+    is read, when the band holds no far-field frequency; every refusal before anything is written; returns as `new`.
+    `review`, `finding` and `pitch` name a review finding to make a variant from (design 5.9): taken, but no variant is
+    made yet, so they change nothing."""
+    from kicad_rf_studio.core.geometry.lid import find_lid  # here, as in `new`
+    from kicad_rf_studio.core.geometry.region import air_gap, board_region
+    from kicad_rf_studio.core.model.parts import project_parts
+    from kicad_rf_studio.core.model.spec import emission_pulse
+    from kicad_rf_studio.core.review import CARRIER_HARMONICS, F_MAX_CAP
+
+    f_lo, f_max = band or (2 * f0, f_max or min(F_MAX_CAP, CARRIER_HARMONICS * f0))
+    if f_max <= f_lo or not emission_far_field_hz(f0, f_lo, f_max):
+        raise KrsError("E_EMISSION_BAND", f_lo_mhz=f"{f_lo / 1e6:g}", f_max_mhz=f"{f_max / 1e6:g}")
+    board, stackup, zs, classes = _load(board, stackup)
+    chain = trace_chain(board, start, end, classes)
+    ports = [_port(board, classes, f"P{n}", signal) for n, signal in enumerate((start, end), 1)]  # P1 driven
+    exc = emission_pulse(f_lo, f_max)
+    region = board_region(board, chain, ports, zs, f_max)
+    series, shunt, others, part_notes = project_parts(board, chain, classes, region.roi, exc["f1"], exc["f2"],
+                                                      antenna=True)
+    # every shield on the board is a candidate, as an antenna's
+    _, gate = find_lid(board, classes, replace(region, roi=region.crop), zs, {"lid": True, "lid_height_mm": lid_height})
+    folder = Path(output or ".")
+    board_path, other_drive = relative_path(board.path, folder)
+    project = make_emission_project(
+        board_path, board_hash(board.path), f0, f_lo, f_max, stackup, classes,
+        {"start": chain.start, "end": chain.end, "nets": list(chain.nets), "series": series, "shunt": shunt}, others,
+        ports, t_max_s=exc["t_max"], air_gap_mm=air_gap(f_lo), preset=preset, lid_height_mm=lid_height)
+    target = _write(folder, project)
+
+    far = project["far_field"]
+    notes = [*_head_notes(board, stackup, project["classes"]),
+             ("I_CHAIN", {"start": chain.start, "end": chain.end, "series": _list(p.ref for p in chain.series),
+                          "shunt": _list(p.ref for p in chain.shunt)}),
+             *map(_part_note, series + shunt + others),
+             *map(_port_note, ports),
+             ("I_EMISSION_DEFAULTS", {"carrier": "T_NONE" if f0 is None else f"{f0 / 1e6:g} MHz",
+                                      "f_lo_mhz": f"{f_lo / 1e6:g}", "f_max_mhz": f"{f_max / 1e6:g}",
+                                      "f1_mhz": f"{exc['f1'] / 1e6:g}", "preset": preset,
+                                      "t_max_ns": f"{exc['t_max'] * 1e9:g}", "mesh_n": project["mesh"]["n"],
+                                      "air_gap_mm": f"{project['air_gap_mm']:.1f}", "boundary": project["boundary"],
+                                      "count": len(far["f_hz"]), "step_deg": far["step_deg"]})]
+    if heavy := stackup.nonstandard_copper():
+        notes.append(("W_COPPER_WEIGHT", {"layers": _list(heavy)}))
+    notes += [("W_LID_HEIGHT_MISSING", params) for code, params in gate if code == "E_LID_HEIGHT"]
+    notes += part_notes  # W_VALUE_UNREADABLE (DNP parts too), W_BOARD_PARTS_OPEN
+    notes += [("W_NO_REFERENCE", {"signal": p["signal"]}) for p in ports if p["reference"] is None]
+    if f0 is not None and not 1e6 <= f0 <= 1e11:  # a bare --f0 915 is 915 Hz
+        notes.append(("W_F0_RANGE", {"f0_hz": f"{f0:g}"}))
+    if other_drive:
+        notes.append(("W_ABSOLUTE_BOARD_PATH", {}))
+    notes.append(("I_WROTE", {"path": target}))
+    return target, notes
+
+
 def review(board: str | Path, *, nets=(), project: str | None = None, f0=None, clocks=(), f_max=None, edge_k=None,
            edge_fence=False, stackup=None, output=None, emit=None) -> int:
     """`review BOARD` (Stage 5 design 5.1, 5.3), returning its exit code: the board as `new` loads it (_load: its
@@ -458,13 +522,26 @@ def review(board: str | Path, *, nets=(), project: str | None = None, f0=None, c
 
 
 def _new(a: argparse.Namespace) -> None:
-    """`new` with --end and --f0, new_antenna with --antenna and --band, or new_si with --end and --interface;
-    E_NEW_KIND for any other mix, --harmonics without --f0 and an SI option without --interface too."""
-    si_option = a.pair or a.pair_with is not None or a.victim or a.f_max is not None or a.target is not None
-    if ((a.antenna is None) != (a.band is None) or a.harmonics is not None and a.f0 is None
-            or si_option and a.interface is None):
+    """`new` with --end and --f0, new_antenna with --antenna and --band, new_si with --end and --interface, or
+    new_emission with the hidden --emission, --end and --f0 (and --f-max) or --band (and --review with --finding, and
+    --pitch with those); E_NEW_KIND for any other mix, --harmonics without --f0, an SI option without --interface and a
+    hidden option without --emission too."""
+    si_other = a.pair or a.pair_with is not None or a.victim or a.target is not None  # the SI options but --f-max
+    if a.emission:
+        refused = (a.antenna is not None or a.interface is not None or a.harmonics is not None or si_other
+                   or a.f_max is not None and a.f0 is None or (a.review is None) != (a.finding is None)
+                   or a.pitch is not None and a.finding is None)
+    else:
+        refused = ((a.antenna is None) != (a.band is None) or a.harmonics is not None and a.f0 is None
+                   or (si_other or a.f_max is not None) and a.interface is None
+                   or a.review is not None or a.finding is not None or a.pitch is not None)
+    if refused:
         raise KrsError("E_NEW_KIND")
-    if a.interface is not None:
+    if a.emission:
+        _, notes = new_emission(a.board, a.start, a.end, f0=a.f0, f_max=a.f_max, band=a.band, review=a.review,
+                                finding=a.finding, pitch=a.pitch, preset=a.preset, stackup=a.stackup,
+                                lid_height=a.lid_height, output=a.output)
+    elif a.interface is not None:
         _, notes = new_si(a.board, a.start, a.end, a.interface, pair=a.pair, pair_with=a.pair_with, victims=a.victim,
                           f_max=a.f_max, target=a.target, preset=a.preset, stackup=a.stackup,
                           lid_height=a.lid_height, output=a.output)
@@ -611,6 +688,15 @@ def _parser() -> argparse.ArgumentParser:
     return parser
 
 
+# `new`'s hidden options (Stage 5 design 5.6, AR-16), the emission kind's: read by this parser before _parser(), which
+# never holds them, so they stay off the usage line and its errors, and an abbreviation such as --e reads as before
+_HIDDEN = argparse.ArgumentParser(add_help=False, allow_abbrev=False)
+_HIDDEN.add_argument("--emission", action="store_true")
+_HIDDEN.add_argument("--review", metavar="PATH")
+_HIDDEN.add_argument("--finding", metavar="ID")
+_HIDDEN.add_argument("--pitch", type=_positive(float), metavar="MM")
+
+
 def _event(run_dir: Path | None, kind: str, code: str, params: dict) -> None:
     """An event of main's own, never printed, written only when `run_dir` is a folder by then; a write that fails
     leaves the exit code as it is."""
@@ -625,8 +711,14 @@ def main(argv: list[str] | None = None) -> int:
             stream.reconfigure(errors="replace")
     run_dir = command = project = None  # the end event's folder and params, once known
     code = 1
+    argv = sys.argv[1:] if argv is None else list(argv)
     try:
-        args = _parser().parse_args(argv)
+        if argv[:1] == ["new"]:  # its hidden options first (_HIDDEN), then the rest as before
+            hidden, rest = _HIDDEN.parse_known_args(argv[1:])
+            args = _parser().parse_args(["new", *rest])
+            vars(args).update(vars(hidden))
+        else:
+            args = _parser().parse_args(argv)
         if getattr(args, "run_dir", None) is not None:  # cost, run and verify: made before the command
             args.run_dir = args.run_dir.absolute()  # a relative DIR is read from the working folder
             try:

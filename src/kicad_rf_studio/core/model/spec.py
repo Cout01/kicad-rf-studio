@@ -66,6 +66,19 @@ def antenna_t_max(f_lo: float, f_hi: float) -> float:
     return math.ceil((2 * pulse(*pulse_band(f_lo, f_hi), 0)["t0"] + 60 / ((f_lo + f_hi) / 2)) * 1e9) / 1e9
 
 
+def emission_t_max(f_lo: float, f_max: float) -> float:
+    """An emission project's default T_max in s (Stage 5 design 5.7): 2·t0 + 60/f_c of its pulse over (f1, f_max), f1
+    pulse_band's of the band and f_c the pulse's centre, rounded up to a whole ns as antenna_t_max rounds."""
+    f1 = pulse_band(f_lo, f_max)[0]
+    return math.ceil((2 * pulse(f1, f_max, 0)["t0"] + 60 / ((f1 + f_max) / 2)) * 1e9) / 1e9
+
+
+def emission_pulse(f_lo: float, f_max: float, t_max: float | None = None) -> dict:
+    """An emission project's pulse (Stage 5 design 5.7): pulse() over (f1, f_max), f1 pulse_band's of the band (f_lo,
+    f_max), run to `t_max` (None: emission_t_max), with "emission": true, the spec's one emission marker (AR-6)."""
+    return {**pulse(pulse_band(f_lo, f_max)[0], f_max, t_max or emission_t_max(f_lo, f_max)), "emission": True}
+
+
 def dc_pulse(f_max: float, t_max: float, window_s: float) -> dict:
     """An SI project's pulse (Stage 4 design 5.4): openEMS's Gaussian with f0 = 0 and fc = f_max as a custom expression,
     exp(−(2π·f_max·t/3 − 3)²) cut at 2·t0, t0 = 9/(2π·f_max), which build_csx passes as v1's with f2 = f_max. f1 is 0:
