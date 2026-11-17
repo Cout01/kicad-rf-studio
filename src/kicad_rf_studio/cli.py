@@ -435,7 +435,7 @@ def new_emission(board: str | Path, start: str, end: str, *, f0: float | None = 
     exc = emission_pulse(f_lo, f_max)
     region = board_region(board, chain, ports, zs, f_max)
     series, shunt, others, part_notes = project_parts(board, chain, classes, region.roi, exc["f1"], exc["f2"],
-                                                      antenna=True)
+                                                      antenna=True, emission=True)
     # every shield on the board is a candidate, as an antenna's
     _, gate = find_lid(board, classes, replace(region, roi=region.crop), zs, {"lid": True, "lid_height_mm": lid_height})
     folder = Path(output or ".")

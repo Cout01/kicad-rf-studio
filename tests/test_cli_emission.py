@@ -38,6 +38,7 @@ def test_new_emission_writes_schema_4_on_the_whole_board(tmp_path):  # design 5.
     assert [p["signal"] for p in d["ports"]] == ["U1.1", "J1.1"] and not any("R" in p for p in d["ports"])
     roles = {q["ref"]: q["role"] for q in (*d["chain"]["series"], *d["chain"]["shunt"], *d["others"])}
     assert {roles[r] for r in ("C2", "L1", "C3")} == {"port"} and roles["C4"] == "copper"  # A-27's bypass
+    assert roles["R1"] == "copper"  # a 0R at its value, as v1 places it (the controller's ruling on Task 4)
 
 
 def test_new_emission_with_a_band_has_no_carrier(tmp_path):  # design 5.6: --band F_LO:F_HI

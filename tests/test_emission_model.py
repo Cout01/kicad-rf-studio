@@ -67,11 +67,7 @@ def test_the_far_field_cap_is_64_for_an_emission_spec_and_stays_11_otherwise(mon
 
 def test_the_near_field_plane_sits_1_5_mm_over_the_lid_at_the_harmonics(tmp_path, monkeypatch):  # design 5.8
     pj = emission_project(tmp_path / "e", LPF, "U1.1", "J1.1", lid_height=2.5)
-    # lpf915's R1, a 0R the antenna's chain rule makes a port, holds no port box (E_PORT_BOX, on v1's geometry too):
-    # copper here, its role in v1's project
-    chain = load_project(pj)["chain"]
-    chain["series"] = [{**q, "role": "copper"} if q["ref"] == "R1" else q for q in chain["series"]]
-    s = built(pj, near_field=True, chain=chain)[4].spec
+    s = built(pj, near_field=True)[4].spec
     near, plate = s["near_field"], s["metal"]["lid"]["plate"]["z"]
     assert near["start"][2] == near["stop"][2] == round(plate + 1.5, 6)
     assert near["f_hz"] == harmonics_hz(915e6, 4.575e9)

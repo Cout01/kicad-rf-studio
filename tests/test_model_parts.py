@@ -158,6 +158,32 @@ def test_every_part_on_an_antennas_chain_is_a_port(mini_board):  # Stage 3 desig
         assert [note for note in notes if note[0] == "W_VALUE_UNREADABLE"] == unreadable
 
 
+def test_an_emission_runs_chain_part_that_bypass_reads_is_placed_at_its_value(mini_board):  # Stage 5 design 5.6
+    # the controller's ruling on Task 4: copper at 0 Ω and open when unfitted, at any angle; the rest stay ports
+    from shapely.geometry import box
+    from test_antenna_kicad import fp
+    from test_tracer import smd
+    from kicad_rf_studio.core.kicad.tracer import Chain, ChainPart
+    lib = {k: f"{n}_SMD:{k}_0402_1005Metric" for k, n in (("R", "Resistor"), ("C", "Capacitor"), ("L", "Inductor"))}
+    b = mini_board(fp("R9", lib["R"], smd(1, "RF"), smd(2, "RF2", x=2), value="0R")  # the antenna test's board
+                   + fp("C9", lib["C"], smd(1, "RF2"), smd(2, "GND", x=2), "(attr smd dnp)", at="5 0", value="1pF")
+                   + fp("L8", lib["L"], smd(1, "RF2"), smd(2, "GND", x=2), at="10 0", value="22uH")  # a choke
+                   + fp("L9", lib["L"], smd(1, "RF2"), smd(2, "GND", x=2), at="15 0 45", value="2.7nH")
+                   + fp("C10", lib["C"], smd(1, "RF2"), smd(2, "GND", x=2), at="20 0", value="open"))
+
+    def on(ref, nets):
+        return ChainPart(ref, (f"{ref}.1", f"{ref}.2"), nets)
+
+    chain = Chain("U1.1", "AE1.1", ("RF", "RF2"), (on("R9", ("RF", "RF2")),),
+                  tuple(on(ref, ("RF2", "GND")) for ref in ("C9", "L8", "L9", "C10")))
+    args = (b, chain, classify(b), box(-5, -5, 25, 5), 70e6, 100e6)
+    series, shunt, _, notes = project_parts(*args, antenna=True, emission=True)
+    assert [(q["ref"], q["role"], q["value"]) for q in series + shunt] == [
+        ("R9", "copper", "0R"), ("C9", "open", "open"), ("L8", "port", "22uH"), ("L9", "curve_port", "2.7nH"),
+        ("C10", "open", "open")]
+    assert notes == project_parts(*args, antenna=True)[3]  # an antenna's notes: no W_VALUE_UNREADABLE for C9 or C10
+
+
 # --- Stage 4 plan 2, task 3: an SI project's parts off its lines -----------------------------------------------
 
 
