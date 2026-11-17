@@ -6,7 +6,7 @@ import pytest
 
 from kicad_rf_studio import pipeline, runs
 from kicad_rf_studio.core.messages import KrsError
-from kicad_rf_studio.core.model.spec import spec_hash
+from kicad_rf_studio.core.model.spec import cell_split, spec_hash
 from kicad_rf_studio.core.post.emission import EMISSION_COLUMNS
 from kicad_rf_studio.core.project import load_project, save_project
 from test_cli_emission import LPF, emission_project
@@ -111,3 +111,24 @@ def test_retune_and_verify_refuse_an_emission_project_and_compare_stays_two_kind
     with pytest.raises(KrsError) as e:
         pipeline.compare_projects(pj, pj)
     assert e.value.code == "E_COMPARE_KIND"
+
+
+def test_cost_counts_the_driven_job_with_the_antennas_pml_weight(tmp_path, calibrated):  # design 5.11
+    pj, run_dir = emission_project(tmp_path / "e"), tmp_path / "c"
+    run_dir.mkdir()
+    assert pipeline.cost(pj, run_dir) == 0
+    ev = [json.loads(x) for x in (run_dir / "events.jsonl").read_text(encoding="utf-8").splitlines()]
+    assert "I_COST_SPLIT" in [e["code"] for e in ev]
+    assert next(e for e in ev if e["code"] == "I_COST_TIME")["params"]["runs"] == 1
+
+
+def test_cost_seconds_and_the_long_run_line(tmp_path):  # design 5.11: past LONG_RUN_S
+    project, board, geom, _ = pipeline.load(emission_project(tmp_path / "e"))
+    model = pipeline.build_model(project, board, geom)
+    cells = len(model.mesh.x) * len(model.mesh.y) * len(model.mesh.z)
+    weighted = cells + (runs.PML_WEIGHT - 1) * cell_split(model.spec)[2]
+    assert pipeline.cost_seconds(model, project, 1e-13, 1, 100.0, 1e-9) == pytest.approx(
+        weighted * 1e4 / (100e6 * runs.small_speed(1)))
+    setup = {"dt": 1e-13, "node": [0, 1, 1, 1]}
+    assert "W_EMISSION_LONG_RUN" in [c for c, _ in pipeline.cost_notes(model, project, setup, 4, 1, 1e-3)]
+    assert "W_EMISSION_LONG_RUN" not in [c for c, _ in pipeline.cost_notes(model, project, setup, 4, 1, 1e9)]

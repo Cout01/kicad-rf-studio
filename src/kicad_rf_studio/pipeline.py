@@ -229,60 +229,73 @@ def dt_params(model: Model, floor: float, setup: dict) -> dict:
             "x": f"{x:.3f}", "y": f"{0.0 - y:.3f}", "z": f"{z:.3f}"}
 
 
+def cost_seconds(model: Model, project: dict, dt: float, pool: int, per_job_mcs: float, t: float) -> float:
+    """The time in s that the runs of a built `model` take to `t`, at openEMS's timestep `dt` with `pool` jobs at once
+    at `per_job_mcs` MC/s a job, in ceil(runs / pool) rounds: one run for an emission project, its driven job (Stage 5
+    design 5.6, 5.11; AR-18: cost runs the setup job and predicts that one, not the transform), else one per port. An
+    antenna's or an emission project's cells take the cost refit's corrections: each PML cell (cell_split) counts as
+    runs.PML_WEIGHT cells, at runs.small_speed(`pool`) × `per_job_mcs` (Stage 3 design 5.9). An SI project's count each
+    cell in its Debye dielectric (debye_cells) as runs.DEBYE_WEIGHT cells (Stage 4 design 5.9, plan 4 ruling D-4)."""
+    cells = len(model.mesh.x) * len(model.mesh.y) * len(model.mesh.z)
+    n_runs = 1 if emission(project) else len(model.spec["ports"])
+    weighted, mcs = cells, per_job_mcs  # the cells a timestep costs, at mcs MC/s a job
+    if antenna(project) or emission(project):
+        weighted, mcs = cells + (runs.PML_WEIGHT - 1) * cell_split(model.spec)[2], per_job_mcs * runs.small_speed(pool)
+    elif si(project):
+        weighted = cells + (runs.DEBYE_WEIGHT - 1) * debye_cells(model.spec)
+    return math.ceil(n_runs / pool) * weighted * (t / dt) / (mcs * 1e6)
+
+
 def cost_notes(model: Model, project: dict, setup: dict, threads: int, pool: int,
                per_job_mcs: float) -> list[tuple[str, dict]]:
     """The cost lines (spec 6.4) of a built `model`, from openEMS's setup (setup.json: its dt and the node [n, i, j, k]
     of the smallest timestep) and `pool` jobs at once with `threads` threads each at `per_job_mcs` MC/s a job: the
-    cells; an antenna's split of them into board, air and PML (cell_split, Stage 3 design 5.9); the smallest cell; dt
-    against its floor, with the edge that sets it in KiCad's frame; the worst case, every run to T_max, in
-    ceil(runs / pool) rounds; the time predicted from the longest stop time of the last run's jobs that kept S, when
-    that run was of this model; the RAM; the main cost (driver). An antenna's two times take the cost refit's
-    corrections: each PML cell counts as runs.PML_WEIGHT cells, at runs.small_speed(`pool`) × `per_job_mcs`; its RAM
-    counts the cells. An SI project's two times count each cell in its Debye dielectric (debye_cells) as
-    runs.DEBYE_WEIGHT cells (Stage 4 design 5.9, plan 4 ruling D-4). Its worst case is followed by its runs broken down
-    into the measured lines' ends, the victims' ends and the part ports (I_SI_COST_JOBS), then, with a Debye dielectric,
-    its cells there, their weight and DEBYE_POLES' count (I_SI_COST_DEBYE), then the ring rule's ceiling, RING_CEILING
-    × T_max, and its runs' time to it (I_SI_COST_RING), then W_SI_LONG_RUN when the worst case exceeds LONG_RUN_S: it
-    stays on T_max, since only a job whose planes ring runs past it (Stage 4 plan 4 ruling T-2)."""
-    mesh, ports, dt = model.mesh, model.spec["ports"], setup["dt"]
+    cells; an antenna's or an emission project's split of them into board, air and PML (cell_split, Stage 3 design
+    5.9; Stage 5 design 5.11); the smallest cell; dt against its floor, with the edge that sets it in KiCad's frame;
+    the worst case, every run to T_max, in ceil(runs / pool) rounds, an emission project's one run its driven job;
+    the time predicted from the longest stop time of the last run's jobs that kept S, when that run was of this model;
+    the RAM; the main cost (driver). Both times are cost_seconds', with its PML and Debye weights; the RAM counts the
+    cells. An emission project's worst case is followed by W_EMISSION_LONG_RUN when it exceeds LONG_RUN_S (Stage 5
+    design 5.11). An SI project's worst case is followed by its runs broken down into the measured lines' ends, the
+    victims' ends and the part ports (I_SI_COST_JOBS), then, with a Debye dielectric, its cells there, their weight and
+    DEBYE_POLES' count (I_SI_COST_DEBYE), then the ring rule's ceiling, RING_CEILING × T_max, and its runs' time to it
+    (I_SI_COST_RING), then W_SI_LONG_RUN when the worst case exceeds LONG_RUN_S: it stays on T_max, since only a job
+    whose planes ring runs past it (Stage 4 plan 4 ruling T-2)."""
+    mesh, ports = model.mesh, model.spec["ports"]
     nx, ny, nz = len(mesh.x), len(mesh.y), len(mesh.z)
-    cells, n_runs, n_parts = nx * ny * nz, len(ports), sum(q["part"] for q in ports)
-    weighted, mcs, split = cells, per_job_mcs, []  # the cells a timestep costs, at mcs MC/s a job
-    n_debye = debye_cells(model.spec) if si(project) else 0
-    if antenna(project):
+    cells, n_parts = nx * ny * nz, sum(q["part"] for q in ports)
+    n_runs = 1 if emission(project) else len(ports)  # cost_seconds' runs
+    seconds = partial(cost_seconds, model, project, setup["dt"], pool, per_job_mcs)
+    split = []
+    if antenna(project) or emission(project):
         board, air, pml = cell_split(model.spec)
-        ratio = runs.small_speed(pool)
-        weighted, mcs = cells + (runs.PML_WEIGHT - 1) * pml, per_job_mcs * ratio
         split = [("I_COST_SPLIT", {"board": f"{board / 1e6:.2f}", "air": f"{air / 1e6:.2f}", "pml": f"{pml / 1e6:.2f}",
-                                   "weight": f"{runs.PML_WEIGHT:g}", "ratio": f"{ratio:g}"})]
-    elif n_debye:
-        weighted = cells + (runs.DEBYE_WEIGHT - 1) * n_debye
-
-    def seconds(t_stop: float) -> float:
-        return math.ceil(n_runs / pool) * weighted * (t_stop / dt) / (mcs * 1e6)
-
+                                   "weight": f"{runs.PML_WEIGHT:g}", "ratio": f"{runs.small_speed(pool):g}"})]
     size, axis, at = smallest_cell(mesh)
     t_max = project["t_max_s"]
+    worst = seconds(t_max)
     notes = [
         ("I_COST_CELLS", {"nx": nx, "ny": ny, "nz": nz, "mcells": f"{cells / 1e6:.2f}", "n": mesh_n(project),
                           "d_mm": f"{mesh.d:.4f}"}),
         *split,
         ("I_COST_SMALLEST", {"size_um": f"{size * 1e3:.1f}", "axis": axis, "at_mm": f"{at:.3f}"}),
         ("I_COST_DT", dt_params(model, project["gates"]["dt_floor"], setup)),
-        ("I_COST_TIME", {"time": duration(seconds(t_max)), "runs": n_runs, "t_max_ns": f"{t_max * 1e9:g}",
-                         "pool": pool, "threads": threads})]
+        ("I_COST_TIME", {"time": duration(worst), "runs": n_runs, "t_max_ns": f"{t_max * 1e9:g}", "pool": pool,
+                         "threads": threads})]
+    if emission(project) and worst > LONG_RUN_S:
+        notes.append(("W_EMISSION_LONG_RUN", {"time": duration(worst)}))
     if si(project):
         roles = [line["role"] for line in project["lines"]]
         notes.append(("I_SI_COST_JOBS", {"lines": 2 * roles.count("measured"), "victims": 2 * roles.count("victim"),
                                          "parts": n_parts}))
-        if n_debye:
+        if n_debye := debye_cells(model.spec):
             # ponytail: the registered pole count; the fit drops a pole that fits 0, so a material may hold fewer
             notes.append(("I_SI_COST_DEBYE", {"mcells": f"{n_debye / 1e6:.2f}", "weight": f"{runs.DEBYE_WEIGHT:g}",
                                               "poles": len(DEBYE_POLES)}))
         notes.append(("I_SI_COST_RING", {"ceiling_ns": f"{RING_CEILING * t_max * 1e9:g}",
                                          "time": duration(seconds(RING_CEILING * t_max))}))
-        if seconds(t_max) > LONG_RUN_S:
-            notes.append(("W_SI_LONG_RUN", {"time": duration(seconds(t_max))}))
+        if worst > LONG_RUN_S:
+            notes.append(("W_SI_LONG_RUN", {"time": duration(worst)}))
     results = project.get("results", {})  # a job with no samples has no stop time, and a stopped one a wrong one
     t_stops = [j["t_stop"] for j in results.get("jobs", ()) if j["verdict"] in KEPT and j["t_stop"] is not None]
     if t_stops and results.get("model_hash") == spec_hash(model.spec):  # another model stops elsewhere
@@ -515,7 +528,9 @@ def cost(path: Path, run_dir: Path | None = None) -> int:
     SI project's 2D table, si_readout) and load()'s notes, then 2 on a refusal among them; a project without ports
     stops there with W_NO_PORTS. Then the model and its mesh gates; with a spec, prepare (a first-use calibration
     inside the run folder), the setup gate in `run_dir`, else a run folder of its own, its lines as events,
-    gate_lines when the gate limits are not default_gates' (C-10), and the cost lines. 3 if any gate blocked
+    gate_lines when the gate limits are not default_gates' (C-10), and the cost lines. An emission project's setup job
+    runs as every kind's does, and its prepare and cost lines are those of its one driven job, as run's simulate takes
+    them (Stage 5 design 5.11; AR-18: the transform is not predicted). 3 if any gate blocked
     (geometry, mesh or setup), else 0. A `run_dir` that exists at the start (--run-dir, A-14) gets every line as an
     event from the first: the readout as cost events, the mesh gates as verdict events with job None, the others
     message events; otherwise those first lines are printed only."""
@@ -540,8 +555,9 @@ def cost(path: Path, run_dir: Path | None = None) -> int:
         say("verdict", code, params)
     if model.spec is None:  # E_EDGE_LINT left no mesh to set up
         return 3
-    threads, pool, per_job_mcs = prepare(model, partial(say, "message"), run_dir, small=antenna(project),
-                                         si=si(project))
+    threads, pool, per_job_mcs = prepare(model, partial(say, "message"), run_dir,
+                                         small=antenna(project) or emission(project), si=si(project),
+                                         jobs=1 if emission(project) else None)
     settings = runs.load_settings()
     setup, blocked, warnings = setup_gate(model, project, run_dir, settings, threads)
     for code, params in blocked:

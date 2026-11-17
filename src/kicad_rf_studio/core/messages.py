@@ -366,6 +366,7 @@ CATALOG: dict[str, str] = {
     "E_EMISSION_ONE_RUN": "{path} is an emission project: its run puts every part in the grid at its value, so `{command}` does not apply. Change a value in project.json and run it again.",
     "I_EMISSION_NO_FAR_FIELD": "No far field is recorded for this run, so it has no emission levels; run it again.",
     "E_EMISSION_PART": "The emission run puts every chain part in the grid at its value, but {ref} (\"{value}\") is not a C, L or R whose value reads (a C above 0), or it is turned off a multiple of 90°. Set {ref}'s \"value\" in project.json, or rotate it in KiCad, and run again.",
+    "W_EMISSION_LONG_RUN": "The driven job may take {time} to T_max, over two hours: a lower --f-max, or a carrier's band instead of --band, cuts it.",
     "E_INTERNAL": "Internal error: {detail}. Please report it.",
     "G_APP": "kicad-rf-studio",
     "G_RUNNING": "Running in {folder}…",
