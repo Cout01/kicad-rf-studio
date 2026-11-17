@@ -10,7 +10,6 @@ from collections.abc import Iterator
 from dataclasses import dataclass
 
 import numpy as np
-from scipy.signal import find_peaks
 
 # provisional, P0 retunes them
 PRESETS = {"draft": (-50.0, 1e-2), "normal": (-60.0, 2e-3), "strict": (-70.0, 5e-4)}  # (residual level, S tolerance)
@@ -198,11 +197,15 @@ def tail_fit(t: np.ndarray, u: np.ndarray, exc: dict, t_end: float) -> list[dict
     """The rings an emission job leaves at its end `t_end` (s), read from every port's voltage, the rows of `u` on `t`
     (Stage 5 design 5.7; AR-5): {"f_hz", "q", "factor"}, ascending in f. A port's tail runs from 2·t0 + TAIL_GAP_S to
     t_end; its peaks are the local maxima of its Hann-windowed DFT, on a grid of 1/(4·span) over the pulse band (f1,
-    f2), within TAIL_CUT_DB of its largest. Their amplitudes are fitted jointly in back-to-back TAIL_WINDOW_S windows,
-    and a line through each one's envelope in dB gives Q = (20/ln 10)·π·f_r/|slope| and the truncation factor
-    e^(−π·f_r·t_end/Q), or q None and factor 1.0 for an envelope that does not decay. Over the ports, the entries
-    within 2/span of a group's first are one ring, the one of the largest factor (BC6). Empty for a quiet tail or one
-    shorter than 3 windows."""
+    f2), within TAIL_CUT_DB of its largest. A maximum at either end of the grid counts as a peak there: a ring at or
+    past that edge, fitted at the edge (the controller's ruling on Task 5). The peaks' amplitudes are fitted jointly in
+    back-to-back TAIL_WINDOW_S windows, and a line through each one's envelope in dB gives Q = (20/ln 10)·π·f_r/|slope|
+    and the truncation factor e^(−π·f_r·t_end/Q), or q None and factor 1.0 for an envelope that does not decay. Over
+    the ports, the entries within 2/span of a group's first are one ring, the one of the largest factor (BC6). Empty
+    for a quiet tail or one shorter than 3 windows."""
+    # imported here: spec imports stoprule at module level, and nothing else should load scipy.signal
+    from scipy.signal import find_peaks
+
     t_s = 2 * exc["t0"] + TAIL_GAP_S
     span = t_end - t_s
     n_win = math.floor(span / TAIL_WINDOW_S)
@@ -221,7 +224,7 @@ def tail_fit(t: np.ndarray, u: np.ndarray, exc: dict, t_end: float) -> list[dict
     for x, spectrum in zip(xs, spectra.T):
         if spectrum.max() == 0:
             continue
-        top = find_peaks(spectrum)[0]
+        top = find_peaks(np.r_[0, spectrum, 0])[0] - 1  # zero-padded: a maximum at either end of the grid is a peak
         peaks = grid[top[spectrum[top] >= spectrum.max() * 10 ** (-TAIL_CUT_DB / 20)]]  # this port's own peaks
         amps = []
         for w in windows:

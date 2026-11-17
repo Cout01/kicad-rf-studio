@@ -83,3 +83,22 @@ def test_truncated_is_50_f_over_q_round_each_ring_over_0_01():  # design 5.7
     rings = [{"f_hz": 2e9, "q": 1000.0, "factor": 0.5}, {"f_hz": 2.5e9, "q": 100.0, "factor": 0.005}]
     f = np.array([1.89e9, 1.9e9, 2.1e9, 2.11e9, 2.5e9])
     assert truncated(f, rings).tolist() == [False, True, True, False, False]
+
+
+def test_a_ring_just_past_f2_is_fitted_at_f2_and_truncates_the_top_of_the_band():  # risk 2; the ruling on Task 5
+    (r,) = fitted(ringing([(3.02e9, 232, [0.1])]))  # as P_pp's TM21, near 3.2 GHz, past f_max 3 GHz
+    assert abs(r["f_hz"] - EXC["f2"]) <= 2 / SPAN
+    assert r["factor"] == pytest.approx(np.exp(-np.pi * 3.02e9 * 31e-9 / 232), rel=0.10)  # 0.28: the slope fixes f/Q
+    assert truncated(np.array([2.9e9]), [r]).all()  # within 50·f/Q, 651 MHz, of 3.02 GHz
+
+
+def test_a_ring_just_below_f1_is_fitted_at_f1_and_its_neighbour_keeps_its_q():  # risk 2; the ruling on Task 5
+    a, b = fitted(ringing([(1.38e9, 232, [0.1]), (2.0e9, 895, [0.1])]))  # A missed has no column in the joint fit
+    assert abs(a["f_hz"] - EXC["f1"]) <= 2 / SPAN
+    assert b["q"] is not None and b["q"] == pytest.approx(895, rel=0.10)
+
+
+@pytest.mark.parametrize("qs", [(232, 895), (895, 232)])  # the larger factor at either port
+def test_a_ring_at_two_ports_keeps_the_larger_factor_of_its_two_fits(qs):  # BC6: the worst over the ports
+    (r,) = fitted(ringing([(2e9, qs[0], [0.1, 0]), (2e9, qs[1], [0, 0.1])], ports=2))  # one f, another Q per port
+    assert r["factor"] == pytest.approx(np.exp(-np.pi * 2e9 * 31e-9 / 895), rel=0.10)  # 0.80, not Q 232's 0.43
