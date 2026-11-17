@@ -3176,6 +3176,14 @@ msgstr "o passo não é menor que o vão, então nenhuma via cabe nele"
 msgid "no added via clears the other nets' copper, the board edge and its plane"
 msgstr "nenhuma via adicionada respeita o isolamento do cobre das outras redes e da borda da placa e fica dentro do seu plano"
 
+#. T_OVERRIDE_TWO_NETS
+msgid "its reference changes between two nets, which only a capacitor would join, and a capacitor variant is deferred; draw the fix in KiCad"
+msgstr "a referência dele muda entre duas redes, que só um capacitor uniria, e uma variante com capacitor fica para depois; desenhe a correção no KiCad"
+
+#. T_OVERRIDE_OFF_PLANE
+msgid "its plane's net does not cover it on the reference layer"
+msgstr "a rede do plano dela não a cobre na camada de referência"
+
 #. T_EMC_RETURN_CAP
 msgid "the nearest capacitor between the two nets"
 msgstr "o capacitor mais próximo entre as duas redes"

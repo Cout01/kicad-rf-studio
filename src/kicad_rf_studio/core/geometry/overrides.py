@@ -22,6 +22,7 @@ from kicad_rf_studio.core.messages import KrsError, reason
 from kicad_rf_studio.core.project import board_hash
 
 CLEARANCE = 0.2  # mm: KiCad's default netclass clearance, as f3's probes used it, for an added via and for a fill
+STEP_MM, ANGLE_DEG = 0.1, 15  # R2's search (return_via): its radius grows by STEP_MM mm, its angle by ANGLE_DEG degrees
 
 
 def span(board: Board, layers: Sequence[str]) -> list[str]:
@@ -57,6 +58,11 @@ def blocker(board: Board, at: XY, radius: float, net: str, layers: Sequence[str]
     if board.outline is None or not board.outline.covers(disc):
         return "T_OVERRIDE_EDGE"
     return None
+
+
+def _plane(board: Board, layer: str, net: str) -> BaseGeometry:
+    """The union of `net`'s zone fills on `layer`."""
+    return unary_union([a.polygon for a in board.areas if (a.source, a.layer, a.net) == ("zone", layer, net)])
 
 
 def _refused(finding: str, at: XY, why: str) -> tuple[str, dict]:
@@ -120,6 +126,25 @@ def via_size(board: Board, net: str) -> tuple[float, float, tuple[str, str]]:
                default=(0.6, 0.3, (board.copper_layers[0], board.copper_layers[-1])))
 
 
+def return_via(board: Board, at: XY, r_signal: float, d: float, size: tuple[float, float, tuple[str, str]], net: str,
+               planes: Sequence[str]) -> XY | None:
+    """R2's return via (design 5.9) for a signal via of radius `r_signal` at `at`: the first point at radius ρ =
+    r_signal + size's radius + CLEARANCE, growing by STEP_MM while ρ ≤ d, at each ρ the angles 0°, ANGLE_DEG, … < 360°
+    from +x, counter-clockwise, where a via of `net` and `size` (via_size's) clears, `blocker` None, and the zone fills
+    of `net` on both `planes` layers cover its disc; None when no point does."""
+    r, fills = size[0] / 2, [_plane(board, layer, net) for layer in planes]
+    rho0 = r_signal + r + CLEARANCE
+    # ponytail: 24 points a radius, and blocker walks the whole board at each one the fills cover; an STRtree per layer
+    # if a large board with no room turns slow
+    for k in range(math.floor(round((d - rho0) / STEP_MM, 9)) + 1):  # rounded: (2 - 0.8) / 0.1 is 11.999999999999998
+        rho = rho0 + k * STEP_MM
+        for deg in range(0, 360, ANGLE_DEG):
+            p = (at[0] + rho * math.cos(math.radians(deg)), at[1] + rho * math.sin(math.radians(deg)))
+            if all(fill.covers(circle(p, r)) for fill in fills) and blocker(board, p, r, net, size[2]) is None:
+                return p
+    return None
+
+
 def _fill(board: Board, f: dict, pitch: float) -> tuple[list[dict], list[tuple[str, dict]]]:
     """R1's variant (the pitch unused): the hole of U, the union of the zone fills of (ref_layer, ref_net), that holds
     the finding's place, filled with ref_net less every other net's copper on ref_layer grown by CLEARANCE, an entry
@@ -127,7 +152,7 @@ def _fill(board: Board, f: dict, pitch: float) -> tuple[list[dict], list[tuple[s
     between two nets or the plane's edge."""
     layer, net, (x, y) = f["ref_layer"], f["ref_net"], f["at_mm"]
     at = Point(x, 0.0 - y)  # review.json's KiCad frame to the importer's
-    plane = unary_union([a.polygon for a in board.areas if (a.source, a.layer, a.net) == ("zone", layer, net)])
+    plane = _plane(board, layer, net)
     hole = next((h for p in shapely.get_parts(plane) for h in map(Polygon, p.interiors) if h.contains(at)), None)
     parts = [] if hole is None else _cleared(board, hole, layer, net)
     if not parts:
@@ -166,6 +191,67 @@ def _densify(board: Board, f: dict, pitch: float) -> tuple[list[dict], list[tupl
     return entries, notes
 
 
+def _return(board: Board, f: dict, pitch: float) -> tuple[list[dict], list[tuple[str, dict]]]:
+    """R2's variant (the pitch unused), for a change between two layers of one net: one via of that net, the planes',
+    of via_size's size, at return_via's point within the finding's d of the signal via, the finding's net's via at
+    at_mm (1 µm), joining from_layer's and to_layer's planes. E_OVERRIDE_NONE: T_OVERRIDE_TWO_NETS for a change between
+    two nets, which only a capacitor would join (deferred), and T_OVERRIDE_NO_ROOM with no point."""
+    p, (x, y) = f["params"], f["at_mm"]
+    if p["from_net"] != p["to_net"]:
+        raise KrsError("E_OVERRIDE_NONE", finding=f["id"], reason="T_OVERRIDE_TWO_NETS")
+    # ponytail: via_size's layers are taken as given, so a net whose most common via is blind may get a return that
+    # misses a plane; a check that span(board, size[2]) holds both layers if such a board turns up
+    plane, size = p["from_net"], via_size(board, p["from_net"])
+    # the review's sha256 is this board's file's, so the via it found is there
+    signal = next(v for v in board.vias if v.net == f["net"] and math.dist(v.at, (x, 0.0 - y)) <= 1e-3)
+    at = return_via(board, signal.at, signal.diameter / 2, f["limit"], size, plane, (p["from_layer"], p["to_layer"]))
+    if at is None:
+        raise KrsError("E_OVERRIDE_NONE", finding=f["id"], reason="T_OVERRIDE_NO_ROOM")
+    return [{"kind": "via", "at_mm": list(at), "diameter_mm": size[0], "drill_mm": size[1], "layers": list(size[2]),
+             "net": plane, "from": f["id"]}], []
+
+
+def _fence(board: Board, f: dict, pitch: float) -> tuple[list[dict], list[tuple[str, dict]]]:
+    """R3's variant, a fence along the stretch R3 measured (the controller's ruling on Task 12: the whole centre lines
+    put vias inside a connector): S is the finding's tracks' centre lines less R3's own exclusions, the union of
+    exclusions(board, classify(board)) grown by EXCLUDE_H·h_mm, then merged, within limit + w/2 of the outline's
+    boundary. A point Q every `pitch` along each line of S from its start moves toward its nearest boundary point B, to
+    w/2 + (|QB| − w/2)/2 from Q, halfway across the gap between the track's copper and the edge (builder's choice,
+    design 6), w the widest of the finding's tracks whose line holds Q. A via of via_size(ref_net) there is kept when
+    `blocker` is None and ref_net's zone fills on ref_layer cover its disc; otherwise it is left out with
+    W_OVERRIDE_REFUSED, T_OVERRIDE_OFF_PLANE for the plane. None kept is E_OVERRIDE_NONE (T_OVERRIDE_NO_ROOM)."""
+    # here, so that pipeline's load imports no review; classify with no options, as the review's _load does
+    from kicad_rf_studio.core.kicad.tracer import classify
+    from kicad_rf_studio.core.review.planes import centre_line
+    from kicad_rf_studio.core.review.rules import EXCLUDE_H, exclusions
+
+    net, ids, edge = f["ref_net"], set(f["kiids"]["tracks"]), board.outline.boundary  # R3 finds nothing without one
+    # ponytail: h_mm is review.json's, rounded to 1e-3, so the hulls may grow up to 1.5 µm off R3's ref.h; R3's own h
+    # needs the plane map, which needs the stackup make_overrides is not given
+    cut = shapely.union_all(exclusions(board, classify(board))).buffer(EXCLUDE_H * f["h_mm"])
+    tracks = [(t, centre_line(t).difference(cut)) for t in board.tracks if t.uuid in ids]
+    s = shapely.line_merge(shapely.union_all([line.intersection(edge.buffer(f["limit"] + t.width / 2))
+                                              for t, line in tracks]))
+    (diameter, drill, layers), fill = via_size(board, net), _plane(board, f["ref_layer"], net)
+    entries, notes = [], []
+    for line in shapely.get_parts(s):
+        for k in range(math.floor(round(line.length / pitch, 9)) + 1):  # rounded, as _densify's n
+            q = line.interpolate(k * pitch)
+            w = max(t.width for t, centre in tracks if centre.distance(q) < 1e-6)
+            qb = shapely.shortest_line(q, edge)
+            at = qb.interpolate(w / 2 + (qb.length - w / 2) / 2).coords[0]
+            why = blocker(board, at, diameter / 2, net, layers) or (
+                None if fill.covers(circle(at, diameter / 2)) else "T_OVERRIDE_OFF_PLANE")
+            if why:
+                notes.append(_refused(f["id"], at, why))
+            else:
+                entries.append({"kind": "via", "at_mm": list(at), "diameter_mm": diameter, "drill_mm": drill,
+                                "layers": list(layers), "net": net, "from": f["id"], "pitch_mm": pitch})
+    if not entries:
+        raise KrsError("E_OVERRIDE_NONE", finding=f["id"], reason="T_OVERRIDE_NO_ROOM")
+    return entries, notes
+
+
 def make_overrides(board: Board, review: dict, finding: str, pitch: float | None,
                    path: str) -> tuple[list[dict], list[tuple[str, dict]]]:
     """The overrides of a variant made from finding `finding` of `review`, a review.json as read_review returns it,
@@ -179,4 +265,5 @@ def make_overrides(board: Board, review: dict, finding: str, pitch: float | None
     f = next((x for x in review["findings"] if x["id"] == finding), None)
     if f is None:
         raise KrsError("E_OVERRIDE_REVIEW", path=path, finding=finding, reason="T_REVIEW_NO_FINDING")
-    return {"R1": _fill, "R4": _densify}[f["rule"]](board, f, pitch or review["settings"]["l_mm"])
+    variant = {"R1": _fill, "R2": _return, "R3": _fence, "R4": _densify}[f["rule"]]
+    return variant(board, f, pitch or review["settings"]["l_mm"])

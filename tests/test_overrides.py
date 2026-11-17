@@ -1,16 +1,17 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 import json
 import math
+from dataclasses import replace
 
 import pytest
 import shapely
-from shapely.geometry import Point, Polygon
+from shapely.geometry import Point, Polygon, box
 
 from kicad_rf_studio import cli, pipeline
-from kicad_rf_studio.core.geometry.overrides import (CLEARANCE, apply_overrides, make_overrides, read_review,
-                                                     via_size)
+from kicad_rf_studio.core.geometry.overrides import (CLEARANCE, apply_overrides, blocker, make_overrides,
+                                                     read_review, via_size)
 from kicad_rf_studio.core.kicad import load_board
-from kicad_rf_studio.core.kicad.board import Via
+from kicad_rf_studio.core.kicad.board import CopperArea, Via
 from kicad_rf_studio.core.messages import KrsError
 from kicad_rf_studio.core.project import board_hash, load_project, save_project
 from kicad_rf_studio.core.review import review_board
@@ -65,6 +66,30 @@ def test_load_applies_the_overrides_and_checks_them_again(tmp_path):  # design 5
     assert [v.uuid for v in board.vias if v.uuid.startswith("override")] == ["override-1"]
 
 
+def test_blocker_meets_another_nets_pad_copper_graphic_and_via_on_a_layer_of_its_span():  # design 5.9; Task 10's review
+    b = load_board(FIX / "usb2_hs.kicad_pcb")
+    fp, side = next(iter(b.footprints.values())), box(110, -101, 111, -100)  # each item reaches x = 111 at y = -100.5
+    items = [({"X1": replace(fp, pads=(replace(fp.pads[0], net="X", layers=("B.Cu",), polygon=side),))}, [], []),
+             ({}, [CopperArea("In2.Cu", "X", side, "graphic", "g")], []),
+             ({}, [], [Via((110.5, -100.5), 1.0, 0.5, ("In1.Cu", "In2.Cu"), "X", "v")])]
+    x = 111 + 0.3 + CLEARANCE - 0.01  # a 0.6 mm via's disc grown by CLEARANCE reaches 0.01 mm past x = 111
+    for footprints, areas, vias in items:
+        b.footprints, b.areas, b.vias, b.tracks = footprints, areas, vias, []
+        assert blocker(b, (x, -100.5), 0.3, "GND", ("F.Cu", "B.Cu")) == "T_OVERRIDE_COPPER"
+        assert blocker(b, (x + 0.05, -100.5), 0.3, "GND", ("F.Cu", "B.Cu")) is None
+
+
+def test_a_fill_loses_another_nets_track_grown_by_the_clearance():  # design 5.9; Task 10's review
+    b = load_board(FIX / "usb2_hs.kicad_pcb")
+    aux = next(t for t in b.tracks if t.net == "AUX")  # F.Cu, 0.2 mm wide along y = -101.15 from x = 108 to 120
+    fill = box(110, -102, 112, -101)
+    assert apply_overrides(b, [{"kind": "fill", "layer": "F.Cu", "net": "GND", "from": "R1-test",
+                                "polygon_mm": {"exterior": list(fill.exterior.coords), "holes": []}}]) == []
+    expected = fill.difference(aux.polygon().buffer(CLEARANCE)).area
+    assert expected < fill.area - 0.5
+    assert sum(a.polygon.area for a in b.areas if a.source == "override") == pytest.approx(expected, abs=1e-6)
+
+
 def reviewed(name, edit=None, **kw):
     """The board `name` as cli._load reads it, edited in memory by `edit`, and its review.json as a dict."""
     path = FIX / f"{name}.kicad_pcb"
@@ -100,6 +125,47 @@ def test_r4_densifies_a_gap_with_ceil_gap_over_p_minus_1_vias_like_its_first(tmp
     with pytest.raises(KrsError) as e:
         make_overrides(board, review, f["id"], 1.0, path)
     assert (e.value.code, e.value.params["reason"]) == ("E_OVERRIDE_NONE", "T_OVERRIDE_PITCH")
+
+
+def test_r2_between_two_nets_has_no_in_app_variant(tmp_path):  # design 5.9
+    board, review = reviewed("qspi_clk", nets=["*CLK"])
+    with pytest.raises(KrsError) as e:
+        make_overrides(board, review, first(review, "R2")["id"], None, str(tmp_path / "review.json"))
+    assert (e.value.code, e.value.params["reason"]) == ("E_OVERRIDE_NONE", "T_OVERRIDE_TWO_NETS")
+
+
+def test_r2s_return_via_is_one_via_of_the_planes_net_within_d_on_both_planes(tmp_path):  # design 5.9
+    def ground_in2(b):  # test_review_rules' same-net case: In2.Cu's +3V3 renamed GND
+        b.areas = [replace(a, net="GND") if a.layer == "In2.Cu" else a for a in b.areas]
+
+    board, review = reviewed("qspi_clk", ground_in2, nets=["*CLK"])
+    f = first(review, "R2")
+    assert (f["params"]["from_net"], f["params"]["to_net"]) == ("GND", "GND")
+    (v,), notes = make_overrides(board, review, f["id"], None, str(tmp_path / "review.json"))
+    signal = (f["at_mm"][0], -f["at_mm"][1])  # KiCad's frame to the importer's
+    (x, y), r = v["at_mm"], v["diameter_mm"] / 2
+    assert (v["kind"], v["net"], v["from"], notes) == ("via", "GND", f["id"], [])
+    assert math.dist((x, y), signal) <= f["limit"] and blocker(board, (x, y), r, "GND", tuple(v["layers"])) is None
+    assert all(plane(board, layer, "GND").covers(Point(x, y).buffer(r))
+               for layer in (f["params"]["from_layer"], f["params"]["to_layer"]))
+
+
+def test_r3s_fence_runs_between_the_track_and_the_edge_where_it_clears(tmp_path):  # design 5.9
+    board, review = reviewed("usb2_hs", nets=["USB_D-"], edge_k=30.0)
+    f = first(review, "R3", net="USB_D-")
+    entries, _ = make_overrides(board, review, f["id"], 1.0, str(tmp_path / "review.json"))
+    assert len(entries) >= 5 and {(e["kind"], e["net"], e["pitch_mm"]) for e in entries} == {("via", "GND", 1.0)}
+    for e in entries:
+        (x, y), r = e["at_mm"], e["diameter_mm"] / 2
+        assert -99.725 < y < -94.0 and blocker(board, (x, y), r, "GND", tuple(e["layers"])) is None
+        assert plane(board, f["ref_layer"], "GND").covers(Point(x, y).buffer(r))
+
+
+def test_r3_with_no_room_by_the_edge_gives_no_variant(tmp_path):  # design 5.9: emc_review's CLK_EDGE, 0.35 mm in
+    board, review = reviewed("emc_review")
+    with pytest.raises(KrsError) as e:
+        make_overrides(board, review, first(review, "R3")["id"], None, str(tmp_path / "review.json"))
+    assert e.value.params["reason"] == "T_OVERRIDE_NO_ROOM"
 
 
 def test_a_review_of_another_board_or_without_the_finding_gives_no_variant(tmp_path):  # design 5.9

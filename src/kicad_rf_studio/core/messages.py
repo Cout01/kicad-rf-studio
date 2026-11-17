@@ -708,6 +708,8 @@ CATALOG: dict[str, str] = {
     "T_OVERRIDE_NO_PAIR": "its fence has fewer than two vias to space new ones between",
     "T_OVERRIDE_PITCH": "the pitch is not under the gap, so no via fits in it",
     "T_OVERRIDE_NO_ROOM": "no added via clears the other nets' copper, the board edge and its plane",
+    "T_OVERRIDE_TWO_NETS": "its reference changes between two nets, which only a capacitor would join, and a capacitor variant is deferred; draw the fix in KiCad",
+    "T_OVERRIDE_OFF_PLANE": "its plane's net does not cover it on the reference layer",
     "T_EMC_RETURN_CAP": "the nearest capacitor between the two nets",
     "T_EMC_RETURN_VIA": "the nearest via joining the two layers",
     "T_EMC_BOARD_EDGE": "board edge",
