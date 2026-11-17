@@ -1723,6 +1723,21 @@ msgstr "A tarefa excitada pode levar {time} até T_max, mais de duas horas: um -
 msgid "An added via of finding {from} at ({x_mm}, {y_mm}) mm is left out: {reason}."
 msgstr "Uma via adicionada do achado {from} em ({x_mm}, {y_mm}) mm fica de fora: {reason}."
 
+#. I_OVERRIDES
+#, python-brace-format
+msgid "The variant holds {fills} filled voids and {vias} added vias from finding {finding}; they are geometry in project.json, not in the board: draw them in KiCad to keep them."
+msgstr "A variante tem {fills} vazios preenchidos e {vias} vias adicionadas do achado {finding}; essa geometria fica no project.json, não na placa: desenhe-a no KiCad para mantê-la."
+
+#. E_OVERRIDE_REVIEW
+#, python-brace-format
+msgid "Cannot make a variant from finding {finding} of the review {path}: {reason}."
+msgstr "Não foi possível criar uma variante a partir do achado {finding} da revisão {path}: {reason}."
+
+#. E_OVERRIDE_NONE
+#, python-brace-format
+msgid "Finding {finding} gives no variant: {reason}."
+msgstr "O achado {finding} não gera nenhuma variante: {reason}."
+
 #. E_INTERNAL
 #, python-brace-format
 msgid "Internal error: {detail}. Please report it."
@@ -3132,6 +3147,34 @@ msgstr "ela ficaria dentro do isolamento de 0.2 mm de trilha, ilha, gráfico de 
 #. T_OVERRIDE_EDGE
 msgid "it would come within the 0.2 mm clearance of the board edge"
 msgstr "ela ficaria dentro do isolamento de 0.2 mm da borda da placa"
+
+#. T_REVIEW_SCHEMA
+msgid "it is not a review.json of schema 1"
+msgstr "o arquivo não é um review.json de esquema 1"
+
+#. T_REVIEW_OTHER_BOARD
+msgid "it reviewed another board, or this one before its last save; review it again"
+msgstr "ela é de outra placa, ou desta antes de ser salva pela última vez; revise a placa de novo"
+
+#. T_REVIEW_NO_FINDING
+msgid "it holds no finding of that id"
+msgstr "ela não tem nenhum achado com esse id"
+
+#. T_OVERRIDE_NOT_A_VOID
+msgid "its run crosses no hole of its reference plane on that layer: a split between two nets, or the plane's edge, cannot be filled without a short; draw the fix in KiCad"
+msgstr "o trecho dele não cruza nenhum vazio interno do plano de referência nessa camada: uma divisão entre duas redes, ou a borda do plano, não pode ser preenchida sem um curto; desenhe a correção no KiCad"
+
+#. T_OVERRIDE_NO_PAIR
+msgid "its fence has fewer than two vias to space new ones between"
+msgstr "a cerca de vias dele tem menos de duas vias entre as quais distribuir as novas"
+
+#. T_OVERRIDE_PITCH
+msgid "the pitch is not under the gap, so no via fits in it"
+msgstr "o passo não é menor que o vão, então nenhuma via cabe nele"
+
+#. T_OVERRIDE_NO_ROOM
+msgid "no added via clears the other nets' copper, the board edge and its plane"
+msgstr "nenhuma via adicionada respeita o isolamento do cobre das outras redes e da borda da placa e fica dentro do seu plano"
 
 #. T_EMC_RETURN_CAP
 msgid "the nearest capacitor between the two nets"

@@ -418,9 +418,11 @@ def new_emission(board: str | Path, start: str, end: str, *, f0: float | None = 
     and ended at `end` (P2) by the emission pulse over the band (f_lo, f_max), which is `band`, or from twice the
     carrier `f0` to `f_max` (None: CARRIER_HARMONICS times f0, at most F_MAX_CAP). E_EMISSION_BAND, before the board
     is read, when the band holds no far-field frequency; every refusal before anything is written; returns as `new`.
-    `review`, `finding` and `pitch` name a review finding to make a variant from (design 5.9): taken, but no variant is
-    made yet, so they change nothing."""
+    With `review`, a review.json, the project is the variant of its finding `finding` (design 5.9): make_overrides'
+    entries, at `pitch` mm (None: the review's L), are its `overrides`, and its notes and I_OVERRIDES join the notes;
+    its refusals name the review file as given."""
     from kicad_rf_studio.core.geometry.lid import find_lid  # here, as in `new`
+    from kicad_rf_studio.core.geometry.overrides import make_overrides, read_review
     from kicad_rf_studio.core.geometry.region import air_gap, board_region
     from kicad_rf_studio.core.model.parts import project_parts
     from kicad_rf_studio.core.model.spec import emission_pulse
@@ -430,6 +432,8 @@ def new_emission(board: str | Path, start: str, end: str, *, f0: float | None = 
     if f_max <= f_lo or not emission_far_field_hz(f0, f_lo, f_max):
         raise KrsError("E_EMISSION_BAND", f_lo_mhz=f"{f_lo / 1e6:g}", f_max_mhz=f"{f_max / 1e6:g}")
     board, stackup, zs, classes = _load(board, stackup)
+    overrides, refused = ([], []) if review is None else make_overrides(
+        board, read_review(review, finding), finding, pitch, str(review))  # never [] with a review: it refuses first
     chain = trace_chain(board, start, end, classes)
     ports = [_port(board, classes, f"P{n}", signal) for n, signal in enumerate((start, end), 1)]  # P1 driven
     exc = emission_pulse(f_lo, f_max)
@@ -444,6 +448,8 @@ def new_emission(board: str | Path, start: str, end: str, *, f0: float | None = 
         board_path, board_hash(board.path), f0, f_lo, f_max, stackup, classes,
         {"start": chain.start, "end": chain.end, "nets": list(chain.nets), "series": series, "shunt": shunt}, others,
         ports, t_max_s=exc["t_max"], air_gap_mm=air_gap(f_lo), preset=preset, lid_height_mm=lid_height)
+    if overrides:
+        project["overrides"] = overrides
     target = _write(folder, project)
 
     far = project["far_field"]
@@ -465,6 +471,10 @@ def new_emission(board: str | Path, start: str, end: str, *, f0: float | None = 
     notes += [("W_NO_REFERENCE", {"signal": p["signal"]}) for p in ports if p["reference"] is None]
     if f0 is not None and not 1e6 <= f0 <= 1e11:  # a bare --f0 915 is 915 Hz
         notes.append(("W_F0_RANGE", {"f0_hz": f"{f0:g}"}))
+    if overrides:
+        kinds = [o["kind"] for o in overrides]
+        notes += [*refused, ("I_OVERRIDES", {"fills": kinds.count("fill"), "vias": kinds.count("via"),
+                                             "finding": finding})]
     if other_drive:
         notes.append(("W_ABSOLUTE_BOARD_PATH", {}))
     notes.append(("I_WROTE", {"path": target}))
@@ -689,8 +699,9 @@ def _parser() -> argparse.ArgumentParser:
 
 
 # `new`'s hidden options (Stage 5 design 5.6, AR-16), the emission kind's: read by this parser before _parser(), which
-# never holds them, so they stay off the usage line and its errors, and an abbreviation such as --e reads as before
-_HIDDEN = argparse.ArgumentParser(add_help=False, allow_abbrev=False)
+# never holds them, so they stay off the usage line and its errors, and an abbreviation such as --e reads as before.
+# Its own errors print no usage line, so one names only the option typed, under the main parser's name
+_HIDDEN = argparse.ArgumentParser(prog="kicad-rf-studio", usage=argparse.SUPPRESS, add_help=False, allow_abbrev=False)
 _HIDDEN.add_argument("--emission", action="store_true")
 _HIDDEN.add_argument("--review", metavar="PATH")
 _HIDDEN.add_argument("--finding", metavar="ID")

@@ -65,8 +65,17 @@ def test_new_refuses_an_emission_mix(tmp_path, capsys, args):  # design 5.6
 
 
 def test_emission_with_an_antenna_is_refused(tmp_path, capsys):  # design 5.6
-    assert main(["new", str(COUPON), "--start", "TP1.1", "--antenna", "TP2", "--band", "1GHz:2GHz", "--emission"]) == 2
-    assert render("E_NEW_KIND") in capsys.readouterr().err
+    assert main(["new", str(COUPON), "--start", "TP1.1", "--antenna", "TP2", "--band", "1GHz:2GHz", "--emission",
+                 "-o", str(tmp_path / "x")]) == 2
+    assert render("E_NEW_KIND") in capsys.readouterr().err and not (tmp_path / "x").exists()
+
+
+def test_a_hidden_options_error_names_no_hidden_flag_the_user_did_not_type(tmp_path, capsys):  # AR-16
+    with pytest.raises(SystemExit) as e:
+        main(["new", str(COUPON), "--emission", "--pitch", "0", "-o", str(tmp_path / "p")])
+    err = capsys.readouterr().err
+    assert e.value.code == 2 and "--pitch" in err and not any(o in err for o in ("--review", "--finding"))
+    assert not (tmp_path / "p").exists()
 
 
 def test_the_emission_options_stay_off_the_usage_and_every_abbreviation_reads_as_before(tmp_path, capsys):  # B10
@@ -86,3 +95,25 @@ def test_new_emission_through_main(tmp_path, capsys):  # design 5.6: --f-max wit
     d = read_project(tmp_path / "e" / "project.json")
     assert (d["band"], d["t_max_s"]) == ({"f_lo_hz": 1.83e9, "f_max_hz": 3e9}, 31e-9)
     assert "not a compliance verdict" in capsys.readouterr().out  # I_EMISSION_DEFAULTS
+
+
+def test_new_emission_makes_a_variant_from_a_review_finding_and_a_pitch(tmp_path, capsys):  # design 5.9; 6
+    import json, math
+    from kicad_rf_studio.core.kicad import load_board
+    from kicad_rf_studio.core.project import board_hash
+    board = load_board(COUPON)
+    a, b = sorted((v for v in board.vias if v.net == "GND" and abs(v.at[1] + 100.9) < 0.01), key=lambda v: v.at[0])[:2]
+    review = {"schema": 1, "board": {"path": "coupon_gcpw_pads.kicad_pcb", "sha256": board_hash(COUPON)},
+              "settings": {"l_mm": 1.413}, "findings": [{"id": "R4-test", "rule": "R4", "kiids": {
+                  "vias": [a.uuid, b.uuid]}, "measured": {"gap_mm": round(math.dist(a.at, b.at), 3)}}]}
+    path = tmp_path / "review.json"
+    path.write_text(json.dumps(review), encoding="utf-8")
+    args = [*NEW, "--emission", "--f0", "915MHz", "--review", str(path), "--finding", "R4-test"]
+    assert main([*args, "--pitch", "0.3", "-o", str(tmp_path / "v")]) == 0
+    d = read_project(tmp_path / "v" / "project.json")
+    assert [o["kind"] for o in d["overrides"]] == ["via"] * 3 and {o["from"] for o in d["overrides"]} == {"R4-test"}
+    assert "R4-test" in capsys.readouterr().out  # I_OVERRIDES
+    path.write_text(json.dumps({**review, "board": {**review["board"], "sha256": "0" * 64}}), encoding="utf-8")
+    assert main([*args, "-o", str(tmp_path / "w")]) == 2 and not (tmp_path / "w").exists()
+    err = capsys.readouterr().err
+    assert render("T_REVIEW_OTHER_BOARD") in err and str(path) in err  # the review file, never the board

@@ -1721,6 +1721,21 @@ msgstr ""
 msgid "An added via of finding {from} at ({x_mm}, {y_mm}) mm is left out: {reason}."
 msgstr ""
 
+#. I_OVERRIDES
+#, python-brace-format
+msgid "The variant holds {fills} filled voids and {vias} added vias from finding {finding}; they are geometry in project.json, not in the board: draw them in KiCad to keep them."
+msgstr ""
+
+#. E_OVERRIDE_REVIEW
+#, python-brace-format
+msgid "Cannot make a variant from finding {finding} of the review {path}: {reason}."
+msgstr ""
+
+#. E_OVERRIDE_NONE
+#, python-brace-format
+msgid "Finding {finding} gives no variant: {reason}."
+msgstr ""
+
 #. E_INTERNAL
 #, python-brace-format
 msgid "Internal error: {detail}. Please report it."
@@ -3121,6 +3136,34 @@ msgstr ""
 
 #. T_OVERRIDE_EDGE
 msgid "it would come within the 0.2 mm clearance of the board edge"
+msgstr ""
+
+#. T_REVIEW_SCHEMA
+msgid "it is not a review.json of schema 1"
+msgstr ""
+
+#. T_REVIEW_OTHER_BOARD
+msgid "it reviewed another board, or this one before its last save; review it again"
+msgstr ""
+
+#. T_REVIEW_NO_FINDING
+msgid "it holds no finding of that id"
+msgstr ""
+
+#. T_OVERRIDE_NOT_A_VOID
+msgid "its run crosses no hole of its reference plane on that layer: a split between two nets, or the plane's edge, cannot be filled without a short; draw the fix in KiCad"
+msgstr ""
+
+#. T_OVERRIDE_NO_PAIR
+msgid "its fence has fewer than two vias to space new ones between"
+msgstr ""
+
+#. T_OVERRIDE_PITCH
+msgid "the pitch is not under the gap, so no via fits in it"
+msgstr ""
+
+#. T_OVERRIDE_NO_ROOM
+msgid "no added via clears the other nets' copper, the board edge and its plane"
 msgstr ""
 
 #. T_EMC_RETURN_CAP
