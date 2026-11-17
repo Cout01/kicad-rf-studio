@@ -1716,6 +1716,11 @@ msgstr ""
 msgid "The driven job may take {time} to T_max, over two hours: a lower --f-max, or a carrier's band instead of --band, cuts it."
 msgstr ""
 
+#. W_OVERRIDE_REFUSED
+#, python-brace-format
+msgid "An added via of finding {from} at ({x_mm}, {y_mm}) mm is left out: {reason}."
+msgstr ""
+
 #. E_INTERNAL
 #, python-brace-format
 msgid "Internal error: {detail}. Please report it."
@@ -3108,6 +3113,14 @@ msgstr ""
 
 #. T_NF2FF_ONLY
 msgid "from NF2FF only"
+msgstr ""
+
+#. T_OVERRIDE_COPPER
+msgid "it would come within the 0.2 mm clearance of another net's track, pad, copper graphic or via"
+msgstr ""
+
+#. T_OVERRIDE_EDGE
+msgid "it would come within the 0.2 mm clearance of the board edge"
 msgstr ""
 
 #. T_EMC_RETURN_CAP

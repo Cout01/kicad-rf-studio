@@ -29,6 +29,7 @@ import numpy as np
 from kicad_rf_studio import __version__, runs
 from kicad_rf_studio.core.cs2d import ShortError, pair, solve
 from kicad_rf_studio.core.geometry import build_geometry, chain_of
+from kicad_rf_studio.core.geometry.overrides import apply_overrides
 from kicad_rf_studio.core.geometry.region import air_cell, band
 from kicad_rf_studio.core.geometry.sections import cross_section, route_length
 from kicad_rf_studio.core.geometry.zstack import substrate_h
@@ -96,25 +97,28 @@ def stops(notes: list[tuple[str, dict]]) -> int:
 
 def load(path: Path) -> tuple[dict, Board, Geometry, list[tuple[str, dict]]]:
     """The project at `path` (read_project), its board and its geometry, and the notes to report, in this order:
-    W_BOARD_CHANGED when the board's sha256 is not the one `new` stored (C-30), the board's warnings, the geometry's
-    notes (its E_ gate entries too, which stops() reads), then W_OFF_TOP_LAYER for each measured section off the top
-    copper (C-9), but in an SI project, whose geometry takes its lines' layers (Stage 4 design 5.3). An SI project whose
-    "dielectric" is "debye" then names in W_SI_DEBYE_NO_LOSS the stackup's dielectric layers whose loss tangent reads 0,
-    which model_spec leaves lossless (Stage 4 plan 4 ruling D-4): a loss tangent the board leaves out reads KiCad's
-    0.02 (Layer.__post_init__), so only 0 runs lossless. An antenna project's antenna is checked again as `new` checks
-    it (tracer.check_antenna: an edited ref or a re-annotated board raises E_ANTENNA_UNKNOWN, E_ANTENNA_MODULE,
-    E_ANTENNA_CHIP or E_NOT_AN_ANTENNA); then its netless copper takes the feed net, the chain's last (tracer.adopt,
-    Stage 3 design 5.3), before the geometry is built."""
+    W_BOARD_CHANGED when the board's sha256 is not the one `new` stored (C-30), the board's warnings, an emission
+    project's W_OVERRIDE_REFUSED, the geometry's notes (its E_ gate entries too, which stops() reads), then
+    W_OFF_TOP_LAYER for each measured section off the top copper (C-9), but in an SI project, whose geometry takes its
+    lines' layers (Stage 4 design 5.3). An SI project whose "dielectric" is "debye" then names in W_SI_DEBYE_NO_LOSS
+    the stackup's dielectric layers whose loss tangent reads 0, which model_spec leaves lossless (Stage 4 plan 4 ruling
+    D-4): a loss tangent the board leaves out reads KiCad's 0.02 (Layer.__post_init__), so only 0 runs lossless. An
+    antenna project's antenna is checked again as `new` checks it (tracer.check_antenna: an edited ref or a re-annotated
+    board raises E_ANTENNA_UNKNOWN, E_ANTENNA_MODULE, E_ANTENNA_CHIP or E_NOT_AN_ANTENNA); then its netless copper takes
+    the feed net, the chain's last (tracer.adopt, Stage 3 design 5.3), before the geometry is built. An emission
+    project's overrides are applied there too (apply_overrides, Stage 5 design 5.9), every added via checked again for
+    clearance."""
     project = read_project(path)
     file = board_file(path, project)
     board = load_board(file)
     if antenna(project):
         check_antenna(board, project["antenna"]["ref"])
         adopt(board, project["antenna"]["ref"], project["chain"]["nets"][-1])
+    extra = apply_overrides(board, project["overrides"]) if emission(project) and project.get("overrides") else []
     geom = build_geometry(board, project)
     notes = [("W_BOARD_CHANGED", {"path": str(file)})] if board_hash(file) != project["board"]["sha256"] else []
     top = board.copper_layers[0]  # top to bottom
-    notes += [*board.warnings, *geom.notes,
+    notes += [*board.warnings, *extra, *geom.notes,
               *(("W_OFF_TOP_LAYER", {"net": s.net, "layer": s.layer}) for s in geom.sections
                 if s.layer != top and not si(project))]
     if si(project) and project["dielectric"] == "debye":
