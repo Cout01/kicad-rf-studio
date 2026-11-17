@@ -58,9 +58,9 @@ from kicad_rf_studio.core.post.outputs import (LIMITS, OUTPUTS, VERIFY_OUTPUT, g
 from kicad_rf_studio.core.post.si import (SI_OUTPUTS, Reading, compare_verify, hammerstad, read, si_csv,
                                           si_delta_lines, si_deltas, si_limits, si_lines, si_png, tdr_csv)
 from kicad_rf_studio.core.post.waves import layout
-from kicad_rf_studio.core.project import (GATES, GATES_SI, antenna, board_file, board_hash, copper_model, default_gates,
-                                          emission, load_project, mesh_n, parts, read_project, relative_path,
-                                          save_project, si)
+from kicad_rf_studio.core.project import (EMISSION_UNVALIDATED, GATES, GATES_SI, antenna, board_file, board_hash,
+                                          copper_model, default_gates, emission, load_project, mesh_n, parts,
+                                          read_project, relative_path, save_project, si)
 from kicad_rf_studio.stoprule import (KEPT, PRESETS, RING_CEILING, WINDOW_S, Records, Verdict, ceiling, residual_db,
                                       stop_rule, tail_fit)
 from kicad_rf_studio.worker import GRIDS, LOG
@@ -97,7 +97,8 @@ def stops(notes: list[tuple[str, dict]]) -> int:
 
 def load(path: Path) -> tuple[dict, Board, Geometry, list[tuple[str, dict]]]:
     """The project at `path` (read_project), its board and its geometry, and the notes to report, in this order:
-    W_BOARD_CHANGED when the board's sha256 is not the one `new` stored (C-30), the board's warnings, an emission
+    W_BOARD_CHANGED when the board's sha256 is not the one `new` stored (C-30), an emission project's
+    W_EMISSION_UNVALIDATED (Stage 5 design 5.13: the kind failed its gate), the board's warnings, an emission
     project's W_OVERRIDE_REFUSED, the geometry's notes (its E_ gate entries too, which stops() reads), then
     W_OFF_TOP_LAYER for each measured section off the top copper (C-9), but in an SI project, whose geometry takes its
     lines' layers (Stage 4 design 5.3). An SI project whose "dielectric" is "debye" then names in W_SI_DEBYE_NO_LOSS
@@ -117,6 +118,8 @@ def load(path: Path) -> tuple[dict, Board, Geometry, list[tuple[str, dict]]]:
     extra = apply_overrides(board, project["overrides"]) if emission(project) and project.get("overrides") else []
     geom = build_geometry(board, project)
     notes = [("W_BOARD_CHANGED", {"path": str(file)})] if board_hash(file) != project["board"]["sha256"] else []
+    if emission(project):  # design 5.13: part B's no-go
+        notes.append(("W_EMISSION_UNVALIDATED", {"record": EMISSION_UNVALIDATED}))
     top = board.copper_layers[0]  # top to bottom
     notes += [*board.warnings, *extra, *geom.notes,
               *(("W_OFF_TOP_LAYER", {"net": s.net, "layer": s.layer}) for s in geom.sections

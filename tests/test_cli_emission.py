@@ -117,3 +117,14 @@ def test_new_emission_makes_a_variant_from_a_review_finding_and_a_pitch(tmp_path
     assert main([*args, "-o", str(tmp_path / "w")]) == 2 and not (tmp_path / "w").exists()
     err = capsys.readouterr().err
     assert render("T_REVIEW_OTHER_BOARD") in err and str(path) in err  # the review file, never the board
+
+
+def test_an_unvalidated_kind_says_so_at_new_and_at_every_load(tmp_path):  # design 5.13: the no-go branch
+    from kicad_rf_studio import pipeline
+    from kicad_rf_studio.core.project import EMISSION_UNVALIDATED
+    from test_cli_new import run_new
+    pj, notes = cli.new_emission(COUPON, "TP1.1", "TP2.1", f0=915e6, output=tmp_path / "e")
+    line = ("W_EMISSION_UNVALIDATED", {"record": EMISSION_UNVALIDATED})
+    assert line in notes and line in pipeline.load(pj)[3]
+    _, v1 = run_new(tmp_path)
+    assert line not in pipeline.load(v1)[3]

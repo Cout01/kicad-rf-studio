@@ -34,6 +34,8 @@ SCHEMA = 1
 SCHEMA_ANTENNA = 2  # an antenna project (Stage 3 design 5.1); v1's stay SCHEMA
 SCHEMA_SI = 3  # an SI project (Stage 4 design 5.1)
 SCHEMA_EMISSION = 4  # an emission project (Stage 5 design 5.6)
+# part B's no-go (design 5.13): the record of the gate the kind failed, gate E-A's, which W_EMISSION_UNVALIDATED names
+EMISSION_UNVALIDATED = "docs/validation/2026-11-17-e-a.md"
 FAR_FIELD_STEP = 5  # the far field's full sphere is sampled every 5° (Stage 3 design 5.5)
 NEAR_FIELD_MAX = 11  # the carrier's harmonics an emission project's near-field plane records, at most (AR-9)
 # an antenna's copper model (Stage 3 design 5.3): Stage 1 5.3's solid copper, or every copper layer a sheet, for the

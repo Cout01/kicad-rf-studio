@@ -1736,6 +1736,11 @@ msgstr ""
 msgid "Finding {finding} gives no variant: {reason}."
 msgstr ""
 
+#. W_EMISSION_UNVALIDATED
+#, python-brace-format
+msgid "The emission kind failed its validation ({record}): its results are unvalidated, relative ones included."
+msgstr ""
+
 #. E_INTERNAL
 #, python-brace-format
 msgid "Internal error: {detail}. Please report it."

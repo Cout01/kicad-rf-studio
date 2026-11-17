@@ -37,10 +37,11 @@ from kicad_rf_studio.core.kicad.tracer import (Chain, adopt, check_antenna, feed
                                                trace_line)
 from kicad_rf_studio.core.kicad.values import parse_band, parse_frequency
 from kicad_rf_studio.core.messages import KrsError, detail, reason, render
-from kicad_rf_studio.core.project import (BAND_FACTOR, DEFAULT_PRESET, EXPAND_H, HARMONICS, INTERFACES, MARGIN_SCALE,
-                                          MESH_N, REACH_H, T_MAX_S, board_hash, emission_far_field_hz,
-                                          make_antenna_project, make_emission_project, make_project, make_si_project,
-                                          pulse_band, relative_path, save_project, si_interface)
+from kicad_rf_studio.core.project import (BAND_FACTOR, DEFAULT_PRESET, EMISSION_UNVALIDATED, EXPAND_H, HARMONICS,
+                                          INTERFACES, MARGIN_SCALE, MESH_N, REACH_H, T_MAX_S, board_hash,
+                                          emission_far_field_hz, make_antenna_project, make_emission_project,
+                                          make_project, make_si_project, pulse_band, relative_path, save_project,
+                                          si_interface)
 
 PRESETS = ("draft", "normal", "strict")  # the run presets; `--stackup` names a stackup preset, which is another thing
 
@@ -417,7 +418,8 @@ def new_emission(board: str | Path, start: str, end: str, *, f0: float | None = 
     """`new` for an emission project (Stage 5 design 5.6, 5.7): the whole board as an antenna's, driven at `start` (P1)
     and ended at `end` (P2) by the emission pulse over the band (f_lo, f_max), which is `band`, or from twice the
     carrier `f0` to `f_max` (None: CARRIER_HARMONICS times f0, at most F_MAX_CAP). E_EMISSION_BAND, before the board
-    is read, when the band holds no far-field frequency; every refusal before anything is written; returns as `new`.
+    is read, when the band holds no far-field frequency; every refusal before anything is written; returns as `new`,
+    with W_EMISSION_UNVALIDATED before I_WROTE (design 5.13: the kind failed its gate).
     With `review`, a review.json, the project is the variant of its finding `finding` (design 5.9): make_overrides'
     entries, at `pitch` mm (None: the review's L), are its `overrides`, and its notes and I_OVERRIDES join the notes;
     its refusals name the review file as given."""
@@ -477,7 +479,7 @@ def new_emission(board: str | Path, start: str, end: str, *, f0: float | None = 
                                              "finding": finding})]
     if other_drive:
         notes.append(("W_ABSOLUTE_BOARD_PATH", {}))
-    notes.append(("I_WROTE", {"path": target}))
+    notes += [("W_EMISSION_UNVALIDATED", {"record": EMISSION_UNVALIDATED}), ("I_WROTE", {"path": target})]  # 5.13
     return target, notes
 
 

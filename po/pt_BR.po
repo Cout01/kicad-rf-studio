@@ -1738,6 +1738,11 @@ msgstr "Não foi possível criar uma variante a partir do achado {finding} da re
 msgid "Finding {finding} gives no variant: {reason}."
 msgstr "O achado {finding} não gera nenhuma variante: {reason}."
 
+#. W_EMISSION_UNVALIDATED
+#, python-brace-format
+msgid "The emission kind failed its validation ({record}): its results are unvalidated, relative ones included."
+msgstr "O tipo de projeto de emissão falhou na validação ({record}): os resultados dele não são validados, inclusive os relativos."
+
 #. E_INTERNAL
 #, python-brace-format
 msgid "Internal error: {detail}. Please report it."

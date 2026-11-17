@@ -371,6 +371,7 @@ CATALOG: dict[str, str] = {
     "I_OVERRIDES": "The variant holds {fills} filled voids and {vias} added vias from finding {finding}; they are geometry in project.json, not in the board: draw them in KiCad to keep them.",
     "E_OVERRIDE_REVIEW": "Cannot make a variant from finding {finding} of the review {path}: {reason}.",
     "E_OVERRIDE_NONE": "Finding {finding} gives no variant: {reason}.",
+    "W_EMISSION_UNVALIDATED": "The emission kind failed its validation ({record}): its results are unvalidated, relative ones included.",
     "E_INTERNAL": "Internal error: {detail}. Please report it.",
     "G_APP": "kicad-rf-studio",
     "G_RUNNING": "Running in {folder}…",
