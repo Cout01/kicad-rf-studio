@@ -41,14 +41,17 @@ from kicad_rf_studio.core.messages import KrsError, english, reason, render
 from kicad_rf_studio.core.model.parts import CURVE_PORT, GRID, PORT
 from kicad_rf_studio.core.model.ports import ends, nominal_boxes, place
 from kicad_rf_studio.core.model.readers import read_log, read_probe, read_run_stats, read_stats
-from kicad_rf_studio.core.model.spec import (DEBYE_POLES, air_box, cell_split, debye_cells, far_field_box, grid_entry,
-                                             metal_in_pml, model_spec, round_trip, spec_hash, verify_spec)
+from kicad_rf_studio.core.model.spec import (DEBYE_POLES, air_box, cell_split, debye_cells, excitation, far_field_box,
+                                             grid_entry, metal_in_pml, model_spec, round_trip, spec_hash, verify_spec)
 from kicad_rf_studio.core.post.antenna import (ANTENNA_LIMITS, ANTENNA_OUTPUTS, ANTENNA_VERIFY_OUTPUTS, COMPARE_OUTPUTS,
                                                antenna_csv, antenna_png, compare_png, compare_s11, delta_lines, deltas,
                                                deltas_csv, eta_what_if_lines, far_field_lines, far_field_of,
                                                farfield_csv, s11_lines)
 from kicad_rf_studio.core.post.chain import above_dc, ideal_schematic, loads, part_impedances, terminate, z_value
 from kicad_rf_studio.core.post.checks import compare, indicator_lines, loss_budget, loss_expected
+from kicad_rf_studio.core.post.emission import (EMISSION_LIMITS, EMISSION_OUTPUTS, emission_csv, emission_lines,
+                                                emission_rows, ring_lines, rings_csv)
+from kicad_rf_studio.core.post.farfield import read_far_field, snapped
 from kicad_rf_studio.core.post.outputs import (LIMITS, OUTPUTS, VERIFY_OUTPUT, grid_lines, marker_lines, port_map,
                                                summary_csv, summary_png, touchstone, write)
 from kicad_rf_studio.core.post.si import (SI_OUTPUTS, Reading, compare_verify, hammerstad, read, si_csv,
@@ -58,7 +61,7 @@ from kicad_rf_studio.core.project import (GATES, GATES_SI, antenna, board_file, 
                                           emission, load_project, mesh_n, parts, read_project, relative_path,
                                           save_project, si)
 from kicad_rf_studio.stoprule import (KEPT, PRESETS, RING_CEILING, WINDOW_S, Records, Verdict, ceiling, residual_db,
-                                      stop_rule)
+                                      stop_rule, tail_fit)
 from kicad_rf_studio.worker import GRIDS, LOG
 
 if TYPE_CHECKING:
@@ -290,12 +293,13 @@ def cost_notes(model: Model, project: dict, setup: dict, threads: int, pool: int
 
 
 def prepare(model: Model, emit: Callable[[str, dict], None], run_dir: Path | None = None, *,
-            small: bool = False, si: bool = False) -> tuple[int, int, float]:
+            small: bool = False, si: bool = False, jobs: int | None = None) -> tuple[int, int, float]:
     """What the jobs of a built `model` (one with a mesh) run with: (threads, pool, per-job MC/s), from this machine's
     calibration, measured first on a machine that has none (spec 6.4), inside the command's `run_dir` when it has one
-    (runs.calibrate), the pool no larger than the number of runs, so that the cost lines count only jobs that run at
-    once, and the per-job MC/s at that level (runs.per_job_mcs, D-16). With `small` (an antenna's model, Stage 3
-    design 5.9) and a pool of 1, the per-job MC/s is the calibration's own one-job speed at its threads ("single"),
+    (runs.calibrate), the pool no larger than the number of runs (`jobs` when given: an emission run's one driven job,
+    Stage 5 design 5.6), so that the cost lines count only jobs that run at once, and the per-job MC/s at that level
+    (runs.per_job_mcs, D-16). With `small` (an antenna's or an emission project's model, Stage 3 design 5.9; Stage 5
+    design 5.11) and a pool of 1, the per-job MC/s is the calibration's own one-job speed at its threads ("single"),
     when it holds one, else per_job_mcs at 1: the cost refit measured runs.SMALL_SPEED[1] against that speed, which no
     run refreshes, while a v1 run at pool 1 refreshes levels["1"]. With `si` (an SI project's model, Stage 4 plan 4
     ruling K-1), a per-job MC/s that is still the calibration's own at that level (runs.calibrated_mcs) is taken at
@@ -311,7 +315,7 @@ def prepare(model: Model, emit: Callable[[str, dict], None], run_dir: Path | Non
     free = runs.free_ram_mb()
     if need > free:
         emit("W_RAM", {"need_gb": f"{need / 1024:.1f}", "free_gb": f"{free / 1024:.1f}"})
-    pool = min(pool, len(model.spec["ports"]))
+    pool = min(pool, jobs or len(model.spec["ports"]))
     mcs = runs.per_job_mcs(entry, pool)
     if small and pool == 1:
         mcs = entry.get("single", {}).get(str(threads), mcs)
@@ -720,11 +724,13 @@ def write_outputs(path: Path, project: dict, command: str, *,
     E_RESULTS_WRITE are raised, or, with `errors_as_lines`, each becomes a line: a part's refusal in the place of the
     chain's lines and files, so that the layout N-port is still written (C-26); E_RESULTS_WRITE in the place of
     I_OUTPUTS, so that the lines already computed and LIMITS are still reported (spec 7.5). Raises layout's refusals
-    and E_S_SINGULAR. An antenna's outputs are antenna_outputs' instead (Stage 3 design 5.6). An SI project's (Stage 4
-    design 5.6) are v1's with si_view's lines (chain_results', then si_lines of the chain's reading) in place of
-    chain_results' and, with a reading, si_summary.csv, si_tdr.csv and si_summary.png of it (si_csv, tdr_csv, si_png,
-    the label as summary.png's) in place of summary.csv and summary.png at any P, with SI_OUTPUTS as the files it owns
-    and si_limits in LIMITS' place."""
+    and E_S_SINGULAR. An emission project's outputs are emission_outputs' instead (Stage 5 design 5.8), an antenna's
+    antenna_outputs' (Stage 3 design 5.6). An SI project's (Stage 4 design 5.6) are v1's with si_view's lines
+    (chain_results', then si_lines of the chain's reading) in place of chain_results' and, with a reading,
+    si_summary.csv, si_tdr.csv and si_summary.png of it (si_csv, tdr_csv, si_png, the label as summary.png's) in place
+    of summary.csv and summary.png at any P, with SI_OUTPUTS as the files it owns and si_limits in LIMITS' place."""
+    if emission(project):
+        return emission_outputs(path, project, command, errors_as_lines=errors_as_lines)
     if antenna(project):
         return antenna_outputs(path, project, command, errors_as_lines=errors_as_lines)
     res = chain_results(path, project, errors_as_lines=errors_as_lines)
@@ -866,6 +872,65 @@ def antenna_outputs(path: Path, project: dict, command: str, *,
     return [*lines, *((code, {}) for code in ANTENNA_LIMITS)]
 
 
+def emission_of(results: dict, project: dict) -> tuple[list[dict], list[str]] | None:
+    """An emission run's rows and its terminations' names (Stage 5 design 5.7, 5.8), from the run `results` holds: the
+    sphere's far field, its frequencies snapped to project.json's far_field.f_hz (snapped), through emission_rows with
+    the driven job's whole waves.npz (the window the dumps accumulate over, as P3-A reads it), the job's rings, whether
+    driven.json's grid holds a resistor, and the carrier; the terminations are driven.json's ports after the first,
+    the source. None when the run records no far field. E_RESULTS_WAVES for the first missing of the sphere's file, the
+    job's waves.npz and driven.json."""
+    if not results.get("far_field"):
+        return None
+    run_dir, job = Path(results["run_dir"]), results["jobs"][0]
+    sphere, waves, spec = run_dir / results["far_field"]["sphere"], run_dir / job["waves"], run_dir / "driven.json"
+    for file in (sphere, waves, spec):
+        if not file.is_file():
+            raise KrsError("E_RESULTS_WAVES", path=str(file))
+    far, driven = read_far_field(sphere), json.loads(spec.read_text(encoding="utf-8"))
+    with np.load(waves) as w:
+        rows = emission_rows(replace(far, f=snapped(far.f, project["far_field"]["f_hz"])), w["t_u"], w["u"], w["t_i"],
+                             w["i"], job["rings"], resistive=any(g.get("R") is not None for g in driven["grid"]),
+                             f0=project["f0_hz"])
+    return rows, [q["name"] for q in driven["ports"][1:]]
+
+
+def emission_outputs(path: Path, project: dict, command: str, *,
+                     errors_as_lines: bool = False) -> list[tuple[str, dict]]:
+    """An emission run's outputs (Stage 5 design 5.7, 5.8), which write_outputs writes for it: emission_rings.csv of
+    its driven job's rings and, with a far field, emission.csv of emission_of's rows, written to results/ beside `path`
+    (write, EMISSION_OUTPUTS, with `command` as E_RESULTS_WRITE's advice). Returns the lines to report:
+    I_EMISSION_RELATIVE, basis_lines, ring_lines at the job's end, emission_lines or I_EMISSION_NO_FAR_FIELD, then
+    I_OUTPUTS and EMISSION_LIMITS. Errors as antenna_outputs takes them: emission_of's E_RESULTS_WAVES (a run folder
+    moved or deleted) in the place of the far field's lines and file, write's E_RESULTS_WRITE in I_OUTPUTS' place."""
+    results = project["results"]
+    job = results["jobs"][0]
+    lines = [("I_EMISSION_RELATIVE", {}), *basis_lines(results, default_gates(project)),
+             *ring_lines(job["rings"], job["t_stop"])]
+    files = {"emission_rings.csv": rings_csv(job["rings"])}
+    try:
+        out = emission_of(results, project)
+    except KrsError as err:  # E_RESULTS_WAVES
+        if not errors_as_lines:
+            raise
+        lines.append((err.code, err.params))
+    else:
+        if out is None:
+            lines.append(("I_EMISSION_NO_FAR_FIELD", {}))
+        else:
+            lines += emission_lines(project, out[0])
+            files["emission.csv"] = emission_csv(*out)
+    folder = path.parent / "results"
+    try:
+        write(folder, files, EMISSION_OUTPUTS, command)
+    except KrsError as err:  # E_RESULTS_WRITE: a file held open, say
+        if not errors_as_lines:
+            raise
+        lines.append((err.code, err.params))
+    else:
+        lines.append(("I_OUTPUTS", {"files": ", ".join(sorted(files)), "folder": str(folder)}))
+    return [*lines, *((code, {}) for code in EMISSION_LIMITS)]
+
+
 def run(path: Path, run_dir: Path | None = None) -> int:
     """`run` on the project at `path` (spec 6.1, C-42), returning its exit code (C-22). Raises E_NO_PORTS for a project
     without ports, and E_LOCKED while another run holds the project lock. Then, under the lock, in a fresh run folder
@@ -884,8 +949,10 @@ def run(path: Path, run_dir: Path | None = None) -> int:
     then transforms its far field and saves again, a transform that fails being an E_ line (_run); its outputs are
     antenna_outputs'. An SI run (Stage 4 design 5.6, 5.8, 5.12 item 2) saves no expected loss (null) but its route
     (si_route) and its settings fingerprint, both taken before the jobs, and its outputs are write_outputs' SI branch
-    (Stage 4 design 5.6: its SI lines and files, and si_limits in LIMITS' place). A given `run_dir` stands in for the
-    fresh run folder."""
+    (Stage 4 design 5.6: its SI lines and files, and si_limits in LIMITS' place). An emission run (Stage 5 design
+    5.6–5.8) is three jobs in its run folder: the setup on model.json, the one driven job on driven.json, every part in
+    the grid at its value, and the far-field transform on that job; it saves its results as an antenna's, with the
+    driven job's rings, and its outputs are emission_outputs'. A given `run_dir` stands in for the fresh run folder."""
     if not read_project(path)["ports"]:
         raise KrsError("E_NO_PORTS")
     return _locked(path, _run, run_dir)
@@ -911,17 +978,25 @@ def _run(path: Path, run_dir: Path) -> int:
     openEMS probe costs no job, then, with no part port, transforms its far field after its job and saves again; a
     transform that fails is an E_ line, and one stopped leaves S kept (Stage 3 design 5.5). An SI run's results gain
     its route (si_route, Stage 4 design 5.6) and its settings fingerprint (Stage 4 design 5.8), both taken before the
-    jobs; v1's and an antenna's gain no route."""
+    jobs; v1's and an antenna's gain no route. An emission run (Stage 5 design 5.6–5.8) refuses a part the grid cannot
+    hold first (emission_parts), has no expected loss, takes its fingerprint and its far-field box before the jobs,
+    records the rings its driven job ends with (stoprule.tail_fit on that job's whole waves.npz) and transforms its far
+    field as an antenna with no part port does, with no S files written before; its outputs' E_RESULTS_WRITE advises
+    `run`, as nothing else rewrites them."""
     emit = partial(runs.emit, run_dir)  # (kind, code, params, job=None)
     if isinstance(built := _model_phase(path, emit), int):
         return built
     project, board, geom, model = built
+    if emission(project):
+        emission_parts(project)  # AR-12: before prepare and any job
     gates, preset = project["gates"], project["preset"]
-    # before prepare: an error here costs no job; design 5.6: v1's loss budget does not apply to SI
-    loss = None if si(project) else expected_loss(geom, project["f0_hz"])
+    # before prepare: an error here costs no job; design 5.6: v1's loss budget does not apply to SI or emission
+    loss = None if si(project) or emission(project) else expected_loss(geom, project["f0_hz"])
     route = si_route(board, geom, project) if si(project) else None
-    fp = fingerprint(project) if antenna(project) or si(project) else None  # likewise a failed openEMS probe
-    if (out := simulate(model, project, run_dir)) is None:
+    # likewise a failed openEMS probe
+    fp = fingerprint(project) if antenna(project) or si(project) or emission(project) else None
+    box = far_field_box(project, board, geom) if emission(project) else None
+    if (out := simulate(model, project, run_dir, box)) is None:
         return 3
     done, setup, wall_s = out
     kept = sum(j["verdict"] in KEPT for j in done)
@@ -929,23 +1004,27 @@ def _run(path: Path, run_dir: Path) -> int:
         emit("result", "W_RUN_NOT_KEPT", {"kept": kept, "runs": len(done), "wall": duration(wall_s),
                                           "folder": str(run_dir)})
         return 4
+    if emission(project):  # design 5.7: the rings still sounding at the driven job's end
+        with np.load(run_dir / done[0]["waves"]) as w:
+            done[0]["rings"] = tail_fit(w["t_u"], w["u"], excitation(project), done[0]["t_stop"])
     data = load_project(path)  # as it is now: only results is replaced
     data["results"] = {"model_hash": spec_hash(model.spec), "run_dir": str(run_dir), "gates": gates, "preset": preset,
                        "loss_expected": loss, "dt": setup["dt"], "c_box": setup["c_box"], "wall_s": wall_s,
                        "jobs": done}
-    if antenna(project):
+    if antenna(project) or emission(project):
         data["results"]["far_field"] = None
         data["results"]["fingerprint"] = fp
     if si(project):
         data["results"] |= {"route": route, "fingerprint": fp}
     rerun = command_line("kicad-rf-studio", "run", str(path))
-    rewrite = command_line("kicad-rf-studio", "retune", str(path))
+    # AR-12: retune refuses an emission project, so only its run writes its outputs again
+    rewrite = rerun if emission(project) else command_line("kicad-rf-studio", "retune", str(path))
     _save(path, data, rerun)
     emit("result", "I_RESULTS", {"kept": kept, "runs": len(done), "wall": duration(wall_s), "path": str(path)})
     lines = []
-    if "nf2ff" in model.spec:  # an antenna with no part port
-        # S's files first, their lines unsaid, so that a stopped transform leaves them
-        write_outputs(path, data, rewrite, errors_as_lines=True)
+    if "nf2ff" in model.spec or emission(project):  # an antenna with no part port, or an emission run
+        if "nf2ff" in model.spec:  # S's files first, their lines unsaid, so that a stopped transform leaves them
+            write_outputs(path, data, rewrite, errors_as_lines=True)
         try:
             paths = far_field(run_dir / Path(done[0]["waves"]).parent, project["far_field"]["step_deg"])
             data["results"]["far_field"] = {grid: p.relative_to(run_dir).as_posix() for grid, p in paths.items()}
@@ -979,20 +1058,36 @@ def _model_phase(path: Path, emit: Callable[..., None]) -> tuple[dict, Board, Ge
     return project, board, geom, model
 
 
-def simulate(model: Model, project: dict, run_dir: Path) -> tuple[list[dict], dict, float] | None:
+def emission_parts(project: dict) -> None:
+    """An emission run's refusal of a part the grid cannot hold, before any job (Stage 5 design 5.6, AR-12):
+    E_EMISSION_PART {ref, value} for the first part port (role "port" or "curve_port", in parts' order) that is a
+    curve port or whose value neither values.bypass nor port_value reads. verify_spec would otherwise refuse it only
+    after the setup job, in words that send the user to verify, or fail on a curve port's "dir" of None."""
+    for ref, q in parts(project).items():
+        unreadable = bypass(ref, q["value"]) is None and port_value(ref, q["value"]) is None
+        if q["role"] == CURVE_PORT or q["role"] == PORT and unreadable:
+            raise KrsError("E_EMISSION_PART", ref=ref, value=q["value"])
+
+
+def simulate(model: Model, project: dict, run_dir: Path,
+             far_field: dict | None = None) -> tuple[list[dict], dict, float] | None:
     """The job phase of a built `model` (one with a spec) in `run_dir`, which run and verify share (spec 6.1): prepare
-    (small for an antenna, si for an SI project) and the setup gate, its blocking gates as verdict events and its
-    warnings as message events, then gate_lines and None when it blocks; else I_GATES_PASSED (I_GATES_PASSED_PML for a
-    spec with a boundary, whose gates include the absorber), gate_lines and the cost lines, then run_ports on every
-    port of the model at the project's preset, and the per-job speed of the level it ran at refreshed in the
-    calibration (D-16), except by an antenna's run (Stage 3 design 5.9) and by a run whose spec holds a Debye material
-    (debye_cells, Stage 4 plan 4 ruling D-4). Returns (the jobs as project.json's results records them, setup.json, the
-    job phase's wall time in s). STOP or Ctrl+C before the jobs start propagates as KeyboardInterrupt; once they run,
-    it stops them, and their verdicts say so."""
+    (small for an antenna or an emission project, si for an SI project, one job for an emission project) and the
+    setup gate, its blocking gates as verdict events and its warnings as message events, then gate_lines and None when
+    it blocks; else I_GATES_PASSED (I_GATES_PASSED_PML for a spec with a boundary, whose gates include the absorber),
+    gate_lines and the cost lines, then run_ports on every port of the model at the project's preset, and the per-job
+    speed of the level it ran at refreshed in the calibration (D-16), except by an antenna's or an emission run
+    (Stage 3 design 5.9) and by a run whose spec holds a Debye material (debye_cells, Stage 4 plan 4 ruling D-4). An
+    emission project's (Stage 5 design 5.6) runs its source port alone, on verify_spec of the model with every part in
+    the grid at its value and `far_field` (far_field_box) as its far field, written to driven.json beside model.json.
+    Returns (the jobs as project.json's results records them, setup.json, the job phase's wall time in s). STOP or
+    Ctrl+C before the jobs start propagates as KeyboardInterrupt; once they run, it stops them, and their verdicts say
+    so."""
     emit = partial(runs.emit, run_dir)  # (kind, code, params, job=None)
     gates, defaults = project["gates"], default_gates(project)
-    threads, pool, per_job_mcs = prepare(model, partial(emit, "message"), run_dir, small=antenna(project),
-                                         si=si(project))
+    threads, pool, per_job_mcs = prepare(model, partial(emit, "message"), run_dir,
+                                         small=antenna(project) or emission(project), si=si(project),
+                                         jobs=1 if emission(project) else None)
     setup, blocked, warnings = setup_gate(model, project, run_dir, runs.load_settings(), threads)
     for code, params in blocked:
         emit("verdict", code, params, 0)
@@ -1008,12 +1103,19 @@ def simulate(model: Model, project: dict, run_dir: Path) -> tuple[list[dict], di
         emit("message", code, params)
     for code, params in cost_notes(model, project, setup, threads, pool, per_job_mcs):
         emit("cost", code, params)
-    done, speeds, wall_s = run_ports(model, run_dir, setup, threads, pool, project["preset"], gates,
-                                     defaults=defaults)
-    # spec 6.4: refreshed from the run's Speed lines; a run whose every job died measured nothing; and an antenna's
-    # speed holds the PML and the small model, which cost applies to the calibration's own (Stage 3 design 5.9); a
-    # Debye cell's speed is no plain one's: a run with Debye refreshes no level (Stage 4 plan 4 ruling D-4)
-    if speeds and not antenna(project) and not debye_cells(model.spec):
+    ports, spec_file = None, "model.json"
+    if emission(project):  # AR-4: the setup ran on model.json, the driven job and the transform read driven.json
+        dump = runs.job_dir(run_dir, 0, "setup") / "operator_dump.vtr"
+        model = replace(model, spec=verify_spec(model.spec, parts(project), dump, setup["dt"], far_field=far_field))
+        (run_dir / "driven.json").write_text(json.dumps(model.spec), encoding="utf-8")  # as runs.write_spec writes
+        ports, spec_file = [1], "driven.json"
+    done, speeds, wall_s = run_ports(model, run_dir, setup, threads, pool, project["preset"], gates, ports,
+                                     defaults=defaults, spec_file=spec_file)
+    # spec 6.4: refreshed from the run's Speed lines; a run whose every job died measured nothing; and an antenna's or
+    # an emission run's speed holds the PML and the small model, which cost applies to the calibration's own (Stage 3
+    # design 5.9); a Debye cell's speed is no plain one's: a run with Debye refreshes no level (Stage 4 plan 4 ruling
+    # D-4)
+    if speeds and not antenna(project) and not emission(project) and not debye_cells(model.spec):
         settings = runs.load_settings()
         # D-16: only the level this run used; aggregate_mcs stays the calibration's
         settings["machines"][runs.machine_key()].setdefault("levels", {})[str(pool)] = sum(speeds) / len(speeds) / 1e6
@@ -1022,15 +1124,16 @@ def simulate(model: Model, project: dict, run_dir: Path) -> tuple[list[dict], di
 
 
 def run_ports(model: Model, run_dir: Path, setup: dict, threads: int, pool: int, preset: str, gates: dict,
-              ports: list[int] | None = None, t_max: float | None = None,
-              defaults: dict = GATES) -> tuple[list[dict], list[float], float]:
+              ports: list[int] | None = None, t_max: float | None = None, defaults: dict = GATES,
+              spec_file: str = "model.json") -> tuple[list[dict], list[float], float]:
     """The jobs of a built `model` in `run_dir` once its setup gate passed (`setup`: setup.json), which simulate and
     the P0 harnesses share (spec 6.1): I_RUN_START; one job job-{k}-{name} per port number k in `ports` (1-based,
-    default every port) to `t_max` (default the spec's ceiling: an SI job's openEMS runs to RING_CEILING × T_max, and
-    the stop rule ends it at T_max unless its residual falls fast enough, Stage 4 plan 4 ruling T-2), `pool` at once
-    with `threads` threads each under the stop rule at `preset`, with I_PROGRESS as its energy log grows; each job's
-    verdict (classify_job) followed by gate_lines(`gates`, `defaults`), then its excitation arrays et and ht removed
-    (D-17), the run folder itself kept (C-23). The residuals I_PROGRESS and a verdict without a cut report are
+    default every port), its model `spec_file` in `run_dir` (an emission run's driven.json, Stage 5 design 5.6; by
+    default job.json is as before), to `t_max` (default the spec's ceiling: an SI job's openEMS runs to RING_CEILING ×
+    T_max, and the stop rule ends it at T_max unless its residual falls fast enough, Stage 4 plan 4 ruling T-2), `pool`
+    at once with `threads` threads each under the stop rule at `preset`, with I_PROGRESS as its energy log grows; each
+    job's verdict (classify_job) followed by gate_lines(`gates`, `defaults`), then its excitation arrays et and ht
+    removed (D-17), the run folder itself kept (C-23). The residuals I_PROGRESS and a verdict without a cut report are
     last_sample's over the stop rule's window, an SI pulse's window_s.
     Returns (the jobs as project.json's results record them, openEMS's speed in cells/s of each job that wrote its
     stats, the job phase's wall time in s). STOP or Ctrl+C stops the jobs, and their verdicts say so."""
@@ -1038,7 +1141,8 @@ def run_ports(model: Model, run_dir: Path, setup: dict, threads: int, pool: int,
     names, exc, dt = [q["name"] for q in model.spec["ports"]], model.spec["excitation"], setup["dt"]
     ports = range(1, len(names) + 1) if ports is None else ports
     t_max = ceiling(exc) if t_max is None else t_max
-    jobs = {runs.write_job(runs.job_dir(run_dir, k, names[k - 1]), k, "run", threads, t_max): k for k in ports}
+    jobs = {runs.write_job(runs.job_dir(run_dir, k, names[k - 1]), k, "run", threads, t_max, spec=f"../{spec_file}"): k
+            for k in ports}
     live, rows = {}, {}  # each job's live verdict, and the energy rows its last I_PROGRESS saw
 
     def watch(job: Path) -> bool:
@@ -1084,13 +1188,15 @@ def run_ports(model: Model, run_dir: Path, setup: dict, threads: int, pool: int,
 def far_field(job: Path, step_deg: int = 5) -> dict[str, Path]:
     """The far-field transform (Stage 3 design 5.5) of the finished job in folder `job`, whose model spec records a far
     field. One worker in mode "nf2ff", in a folder of its own beside the job (job-0-nf2ff-<token>, a new
-    `secrets.token_hex(4)` at each call), reads the job's dumps and writes <job>/nf2ff-<token>-<grid>.h5 for each of
-    worker.GRIDS, the sphere at `step_deg`, so a second transform never reads or overwrites the first's. Returns those
-    paths by grid. Raises what check_job raises, naming the job T_JOB_FAR_FIELD."""
+    `secrets.token_hex(4)` at each call), builds its box from the job's own spec file (an emission run's driven.json,
+    Stage 5 design 5.6), reads the job's dumps and writes <job>/nf2ff-<token>-<grid>.h5 for each of worker.GRIDS, the
+    sphere at `step_deg`, so a second transform never reads or overwrites the first's. Returns those paths by grid.
+    Raises what check_job raises, naming the job T_JOB_FAR_FIELD."""
     finished = json.loads((job / "job.json").read_text(encoding="utf-8"))
     token, settings = secrets.token_hex(4), runs.load_settings()
     work = runs.write_job(runs.job_dir(job.parent, 0, f"nf2ff-{token}"), finished["port"], "nf2ff", 1,
-                          finished["t_max"], dumps=f"../{job.name}", out=f"nf2ff-{token}", step_deg=step_deg)
+                          finished["t_max"], spec=finished["spec"], dumps=f"../{job.name}", out=f"nf2ff-{token}",
+                          step_deg=step_deg)
     out = runs.run_jobs([work], 1, job.parent, settings)
     runs.check_job(work, out[work], "T_JOB_FAR_FIELD", settings)
     return {grid: job / f"nf2ff-{token}-{grid}.h5" for grid in GRIDS}
@@ -1216,8 +1322,11 @@ def retune(path: Path, assignments: list[str], emit: Callable[[str, dict], None]
     (Stage 2's GUI passes its own, C-4), and 0. It starts no worker and needs no openEMS; any refusal but that last
     one raises before anything is stored (C-20). An SI project's retune (Stage 4 design 5.7) redraws its TDRs, its
     mixed-mode S and its crosstalk from the N-port closed at the new values, an S2P file read from the grid's first
-    point above DC."""
-    read_project(path)  # before the lock, as in run: its file needs the project's folder, which a typo lacks
+    point above DC. An emission project is refused first, E_EMISSION_ONE_RUN: its one run already puts every part in
+    the grid at its value (Stage 5 design 5.6, AR-12)."""
+    # before the lock, as in run: its file needs the project's folder, which a typo lacks
+    if emission(read_project(path)):
+        raise KrsError("E_EMISSION_ONE_RUN", path=str(path), command="retune")
     # ponytail: results/ stands in for the lock's run folder, so E_LOCKED names results/ while a retune holds the lock
     with runs.project_lock(path, path.resolve().parent / "results"):
         project = read_project(path)  # again under the lock: a run may have saved new results since
@@ -1388,8 +1497,11 @@ def verify(path: Path, run_dir: Path | None = None) -> int:
     for none), the indicator lines with a 2-port's loss budget in its verify form (the parts in the grid, no part loss
     removed), the E_ lines as message events, I_OUTPUTS when verify.s{P}p was written, I_VERIFY_SCOPE and LIMITS; then
     0, or 2 after an E_ line. A given `run_dir` stands in for the fresh run folder. An SI project's verify is v1's with
-    SI's comparison (Stage 4 design 5.7)."""
+    SI's comparison (Stage 4 design 5.7). An emission project is refused first, E_EMISSION_ONE_RUN: its one run already
+    puts every part in the grid at its value (Stage 5 design 5.6, AR-12)."""
     project = read_project(path)  # before the lock, as in run
+    if emission(project):
+        raise KrsError("E_EMISSION_ONE_RUN", path=str(path), command="verify")
     by_ref = parts(project)
     if not any(q["role"] in (PORT, CURVE_PORT) for q in by_ref.values()):
         raise KrsError("E_VERIFY_NO_PARTS")
