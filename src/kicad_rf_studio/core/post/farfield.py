@@ -1,6 +1,8 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
-"""The far field (Stage 3 design 5.5): openEMS's transform files read with h5py; the port's powers over the recording's
-window; the efficiencies and gains; and their validity flag. Never imports openEMS."""
+"""The far field (Stage 3 design 5.5): openEMS's transform files read with h5py, their float32 frequencies snapped to
+the listed ones; the port's DFT and powers over the recording's window; the efficiencies and gains; and their validity
+flag. Never imports openEMS."""
+from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -47,15 +49,34 @@ def read_far_field(path: Path) -> FarField:
                     4 * np.pi * r ** 2 * np.array(p) / p_rad[:, None, None], e_theta, e_phi)
 
 
+def snapped(f: np.ndarray, exact: Sequence[float]) -> np.ndarray:
+    """`f` (Hz) with each value snapped to the nearest of `exact` within a relative 1e-6: openEMS stores the recorded
+    frequencies as float32, up to about 128 Hz off at 2.4 GHz. A value near none of them, or every value when `exact`
+    is empty, keeps its own."""
+    exact = np.asarray(exact, dtype=float)
+    if not exact.size:
+        return f
+    # ponytail: a frequency within 1e-6 of none of `exact` keeps openEMS's float32 value; nothing records another today
+    nearest = exact[np.abs(f[:, None] - exact).argmin(axis=1)]
+    return np.where(np.isclose(nearest, f, rtol=1e-6, atol=0), nearest, f)
+
+
+def port_dft(t_u: np.ndarray, u: np.ndarray, t_i: np.ndarray, i: np.ndarray,
+             f: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+    """(U, I) at `f` (Hz) of one port's 1-D records, u on t_u and i on t_i (s): openEMS's DFT_time2freq for a pulse,
+    each on its own time axis, X(f) = 2·Δt·Σ x·exp(−j2πft), Δt = t[1] − t[0]."""
+    U, I = (2 * (t[1] - t[0]) * np.array([np.sum(x * np.exp(-2j * np.pi * fk * t)) for fk in f])
+            for t, x in ((t_u, u), (t_i, i)))
+    return U, I
+
+
 def port_powers(t_u: np.ndarray, u: np.ndarray, t_i: np.ndarray, i: np.ndarray,
                 f: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
     """(P_acc, P_inc) at `f` (Hz) of one port's 1-D records, u on t_u and i on t_i (s), each over its whole record at
     the probes' rate: the far field's window and rate, as the frequency-domain dumps accumulate to the engine's last
-    step, not to the cut, at that same rate (over-sampling 4). U and I are openEMS's DFT_time2freq for a pulse, each
-    on its own time axis: X(f) = 2·Δt·Σ x·exp(−j2πft), Δt = t[1] − t[0]. P_acc = ½·Re(U·I*) and P_inc =
+    step, not to the cut, at that same rate (over-sampling 4). U and I are port_dft's. P_acc = ½·Re(U·I*) and P_inc =
     |U + Z0·I|²/(8·Z0), CalcPort's ½·Re(uf_inc·if_inc*) for a real Z0 (probed: equal to CalcPort within 2e-16)."""
-    U, I = (2 * (t[1] - t[0]) * np.array([np.sum(x * np.exp(-2j * np.pi * fk * t)) for fk in f])
-            for t, x in ((t_u, u), (t_i, i)))
+    U, I = port_dft(t_u, u, t_i, i, f)
     return 0.5 * np.real(U * np.conj(I)), np.abs(U + Z0 * I) ** 2 / (8 * Z0)
 
 

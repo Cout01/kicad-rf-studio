@@ -14,7 +14,7 @@ import skrf as rf
 
 from kicad_rf_studio.core.messages import KrsError, render
 from kicad_rf_studio.core.model.parts import Z0
-from kicad_rf_studio.core.post.farfield import efficiencies, eta_lines, port_powers, read_far_field
+from kicad_rf_studio.core.post.farfield import efficiencies, eta_lines, port_powers, read_far_field, snapped
 
 ANTENNA_OUTPUTS = re.compile(r"(layout|chain)\.s\d+p|farfield\.csv|antenna_summary\.(png|csv)")  # matched whole
 # verify's files for an antenna (Stage 3 design 5.6, 5.7), which ANTENNA_OUTPUTS never matches, so a retune leaves them
@@ -136,18 +136,13 @@ def far_field_of(paths: dict[str, Path], waves: Path, f_hz: Sequence[float] = ()
     grid's name; "p_acc" and "p_inc" at the sphere's frequencies from port 1 of the job's `waves` file, u[0] and i[0]
     over the whole record; and "eff", efficiencies' dict. `f_hz` (project.json's far_field.f_hz): openEMS stores the
     recorded frequencies as float32, up to about 128 Hz off at 2.4 GHz, so each is snapped to the nearest of them
-    within a relative 1e-6 and keeps its recorded value otherwise; with none, none is snapped. E_RESULTS_WAVES for the
-    first file missing, in that order."""
+    within a relative 1e-6 and keeps its recorded value otherwise (snapped); with none, none is snapped.
+    E_RESULTS_WAVES for the first file missing, in that order."""
     for path in (*paths.values(), waves):
         if not path.is_file():
             raise KrsError("E_RESULTS_WAVES", path=str(path))
     far = {grid: read_far_field(path) for grid, path in paths.items()}
-    exact = np.asarray(f_hz, dtype=float)
-    if exact.size:
-        # ponytail: a frequency within 1e-6 of none of f_hz keeps openEMS's float32 value; nothing records another today
-        for grid, g in far.items():
-            nearest = exact[np.abs(g.f[:, None] - exact).argmin(axis=1)]
-            far[grid] = replace(g, f=np.where(np.isclose(nearest, g.f, rtol=1e-6, atol=0), nearest, g.f))
+    far = {grid: replace(g, f=snapped(g.f, f_hz)) for grid, g in far.items()}
     with np.load(waves) as w:
         p_acc, p_inc = port_powers(w["t_u"], w["u"][0], w["t_i"], w["i"][0], far["sphere"].f)
     return {**far, "p_acc": p_acc, "p_inc": p_inc, "eff": efficiencies(far["sphere"], p_acc, p_inc)}

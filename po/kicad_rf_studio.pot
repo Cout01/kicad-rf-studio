@@ -1654,6 +1654,49 @@ msgstr ""
 msgid "Shields {refs} get no lid: the emission model holds one lid, over {ref}, the shield over most of the board."
 msgstr ""
 
+#. I_EMISSION_RELATIVE
+msgid "Relative emission, not a compliance verdict: the field at 3 m per volt of the source's incident wave and per mA of its current, for comparing variants of one board under identical settings; it predicts no measured field."
+msgstr ""
+
+#. I_EMISSION_BAND
+#, python-brace-format
+msgid "Far field at {count} frequencies from {f_lo_mhz} to {f_max_mhz} MHz; the carrier's harmonics among them: {harmonics}."
+msgstr ""
+
+#. I_EMISSION_HARMONIC
+#, python-brace-format
+msgid "Harmonic {n} at {f_mhz} MHz: {e_v_db} dB re 1 (V/m)/V and {e_ma_db} dB re 1 (V/m)/mA at 3 m, the sphere's largest at θ {theta_deg}°, φ {phi_deg}°; P_rad is {rad_pct} % of the incident power ({basis}); energy closure ε {eps}: {closure}."
+msgstr ""
+
+#. I_EMISSION_CLOSURE
+#, python-brace-format
+msgid "Energy closure is judged at {judged} of {total} frequencies; the largest |ε| among them is {eps}, at {f_mhz} MHz, against {limit}."
+msgstr ""
+
+#. I_EMISSION_NOT_JUDGED
+#, python-brace-format
+msgid "Energy closure is judged at none of the {total} frequencies: each is truncated by a ring, takes in under 1e-3 of the incident power, or meets a resistor in the grid."
+msgstr ""
+
+#. W_EMISSION_CLOSURE
+#, python-brace-format
+msgid "Energy closure misses at {f_mhz} MHz: |ε| {eps} is over {limit}, so the power bookkeeping there is not to be trusted; a stricter preset or a wider air gap is the usual fix."
+msgstr ""
+
+#. W_EMISSION_RING
+#, python-brace-format
+msgid "A resonance at {f_mhz} MHz still rings when the job ends at {t_ns} ns: fitted Q {q}, truncation factor {factor}. Frequencies within {width_mhz} MHz of it are reported as truncated and are not closure-judged."
+msgstr ""
+
+#. W_EMISSION_RING_HELD
+#, python-brace-format
+msgid "A resonance at {f_mhz} MHz does not decay by the job's end at {t_ns} ns, so no Q fits it and every frequency is reported as truncated."
+msgstr ""
+
+#. I_LIMIT_EMISSION
+msgid "Limits of the emission results: the board alone in free space, with no ground reflection, cables, enclosure or part bodies; copper a perfect conductor and the dielectric lossless, so a cavity's Q reads 5 to 40 times a real FR-4 board's; one lid, drawn walls only; the largest over a 5° sphere, not a turntable; peak phasors, which a per-V or per-mA ratio cancels; truncation as reported; the results compare variants under identical settings and predict no measured field."
+msgstr ""
+
 #. E_INTERNAL
 #, python-brace-format
 msgid "Internal error: {detail}. Please report it."
@@ -3022,6 +3065,30 @@ msgstr ""
 
 #. T_EXPECT_NO_OVERRIDES
 msgid "absent: only an emission project holds overrides"
+msgstr ""
+
+#. T_CLOSURE_JUDGED
+msgid "judged"
+msgstr ""
+
+#. T_CLOSURE_TRUNCATED
+msgid "not judged, a ring truncates it"
+msgstr ""
+
+#. T_CLOSURE_P_ACC_LOW
+msgid "not judged, under 1e-3 of the incident power is taken in"
+msgstr ""
+
+#. T_CLOSURE_RESISTIVE
+msgid "not judged, a resistor in the grid takes power no probe measures"
+msgstr ""
+
+#. T_CLOSURE_BACKED
+msgid "closure-backed"
+msgstr ""
+
+#. T_NF2FF_ONLY
+msgid "from NF2FF only"
 msgstr ""
 
 #. T_EMC_RETURN_CAP
