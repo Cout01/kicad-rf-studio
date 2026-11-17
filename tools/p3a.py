@@ -42,20 +42,22 @@ T_FREE = REFS["growth_factor"] * T_MAX  # the free runs' end, 90 ns: Stage 1 6.4
 
 
 def dipole(length_mm: float, *, f_hz: list[float] = F_HZ, boundary: str | None = "pml_8",
-           box: list[list[float]] | None = None) -> dict:
+           box: list[list[float]] | None = None, gap_mm: float = GAP_MM, cmax_mm: float = CMAX_MM,
+           excitation: dict | None = None) -> dict:
     """A z-directed PEC wire dipole `length_mm` long, centred on the origin, in vacuum, as a model spec (design 5.11).
     Its arms are two curves on the x = y = 0 lines, and a 50 Ω lumped port P1 spans the FEED_MM gap, with witnesses one
-    CELL_MM into each arm. The pulse runs over F1–F2 to T_MAX. Mesh lines fall every CELL_MM out to 1 mm past the wire's
-    ends and to ±1 mm in x and y, then GAP_MM of air graded at 1.3 up to CMAX_MM, then with_pml. `boundary` is "pml_8"
-    (None: MUR). The far field is recorded at `f_hz` about the origin, in `box` when given."""
+    CELL_MM into each arm. The pulse runs over F1–F2 to T_MAX, or is `excitation` when given (gate E-A's emission
+    pulse). Mesh lines fall every CELL_MM out to 1 mm past the wire's ends and to ±1 mm in x and y, then `gap_mm` of air
+    graded at 1.3 up to `cmax_mm`, then with_pml. `boundary` is "pml_8" (None: MUR). The far field is recorded at `f_hz`
+    about the origin, in `box` when given."""
     half, gap = length_mm / 2, FEED_MM / 2
     fine = {"x": [-1.0, -0.5, 0.0, 0.5, 1.0], "y": [-1.0, -0.5, 0.0, 0.5, 1.0],
             "z": np.arange(-half - 1.0, half + 1.0 + 1e-9, CELL_MM).tolist()}
     ends = {"x": (0.0, 0.0), "y": (0.0, 0.0), "z": (-half, half)}
     mesh = {a: with_pml([round(float(v), 6) for v in smooth_mesh_lines(
-        np.array([*fine[a], ends[a][0] - GAP_MM, ends[a][1] + GAP_MM]), CMAX_MM, 1.3)]) for a in "xyz"}
+        np.array([*fine[a], ends[a][0] - gap_mm, ends[a][1] + gap_mm]), cmax_mm, 1.3)]) for a in "xyz"}
     start, stop = [0.0, 0.0, -gap], [0.0, 0.0, gap]
-    spec = {"mesh": mesh, "excitation": pulse(F1, F2, T_MAX), "materials": [],
+    spec = {"mesh": mesh, "excitation": excitation or pulse(F1, F2, T_MAX), "materials": [],
             "metal": {"copper": [], "lid": {"plate": None, "walls": []}, "cylinders": [],
                       "curves": [{"at": [0.0, 0.0], "z": [gap, half]}, {"at": [0.0, 0.0], "z": [-half, -gap]}]},
             "ports": [{"name": "P1", "kind": "lumped", "dir": "z", "start": start, "stop": stop, "part": False,

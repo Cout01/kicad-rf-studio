@@ -1,0 +1,74 @@
+{
+  "gate": "E-A",
+  "source": "(1) E_max·r/I_in within ±0.5 dB of η·tan(kL/4)/(2π), the sinusoidal current's feed-referenced form (the Hertzian form is about 6 dB off for a gap-fed wire, r5); the identity |E|·r = √(η·D·P_rad/(2π)) within ±0.05 dB; η_rad = 1 ± 0.02 where P_acc/P_inc ≥ 1e-3; (2) E_max(3 m)/I_port within ±0.5 dB of 1.3169e-14·f²·A/r, A from the mesh-snapped centre line; no η or closure on the loop: r5 computed P_acc/P_inc ≈ 3.2e-4 for a 10 mm loop at 1 GHz, and a smaller one is worse",
+  "eta_ohm": 376.730313412,
+  "r_m": 3.0,
+  "expected_blocks": {
+    "dipole": [],
+    "loop": [
+      "E_PORT_SHORT"
+    ]
+  },
+  "dipole": {
+    "length_mm": 12.0,
+    "f_hz": [
+      1000000000.0,
+      1100000000.0,
+      1200000000.0,
+      1300000000.0,
+      1400000000.0,
+      1500000000.0,
+      1600000000.0,
+      1700000000.0,
+      1800000000.0,
+      1900000000.0,
+      2000000000.0,
+      2100000000.0,
+      2200000000.0,
+      2300000000.0,
+      2400000000.0,
+      2500000000.0
+    ],
+    "e_r_per_a": [
+      3.774886927729949,
+      4.1535272209145635,
+      4.5324975023928715,
+      4.911828208649327,
+      5.291549891145094,
+      5.671693226248944,
+      6.052289025253254,
+      6.433368244482113,
+      6.8149619954987015,
+      7.197101555419176,
+      7.579818377340415,
+      7.963144100889161,
+      8.347110562900193,
+      8.731749808231354,
+      9.117094100723406,
+      9.503175934312816
+    ],
+    "e_tol_db": 0.5,
+    "identity_tol_db": 0.05,
+    "eta_rad": 1.0,
+    "eta_tol": 0.02,
+    "p_acc_min": 0.001,
+    "eta_judged_expected": 0
+  },
+  "loop": {
+    "side_mm": 5.0,
+    "area_mm2": 25.0,
+    "constant": 1.3169e-14,
+    "f_hz": [
+      500000000.0,
+      1000000000.0,
+      1500000000.0
+    ],
+    "e_per_ma": [
+      2.743541666666667e-05,
+      0.00010974166666666667,
+      0.00024691875
+    ],
+    "e_tol_db": 0.5
+  },
+  "incomplete": "a case with no record, a verdict not in KEPT, a criteria frequency missing from its far field (a relative 1e-6), or a blocking setup gate other than expected_blocks': handled as a fail (Task 14)"
+}

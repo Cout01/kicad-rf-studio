@@ -139,11 +139,22 @@ def _git(*args: str) -> str:
                           check=True).stdout.strip()
 
 
+def _tree_id(folder: str) -> str:
+    """`git rev-parse HEAD:<folder>`, plus "+dirty" when a tracked file under `folder` differs from it."""
+    dirty = _git("status", "--porcelain", "--untracked-files=no", "--", folder)
+    return _git("rev-parse", f"HEAD:{folder}") + ("+dirty" if dirty else "")
+
+
 def code_id() -> str:
     """The id of the committed product tree, `git rev-parse HEAD:src`, plus "+dirty" when a tracked file under src
     differs from it."""
-    dirty = _git("status", "--porcelain", "--untracked-files=no", "--", "src")
-    return _git("rev-parse", "HEAD:src") + ("+dirty" if dirty else "")
+    return _tree_id("src")
+
+
+def tools_id() -> str:
+    """The id of the committed gate tools, `git rev-parse HEAD:tools`, plus "+dirty" when a tracked file under tools
+    differs from it, as code_id has it for src: a gate whose steps hold it reruns them when its tool changes (AR-19)."""
+    return _tree_id("tools")
 
 
 def step(out: Path, step_id: str, key: str, work: Callable[[], dict]) -> dict:
