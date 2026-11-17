@@ -6,7 +6,7 @@ import numpy as np
 import pytest
 
 from kicad_rf_studio.core.post.emission import (EMISSION_COLUMNS, R_M, emission_csv, emission_lines, emission_rows,
-                                                incident, ring_lines, rings_csv)
+                                                floor_db, incident, null_floor, ring_lines, rings_csv)
 from kicad_rf_studio.core.post.farfield import FarField, port_dft, port_powers, snapped
 
 F = [1.83e9, 2.0e9, 2.745e9]
@@ -87,3 +87,15 @@ def test_the_lines_state_the_band_each_harmonic_the_closure_and_the_rings():  # 
     held = {"f_hz": 1.5e9, "q": None, "factor": 1.0}
     assert [c for c, _ in ring_lines([*RINGS, {"f_hz": 2.5e9, "q": 100.0, "factor": 0.005}, held], 31e-9)] == [
         "W_EMISSION_RING", "W_EMISSION_RING_HELD"]
+
+
+def test_n_is_the_largest_vector_difference_over_the_sphere_per_v_at_3_m():  # design 5.10; f2
+    u = np.full(3, 1.5)
+    assert null_floor(far(3.0), far(3.0j), u, u) == pytest.approx([abs(3 - 3j) / R_M / 1.5] * 3)  # max|E| equal
+    assert null_floor(far(3.0), far(3.3), u, u) == pytest.approx([0.3 / R_M / 1.5] * 3)
+    with pytest.raises(ValueError):
+        null_floor(far(), far(f=[1.83e9, 2.0e9, 2.8e9]), u, u)
+
+
+def test_the_floor_is_r13s_form_rounded_up_to_0_05_db():  # design 5.10; R-13
+    assert floor_db(np.array([10 ** (-47.28 / 20), 0.05, 0.0])).tolist() == [-37.7, -16.45, -np.inf]

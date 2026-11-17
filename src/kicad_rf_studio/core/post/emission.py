@@ -2,8 +2,9 @@
 """An emission run's results (Stage 5 design 5.7, 5.8): at each far-field frequency the largest field over the sphere
 at 3 m, per V of the source's incident wave and per mA of its current, the powers and the energy closure, judged only
 where no ring truncates it, the source takes in power and no resistor sits in the grid; the rings the job ends with;
-and their CSVs and lines, labelled relative with their stated limits. Never a dBµV/m, a limit line or a standard's
-name. Never imports openEMS, CSXCAD, Qt or matplotlib."""
+their CSVs and lines, labelled relative with their stated limits; and n(f), two runs' largest field difference, with
+its floor (5.10). Never a dBµV/m, a limit line or a standard's name. Never imports openEMS, CSXCAD, Qt or
+matplotlib."""
 import csv
 import io
 import math
@@ -20,6 +21,7 @@ R_M = 3.0  # m: the field's distance, the worker's 1 m transform times 1/R_M, ex
 P_ACC_MIN = 1e-3  # × P_inc: a frequency whose source takes in less is not closure-judged (P3-A's conditioning, B8)
 BACKED = 3.0  # P_rad/P_inc of at least BACKED·|ε| is closure-backed (r5's test on B8's P_inc base)
 EPS_LIMIT = round(ETA_LIMIT - 1, 6)  # |ε| over it raises W_EMISSION_CLOSURE: P3-A's η ± 0.02 (B8)
+FLOOR_STEP_DB = 0.05  # dB: floor_db rounds up to it (design 5.10, P4-E's rule)
 EMISSION_OUTPUTS = re.compile(r"emission(_rings)?\.csv")  # an emission run's files, matched whole
 EMISSION_LIMITS = ("I_LIMIT_EMISSION",)  # design 5.8: stated after every emission result
 EMISSION_COLUMNS = ("f_hz", "harmonic", "e_3m_db_per_v_relative", "e_3m_db_per_ma_relative", "theta_deg", "phi_deg",
@@ -147,3 +149,25 @@ def emission_lines(project: dict, rows: list[dict]) -> list[tuple[str, dict]]:
     if not abs(worst["eps"]) <= EPS_LIMIT:  # a NaN is over it too
         lines.append(("W_EMISSION_CLOSURE", at))
     return lines
+
+
+def null_floor(a: FarField, b: FarField, u_a: np.ndarray, u_b: np.ndarray) -> np.ndarray:
+    """n(f) (F,) of two runs' far fields `a` and `b` and their sources' U_inc (F,) `u_a` and `u_b`, incident's (design
+    5.10; f2): at each frequency the largest over the sphere of |E_b − E_a|, E = (E_θ, E_φ)/R_M/U_inc the field at 3 m
+    per V of the incident wave. The sphere is the finest grid that holds every frequency (the 1° cuts hold the first
+    only). ValueError when the frequencies (relative 1e-6), θ or φ differ."""
+    if (a.f.shape != b.f.shape or not np.allclose(a.f, b.f, rtol=1e-6, atol=0)
+            or not np.array_equal(a.theta, b.theta) or not np.array_equal(a.phi, b.phi)):
+        raise ValueError("the two far fields differ in their frequencies, θ or φ")
+    s_a, s_b = (1 / (R_M * np.asarray(u)[:, None, None]) for u in (u_a, u_b))
+    d2 = np.abs(b.e_theta * s_b - a.e_theta * s_a) ** 2 + np.abs(b.e_phi * s_b - a.e_phi * s_a) ** 2
+    return np.sqrt(d2.max(axis=(1, 2)))
+
+
+def floor_db(n: np.ndarray) -> np.ndarray:
+    """floor(f) of null_floor's `n` (design 5.10; R-13's form): 20·log10(3·n), three times the null's noise, in dB,
+    rounded up to FLOOR_STEP_DB (the steps rounded to 9 places first, so float noise never adds one) and to 2 places;
+    −inf where n is 0."""
+    with np.errstate(divide="ignore"):  # log10(0) is −inf, a null with no difference at all
+        db = 20 * np.log10(3 * np.asarray(n, dtype=float))
+    return np.round(np.ceil(np.round(db / FLOOR_STEP_DB, 9)) * FLOOR_STEP_DB, 2)

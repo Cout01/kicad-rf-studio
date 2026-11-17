@@ -1131,7 +1131,17 @@ def fingerprint(project: dict) -> dict:
     dielectric, lid and lid_height_mm, its mesh without max_cell_mm's value but with "d_fill", whether it is null (the d
     fill, gate P4-C), so a d-fill run never compares with a set cell's; "ends" (its external ports' signal pads, in
     order, so two projects of other lines or victims never compare) and the versions; t_max_s and window_s, the stop
-    window, stay out, as they follow the lines' 2D εeff and length, which a variant may change."""
+    window, stay out, as they follow the lines' 2D εeff and length, which a variant may change. An emission project's
+    (Stage 5 design 5.10): the antenna's keys and near_field, without the start or flat_s (its stop branch is never
+    flat); "ends", each port's signal pad with its R (50 Ω unless a termination sets one), so another source or
+    termination never compares; the copper model and the versions. Its lid, overrides, results, verify and board stay
+    out, so the lid pair, an override pair and two boards compare."""
+    if emission(project):
+        keys = ("preset", "mesh", "region", "f0_hz", "band", "t_max_s", "air_gap_mm", "boundary", "far_field",
+                "near_field", "stackup", "lid_height_mm")
+        return {**{key: project[key] for key in keys},
+                "ends": [[q["signal"], q.get("R", 50.0)] for q in project["ports"]], "copper": copper_model(project),
+                "app": __version__, "openems": runs.openems_versions()[0]}
     if si(project):
         # ponytail: max_cell_mm's value out, so a hand-edited coarser cell compares too; whether it is null in, as the
         # d fill and a set cell differ by more than the thresholds (gate P4-C); a recorded factor if users edit it
